@@ -476,7 +476,7 @@ function DashboardContent() {
                                         setSearchTerm(event.target.value);
                                         setIsSearchFocused(true);
                                     }}
-                                    placeholder="Ej. cardiología, López, 1001"
+                                    placeholder="Ej. cardiología, López"
                                     className="w-full bg-transparent pr-10 text-sm font-medium text-slate-900 outline-none placeholder:text-slate-400"
                                 />
 
