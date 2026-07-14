@@ -463,7 +463,7 @@ function DashboardContent() {
 
                     <div ref={searchMenuRef} className="relative rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
                         <label htmlFor="searchTerm" className="mb-1 block text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
-                            Buscar por nombre, especialidad, correo o colegiado
+                            Buscar por nombre o especialidad
                         </label>
                         <div className="flex items-center gap-3">
                             <Search className="h-4 w-4 shrink-0 text-slate-400" />
