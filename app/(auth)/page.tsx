@@ -200,18 +200,18 @@ export default function LoginPage() {
                 type="email"
                 autoComplete="email"
                 placeholder="Correo electrónico*"
-                className="h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 sm:text-[0.95rem]"
+                className="autofill-fix h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 sm:text-[0.95rem]"
                 {...registerRecovery('correo')}
               />
             </div>
             {recoveryErrors.correo ? <p className="mt-2 text-sm text-rose-300">{recoveryErrors.correo.message}</p> : null}
             
-            <div className="mt-4 flex h-14 items-center gap-3 rounded-2xl border border-sky-400/30 bg-[#0b234c] px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition focus-within:border-sky-300/70 focus-within:ring-2 focus-within:ring-sky-400/25">
+            {/* <div className="mt-4 flex h-14 items-center gap-3 rounded-2xl border border-sky-400/30 bg-[#0b234c] px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition focus-within:border-sky-300/70 focus-within:ring-2 focus-within:ring-sky-400/25">
               <input
                 id="recovery-nuevaPassword"
                 type={showPassword ? 'text' : 'password'}
                 placeholder="Nueva contraseña*"
-                className="h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 sm:text-[0.95rem]"
+                className="autofill-fix h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 sm:text-[0.95rem]"
                 {...registerRecovery('nuevaPassword')}
               />
               <button
@@ -222,7 +222,7 @@ export default function LoginPage() {
               >
                 {showPassword ? <EyeOff className="h-4.5 w-4.5" /> : <Eye className="h-4.5 w-4.5" />}
               </button>
-            </div>
+            </div> */}
             {recoveryErrors.nuevaPassword ? <p className="mt-2 text-sm text-rose-300">{recoveryErrors.nuevaPassword.message}</p> : null}
           </div>
 
@@ -271,7 +271,7 @@ export default function LoginPage() {
               type="email"
               autoComplete="email"
               placeholder="Correo electrónico*"
-              className="h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 sm:text-[0.95rem]"
+              className="autofill-fix h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 sm:text-[0.95rem]"
               {...register('correo')}
             />
           </div>
@@ -297,7 +297,7 @@ export default function LoginPage() {
               type={showPassword ? 'text' : 'password'}
               autoComplete="current-password"
               placeholder="Contraseña"
-              className="h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 sm:text-[0.95rem]"
+              className="autofill-fix h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 sm:text-[0.95rem]"
               {...register('password')}
             />
             <button
@@ -346,7 +346,7 @@ export default function LoginPage() {
             setShowPassword(false);
             setAuthView('choice');
           }}
-          className="w-full text-center text-sm font-medium text-slate-300 transition hover:text-white"
+          className="w-full text-center font-medium text-cyan-300 underline underline-offset-4 transition hover:text-cyan-200"
         >
           Iniciar sesión con otro método
         </button>

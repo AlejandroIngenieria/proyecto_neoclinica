@@ -5,11 +5,14 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'La contraseña es obligatoria').min(6, 'La contraseña debe tener al menos 6 caracteres'),
 });
 export const registerSchema = z.object({
-  primerNombre: z.string().min(1, 'El nombre es obligatorio'),
-  primerApellido: z.string().min(1, 'El apellido es obligatorio'),
-  correo: z.string().min(1, 'El correo es obligatorio').email('El correo no es válido'),
-  password: z.string().min(1, 'La contraseña es obligatoria').min(6, 'La contraseña debe tener al menos 6 caracteres'),
-  confirmPassword: z.string().min(1, 'Debes confirmar la contraseña'),
+  primerNombre: z.string().trim().min(1, 'El primer nombre es obligatorio').max(100, 'Máximo 100 caracteres'),
+  segundoNombre: z.string().trim().max(100, 'Máximo 100 caracteres').optional(),
+  primerApellido: z.string().trim().min(1, 'El primer apellido es obligatorio').max(100, 'Máximo 100 caracteres'),
+  segundoApellido: z.string().trim().max(100, 'Máximo 100 caracteres').optional(),
+  apellidoCasado: z.string().trim().max(100, 'Máximo 100 caracteres').optional(),
+  correo: z.string().trim().min(1, 'El correo es obligatorio').email('El correo no es válido'),
+  password: z.string().trim().regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*[%&@\-_]).{8,15}$/, 'La contraseña no cumple con los requisitos'),
+  confirmPassword: z.string().trim().min(1, 'Debes confirmar la contraseña'),
 }).refine((values) => values.password === values.confirmPassword, {
   message: 'Las contraseñas no coinciden',
   path: ['confirmPassword'],

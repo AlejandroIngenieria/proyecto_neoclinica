@@ -126,3 +126,12 @@ body {
   background: #334155;
   border-radius: 8px;
 }
+
+/* Fix Chrome autofill background */
+.autofill-fix:-webkit-autofill,
+.autofill-fix:-webkit-autofill:hover, 
+.autofill-fix:-webkit-autofill:focus, 
+.autofill-fix:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0px 1000px #0b234c inset !important;
+    -webkit-text-fill-color: white !important;
+}
