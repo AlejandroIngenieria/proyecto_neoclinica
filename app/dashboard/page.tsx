@@ -15,6 +15,12 @@ import {
     Sparkles,
     Users,
     X,
+    ArrowDownUp,
+    Calendar,
+    Video,
+    DollarSign,
+    Target,
+    ChevronDown,
 } from 'lucide-react';
 
 import type { DoctorResponse } from '@/types';
@@ -44,7 +50,7 @@ type ResolvedDoctor = {
     searchIndex: string;
 };
 
-type SortOption = 'name-asc' | 'name-desc' | 'services-desc';
+type SortOption = 'name-asc' | 'name-desc' | 'rating-desc' | 'price-asc';
 
 const PRICE_LIMIT_MAX = 5000;
 
@@ -173,6 +179,87 @@ function SummarySection({
     );
 }
 
+function CustomDropdown({
+    icon: Icon,
+    title,
+    options,
+    value,
+    onChange
+}: {
+    icon: any;
+    title: string;
+    options: { value: string; label: string }[];
+    value: string;
+    onChange: (val: string) => void;
+}) {
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const selectedOption = options.find(o => o.value === value) || options[0];
+
+    return (
+        <div ref={dropdownRef} className="relative w-full">
+            <button 
+                type="button" 
+                onClick={() => setIsOpen(!isOpen)}
+                className="flex w-full items-center justify-between py-1 transition hover:opacity-80"
+            >
+                <div className="flex items-center gap-4">
+                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 backdrop-blur-sm`}>
+                        <Icon className={`h-5 w-5 text-white`} />
+                    </div>
+                    <div className="text-left">
+                        <div className="text-[0.95rem] font-bold text-white">{title}</div>
+                        <div className="text-sm font-medium text-sky-100">{selectedOption.label}</div>
+                    </div>
+                </div>
+                <ChevronDown className={`h-4 w-4 text-white/50 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isOpen && (
+                <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/95 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.5)]">
+                    <div className="max-h-60 overflow-y-auto p-2 space-y-1">
+                        {options.map((option) => {
+                            const isSelected = value === option.value;
+                            return (
+                                <button
+                                    key={option.value}
+                                    type="button"
+                                    onClick={() => {
+                                        onChange(option.value);
+                                        setIsOpen(false);
+                                    }}
+                                    className={`flex w-full items-center justify-between rounded-xl px-4 py-3 text-left text-sm font-bold transition ${
+                                        isSelected 
+                                        ? 'bg-sky-500/20 text-sky-300' 
+                                        : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                                    }`}
+                                >
+                                    <span className={`flex items-center gap-2`}>
+                                        {isSelected && title === 'Ordenar por' && <ArrowDownUp className="h-4 w-4" />}
+                                        {option.label}
+                                    </span>
+                                    {isSelected && <div className="h-1.5 w-1.5 rounded-full bg-sky-400"></div>}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 function DashboardContent() {
     const router = useRouter();
     const { status } = useSession();
@@ -184,10 +271,15 @@ function DashboardContent() {
     const [searchTerm, setSearchTerm] = useParamString('q');
     const [locationTerm, setLocationTerm] = useParamString('location');
     const [sortBy, setSortBy] = useParamString('sort', 'name-asc') as [SortOption, (v: string) => void];
+    const [availability, setAvailability] = useParamString('availability', 'any');
+    const [modality, setModality] = useParamString('modality', 'all');
     const [showOnlyActive, setShowOnlyActive] = useParamBoolean('active');
-    const [presencial, setPresencial] = useParamBoolean('presencial');
-    const [telemedicina, setTelemedicina] = useParamBoolean('telemedicina');
     const [priceLimit, setPriceLimit] = useParamNumber('price', PRICE_LIMIT_MAX);
+    const [localPriceLimit, setLocalPriceLimit] = useState(priceLimit);
+    useEffect(() => {
+        setLocalPriceLimit(priceLimit);
+    }, [priceLimit]);
+
     const [currentPage, setCurrentPage] = useParamNumber('page', 1);
     const resetParams = useResetParams();
 
@@ -256,34 +348,41 @@ function DashboardContent() {
     const visibleDoctors = useMemo(() => {
         const normalizedQuery = normalizeText(searchTerm.trim());
         const normalizedLocation = normalizeText(locationTerm.trim());
-        const hasModalityFilter = presencial || telemedicina;
 
         const filteredDoctors = resolvedDoctors.filter((doctor) => {
             const matchesQuery = !normalizedQuery || doctor.searchIndex.includes(normalizedQuery);
             const matchesLocation = !normalizedLocation || normalizeText(doctor.locationLabel).includes(normalizedLocation);
             const matchesActive = !showOnlyActive || isDoctorActive(doctor.doctor);
+            
             const doctorModalities = doctor.doctor.modalidades.map((item) => normalizeText(item.modalidad));
-            const matchesModality =
-                !hasModalityFilter ||
-                (presencial && doctorModalities.some((item) => item.includes('presencial'))) ||
-                (telemedicina && doctorModalities.some((item) => item.includes('telemedicina') || item.includes('virtual')));
+            let matchesModality = true;
+            if (modality === 'virtual') matchesModality = doctorModalities.some((item) => item.includes('telemedicina') || item.includes('virtual'));
+            if (modality === 'presencial') matchesModality = doctorModalities.some((item) => item.includes('presencial'));
+            if (modality === 'hybrid') matchesModality = doctorModalities.some((item) => item.includes('telemedicina') || item.includes('virtual')) && doctorModalities.some((item) => item.includes('presencial'));
+            
+            const matchesAvailability = true; 
+            
             const matchesPrice = matchesPriceLimit(getDoctorPricePoints(doctor.doctor), priceLimit);
 
-            return matchesQuery && matchesLocation && matchesActive && matchesModality && matchesPrice;
+            return matchesQuery && matchesLocation && matchesActive && matchesModality && matchesAvailability && matchesPrice;
         });
 
         return filteredDoctors.sort((leftDoctor, rightDoctor) => {
             if (sortBy === 'name-desc') {
                 return rightDoctor.fullName.localeCompare(leftDoctor.fullName, 'es');
             }
-
-            if (sortBy === 'services-desc') {
-                return rightDoctor.serviceCount - leftDoctor.serviceCount;
+            if (sortBy === 'rating-desc') {
+                return rightDoctor.recognitionCount - leftDoctor.recognitionCount;
+            }
+            if (sortBy === 'price-asc') {
+                const minPriceL = Math.min(...getDoctorPricePoints(leftDoctor.doctor)) || Infinity;
+                const minPriceR = Math.min(...getDoctorPricePoints(rightDoctor.doctor)) || Infinity;
+                return minPriceL - minPriceR;
             }
 
             return leftDoctor.fullName.localeCompare(rightDoctor.fullName, 'es');
         });
-    }, [locationTerm, presencial, telemedicina, priceLimit, resolvedDoctors, searchTerm, showOnlyActive, sortBy]);
+    }, [locationTerm, modality, availability, priceLimit, resolvedDoctors, searchTerm, showOnlyActive, sortBy]);
 
     const recentDoctorItems = useMemo(() => recentDoctors.slice(0, 3), [recentDoctors]);
     const searchSuggestions = useMemo(() => {
@@ -360,20 +459,7 @@ function DashboardContent() {
             />
 
             <div className="mx-auto w-[90%] max-w-[1800px] mt-8">
-                <div className="grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] lg:items-end">
-                    <button
-                        type="button"
-                        onClick={() => isFiltersOpen ? closeFilters() : openFilters()}
-                        className={`inline-flex h-18 items-center gap-2 rounded-2xl border px-5 text-sm font-semibold transition ${
-                            isFiltersOpen 
-                            ? 'border-sky-600 bg-sky-600 text-white shadow-lg shadow-sky-500/20' 
-                            : 'border-slate-200 bg-white text-slate-700 shadow-sm hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700'
-                        }`}
-                        aria-label="Alternar filtros"
-                    >
-                        <Filter className="h-4 w-4" />
-                        {isFiltersOpen ? 'Ocultar filtros' : 'Mostrar filtros'}
-                    </button>
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] lg:items-end">
 
                     <div ref={searchMenuRef} className="relative rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
                         <label htmlFor="searchTerm" className="mb-1 block text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
@@ -484,113 +570,143 @@ function DashboardContent() {
                             </div>
                         </div>
                     </div>
+
+                    <button
+                        type="button"
+                        onClick={() => {
+                            alert('Buscando médicos cerca de tu ubicación actual...');
+                        }}
+                        className="inline-flex h-18 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
+                    >
+                        <Target className="h-4 w-4" />
+                        Cerca de ti
+                    </button>
+
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={() => isFiltersOpen ? closeFilters() : openFilters()}
+                            className={`inline-flex h-18 w-full justify-center items-center gap-2 rounded-2xl border px-5 text-sm font-semibold transition ${
+                                isFiltersOpen 
+                                ? 'border-slate-900 bg-slate-900 text-white shadow-lg shadow-slate-900/30' 
+                                : 'border-slate-200 bg-white text-slate-700 shadow-sm hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700'
+                            }`}
+                            aria-label="Alternar filtros"
+                        >
+                            <Filter className="h-4 w-4" />
+                            {isFiltersOpen ? 'Ocultar filtros' : 'Mostrar filtros'}
+                        </button>
+
+                        {isFiltersOpen && (
+                            <div className="absolute right-0 top-full mt-3 w-[340px] z-50 rounded-3xl border border-slate-700 bg-slate-900 shadow-2xl shadow-slate-900/50 flex flex-col overflow-hidden">
+                                <div className="flex items-center justify-between p-5 bg-white border-b border-slate-200">
+                                    <h3 className="text-sm font-black uppercase tracking-[0.2em] text-slate-700">Filtros activos</h3>
+                                    <button
+                                        type="button"
+                                        onClick={() => resetParams()}
+                                        className="text-xs font-semibold text-sky-600 transition hover:text-sky-700 underline underline-offset-2"
+                                    >
+                                        Limpiar todo
+                                    </button>
+                                </div>
+
+                                <div className="p-6 space-y-6">
+                                    <CustomDropdown
+                                        icon={ArrowDownUp}
+                                        title="Ordenar por"
+                                        value={sortBy}
+                                        onChange={(val) => setSortBy(val as SortOption)}
+                                        options={[
+                                            { value: 'name-asc', label: 'Nombre A-Z' },
+                                            { value: 'name-desc', label: 'Nombre Z-A' },
+                                            { value: 'rating-desc', label: 'Mejor valorados' },
+                                            { value: 'price-asc', label: 'Precio menor' },
+                                        ]}
+                                    />
+
+                                    <div className="h-px w-full bg-white/10" />
+
+                                    <CustomDropdown
+                                        icon={Calendar}
+                                        title="Disponibilidad"
+                                        value={availability}
+                                        onChange={setAvailability}
+                                        options={[
+                                            { value: 'any', label: 'Cualquier momento' },
+                                            { value: 'today', label: 'Disponible hoy' },
+                                            { value: 'tomorrow', label: 'Disponible mañana' },
+                                        ]}
+                                    />
+
+                                    <div className="h-px w-full bg-white/10" />
+
+                                    <CustomDropdown
+                                        icon={Video}
+                                        title="Modalidad"
+                                        value={modality}
+                                        onChange={setModality}
+                                        options={[
+                                            { value: 'all', label: 'Todas las modalidades' },
+                                            { value: 'virtual', label: 'Consulta virtual' },
+                                            { value: 'hybrid', label: 'Modalidad híbrida' },
+                                            { value: 'presencial', label: 'Consulta presencial' },
+                                        ]}
+                                    />
+
+                                    <div className="h-px w-full bg-white/10" />
+
+                                    <div className="w-full">
+                                        <div className="flex w-full items-center justify-between py-1 mb-4">
+                                            <div className="flex items-center gap-4">
+                                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 backdrop-blur-sm">
+                                                    <DollarSign className="h-5 w-5 text-white" />
+                                                </div>
+                                                <div className="text-left">
+                                                    <div className="text-[0.95rem] font-bold text-white">Rango de precios</div>
+                                                    <div className="text-sm font-medium text-sky-100">Q0 - Q{localPriceLimit}</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="px-3 pt-2 pb-4">
+                                            <div className="relative h-1.5 w-full bg-white/20 rounded-full flex items-center">
+                                                {/* Barra de progreso azul */}
+                                                <div 
+                                                    className="absolute left-0 top-0 h-full bg-sky-400 rounded-full shadow-[0_0_10px_rgba(56,189,248,0.5)]" 
+                                                    style={{ width: `${(localPriceLimit / PRICE_LIMIT_MAX) * 100}%` }}
+                                                />
+
+                                                {/* Punto negro izquierdo (fijo en Q0) */}
+                                                <div className="absolute left-0 -ml-2.5 h-5 w-5 rounded-full bg-white shadow-md pointer-events-none z-20"></div>
+                                                
+                                                {/* Input Range Slider invisible que controla todo */}
+                                                <input
+                                                    type="range"
+                                                    min={0}
+                                                    max={PRICE_LIMIT_MAX}
+                                                    step={50}
+                                                    value={localPriceLimit}
+                                                    onChange={(event) => setLocalPriceLimit(Number(event.target.value))}
+                                                    onMouseUp={() => setPriceLimit(localPriceLimit)}
+                                                    onTouchEnd={() => setPriceLimit(localPriceLimit)}
+                                                    className="absolute w-full appearance-none bg-transparent accent-white [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-[0_0_10px_rgba(255,255,255,0.5)] cursor-pointer z-10 m-0"
+                                                    style={{ margin: 0, padding: 0 }}
+                                                />
+                                            </div>
+                                            <div className="mt-4 flex justify-between text-sm font-medium text-slate-400">
+                                                <span>Q0</span>
+                                                <span>Q{localPriceLimit}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 
-            <div className={`mx-auto w-[90%] max-w-[1800px] py-8 grid items-start gap-8 ${isFiltersOpen ? 'lg:grid-cols-[300px_1fr]' : 'grid-cols-1'}`}>
-                {isFiltersOpen && (
-                    <aside className="sticky top-32 space-y-5 rounded-3xl border border-slate-200/60 bg-white/50 p-6 shadow-xl shadow-slate-900/5 backdrop-blur-xl">
-                        <div className="flex items-center justify-between pb-2">
-                            <h3 className="text-sm font-black uppercase tracking-[0.2em] text-slate-700">Filtros activos</h3>
-                            <button
-                                type="button"
-                                onClick={() => resetParams()}
-                                className="text-xs font-semibold text-sky-600 transition hover:text-sky-700 underline underline-offset-2"
-                            >
-                                Limpiar todo
-                            </button>
-                        </div>
-
-                        <div className="space-y-6">
-                            {/* Ordenar por */}
-                            <div>
-                                <label className="mb-3 block text-xs font-bold uppercase tracking-[0.22em] text-slate-500">Ordenar por</label>
-                                <div className="space-y-2">
-                                    {([
-                                        { value: 'name-asc' as const, label: 'Nombre (A-Z)' },
-                                        { value: 'name-desc' as const, label: 'Nombre (Z-A)' },
-                                        { value: 'services-desc' as const, label: 'Más servicios' },
-                                    ] as const).map((option) => (
-                                        <button
-                                            key={option.value}
-                                            type="button"
-                                            onClick={() => setSortBy(option.value)}
-                                            className={`w-full rounded-2xl border px-4 py-2.5 text-left text-sm transition ${sortBy === option.value
-                                                    ? 'border-sky-600 bg-sky-600 text-white shadow-md shadow-sky-500/20'
-                                                    : 'border-slate-200 bg-white text-slate-700 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700'
-                                                }`}
-                                        >
-                                            <span className="font-bold">{option.label}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Modalidad */}
-                            <div>
-                                <label className="mb-3 block text-xs font-bold uppercase tracking-[0.22em] text-slate-500">Modalidad</label>
-                                <div className="space-y-2">
-                                    {[
-                                        { checked: presencial, onChange: setPresencial, label: 'Presencial' },
-                                        { checked: telemedicina, onChange: setTelemedicina, label: 'Telemedicina' },
-                                    ].map((option) => (
-                                        <label key={option.label} className="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 transition hover:border-sky-200 hover:bg-sky-50">
-                                            <input
-                                                checked={option.checked}
-                                                onChange={(event) => option.onChange(event.target.checked)}
-                                                type="checkbox"
-                                                className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-200"
-                                            />
-                                            <span className="text-sm font-semibold text-slate-800">{option.label}</span>
-                                        </label>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Precio */}
-                            <div>
-                                <label className="mb-3 flex items-center justify-between text-xs font-bold uppercase tracking-[0.22em] text-slate-500">
-                                    <span>Precio máximo</span>
-                                    <span className="text-sky-700">{priceLimit >= PRICE_LIMIT_MAX ? 'Sin límite' : `Q${priceLimit}`}</span>
-                                </label>
-                                <input
-                                    type="range"
-                                    min={0}
-                                    max={PRICE_LIMIT_MAX}
-                                    step={50}
-                                    value={priceLimit}
-                                    onChange={(event) => setPriceLimit(Number(event.target.value))}
-                                    className="h-2 w-full cursor-pointer appearance-none rounded-full bg-slate-200 accent-sky-600 mb-3"
-                                />
-                                <div className="flex gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setPriceLimit(PRICE_LIMIT_MAX)}
-                                        className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 text-xs font-semibold text-slate-600 transition hover:bg-white hover:text-sky-700"
-                                    >
-                                        Sin límite
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Estado */}
-                            <div>
-                                <label className="mb-3 block text-xs font-bold uppercase tracking-[0.22em] text-slate-500">Estado</label>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowOnlyActive(!showOnlyActive)}
-                                    className={`w-full rounded-2xl border px-4 py-2.5 text-left text-sm font-semibold transition ${showOnlyActive
-                                            ? 'border-sky-600 bg-sky-600 text-white shadow-md shadow-sky-500/20'
-                                            : 'border-slate-200 bg-white text-slate-700 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700'
-                                        }`}
-                                >
-                                    Solo médicos activos
-                                </button>
-                            </div>
-                        </div>
-                    </aside>
-                )}
-
+            <div className="mx-auto w-[90%] max-w-[1800px] py-8">
                 <div className="min-w-0 space-y-6">
                     {error ? (
                         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">

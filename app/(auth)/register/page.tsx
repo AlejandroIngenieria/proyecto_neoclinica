@@ -41,9 +41,10 @@ export default function RegisterPage() {
   const hasLength = watchPassword.length >= 8 && watchPassword.length <= 15;
   const hasUpperCase = /[A-Z]/.test(watchPassword);
   const hasLowerCase = /[a-z]/.test(watchPassword);
+  const hasNumber = /\d/.test(watchPassword);
   const hasSpecialChar = /[%&@\-_]/.test(watchPassword);
   
-  const isPasswordValid = hasLength && hasUpperCase && hasLowerCase && hasSpecialChar;
+  const isPasswordValid = hasLength && hasUpperCase && hasLowerCase && hasNumber && hasSpecialChar;
 
   const handleNextStep = async () => {
     // Validar solo los campos del Paso 1 antes de continuar
@@ -252,6 +253,10 @@ export default function RegisterPage() {
                         <li className={`flex items-center gap-2 ${hasLowerCase ? 'text-emerald-400' : 'text-slate-400'}`}>
                           {hasLowerCase ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
                           Al menos una minúscula
+                        </li>
+                        <li className={`flex items-center gap-2 ${hasNumber ? 'text-emerald-400' : 'text-slate-400'}`}>
+                          {hasNumber ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
+                          Al menos un número
                         </li>
                         <li className={`flex items-center gap-2 ${hasSpecialChar ? 'text-emerald-400' : 'text-slate-400'}`}>
                           {hasSpecialChar ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}

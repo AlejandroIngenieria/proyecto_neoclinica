@@ -11,7 +11,7 @@ export const registerSchema = z.object({
   segundoApellido: z.string().trim().max(100, 'Máximo 100 caracteres').optional(),
   apellidoCasado: z.string().trim().max(100, 'Máximo 100 caracteres').optional(),
   correo: z.string().trim().min(1, 'El correo es obligatorio').email('El correo no es válido'),
-  password: z.string().trim().regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*[%&@\-_]).{8,15}$/, 'La contraseña no cumple con los requisitos'),
+  password: z.string().trim().regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[%&@\-_]).{8,15}$/, 'La contraseña no cumple con los requisitos'),
   confirmPassword: z.string().trim().min(1, 'Debes confirmar la contraseña'),
 }).refine((values) => values.password === values.confirmPassword, {
   message: 'Las contraseñas no coinciden',
