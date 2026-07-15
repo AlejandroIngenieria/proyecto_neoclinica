@@ -1,3 +1,5 @@
+import type { ResenaDto } from './resenas';
+
 // ─── Base del expediente médico ───────────────────────────────────────────────
 
 export type ExpedienteDoctor = {
@@ -23,6 +25,7 @@ export type ExpedienteDoctor = {
   exp_colegiado_gt: string | null;
   exp_presentacion: string | null;
   exp_edad_minima_atencion: number | null;
+  exp_anios_experiencia: number | null;
   exp_foto_perfil: string | null;
   exp_nombre_factura: string | null;
   exp_nit_factura: string | null;
@@ -144,6 +147,9 @@ export type DoctorResponse = ExpedienteDoctor & {
   reconocimientos: DoctorReconocimiento[];
   redes_sociales: DoctorRedSocial[];
   fotos_trabajo: DoctorFotoTrabajo[];
+  promedio_valoracion: number;
+  total_resenas: number;
+  resenas: ResenaDto[];
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -161,3 +167,17 @@ export function buildDoctorFullName(
     .filter(Boolean)
     .join(' ');
 }
+
+// ─── Favoritos ────────────────────────────────────────────────────────────────
+
+export type MedicoFavorito = {
+  favCodigo: string;
+  expCodigo: string;
+  nombreCompleto: string;
+  fotoPerfilUrl: string | null;
+  especialidadPrincipal: string;
+  promedioValoracion: number;
+  totalResenas: number;
+  precioBaseConsulta: number | null;
+  fechaAgregado: string;
+};

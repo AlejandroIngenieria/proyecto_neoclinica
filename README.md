@@ -357,3 +357,51 @@ Realiza una baja lógica (soft delete) del usuario en sesión. Inactiva la cuent
 }
 
 ```
+
+---
+
+### Nuevos Endpoints: Reseñas (Reviews)
+
+Nota: Obtener reseñas es para el perfil del médico. Crear, actualizar y eliminar reseña es para el usuario que ya haya tenido una cita con dicho médico.
+
+#### 1. CREAR RESEÑA
+
+* **Endpoint:** `/api/Expedientes`
+* **Método:** `POST`
+* **Headers:** `Authorization: Bearer {token}`
+* **Body (JSON):**
+```json
+{
+  "codDoc": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "codPac": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "codCta": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "valoracion": 5,
+  "texto": "Excelente atención."
+}
+```
+* **Respuestas:** `200 OK` (Éxito), `400 Bad Request` (Errores de validación de modelo), `409 Conflict` (La cita ya tiene reseña).
+
+
+
+#### 3. ACTUALIZAR RESEÑA
+
+* **Endpoint:** `/api/Expedientes/{resCodigo}`
+* **Método:** `PUT`
+* **Headers:** `Authorization: Bearer {token}`
+* **Parámetro en URL:** `resCodigo` (UUID de la reseña).
+* **Body (JSON):**
+```json
+{
+  "valoracion": 4,
+  "texto": "Muy buena atención, pero la cita empezó tarde."
+}
+```
+* **Respuestas:** `200 OK` (Éxito), `400 Bad Request` (Errores de validación), `403 Forbidden` (El usuario no es el autor o la reseña no existe).
+
+#### 4. ELIMINAR RESEÑA
+
+* **Endpoint:** `/api/Expedientes/{resCodigo}`
+* **Método:** `DELETE`
+* **Headers:** `Authorization: Bearer {token}`
+* **Parámetro en URL:** `resCodigo` (UUID de la reseña).
+* **Respuestas:** `200 OK` (Éxito), `403 Forbidden` (El usuario no es el autor o la reseña no existe).

@@ -20,6 +20,7 @@ async function proxyRequest(request: NextRequest, context: RouteContext, method:
 
   const subPath = slug.join('/');
   const targetUrl = new URL(`/api/Pacientes/${subPath}`, backendBaseUrl);
+  console.log(`[PROXY] Requesting backend: ${targetUrl.toString()}`);
 
   const searchParams = request.nextUrl.searchParams;
   searchParams.forEach((value, key) => {
@@ -53,14 +54,16 @@ async function proxyRequest(request: NextRequest, context: RouteContext, method:
       fetchOptions.body = await request.arrayBuffer();
     } else {
       // Para peticiones JSON normales
-      const arrayBuffer = await request.arrayBuffer();
-      if (arrayBuffer.byteLength > 0) {
-        fetchOptions.body = arrayBuffer;
+      const textBody = await request.text();
+      if (textBody) {
+        fetchOptions.body = textBody;
       }
     }
   }
 
   const response = await fetch(targetUrl.toString(), fetchOptions);
+
+  console.log(`[PROXY] Response from backend ${targetUrl.toString()}: ${response.status} ${response.statusText}`);
 
   const responseContentType = response.headers.get('content-type') ?? '';
   const textBody = await response.text();

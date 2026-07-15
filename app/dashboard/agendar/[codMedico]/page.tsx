@@ -50,7 +50,7 @@ export default function AgendarCitaPage({ params }: { params: Promise<{ codMedic
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-20 lg:pb-0">
-      <Navbar subtitle="Agendar cita" backHref="/dashboard" navLinks={NAV_LINKS} />
+      <Navbar subtitle="Agendar cita" backHref="back" navLinks={NAV_LINKS} />
 
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         

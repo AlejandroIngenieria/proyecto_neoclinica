@@ -24,6 +24,7 @@ import {
     Grid,
     List,
     Home,
+    Heart,
 } from 'lucide-react';
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
@@ -41,12 +42,15 @@ import { useDoctors } from '@/hooks/use-doctors';
 import { useParamString, useParamBoolean, useParamNumber, useResetParams } from '@/hooks/use-search-params-state';
 import { useUIStore } from '@/stores/ui-store';
 import { addRecentDoctor, readRecentDoctors, type RecentDoctorItem } from '@/lib/recent-doctors';
+import { useFavoritos } from '@/hooks/use-favoritos';
+import { usePacienteTitular } from '@/hooks/use-pacientes';
 
 type ResolvedDoctor = {
     doctor: DoctorResponse;
     fullName: string;
     specialty: string;
     locationLabel: string;
+    locationPreview: string[];
     specialtyPreview: string[];
     modalityPreview: string[];
     languagePreview: string[];
@@ -132,9 +136,13 @@ function resolveDoctor(doctor: DoctorResponse): ResolvedDoctor {
     const fullName = buildDoctorFullName(doctor) || 'Médico sin nombre';
     const specialty = doctor.exp_profesion || 'Especialidad médica';
     const locationLabel = [doctor.pais_nacimiento, doctor.nacionalidad].filter(Boolean).join(' · ') || 'Ubicación no registrada';
-    const specialtyPreview = doctor.especialidades.map((item) => item.especialidad).filter(Boolean).slice(0, 3);
+    const specialtyPreview = doctor.especialidades.map((item) => item.especialidad).filter(Boolean);
     const modalityPreview = doctor.modalidades.map((item) => item.modalidad).filter(Boolean).slice(0, 2);
     const languagePreview = doctor.idiomas.map((item) => item.idioma).filter(Boolean).slice(0, 2);
+    const locationPreview = Array.from(new Set([
+        ...doctor.clinicas.map(c => [c.cli_descripcion, c.cli_zona ? `Zona ${c.cli_zona}` : ''].filter(Boolean).join(', ')).filter(Boolean),
+        ...(doctor.atencion_domicilio || []).map(d => `Domicilio: ${[d.mun_descripcion, d.lad_zonas ? `Zonas ${d.lad_zonas}` : ''].filter(Boolean).join(', ')}`).filter(Boolean)
+    ]));
 
     // Restringimos el índice a lo que el usuario realmente buscaría: Nombres, Especialidades y Colegiado
     const searchIndex = normalizeText(
@@ -142,6 +150,7 @@ function resolveDoctor(doctor: DoctorResponse): ResolvedDoctor {
             fullName,
             doctor.exp_colegiado_gt ?? '',
             ...doctor.especialidades.map((item) => item.especialidad),
+            ...locationPreview
         ]
             .filter(Boolean)
             .join(' '),
@@ -152,6 +161,7 @@ function resolveDoctor(doctor: DoctorResponse): ResolvedDoctor {
         fullName,
         specialty,
         locationLabel,
+        locationPreview,
         specialtyPreview,
         modalityPreview,
         languagePreview,
@@ -297,6 +307,9 @@ function DashboardContent() {
 
     // React Query — datos del servidor
     const { data: doctors = [], isLoading, error } = useDoctors();
+    const { titular } = usePacienteTitular();
+    const codPac = titular?.pac_codigo || null;
+    const { data: favoritos = [] } = useFavoritos(codPac);
 
     // Local search state for ultra-fast typing
     const [searchTerm, setSearchTerm] = useState('');
@@ -305,7 +318,40 @@ function DashboardContent() {
     const [availability, setAvailability] = useParamString('availability', '');
     const [modality, setModality] = useParamString('modality', 'all');
     const [specialtyParam, setSpecialtyParam] = useParamString('specialty', 'all');
+    
+    const activeModalities = useMemo(() => modality ? modality.split(',') : ['all'], [modality]);
+    const activeSpecialties = useMemo(() => specialtyParam ? specialtyParam.split(',') : ['all'], [specialtyParam]);
+
+    const toggleModality = (id: string) => {
+        if (id === 'all') {
+            setModality('all');
+        } else {
+            let next = activeModalities.filter(m => m !== 'all');
+            if (next.includes(id)) {
+                next = next.filter(m => m !== id);
+            } else {
+                next.push(id);
+            }
+            setModality(next.length === 0 ? 'all' : next.join(','));
+        }
+    };
+
+    const toggleSpecialty = (id: string) => {
+        if (id === 'all') {
+            setSpecialtyParam('all');
+        } else {
+            let next = activeSpecialties.filter(s => s !== 'all');
+            if (next.includes(id)) {
+                next = next.filter(s => s !== id);
+            } else {
+                next.push(id);
+            }
+            setSpecialtyParam(next.length === 0 ? 'all' : next.join(','));
+        }
+    };
+
     const [showOnlyActive, setShowOnlyActive] = useParamBoolean('active');
+    const [showOnlyFavorites, setShowOnlyFavorites] = useParamBoolean('favorites');
     const [priceLimit, setPriceLimit] = useParamNumber('price', PRICE_LIMIT_MAX);
     const [localPriceLimit, setLocalPriceLimit] = useState(priceLimit);
     useEffect(() => {
@@ -354,6 +400,19 @@ function DashboardContent() {
     const [selectedInsurances, setSelectedInsurances] = useState<string[]>([]);
     
     const deferredSearchTerm = useDeferredValue(searchTerm);
+
+    const hasActiveFilters = 
+        searchTags.length > 0 || 
+        searchTerm !== '' || 
+        sortBy !== 'name-asc' || 
+        selectedLanguages.length > 0 || 
+        selectedInsurances.length > 0 || 
+        priceLimit !== PRICE_LIMIT_MAX || 
+        modality !== 'all' || 
+        specialtyParam !== 'all' || 
+        availability !== '' || 
+        showOnlyFavorites ||
+        showOnlyActive;
 
     const advancedFiltersRef = useRef<HTMLDivElement | null>(null);
     const sortMenuRef = useRef<HTMLDivElement | null>(null);
@@ -408,27 +467,29 @@ function DashboardContent() {
         const filteredDoctors = resolvedDoctors.map((doctor) => {
             let isMatch = true;
             let matchedSpecialty: string | undefined = undefined;
-            let searchHighlight: string | undefined = undefined;
+            let matchedLocation: string | undefined = undefined;
 
             for (const tag of activeTags) {
-                const homologues = getNormalizedHomologues(tag);
-                const matchedHomologue = homologues.find(h => doctor.searchIndex.includes(h));
-                if (!matchedHomologue) {
+                const homs = getNormalizedHomologues(tag);
+                const isBroadMatch = homs.some(h => doctor.searchIndex.includes(h));
+                
+                if (!isBroadMatch) {
                     isMatch = false;
                     break;
                 }
 
-                if (!searchHighlight) searchHighlight = tag;
-                
-                // Buscar si la coincidencia fue en una especialidad
-                if (!matchedSpecialty) {
-                    for (const spec of doctor.specialtyPreview) {
-                        const normSpec = normalizeText(spec);
-                        if (homologues.some(h => normSpec.includes(h))) {
-                            matchedSpecialty = spec;
-                            break;
-                        }
-                    }
+                const specMatch = doctor.doctor.especialidades.find(
+                    (s) => homs.some(h => normalizeText(s.especialidad).includes(h))
+                );
+                if (specMatch) {
+                    matchedSpecialty = specMatch.especialidad;
+                }
+
+                const locMatch = doctor.locationPreview.find(
+                    (l) => homs.some(h => normalizeText(l).includes(h))
+                );
+                if (locMatch) {
+                    matchedLocation = locMatch;
                 }
             }
 
@@ -436,18 +497,26 @@ function DashboardContent() {
 
             const matchesLocation = !normalizedLocation || normalizeText(doctor.locationLabel).includes(normalizedLocation);
             const matchesActive = !showOnlyActive || isDoctorActive(doctor.doctor);
+            const isFavorite = favoritos.some(f => f.expCodigo === doctor.doctor.exp_codigo);
+            if (showOnlyFavorites && !isFavorite) return null;
             
             const doctorModalities = doctor.doctor.modalidades.map((item) => normalizeText(item.modalidad));
             let matchesModality = true;
-            if (modality === 'virtual') matchesModality = doctorModalities.some((item) => item.includes('telemedicina') || item.includes('virtual'));
-            if (modality === 'presencial') matchesModality = doctorModalities.some((item) => item.includes('presencial'));
-            if (modality === 'hybrid') matchesModality = doctorModalities.some((item) => item.includes('telemedicina') || item.includes('virtual')) && doctorModalities.some((item) => item.includes('presencial'));
+            if (!activeModalities.includes('all')) {
+                matchesModality = activeModalities.some(m => {
+                    if (m === 'virtual') return doctorModalities.some((item) => item.includes('telemedicina') || item.includes('virtual'));
+                    if (m === 'presencial') return doctorModalities.some((item) => item.includes('presencial'));
+                    if (m === 'hybrid') return doctorModalities.some((item) => item.includes('telemedicina') || item.includes('virtual')) && doctorModalities.some((item) => item.includes('presencial'));
+                    if (m === 'domicilio') return doctorModalities.some((item) => item.includes('domicilio'));
+                    return true;
+                });
+            }
             
             const matchesAvailability = true; 
             
             const matchesPrice = matchesPriceLimit(getDoctorPricePoints(doctor.doctor), priceLimit);
 
-            const matchesSpecialtyParam = specialtyParam === 'all' || doctor.specialtyPreview.some((s) => s === specialtyParam);
+            const matchesSpecialtyParam = activeSpecialties.includes('all') || doctor.specialtyPreview.some((s) => activeSpecialties.includes(s));
             
             const matchesLanguages = selectedLanguages.length === 0 || selectedLanguages.some(lang => doctor.languagePreview?.includes(lang));
             const matchesInsurances = selectedInsurances.length === 0 || selectedInsurances.some(ins => doctor.doctor.aseguradoras?.some(a => a.aseguradora === ins));
@@ -457,11 +526,16 @@ function DashboardContent() {
             }
 
             return {
-                ...doctor,
+                doctor: doctor.doctor,
+                fullName: doctor.fullName,
+                specialtyPreview: doctor.specialtyPreview,
+                modalityPreview: doctor.modalityPreview,
+                locationPreview: doctor.locationPreview,
                 matchedSpecialty,
-                searchHighlight,
+                matchedLocation,
+                searchHighlight: deferredSearchTerm.trim() || undefined,
             };
-        }).filter(Boolean) as (typeof resolvedDoctors[0] & { matchedSpecialty?: string, searchHighlight?: string })[];
+        }).filter(Boolean) as (typeof resolvedDoctors[0] & { matchedSpecialty?: string, matchedLocation?: string, searchHighlight?: string })[];
 
         return filteredDoctors.sort((leftDoctor, rightDoctor) => {
             if (sortBy === 'name-desc') {
@@ -478,7 +552,7 @@ function DashboardContent() {
 
             return leftDoctor.fullName.localeCompare(rightDoctor.fullName, 'es');
         });
-    }, [locationTerm, modality, availability, priceLimit, resolvedDoctors, deferredSearchTerm, showOnlyActive, sortBy, specialtyParam, searchTags, selectedLanguages, selectedInsurances]);
+    }, [locationTerm, activeModalities, availability, priceLimit, resolvedDoctors, deferredSearchTerm, showOnlyActive, showOnlyFavorites, favoritos, sortBy, activeSpecialties, searchTags, selectedLanguages, selectedInsurances]);
 
     const recentDoctorItems = useMemo(() => recentDoctors.slice(0, 3), [recentDoctors]);
     const searchSuggestions = useMemo(() => {
@@ -760,6 +834,40 @@ function DashboardContent() {
                         Cerca de ti
                     </button>
 
+                    <button
+                        type="button"
+                        onClick={() => setShowOnlyFavorites(!showOnlyFavorites)}
+                        className={`inline-flex h-14 shrink-0 items-center gap-2 rounded-2xl px-6 text-label-md font-semibold transition ${
+                            showOnlyFavorites
+                                ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20'
+                                : 'border border-outline-variant/20 bg-surface text-on-surface hover:bg-surface-container'
+                        }`}
+                    >
+                        <Heart className={`h-5 w-5 ${showOnlyFavorites ? 'fill-current' : ''}`} />
+                        Mis Favoritos
+                    </button>
+
+                    {hasActiveFilters && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                resetParams(); // Limpia todos los parámetros de la URL
+                                // Limpia los estados puramente locales:
+                                setSearchTerm('');
+                                setSearchTags([]);
+                                setSelectedLanguages([]);
+                                setSelectedInsurances([]);
+                                setLocalPriceLimit(PRICE_LIMIT_MAX);
+                                setSpecialtySearch('');
+                                setActiveSidebarFilter(null);
+                            }}
+                            className="inline-flex h-14 shrink-0 items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-6 text-label-md font-semibold text-red-600 transition hover:bg-red-100"
+                        >
+                            <X className="h-5 w-5" />
+                            Limpiar
+                        </button>
+                    )}
+
                     <div className="relative" ref={advancedFiltersRef}>
                         <button
                             type="button"
@@ -916,16 +1024,21 @@ function DashboardContent() {
                                             onChange={(e) => setSpecialtySearch(e.target.value)}
                                             className="w-full bg-surface-container-lowest border border-outline-variant rounded-xl px-3 py-2 text-sm outline-none focus:border-primary mb-3"
                                         />
-                                        <div className="flex flex-col gap-2 max-h-60 overflow-y-auto pr-2" style={{scrollbarWidth: 'thin'}}>
-                                            <label className="flex items-center gap-2 cursor-pointer group/item">
-                                                <div className={`w-4 h-4 rounded-full border ${specialtyParam === 'all' ? 'border-[#0d9488] border-[4px]' : 'border-outline group-hover/item:border-[#0d9488]'} transition-all`} onClick={() => setSpecialtyParam('all')}></div>
-                                                <span className="text-body-md text-on-surface-variant">Todas</span>
-                                            </label>
+                                        <div className="flex flex-col max-h-60 overflow-y-auto pr-2 gap-0.5" style={{scrollbarWidth: 'thin'}}>
+                                            <button 
+                                                onClick={() => toggleSpecialty('all')}
+                                                className={`flex items-center w-full text-left px-3 py-2.5 rounded-xl transition-all ${activeSpecialties.includes('all') ? 'bg-[#0d9488]/10 border border-[#0d9488]/30 text-[#0d9488] font-bold' : 'border border-transparent text-on-surface-variant hover:bg-surface-container'}`}
+                                            >
+                                                Todas
+                                            </button>
                                             {specialtyPicks.filter(s => s.toLowerCase().includes(specialtySearch.toLowerCase())).map(opt => (
-                                                <label key={opt} className="flex items-center gap-2 cursor-pointer group/item">
-                                                    <div className={`w-4 h-4 rounded-full border ${specialtyParam === opt ? 'border-[#0d9488] border-[4px]' : 'border-outline group-hover/item:border-[#0d9488]'} transition-all`} onClick={() => setSpecialtyParam(opt)}></div>
-                                                    <span className="text-body-md text-on-surface-variant">{opt}</span>
-                                                </label>
+                                                <button 
+                                                    key={opt}
+                                                    onClick={() => toggleSpecialty(opt)}
+                                                    className={`flex items-center w-full text-left px-3 py-2.5 rounded-xl transition-all ${activeSpecialties.includes(opt) ? 'bg-[#0d9488]/10 border border-[#0d9488]/30 text-[#0d9488] font-bold' : 'border border-transparent text-on-surface-variant hover:bg-surface-container'}`}
+                                                >
+                                                    {opt}
+                                                </button>
                                             ))}
                                         </div>
                                     </div>
@@ -961,18 +1074,16 @@ function DashboardContent() {
                                             <h3 className="font-semibold text-lg text-[#4f46e5]">Modalidad</h3>
                                             <button onClick={() => setActiveSidebarFilter(null)} className="p-1 hover:bg-surface-container rounded-lg text-outline"><X className="w-4 h-4"/></button>
                                         </div>
-                                        <div className="flex flex-col gap-2">
+                                        <div className="flex flex-col gap-0.5">
                                             {[{id: 'all', label: 'Todas', icon: <Search className="w-4 h-4"/>}, {id: 'presencial', label: 'Presencial', icon: <MapPin className="w-4 h-4"/>}, {id: 'virtual', label: 'Virtual', icon: <Video className="w-4 h-4"/>}, {id: 'domicilio', label: 'Domicilio', icon: <Home className="w-4 h-4"/>}].map(opt => (
-                                                <label
+                                                <button
                                                     key={opt.id}
-                                                    className={`flex items-center gap-3 p-3 cursor-pointer select-none group/item rounded-xl border transition-all ${modality === opt.id ? 'border-[#4f46e5] bg-[#4f46e5]/5' : 'border-outline-variant/50 hover:bg-surface-container'}`}
+                                                    onClick={() => toggleModality(opt.id)}
+                                                    className={`flex items-center gap-3 px-3 py-2.5 w-full text-left rounded-xl transition-all ${activeModalities.includes(opt.id) ? 'bg-[#4f46e5]/10 border border-[#4f46e5]/30 text-[#4f46e5] font-bold' : 'border border-transparent text-on-surface-variant hover:bg-surface-container'}`}
                                                 >
-                                                    <div className={`shrink-0 w-4 h-4 rounded-full border ${modality === opt.id ? 'border-[#4f46e5] border-[4px]' : 'border-outline group-hover/item:border-[#4f46e5]'} transition-all`} onClick={() => setModality(opt.id)}></div>
-                                                    <div className={`flex items-center gap-2 text-body-md font-medium ${modality === opt.id ? 'text-[#4f46e5]' : 'text-on-surface-variant'}`}>
-                                                        {opt.icon}
-                                                        {opt.label}
-                                                    </div>
-                                                </label>
+                                                    {opt.icon}
+                                                    {opt.label}
+                                                </button>
                                             ))}
                                         </div>
                                     </div>

@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { signOut, useSession } from 'next-auth/react';
 import { usePacienteTitular } from '@/hooks/use-pacientes';
@@ -42,6 +42,7 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
   const { data: session } = useSession();
   const { titular } = usePacienteTitular();
   const pathname = usePathname();
+  const router = useRouter();
   const userMenuRef = useRef<HTMLDivElement | null>(null);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
@@ -115,7 +116,15 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
         <div className="flex items-center justify-between gap-4 py-4">
         {/* ── Logo ── */}
         <div className="flex shrink-0 items-center gap-3">
-          {backHref ? (
+          {backHref === 'back' ? (
+            <button
+              onClick={() => router.back()}
+              className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
+              aria-label="Volver"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+          ) : backHref ? (
             <Link
               href={backHref}
               className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
