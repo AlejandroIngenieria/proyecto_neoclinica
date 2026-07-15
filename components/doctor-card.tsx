@@ -10,6 +10,8 @@ export type DoctorCardData = {
   fullName: string;
   specialtyPreview: string[];
   modalityPreview: string[];
+  matchedSpecialty?: string;
+  searchHighlight?: string;
 };
 
 type DoctorCardProps = {
@@ -26,10 +28,41 @@ function getLowestPrice(doctor: DoctorResponse): number | null {
   return prices.length ? Math.min(...prices) : null;
 }
 
+function HighlightText({ text, highlight }: { text: string; highlight?: string }) {
+  if (!highlight || !highlight.trim()) {
+    return <>{text}</>;
+  }
+  
+  const escapedHighlight = highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const parts = text.split(new RegExp(`(${escapedHighlight})`, 'gi'));
+  
+  return (
+    <>
+      {parts.map((part, i) => 
+        part.toLowerCase() === highlight.toLowerCase() ? (
+          <mark key={i} className="bg-primary/20 text-primary font-bold rounded-sm px-0.5">{part}</mark>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  );
+}
+
 export function DoctorCard({ data, onVisit, isListView = false }: DoctorCardProps) {
   const router = useRouter();
 
-  const { doctor, fullName, specialtyPreview, modalityPreview } = data;
+  const { doctor, fullName, modalityPreview, matchedSpecialty, searchHighlight } = data;
+  let specialtyPreview = [...data.specialtyPreview];
+
+  // Reordenar especialidades si hay coincidencia para que la coincidente sea la principal
+  if (matchedSpecialty) {
+    const matchIndex = specialtyPreview.findIndex(s => s.toLowerCase() === matchedSpecialty.toLowerCase());
+    if (matchIndex > 0) {
+      const [matched] = specialtyPreview.splice(matchIndex, 1);
+      specialtyPreview.unshift(matched);
+    }
+  }
 
   const initials = fullName
     .split(' ')
@@ -74,11 +107,11 @@ export function DoctorCard({ data, onVisit, isListView = false }: DoctorCardProp
           <div className="flex flex-col flex-grow min-w-0">
             <div className="min-w-0">
               <h2 className="font-display text-[18px] md:text-[22px] font-bold text-primary leading-tight truncate" title={fullName}>
-                {fullName}
+                <HighlightText text={fullName} highlight={searchHighlight} />
               </h2>
               <div className="flex items-center gap-1.5 mt-1 relative group/spec">
                 <p className="text-secondary font-medium text-sm md:text-base truncate max-w-[150px] md:max-w-[250px]">
-                  {specialtyPreview[0] || 'General'}
+                  <HighlightText text={specialtyPreview[0] || 'General'} highlight={searchHighlight} />
                 </p>
                 {specialtyPreview.length > 1 && (
                   <div className="relative">
@@ -167,11 +200,13 @@ export function DoctorCard({ data, onVisit, isListView = false }: DoctorCardProp
       </div>
 
       <div className="flex flex-col flex-1 text-center p-6">
-        <h3 className="font-display text-[22px] font-bold text-primary mb-1 leading-tight truncate" title={fullName}>{fullName}</h3>
+        <h3 className="font-display text-[22px] font-bold text-primary mb-1 leading-tight truncate" title={fullName}>
+          <HighlightText text={fullName} highlight={searchHighlight} />
+        </h3>
         
         <div className="flex justify-center items-center gap-1.5 mb-4 h-[20px] relative group/spec">
           <p className="text-secondary font-medium text-sm truncate max-w-[180px]">
-            {specialtyPreview[0] || 'General'}
+            <HighlightText text={specialtyPreview[0] || 'General'} highlight={searchHighlight} />
           </p>
           {specialtyPreview.length > 1 && (
             <div className="relative">

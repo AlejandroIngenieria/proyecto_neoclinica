@@ -68,6 +68,43 @@ function normalizeText(value: string) {
         .replace(/[\u0300-\u036f]/g, '');
 }
 
+const specialtyHomologues: Record<string, string[]> = {
+    'traumatologo': ['traumatología', 'traumatologia', 'traumatologo', 'ortopedia'],
+    'urologo': ['urología', 'urologia', 'urologo'],
+    'cardiologo': ['cardiología', 'cardiologia', 'cardiologo'],
+    'ginecologo': ['ginecología', 'ginecologia', 'ginecologo', 'obstetricia'],
+    'pediatra': ['pediatría', 'pediatria', 'pediatra'],
+    'dermatologo': ['dermatología', 'dermatologia', 'dermatologo'],
+    'oftalmologo': ['oftalmología', 'oftalmologia', 'oftalmologo'],
+    'neurologo': ['neurología', 'neurologia', 'neurologo'],
+    'psiquiatra': ['psiquiatría', 'psiquiatria', 'psiquiatra'],
+    'psicologo': ['psicología', 'psicologia', 'psicologo'],
+    'gastroenterologo': ['gastroenterología', 'gastroenterologia', 'gastroenterologo'],
+    'otorrino': ['otorrinolaringología', 'otorrinolaringologia', 'otorrinolaringologo', 'otorrino'],
+    'endocrinologo': ['endocrinología', 'endocrinologia', 'endocrinologo'],
+    'oncologo': ['oncología', 'oncologia', 'oncologo'],
+    'neumologo': ['neumología', 'neumologia', 'neumologo'],
+    'nefrologo': ['nefrología', 'nefrologia', 'nefrologo'],
+    'reumatologo': ['reumatología', 'reumatologia', 'reumatologo'],
+    'alergologo': ['alergología', 'alergologia', 'alergologo'],
+    'odontologo': ['odontología', 'odontologia', 'odontologo', 'dentista'],
+    'nutricionista': ['nutrición', 'nutricion', 'nutricionista']
+};
+
+function getNormalizedHomologues(term: string): string[] {
+    const normalized = normalizeText(term);
+    
+    // Si el término encaja en una de nuestras llaves o valores de homólogos, devolvemos todo ese grupo normalizado
+    for (const [key, values] of Object.entries(specialtyHomologues)) {
+        const normalizedValues = values.map(normalizeText);
+        if (normalizeText(key) === normalized || normalizedValues.includes(normalized)) {
+            return [normalizeText(key), ...normalizedValues];
+        }
+    }
+    return [normalized];
+}
+
+
 function formatCount(value: number) {
     return new Intl.NumberFormat('es-GT').format(value);
 }
@@ -99,25 +136,12 @@ function resolveDoctor(doctor: DoctorResponse): ResolvedDoctor {
     const modalityPreview = doctor.modalidades.map((item) => item.modalidad).filter(Boolean).slice(0, 2);
     const languagePreview = doctor.idiomas.map((item) => item.idioma).filter(Boolean).slice(0, 2);
 
+    // Restringimos el índice a lo que el usuario realmente buscaría: Nombres, Especialidades y Colegiado
     const searchIndex = normalizeText(
         [
             fullName,
-            specialty,
             doctor.exp_colegiado_gt ?? '',
-            doctor.exp_email ?? '',
-            doctor.exp_telefono1 ?? '',
-            doctor.exp_presentacion ?? '',
-            doctor.pais_nacimiento ?? '',
-            doctor.nacionalidad ?? '',
             ...doctor.especialidades.map((item) => item.especialidad),
-            ...doctor.modalidades.map((item) => item.modalidad),
-            ...doctor.idiomas.map((item) => item.idioma),
-            ...doctor.sintomas.map((item) => item.sintoma),
-            ...doctor.aseguradoras.map((item) => item.aseguradora),
-            ...doctor.servicios.map((item) => item.servicio ?? ''),
-            ...doctor.educacion.map((item) => `${item.edu_institucion} ${item.edu_titulo_obtenido} ${item.pais}`),
-            ...doctor.cursos.map((item) => `${item.cur_institucion} ${item.cur_titulo_obtenido} ${item.tipo_curso}`),
-            ...doctor.reconocimientos.map((item) => `${item.descripcion} ${item.institucion} ${item.anio}`),
         ]
             .filter(Boolean)
             .join(' '),
@@ -378,12 +402,38 @@ function DashboardContent() {
     );
 
     const visibleDoctors = useMemo(() => {
-        const normalizedQuery = normalizeText(deferredSearchTerm.trim());
-        const activeTags = [...searchTags, deferredSearchTerm.trim()].filter(Boolean).map(normalizeText);
+        const activeTags = [...searchTags, deferredSearchTerm.trim()].filter(Boolean);
         const normalizedLocation = normalizeText(locationTerm.trim());
 
-        const filteredDoctors = resolvedDoctors.filter((doctor) => {
-            const matchesQuery = activeTags.every(tag => doctor.searchIndex.includes(tag));
+        const filteredDoctors = resolvedDoctors.map((doctor) => {
+            let isMatch = true;
+            let matchedSpecialty: string | undefined = undefined;
+            let searchHighlight: string | undefined = undefined;
+
+            for (const tag of activeTags) {
+                const homologues = getNormalizedHomologues(tag);
+                const matchedHomologue = homologues.find(h => doctor.searchIndex.includes(h));
+                if (!matchedHomologue) {
+                    isMatch = false;
+                    break;
+                }
+
+                if (!searchHighlight) searchHighlight = tag;
+                
+                // Buscar si la coincidencia fue en una especialidad
+                if (!matchedSpecialty) {
+                    for (const spec of doctor.specialtyPreview) {
+                        const normSpec = normalizeText(spec);
+                        if (homologues.some(h => normSpec.includes(h))) {
+                            matchedSpecialty = spec;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!isMatch) return null;
+
             const matchesLocation = !normalizedLocation || normalizeText(doctor.locationLabel).includes(normalizedLocation);
             const matchesActive = !showOnlyActive || isDoctorActive(doctor.doctor);
             
@@ -397,13 +447,21 @@ function DashboardContent() {
             
             const matchesPrice = matchesPriceLimit(getDoctorPricePoints(doctor.doctor), priceLimit);
 
-            const matchesSpecialty = specialtyParam === 'all' || doctor.specialtyPreview.some((s) => s === specialtyParam);
+            const matchesSpecialtyParam = specialtyParam === 'all' || doctor.specialtyPreview.some((s) => s === specialtyParam);
             
             const matchesLanguages = selectedLanguages.length === 0 || selectedLanguages.some(lang => doctor.languagePreview?.includes(lang));
             const matchesInsurances = selectedInsurances.length === 0 || selectedInsurances.some(ins => doctor.doctor.aseguradoras?.some(a => a.aseguradora === ins));
 
-            return matchesQuery && matchesLocation && matchesActive && matchesModality && matchesAvailability && matchesPrice && matchesSpecialty && matchesLanguages && matchesInsurances;
-        });
+            if (!(matchesLocation && matchesActive && matchesModality && matchesAvailability && matchesPrice && matchesSpecialtyParam && matchesLanguages && matchesInsurances)) {
+                return null;
+            }
+
+            return {
+                ...doctor,
+                matchedSpecialty,
+                searchHighlight,
+            };
+        }).filter(Boolean) as (typeof resolvedDoctors[0] & { matchedSpecialty?: string, searchHighlight?: string })[];
 
         return filteredDoctors.sort((leftDoctor, rightDoctor) => {
             if (sortBy === 'name-desc') {
