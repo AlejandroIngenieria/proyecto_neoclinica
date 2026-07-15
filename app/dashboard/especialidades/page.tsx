@@ -49,6 +49,10 @@ function mapToDoctorCardData(doctor: DoctorResponse): DoctorCardData {
     fullName: buildDoctorFullName(doctor) || 'Médico sin nombre',
     specialtyPreview: doctor.especialidades.map((e) => e.especialidad).filter(Boolean),
     modalityPreview: doctor.modalidades.map((m) => m.modalidad).filter(Boolean),
+    locationPreview: Array.from(new Set([
+        ...doctor.clinicas.map(c => [c.cli_descripcion, c.cli_zona ? `Zona ${c.cli_zona}` : ''].filter(Boolean).join(', ')).filter(Boolean),
+        ...(doctor.atencion_domicilio || []).map(d => `Domicilio: ${[d.mun_descripcion, d.lad_zonas ? `Zonas ${d.lad_zonas}` : ''].filter(Boolean).join(', ')}`).filter(Boolean)
+    ]))
   };
 }
 
