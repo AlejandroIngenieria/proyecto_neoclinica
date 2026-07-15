@@ -52,8 +52,8 @@ export function DoctorCard({ data, onVisit, isListView = false }: DoctorCardProp
 
   if (isListView) {
     return (
-      <div className="doctor-card group flex flex-col sm:flex-row h-auto sm:h-[240px] bg-[#FFFFFF] rounded-2xl overflow-hidden shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] hover:shadow-[0_20px_40px_-12px_rgba(0,0,0,0.15)] hover:-translate-y-1.5 transition-all duration-500 border border-[#EAECF0]">
-        <div className="w-full sm:w-[240px] h-[200px] sm:h-full shrink-0 border-b sm:border-b-0 sm:border-r relative border-[#EAECF0] overflow-hidden bg-[#F3F4F6]">
+      <div className="doctor-card group flex flex-col sm:flex-row h-auto sm:h-[220px] bg-surface rounded-2xl overflow-hidden shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] hover:shadow-[0_20px_40px_-12px_rgba(0,0,0,0.15)] hover:-translate-y-1.5 transition-all duration-500 border border-outline-variant/30">
+        <div className="w-full sm:w-[160px] md:w-[180px] h-[200px] sm:h-full shrink-0 border-b sm:border-b-0 sm:border-r relative border-outline-variant/30 overflow-hidden bg-surface-container">
           {doctor.exp_foto_perfil ? (
             <Image
               src={doctor.exp_foto_perfil}
@@ -70,20 +70,26 @@ export function DoctorCard({ data, onVisit, isListView = false }: DoctorCardProp
           )}
         </div>
         
-        <div className="p-4 md:p-6 flex flex-col sm:flex-row gap-6 items-center w-full min-w-0 flex-grow">
+        <div className="p-4 flex flex-col sm:flex-row gap-4 items-center w-full min-w-0 flex-grow">
           <div className="flex flex-col flex-grow min-w-0">
             <div className="min-w-0">
-              <h2 className="font-display text-[20px] md:text-[24px] font-bold text-primary leading-tight truncate" title={fullName}>
+              <h2 className="font-display text-[18px] md:text-[22px] font-bold text-primary leading-tight truncate" title={fullName}>
                 {fullName}
               </h2>
-              <div className="flex items-center flex-wrap gap-2 mt-1">
-                <p className="text-secondary font-medium text-base truncate max-w-[200px] md:max-w-[400px]">
-                  {specialtyPreview.join(' & ')}
+              <div className="flex items-center gap-1.5 mt-1 relative group/spec">
+                <p className="text-secondary font-medium text-sm md:text-base truncate max-w-[150px] md:max-w-[250px]">
+                  {specialtyPreview[0] || 'General'}
                 </p>
-                {specialtyPreview.length > 2 && (
-                  <span className="inline-flex items-center justify-center bg-surface-container-high text-outline text-[10px] font-bold w-5 h-5 rounded-full">
-                    {specialtyPreview.length - 2}
-                  </span>
+                {specialtyPreview.length > 1 && (
+                  <div className="relative">
+                    <span className="inline-flex items-center justify-center bg-primary/10 text-primary text-[10px] font-bold px-1.5 h-5 rounded-md cursor-help">
+                      +{specialtyPreview.length - 1}
+                    </span>
+                    <div className="absolute bottom-full left-0 mb-2 w-max max-w-[220px] bg-surface-container-highest text-on-surface text-xs p-2.5 rounded-xl opacity-0 pointer-events-none group-hover/spec:opacity-100 transition-opacity z-50 shadow-xl border border-outline-variant/20">
+                      {specialtyPreview.slice(1).map(s => <div key={s} className="mb-1 last:mb-0">{s}</div>)}
+                      <div className="absolute top-full left-4 border-4 border-transparent border-t-surface-container-highest"></div>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
@@ -104,12 +110,12 @@ export function DoctorCard({ data, onVisit, isListView = false }: DoctorCardProp
             </div>
           </div>
 
-          <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center w-full sm:w-auto sm:min-w-[220px] gap-4 sm:pl-6 sm:border-l border-outline-variant/30">
+          <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center w-full sm:w-auto shrink-0 gap-3 sm:pl-4 sm:border-l border-outline-variant/30">
             <div className="flex flex-col items-start sm:items-end">
               <span className="text-[10px] font-bold uppercase tracking-widest text-outline">Consulta desde</span>
-              <span className="font-bold text-primary text-[24px]">{priceLabel}</span>
+              <span className="font-bold text-primary text-[20px] md:text-[24px]">{priceLabel}</span>
             </div>
-            <div className="flex flex-row w-auto gap-2">
+            <div className="flex flex-col lg:flex-row w-full sm:w-auto gap-2">
               <button
                 onClick={(e) => {
                   e.preventDefault();
@@ -117,7 +123,7 @@ export function DoctorCard({ data, onVisit, isListView = false }: DoctorCardProp
                   onVisit?.(data);
                   router.push(`/dashboard/${doctor.exp_codigo}`);
                 }}
-                className="px-6 py-2.5 w-auto border border-outline-variant rounded-xl font-bold text-sm hover:bg-surface-container transition-colors text-on-surface text-center"
+                className="px-4 py-2.5 w-full sm:w-auto border border-outline-variant rounded-xl font-bold text-sm hover:bg-surface-container transition-colors text-on-surface text-center whitespace-nowrap"
               >
                 Ver Perfil
               </button>
@@ -127,9 +133,9 @@ export function DoctorCard({ data, onVisit, isListView = false }: DoctorCardProp
                   e.stopPropagation();
                   router.push(`/dashboard/agendar/${doctor.exp_codigo}`);
                 }}
-                className="px-6 py-2.5 w-auto bg-secondary text-on-primary rounded-xl font-bold text-sm hover:opacity-90 transition-opacity text-center"
+                className="px-4 py-2.5 w-full sm:w-auto bg-secondary text-on-primary rounded-xl font-bold text-sm hover:opacity-90 transition-opacity text-center whitespace-nowrap"
               >
-                Agendar Cita
+                Agendar
               </button>
             </div>
           </div>

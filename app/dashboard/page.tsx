@@ -965,7 +965,7 @@ function DashboardContent() {
                                 <div className="h-20 w-20 animate-spin rounded-full border-8 border-slate-200 border-t-sky-600" />
                             </div>
                         ) : paginatedDoctors.length ? (
-                            <AnimatedList className={isListView ? "flex flex-col gap-4 max-w-4xl mx-auto w-full" : "grid gap-6 grid-cols-[repeat(auto-fill,minmax(280px,1fr))] max-w-[1360px] mx-auto w-full"}>
+                            <AnimatedList className={isListView ? "grid grid-cols-1 xl:grid-cols-2 gap-4 max-w-7xl mx-auto w-full" : "grid gap-6 grid-cols-[repeat(auto-fill,minmax(280px,1fr))] max-w-[1360px] mx-auto w-full"}>
                                 {paginatedDoctors.map((doctor) => (
                                     <DoctorCard key={doctor.doctor.exp_codigo} data={doctor} onVisit={handleDoctorVisit} isListView={isListView} />
                                 ))}
