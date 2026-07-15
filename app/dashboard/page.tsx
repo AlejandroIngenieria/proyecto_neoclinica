@@ -308,7 +308,7 @@ function DashboardContent() {
     // React Query — datos del servidor
     const { data: doctors = [], isLoading, error } = useDoctors();
     const { titular } = usePacienteTitular();
-    const codPac = titular?.pac_codigo || null;
+    const codPac = titular?.pac_codigo || undefined;
     const { data: favoritos = [] } = useFavoritos(codPac);
 
     // Local search state for ultra-fast typing
