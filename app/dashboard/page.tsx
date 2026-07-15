@@ -717,7 +717,7 @@ function DashboardContent() {
                             <ChevronDown className={`w-4 h-4 ml-2 transition-transform ${isAdvancedFiltersOpen ? 'rotate-180' : ''}`} />
                         </button>
                         {isAdvancedFiltersOpen && (
-                            <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-[540px] rounded-3xl border border-outline-variant/20 bg-[#FFFFFF] p-6 shadow-[0_12px_48px_rgba(0,0,0,0.12)]">
+                            <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-[540px] rounded-3xl border border-outline-variant/20 bg-surface-container-lowest p-6 shadow-[0_12px_48px_rgba(0,0,0,0.12)]">
                                 <div className="flex gap-8 max-h-[60vh] overflow-y-auto pr-2" style={{scrollbarWidth: 'thin'}}>
                                     
                                     {/* Columna Idiomas */}
