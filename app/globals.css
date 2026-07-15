@@ -4,13 +4,55 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #f8fafc;
-  --foreground: #171717;
+  --background: #F9FAFB;
+  --foreground: #111827;
+  
+  --primary: #0D9488;
+  --on-primary: #ffffff;
+  --secondary: #2563EB;
+  --on-secondary: #ffffff;
+  
+  --surface: #FFFFFF;
+  --surface-container-lowest: #FFFFFF;
+  --surface-container-low: #F9FAFB;
+  --surface-container: #F3F4F6;
+  --surface-container-high: #E5E7EB;
+  --surface-container-highest: #D1D5DB;
+  
+  --on-surface: #111827;
+  --on-surface-variant: #6B7280;
+  
+  --outline: #9CA3AF;
+  --outline-variant: #D1D5DB;
+  
+  --error: #ba1a1a;
+  --on-error: #ffffff;
 }
 
 .dark {
-  --background: #0b1120;
-  --foreground: #e2e8f0;
+  --background: #111827;
+  --foreground: #F9FAFB;
+  
+  --primary: #14B8A6; /* Lighter primary for dark mode */
+  --on-primary: #ffffff;
+  --secondary: #3B82F6; /* Lighter secondary for dark mode */
+  --on-secondary: #ffffff;
+  
+  --surface: #1F2937;
+  --surface-container-lowest: #030712;
+  --surface-container-low: #111827;
+  --surface-container: #1F2937;
+  --surface-container-high: #374151;
+  --surface-container-highest: #4B5563;
+  
+  --on-surface: #F9FAFB;
+  --on-surface-variant: #D1D5DB;
+  
+  --outline: #6B7280;
+  --outline-variant: #4B5563;
+  
+  --error: #ffb4ab;
+  --on-error: #690005;
 }
 
 @theme inline {
@@ -18,15 +60,42 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* MD3 Colors mapped to our dynamic CSS variables */
+  --color-primary: var(--primary);
+  --color-on-primary: var(--on-primary);
+  --color-secondary: var(--secondary);
+  --color-on-secondary: var(--on-secondary);
+  
+  --color-surface: var(--surface);
+  --color-surface-variant: var(--surface-container-highest);
+  --color-surface-container-lowest: var(--surface-container-lowest);
+  --color-surface-container-low: var(--surface-container-low);
+  --color-surface-container: var(--surface-container);
+  --color-surface-container-high: var(--surface-container-high);
+  --color-surface-container-highest: var(--surface-container-highest);
+  
+  --color-on-surface: var(--on-surface);
+  --color-on-surface-variant: var(--on-surface-variant);
+  
+  --color-outline: var(--outline);
+  --color-outline-variant: var(--outline-variant);
+  
+  --color-error: var(--error);
+  --color-on-error: var(--on-error);
+
+  /* Fonts */
+  --font-display: var(--font-inter);
+  --font-body-md: var(--font-inter);
+  --font-body-lg: var(--font-inter);
+  --font-label-md: var(--font-inter);
+  --font-headline-md: var(--font-inter);
+  --font-headline-lg: var(--font-inter);
+  --font-caption: var(--font-inter);
 }
 
 body {
   background-color: var(--background);
-  background-image: url('/fondoClaro.png');
-  background-size: cover;
-  background-position: center;
-  background-attachment: fixed;
-  background-repeat: no-repeat;
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
   transition: background-color 0.3s ease, color 0.3s ease;
@@ -38,13 +107,8 @@ body {
 /* General dark background — single gradient applied to body so all pages inherit
    it uniformly. No per-block or per-page backgrounds needed. */
 .dark body {
-  background-color: #0b1120;
-  background-image: url('/fondoOscuro.png');
-  background-size: cover;
-  background-position: center;
-  background-attachment: fixed;
-  background-repeat: no-repeat;
-  color: #e2e8f0;
+  background-color: var(--background);
+  color: var(--foreground);
 }
 
 .dark main {

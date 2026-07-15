@@ -16,7 +16,6 @@ import { buildDoctorFullName } from '@/types/doctor';
 
 const NAV_LINKS = [
   { href: '/dashboard', label: 'Directorio' },
-  { href: '/dashboard/especialidades', label: 'Especialidades' },
   { href: '/dashboard/citas', label: 'Citas' },
   { href: '/dashboard/medicamentos', label: 'Medicamentos' },
 ];

@@ -6,7 +6,16 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { signOut, useSession } from 'next-auth/react';
 import { usePacienteTitular } from '@/hooks/use-pacientes';
-import { ArrowLeft, Bell, ChevronDown, LogOut, Settings, Stethoscope, UserRound } from 'lucide-react';
+import { ArrowLeft, Bell, ChevronDown, LogOut, Settings, Stethoscope, UserRound, Home, Star, Heart, Calendar, Target, Pill, BookUser, CalendarDays, Activity, Moon, Sun } from 'lucide-react';
+
+function getNavStyles(label: string) {
+    const l = label.toLowerCase();
+    if (l.includes('directorio') || l.includes('inicio')) return { Icon: BookUser, from: 'from-[#0052FF]', to: 'to-[#002B99]' };
+    if (l.includes('especialidad')) return { Icon: Star, from: 'from-[#56CCF2]', to: 'to-[#2F80ED]' };
+    if (l.includes('medicamento') || l.includes('farmacia')) return { Icon: Pill, from: 'from-[#E11D48]', to: 'to-[#9F1239]' };
+    if (l.includes('cita')) return { Icon: CalendarDays, from: 'from-[#0D9488]', to: 'to-[#0F766E]' };
+    return { Icon: Activity, from: 'from-[#4F46E5]', to: 'to-[#3730A3]' };
+}
 import { AnimatePresence, motion } from 'framer-motion';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -35,6 +44,28 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
   const pathname = usePathname();
   const userMenuRef = useRef<HTMLDivElement | null>(null);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (document.documentElement.classList.contains('dark') || localStorage.getItem('theme') === 'dark') {
+        setTheme('dark');
+        document.documentElement.classList.add('dark');
+      }
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    if (theme === 'light') {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+      setTheme('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+      setTheme('light');
+    }
+  };
 
   const sessionName = session?.user?.name || 'Usuario';
   const userName = titular
@@ -78,9 +109,10 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
   }, []);
 
   return (
-    <div className="sticky top-4 z-40 mx-auto w-[90%] max-w-[1800px]">
-      <header className="rounded-3xl border border-slate-200/60 bg-white/80 shadow-xl shadow-slate-900/5 backdrop-blur-xl">
-      <div className="flex items-center gap-4 px-4 py-4 lg:px-6">
+    <div className="relative z-50 w-full bg-transparent shadow-none">
+      <div className="mx-auto w-[90%] max-w-[1800px]">
+        <header className="bg-transparent border-none shadow-none">
+        <div className="flex items-center justify-between gap-4 py-4">
         {/* ── Logo ── */}
         <div className="flex shrink-0 items-center gap-3">
           {backHref ? (
@@ -106,23 +138,22 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
 
         {/* ── Nav links ── */}
         {navLinks.length > 0 && (
-          <nav className="flex min-w-0 flex-1 flex-nowrap items-center justify-center gap-1 overflow-x-auto text-sm font-semibold text-slate-600">
+          <nav className="flex min-w-0 flex-1 flex-nowrap items-center justify-center gap-5 overflow-visible text-sm py-2">
             {navLinks.map((link) => {
               const isActive = pathname === link.href;
+              const { Icon, from, to } = getNavStyles(link.label);
               return (
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`relative rounded-full px-4 py-2 transition ${
+                  className={`relative flex items-center gap-2 px-4 py-3 transition-colors ${
                     isActive
-                      ? 'bg-sky-50 text-sky-700 font-bold'
-                      : 'hover:bg-slate-100 hover:text-sky-700'
+                      ? 'text-primary font-bold border-b-2 border-primary'
+                      : 'text-on-surface-variant hover:text-primary font-medium border-b-2 border-transparent'
                   }`}
                 >
-                  {link.label}
-                  {isActive && (
-                    <span className="absolute bottom-0 left-1/2 h-0.5 w-3/5 -translate-x-1/2 rounded-full bg-sky-600" />
-                  )}
+                  <Icon className="w-4 h-4" />
+                  <span>{link.label}</span>
                 </Link>
               );
             })}
@@ -135,11 +166,11 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
         {/* ── Notifications ── */}
         <button
           type="button"
-          className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
+          className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-transparent text-on-surface hover:bg-surface-container transition-all"
           aria-label="Notificaciones"
         >
           <Bell className="h-5 w-5" />
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white ring-2 ring-white">
+          <span className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-error text-[10px] font-bold text-on-error ring-2 ring-[#FFFFFF]">
             3
           </span>
         </button>
@@ -149,11 +180,11 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
           <button
             type="button"
             onClick={() => setIsUserMenuOpen((v) => !v)}
-            className="inline-flex items-center gap-3 rounded-full border border-slate-200 bg-white px-2 py-2 text-left shadow-sm transition hover:border-sky-200 hover:bg-sky-50 whitespace-nowrap"
+            className="inline-flex items-center gap-3 rounded-full bg-transparent p-1.5 pr-4 text-left transition-all hover:bg-surface-container whitespace-nowrap"
             aria-haspopup="menu"
             aria-expanded={isUserMenuOpen}
           >
-            <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-sm font-black text-sky-700">
+            <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-primary/10 text-sm font-black text-primary">
               {userImage ? (
                 <img src={userImage} alt={userName} className="h-10 w-10 rounded-full object-cover" />
               ) : (
@@ -161,24 +192,24 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
               )}
             </span>
             <span className="hidden flex-col text-left sm:flex">
-              <span className="text-sm font-bold text-slate-900">{userName}</span>
-              <span className="text-xs text-slate-500">{userEmail}</span>
+              <span className="text-sm font-bold text-on-surface">{userName}</span>
+              <span className="text-xs text-on-surface-variant font-medium">{userEmail}</span>
             </span>
-            <ChevronDown className={`h-4 w-4 text-slate-500 transition ${isUserMenuOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`h-4 w-4 text-on-surface-variant transition-transform ${isUserMenuOpen ? 'rotate-180' : ''}`} />
           </button>
 
           <AnimatePresence>
           {isUserMenuOpen && (
             <motion.div
-              className="absolute right-0 z-40 mt-3 w-72 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.15)]"
+              className="absolute right-0 z-50 mt-3 w-72 overflow-hidden rounded-3xl border border-outline-variant/30 bg-surface-container-lowest shadow-[0_20px_60px_rgba(0,0,0,0.15)]"
               initial={{ opacity: 0, y: -8, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -8, scale: 0.96 }}
               transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
             >
-              <div className="border-b border-slate-100 px-4 py-4">
+              <div className="border-b border-outline-variant/20 px-4 py-4">
                 <div className="flex items-center gap-3">
-                  <span className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-sky-100 text-base font-black text-sky-700">
+                  <span className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-primary/10 text-base font-black text-primary">
                     {userImage ? (
                       <img src={userImage} alt={userName} className="h-12 w-12 rounded-2xl object-cover" />
                     ) : (
@@ -186,17 +217,30 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
                     )}
                   </span>
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-black text-slate-900">{userName}</p>
-                    <p className="truncate text-xs text-slate-500">{userEmail}</p>
+                    <p className="truncate text-sm font-black text-on-surface">{userName}</p>
+                    <p className="truncate text-xs text-on-surface-variant">{userEmail}</p>
                   </div>
                 </div>
               </div>
 
               <div className="p-2">
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  className="flex w-full items-center justify-between rounded-2xl px-3 py-3 text-sm font-semibold text-on-surface transition hover:bg-surface-container hover:text-primary"
+                >
+                  <span className="flex items-center gap-3">
+                    {theme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+                    Modo Oscuro
+                  </span>
+                  <div className={`relative flex h-5 w-9 items-center rounded-full transition-colors ${theme === 'dark' ? 'bg-primary' : 'bg-outline-variant'}`}>
+                    <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${theme === 'dark' ? 'translate-x-5' : 'translate-x-1'}`} />
+                  </div>
+                </button>
                 <Link
                   href="/dashboard/perfil"
                   onClick={() => setIsUserMenuOpen(false)}
-                  className="flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-sky-700"
+                  className="flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-semibold text-on-surface transition hover:bg-surface-container hover:text-primary"
                 >
                   <UserRound className="h-4 w-4" />
                   Mi perfil
@@ -204,7 +248,7 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
                 <Link
                   href="/dashboard/perfil/configuracion"
                   onClick={() => setIsUserMenuOpen(false)}
-                  className="flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-sky-700"
+                  className="flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-semibold text-on-surface transition hover:bg-surface-container hover:text-primary"
                 >
                   <Settings className="h-4 w-4" />
                   Configuraciones
@@ -212,7 +256,7 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
                 <button
                   type="button"
                   onClick={() => signOut({ callbackUrl: '/login' })}
-                  className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm font-semibold text-rose-600 transition hover:bg-rose-50"
+                  className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm font-semibold text-error transition hover:bg-error/10"
                 >
                   <LogOut className="h-4 w-4" />
                   Cerrar sesión
@@ -231,6 +275,7 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
         </div>
       )}
       </header>
+      </div>
     </div>
   );
 }

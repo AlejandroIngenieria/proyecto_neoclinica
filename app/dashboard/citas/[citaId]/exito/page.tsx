@@ -8,7 +8,6 @@ import { Navbar } from '@/components/navbar';
 
 const NAV_LINKS = [
   { href: '/dashboard', label: 'Directorio' },
-  { href: '/dashboard/especialidades', label: 'Especialidades' },
   { href: '/dashboard/medicamentos', label: 'Medicamentos' },
   { href: '/dashboard/citas', label: 'Citas' },
 ];

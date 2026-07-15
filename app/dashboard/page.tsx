@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState, useDeferredValue } from 'react';
 import { useSession } from 'next-auth/react';
 import {
     BadgeCheck,
@@ -21,7 +21,14 @@ import {
     DollarSign,
     Target,
     ChevronDown,
+    Grid,
+    List,
+    Home,
 } from 'lucide-react';
+import { DayPicker } from 'react-day-picker';
+import 'react-day-picker/dist/style.css';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale/es';
 
 import type { DoctorResponse } from '@/types';
 import { buildDoctorFullName, isDoctorActive } from '@/types/doctor';
@@ -267,18 +274,20 @@ function DashboardContent() {
     // React Query — datos del servidor
     const { data: doctors = [], isLoading, error } = useDoctors();
 
-    // URL params — filtros y búsqueda
-    const [searchTerm, setSearchTerm] = useParamString('q');
+    // Local search state for ultra-fast typing
+    const [searchTerm, setSearchTerm] = useState('');
     const [locationTerm, setLocationTerm] = useParamString('location');
     const [sortBy, setSortBy] = useParamString('sort', 'name-asc') as [SortOption, (v: string) => void];
-    const [availability, setAvailability] = useParamString('availability', 'any');
+    const [availability, setAvailability] = useParamString('availability', '');
     const [modality, setModality] = useParamString('modality', 'all');
+    const [specialtyParam, setSpecialtyParam] = useParamString('specialty', 'all');
     const [showOnlyActive, setShowOnlyActive] = useParamBoolean('active');
     const [priceLimit, setPriceLimit] = useParamNumber('price', PRICE_LIMIT_MAX);
     const [localPriceLimit, setLocalPriceLimit] = useState(priceLimit);
     useEffect(() => {
         setLocalPriceLimit(priceLimit);
     }, [priceLimit]);
+    const [activeSidebarFilter, setActiveSidebarFilter] = useState<'especialidad' | 'disponibilidad' | 'modalidad' | 'precio' | null>(null);
 
     const [currentPage, setCurrentPage] = useParamNumber('page', 1);
     const resetParams = useResetParams();
@@ -309,6 +318,21 @@ function DashboardContent() {
     const searchMenuRef = useRef<HTMLDivElement | null>(null);
     const [isSearchFocused, setIsSearchFocused] = useState(false);
     const [recentDoctors, setRecentDoctors] = useState<RecentDoctorItem[]>(() => readRecentDoctors());
+    
+    const [isSidebarMinimized, setIsSidebarMinimized] = useState(false);
+    const [isAdvancedFiltersOpen, setIsAdvancedFiltersOpen] = useState(false);
+    const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
+    const [isListView, setIsListView] = useState(false);
+    const [isChangingView, setIsChangingView] = useState(false);
+    const [specialtySearch, setSpecialtySearch] = useState('');
+    const [searchTags, setSearchTags] = useState<string[]>([]);
+    const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]);
+    const [selectedInsurances, setSelectedInsurances] = useState<string[]>([]);
+    
+    const deferredSearchTerm = useDeferredValue(searchTerm);
+
+    const advancedFiltersRef = useRef<HTMLDivElement | null>(null);
+    const sortMenuRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
         const handlePointerDown = (event: PointerEvent) => {
@@ -316,12 +340,20 @@ function DashboardContent() {
             if (searchMenuRef.current && !searchMenuRef.current.contains(target)) {
                 setIsSearchFocused(false);
             }
+            if (advancedFiltersRef.current && !advancedFiltersRef.current.contains(target)) {
+                setIsAdvancedFiltersOpen(false);
+            }
+            if (sortMenuRef.current && !sortMenuRef.current.contains(target)) {
+                setIsSortMenuOpen(false);
+            }
         };
 
         const handleEscape = (event: KeyboardEvent) => {
             if (event.key === 'Escape') {
                 setIsSearchFocused(false);
                 closeFilters();
+                setIsAdvancedFiltersOpen(false);
+                setIsSortMenuOpen(false);
             }
         };
 
@@ -346,11 +378,12 @@ function DashboardContent() {
     );
 
     const visibleDoctors = useMemo(() => {
-        const normalizedQuery = normalizeText(searchTerm.trim());
+        const normalizedQuery = normalizeText(deferredSearchTerm.trim());
+        const activeTags = [...searchTags, deferredSearchTerm.trim()].filter(Boolean).map(normalizeText);
         const normalizedLocation = normalizeText(locationTerm.trim());
 
         const filteredDoctors = resolvedDoctors.filter((doctor) => {
-            const matchesQuery = !normalizedQuery || doctor.searchIndex.includes(normalizedQuery);
+            const matchesQuery = activeTags.every(tag => doctor.searchIndex.includes(tag));
             const matchesLocation = !normalizedLocation || normalizeText(doctor.locationLabel).includes(normalizedLocation);
             const matchesActive = !showOnlyActive || isDoctorActive(doctor.doctor);
             
@@ -364,7 +397,12 @@ function DashboardContent() {
             
             const matchesPrice = matchesPriceLimit(getDoctorPricePoints(doctor.doctor), priceLimit);
 
-            return matchesQuery && matchesLocation && matchesActive && matchesModality && matchesAvailability && matchesPrice;
+            const matchesSpecialty = specialtyParam === 'all' || doctor.specialtyPreview.some((s) => s === specialtyParam);
+            
+            const matchesLanguages = selectedLanguages.length === 0 || selectedLanguages.some(lang => doctor.languagePreview?.includes(lang));
+            const matchesInsurances = selectedInsurances.length === 0 || selectedInsurances.some(ins => doctor.doctor.aseguradoras?.some(a => a.aseguradora === ins));
+
+            return matchesQuery && matchesLocation && matchesActive && matchesModality && matchesAvailability && matchesPrice && matchesSpecialty && matchesLanguages && matchesInsurances;
         });
 
         return filteredDoctors.sort((leftDoctor, rightDoctor) => {
@@ -382,20 +420,38 @@ function DashboardContent() {
 
             return leftDoctor.fullName.localeCompare(rightDoctor.fullName, 'es');
         });
-    }, [locationTerm, modality, availability, priceLimit, resolvedDoctors, searchTerm, showOnlyActive, sortBy]);
+    }, [locationTerm, modality, availability, priceLimit, resolvedDoctors, deferredSearchTerm, showOnlyActive, sortBy, specialtyParam, searchTags, selectedLanguages, selectedInsurances]);
 
     const recentDoctorItems = useMemo(() => recentDoctors.slice(0, 3), [recentDoctors]);
     const searchSuggestions = useMemo(() => {
-        const normalizedQuery = normalizeText(searchTerm.trim());
+        const query = searchTerm.trim();
+        const normalizedQuery = normalizeText(query);
+        
+        if (!normalizedQuery) {
+            return recentDoctorItems.map(doc => ({ type: 'recent' as const, label: doc.fullName, sublabel: doc.specialty }));
+        }
 
-        return recentDoctorItems.filter((doctor) => {
-            if (!normalizedQuery) {
-                return true;
+        const suggestions = new Map<string, { type: 'specialty' | 'location' | 'doctor', label: string, sublabel?: string }>();
+        
+        resolvedDoctors.forEach(doc => {
+            // Check specialty
+            doc.specialtyPreview.forEach(s => {
+                if (normalizeText(s).includes(normalizedQuery) && !searchTags.includes(s)) {
+                    suggestions.set(`spec_${s}`, { type: 'specialty', label: s });
+                }
+            });
+            // Check location
+            if (normalizeText(doc.locationLabel).includes(normalizedQuery) && !searchTags.includes(doc.locationLabel)) {
+                suggestions.set(`loc_${doc.locationLabel}`, { type: 'location', label: doc.locationLabel });
             }
-
-            return normalizeText([doctor.fullName, doctor.specialty, doctor.locationLabel].join(' ')).includes(normalizedQuery);
+            // Check name
+            if (normalizeText(doc.fullName).includes(normalizedQuery) && !searchTags.includes(doc.fullName)) {
+                suggestions.set(`doc_${doc.fullName}`, { type: 'doctor', label: doc.fullName, sublabel: doc.specialtyPreview[0] });
+            }
         });
-    }, [recentDoctorItems, searchTerm]);
+
+        return Array.from(suggestions.values()).slice(0, 8);
+    }, [recentDoctorItems, searchTerm, resolvedDoctors, searchTags]);
 
     const handleDoctorVisit = (cardData: DoctorCardData) => {
         const item: RecentDoctorItem = {
@@ -409,7 +465,7 @@ function DashboardContent() {
         setRecentDoctors(addRecentDoctor(item));
     };
 
-    const itemsPerPage = 10;
+    const itemsPerPage = 8;
     const totalPages = Math.max(1, Math.ceil(visibleDoctors.length / itemsPerPage));
     const currentPageForView = Math.min(currentPage, totalPages);
     const paginatedDoctors = useMemo(
@@ -426,7 +482,7 @@ function DashboardContent() {
         [resolvedDoctors],
     );
     const specialtyPicks = useMemo(
-        () => Array.from(new Set(resolvedDoctors.flatMap((doctor) => doctor.specialtyPreview))).slice(0, 8),
+        () => Array.from(new Set(resolvedDoctors.flatMap((doctor) => doctor.specialtyPreview))).sort(),
         [resolvedDoctors],
     );
     const locationPicks = useMemo(
@@ -441,6 +497,15 @@ function DashboardContent() {
             ).slice(0, 8),
         [resolvedDoctors],
     );
+    
+    const languagePicks = useMemo(
+        () => Array.from(new Set(resolvedDoctors.flatMap((doctor) => doctor.languagePreview || []))).sort(),
+        [resolvedDoctors],
+    );
+    const insurancePicks = useMemo(
+        () => Array.from(new Set(resolvedDoctors.flatMap((doctor) => doctor.doctor.aseguradoras?.map(a => a.aseguradora) || []))).sort(),
+        [resolvedDoctors],
+    );
 
     if (status === 'loading' || (status === 'authenticated' && isLoading)) {
         return <NeoLoader />;
@@ -452,253 +517,254 @@ function DashboardContent() {
                 subtitle="Directorio médico"
                 navLinks={[
                     { href: '/dashboard', label: 'Directorio' },
-                    { href: '/dashboard/especialidades', label: 'Especialidades' },
                     { href: '/dashboard/citas', label: 'Citas' },
                     { href: '/dashboard/medicamentos', label: 'Medicamentos' },
                 ]}
             />
 
-            <div className="mx-auto w-[90%] max-w-[1800px] mt-8">
-                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] lg:items-end">
+            <div className="mx-auto w-[90%] max-w-[1800px] mt-8 flex flex-col gap-8">
+                {/* 1. Hero Header */}
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+                    <div>
+                        <h1 className="text-3xl md:text-4xl font-display font-black text-primary leading-tight">Encuentra a tu especialista</h1>
+                        <p className="text-on-surface-variant text-body-md mt-2">Más de 200 profesionales de la salud listos para atenderte hoy.</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                        <div className="relative z-40" ref={sortMenuRef}>
+                            <button
+                                onClick={() => setIsSortMenuOpen(!isSortMenuOpen)}
+                                className={`inline-flex items-center gap-3 bg-surface rounded-xl pl-4 pr-3 py-2.5 text-label-md font-semibold focus:outline-none transition-all shadow-[0_2px_4px_rgba(0,0,0,0.02)] border ${
+                                    isSortMenuOpen ? 'border-primary text-primary ring-2 ring-primary/20' : 'border-outline-variant/30 text-on-surface hover:border-outline-variant/60 hover:bg-surface-container'
+                                }`}
+                            >
+                                <span>
+                                    {sortBy === 'name-asc' && 'Nombre A-Z'}
+                                    {sortBy === 'name-desc' && 'Nombre Z-A'}
+                                    {sortBy === 'rating-desc' && 'Mejor valorados'}
+                                    {sortBy === 'price-asc' && 'Precio menor'}
+                                </span>
+                                <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isSortMenuOpen ? 'rotate-180 text-primary' : 'text-on-surface-variant'}`} />
+                            </button>
+                            
+                            {isSortMenuOpen && (
+                                <div className="absolute right-0 top-[calc(100%+8px)] w-48 rounded-2xl border border-outline-variant/20 bg-surface-container-lowest p-2 shadow-[0_8px_32px_rgba(0,0,0,0.08)]">
+                                    {[
+                                        { id: 'name-asc', label: 'Nombre A-Z' },
+                                        { id: 'name-desc', label: 'Nombre Z-A' },
+                                        { id: 'rating-desc', label: 'Mejor valorados' },
+                                        { id: 'price-asc', label: 'Precio menor' }
+                                    ].map(opt => (
+                                        <button
+                                            key={opt.id}
+                                            onClick={() => {
+                                                setSortBy(opt.id as SortOption);
+                                                setIsSortMenuOpen(false);
+                                            }}
+                                            className={`w-full text-left px-3 py-2.5 rounded-xl text-body-md font-medium transition-colors ${
+                                                sortBy === opt.id 
+                                                    ? 'bg-primary/10 text-primary' 
+                                                    : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+                                            }`}
+                                        >
+                                            {opt.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        <div className="flex bg-surface-container-high rounded-xl p-1 border border-outline-variant/30">
+                            <button
+                                onClick={() => {
+                                    if (!isListView) return;
+                                    setIsChangingView(true);
+                                    setTimeout(() => { setIsListView(false); setTimeout(() => setIsChangingView(false), 300); }, 50);
+                                }}
+                                className={`p-2 rounded-lg transition-colors ${!isListView ? 'bg-surface text-primary shadow-sm' : 'text-on-surface-variant hover:text-primary'}`}
+                                aria-label="Vista en cuadrícula"
+                            >
+                                <Grid className="w-5 h-5" />
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (isListView) return;
+                                    setIsChangingView(true);
+                                    setTimeout(() => { setIsListView(true); setTimeout(() => setIsChangingView(false), 300); }, 50);
+                                }}
+                                className={`p-2 rounded-lg transition-colors ${isListView ? 'bg-surface text-primary shadow-sm' : 'text-on-surface-variant hover:text-primary'}`}
+                                aria-label="Vista en lista"
+                            >
+                                <List className="w-5 h-5" />
+                            </button>
+                        </div>
+                    </div>
+                </div>
 
-                    <div ref={searchMenuRef} className="relative rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                        <label htmlFor="searchTerm" className="mb-1 block text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
-                            Buscar por nombre o especialidad
-                        </label>
-                        <div className="flex items-center gap-3">
-                            <Search className="h-4 w-4 shrink-0 text-slate-400" />
-                            <div className="relative min-w-0 flex-1">
-                                <input
-                                    id="searchTerm"
-                                    value={searchTerm}
-                                    onFocus={() => setIsSearchFocused(true)}
-                                    onChange={(event) => {
-                                        setSearchTerm(event.target.value);
-                                        setIsSearchFocused(true);
-                                    }}
-                                    placeholder="Ej. cardiología, López"
-                                    className="w-full bg-transparent pr-10 text-sm font-medium text-slate-900 outline-none placeholder:text-slate-400"
-                                />
-
-                                {searchTerm ? (
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setSearchTerm('');
-                                            setIsSearchFocused(true);
-                                        }}
-                                        className="absolute right-0 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-200 hover:text-slate-700"
-                                        aria-label="Limpiar búsqueda"
+                {/* 2. Barra de búsqueda */}
+                <div className="flex flex-col lg:flex-row gap-4">
+                    <div ref={searchMenuRef} className="relative flex-1 rounded-2xl bg-surface border border-outline-variant/30 shadow-sm flex items-center px-4 h-14 overflow-hidden">
+                        <Search className="h-5 w-5 shrink-0 text-outline mr-2" />
+                        
+                        <div className="flex items-center gap-2 h-full flex-nowrap shrink-0 overflow-x-auto no-scrollbar">
+                            {searchTags.map((tag, idx) => (
+                                <span key={idx} className="inline-flex items-center gap-1 h-8 rounded-lg bg-primary/10 text-primary px-3 text-sm font-medium whitespace-nowrap">
+                                    {tag}
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setSearchTags(tags => tags.filter((_, i) => i !== idx))}
+                                        className="hover:bg-primary/20 rounded-full p-0.5"
                                     >
-                                        <X className="h-4 w-4" />
+                                        <X className="h-3 w-3" />
                                     </button>
-                                ) : null}
-                            </div>
+                                </span>
+                            ))}
                         </div>
 
-                        {isSearchFocused && searchSuggestions.length ? (
-                            <div className="absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.15)]">
-                                <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                                    <div>
-                                        <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">Sugerencias recientes</p>
-                                        <p className="text-xs text-slate-400">Últimos 3 médicos visitados</p>
-                                    </div>
-                                </div>
+                        <input
+                            id="searchTerm"
+                            value={searchTerm}
+                            onFocus={() => setIsSearchFocused(true)}
+                            onChange={(event) => {
+                                setSearchTerm(event.target.value);
+                                setIsSearchFocused(true);
+                            }}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && searchTerm.trim()) {
+                                    e.preventDefault();
+                                    if (!searchTags.includes(searchTerm.trim())) {
+                                        setSearchTags(prev => [...prev, searchTerm.trim()]);
+                                    }
+                                    setSearchTerm('');
+                                } else if (e.key === 'Backspace' && !searchTerm && searchTags.length > 0) {
+                                    setSearchTags(prev => prev.slice(0, -1));
+                                }
+                            }}
+                            placeholder={searchTags.length === 0 ? "Buscar por doctor, especialidad o ubicación..." : "Añadir filtro..."}
+                            className="flex-1 h-full bg-transparent min-w-[140px] px-2 text-body-md font-medium text-on-surface outline-none placeholder:text-outline/70"
+                        />
+                        {(searchTerm || searchTags.length > 0) && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSearchTerm('');
+                                    setSearchTags([]);
+                                    setIsSearchFocused(true);
+                                }}
+                                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-outline transition hover:bg-surface-container-high hover:text-on-surface ml-2"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        )}
 
-                                <div className="divide-y divide-slate-100">
-                                    {searchSuggestions.map((doctor) => (
-                                        <Link
-                                            key={doctor.exp_codigo}
-                                            href={`/dashboard/${doctor.exp_codigo}`}
+                        {/* Search Suggestions Dropdown */}
+                        {isSearchFocused && searchSuggestions.length > 0 && (
+                            <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-40 overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface shadow-lg">
+                                <div className="border-b border-outline-variant/20 px-4 py-3 flex items-center gap-2">
+                                    {searchTerm ? (
+                                        <>
+                                            <Sparkles className="h-4 w-4 text-primary" />
+                                            <p className="text-xs font-bold text-outline">
+                                                Sugerencias para "{searchTerm}"
+                                            </p>
+                                        </>
+                                    ) : (
+                                        <p className="text-xs font-bold uppercase tracking-wider text-outline">Búsquedas recientes</p>
+                                    )}
+                                </div>
+                                <div className="py-2">
+                                    {searchSuggestions.map((suggestion, idx) => (
+                                        <button
+                                            key={idx}
+                                            type="button"
                                             onClick={() => {
+                                                if (!searchTags.includes(suggestion.label)) {
+                                                    setSearchTags(prev => [...prev, suggestion.label]);
+                                                }
+                                                setSearchTerm('');
                                                 setIsSearchFocused(false);
                                             }}
-                                            className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-sky-50"
+                                            className="flex w-full items-center gap-4 px-4 py-3 text-left transition hover:bg-surface-container-lowest"
                                         >
-                                            <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-sky-100 text-xs font-black text-sky-700">
-                                                {doctor.image ? (
-                                                    <Image src={doctor.image} alt={doctor.fullName} width={40} height={40} className="h-10 w-10 object-cover" />
-                                                ) : (
-                                                    doctor.fullName
-                                                        .split(' ')
-                                                        .filter(Boolean)
-                                                        .slice(0, 2)
-                                                        .map((part) => part[0])
-                                                        .join('') || 'MD'
-                                                )}
-                                            </span>
-
-                                            <div className="min-w-0 flex-1">
-                                                <p className="truncate text-sm font-semibold text-slate-900">{doctor.fullName}</p>
-                                                <p className="truncate text-xs text-slate-500">{doctor.specialty}</p>
-                                                <p className="truncate text-xs text-slate-400">{doctor.locationLabel}</p>
-                                            </div>
-
-                                            <ChevronRight className="h-4 w-4 shrink-0 text-sky-500" />
-                                        </Link>
+                                            <Search className="h-5 w-5 text-primary" />
+                                            <span className="text-body-md text-on-surface">{suggestion.label}</span>
+                                        </button>
                                     ))}
                                 </div>
                             </div>
-                        ) : null}
+                        )}
                     </div>
-
-                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                        <label htmlFor="locationTerm" className="mb-1 block text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
-                            Buscar por ubicación
-                        </label>
-                        <div className="flex items-center gap-3">
-                            <MapPin className="h-4 w-4 shrink-0 text-slate-400" />
-                            <div className="relative min-w-0 flex-1">
-                                <input
-                                    id="locationTerm"
-                                    value={locationTerm}
-                                    onChange={(event) => setLocationTerm(event.target.value)}
-                                    placeholder="País o nacionalidad"
-                                    className="w-full bg-transparent pr-10 text-sm font-medium text-slate-900 outline-none placeholder:text-slate-400"
-                                />
-
-                                {locationTerm ? (
-                                    <button
-                                        type="button"
-                                        onClick={() => setLocationTerm('')}
-                                        className="absolute right-0 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-200 hover:text-slate-700"
-                                        aria-label="Limpiar ubicación"
-                                    >
-                                        <X className="h-4 w-4" />
-                                    </button>
-                                ) : null}
-                            </div>
-                        </div>
-                    </div>
-
+                    
                     <button
                         type="button"
-                        onClick={() => {
-                            alert('Buscando médicos cerca de tu ubicación actual...');
-                        }}
-                        className="inline-flex h-18 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
+                        onClick={() => alert('Buscando médicos cerca de tu ubicación actual...')}
+                        className="inline-flex h-14 shrink-0 items-center gap-2 rounded-2xl bg-secondary-container px-6 text-label-md font-semibold text-on-secondary-container transition hover:bg-secondary-container/90"
                     >
-                        <Target className="h-4 w-4" />
+                        <Target className="h-5 w-5" />
                         Cerca de ti
                     </button>
 
-                    <div className="relative">
+                    <div className="relative" ref={advancedFiltersRef}>
                         <button
                             type="button"
-                            onClick={() => isFiltersOpen ? closeFilters() : openFilters()}
-                            className={`inline-flex h-18 w-full justify-center items-center gap-2 rounded-2xl border px-5 text-sm font-semibold transition ${
-                                isFiltersOpen 
-                                ? 'border-slate-900 bg-slate-900 text-white shadow-lg shadow-slate-900/30' 
-                                : 'border-slate-200 bg-white text-slate-700 shadow-sm hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700'
+                            onClick={() => setIsAdvancedFiltersOpen(!isAdvancedFiltersOpen)}
+                            className={`inline-flex h-14 shrink-0 items-center gap-2 rounded-2xl border px-6 text-label-md font-semibold transition ${
+                                isAdvancedFiltersOpen
+                                    ? 'border-primary bg-primary text-on-primary'
+                                    : 'border-outline-variant bg-surface text-on-surface hover:bg-surface-container'
                             }`}
-                            aria-label="Alternar filtros"
                         >
-                            <Filter className="h-4 w-4" />
-                            {isFiltersOpen ? 'Ocultar filtros' : 'Mostrar filtros'}
+                            <Filter className="h-5 w-5" />
+                            Filtros Avanzados
+                            <ChevronDown className={`w-4 h-4 ml-2 transition-transform ${isAdvancedFiltersOpen ? 'rotate-180' : ''}`} />
                         </button>
-
-                        {isFiltersOpen && (
-                            <div className="absolute right-0 top-full mt-3 w-[340px] z-50 rounded-3xl border border-slate-700 bg-slate-900 shadow-2xl shadow-slate-900/50 flex flex-col overflow-hidden">
-                                <div className="flex items-center justify-between p-5 bg-white border-b border-slate-200">
-                                    <h3 className="text-sm font-black uppercase tracking-[0.2em] text-slate-700">Filtros activos</h3>
-                                    <button
-                                        type="button"
-                                        onClick={() => resetParams()}
-                                        className="text-xs font-semibold text-sky-600 transition hover:text-sky-700 underline underline-offset-2"
-                                    >
-                                        Limpiar todo
-                                    </button>
-                                </div>
-
-                                <div className="p-6 space-y-6">
-                                    <CustomDropdown
-                                        icon={ArrowDownUp}
-                                        title="Ordenar por"
-                                        value={sortBy}
-                                        onChange={(val) => setSortBy(val as SortOption)}
-                                        options={[
-                                            { value: 'name-asc', label: 'Nombre A-Z' },
-                                            { value: 'name-desc', label: 'Nombre Z-A' },
-                                            { value: 'rating-desc', label: 'Mejor valorados' },
-                                            { value: 'price-asc', label: 'Precio menor' },
-                                        ]}
-                                    />
-
-                                    <div className="h-px w-full bg-white/10" />
-
-                                    <CustomDropdown
-                                        icon={Calendar}
-                                        title="Disponibilidad"
-                                        value={availability}
-                                        onChange={setAvailability}
-                                        options={[
-                                            { value: 'any', label: 'Cualquier momento' },
-                                            { value: 'today', label: 'Disponible hoy' },
-                                            { value: 'tomorrow', label: 'Disponible mañana' },
-                                        ]}
-                                    />
-
-                                    <div className="h-px w-full bg-white/10" />
-
-                                    <CustomDropdown
-                                        icon={Video}
-                                        title="Modalidad"
-                                        value={modality}
-                                        onChange={setModality}
-                                        options={[
-                                            { value: 'all', label: 'Todas las modalidades' },
-                                            { value: 'virtual', label: 'Consulta virtual' },
-                                            { value: 'hybrid', label: 'Modalidad híbrida' },
-                                            { value: 'presencial', label: 'Consulta presencial' },
-                                        ]}
-                                    />
-
-                                    <div className="h-px w-full bg-white/10" />
-
-                                    <div className="w-full">
-                                        <div className="flex w-full items-center justify-between py-1 mb-4">
-                                            <div className="flex items-center gap-4">
-                                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 backdrop-blur-sm">
-                                                    <DollarSign className="h-5 w-5 text-white" />
-                                                </div>
-                                                <div className="text-left">
-                                                    <div className="text-[0.95rem] font-bold text-white">Rango de precios</div>
-                                                    <div className="text-sm font-medium text-sky-100">Q0 - Q{localPriceLimit}</div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="px-3 pt-2 pb-4">
-                                            <div className="relative h-1.5 w-full bg-white/20 rounded-full flex items-center">
-                                                {/* Barra de progreso azul */}
-                                                <div 
-                                                    className="absolute left-0 top-0 h-full bg-sky-400 rounded-full shadow-[0_0_10px_rgba(56,189,248,0.5)]" 
-                                                    style={{ width: `${(localPriceLimit / PRICE_LIMIT_MAX) * 100}%` }}
-                                                />
-
-                                                {/* Punto negro izquierdo (fijo en Q0) */}
-                                                <div className="absolute left-0 -ml-2.5 h-5 w-5 rounded-full bg-white shadow-md pointer-events-none z-20"></div>
-                                                
-                                                {/* Input Range Slider invisible que controla todo */}
-                                                <input
-                                                    type="range"
-                                                    min={0}
-                                                    max={PRICE_LIMIT_MAX}
-                                                    step={50}
-                                                    value={localPriceLimit}
-                                                    onChange={(event) => setLocalPriceLimit(Number(event.target.value))}
-                                                    onMouseUp={() => setPriceLimit(localPriceLimit)}
-                                                    onTouchEnd={() => setPriceLimit(localPriceLimit)}
-                                                    className="absolute w-full appearance-none bg-transparent accent-white [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-[0_0_10px_rgba(255,255,255,0.5)] cursor-pointer z-10 m-0"
-                                                    style={{ margin: 0, padding: 0 }}
-                                                />
-                                            </div>
-                                            <div className="mt-4 flex justify-between text-sm font-medium text-slate-400">
-                                                <span>Q0</span>
-                                                <span>Q{localPriceLimit}</span>
-                                            </div>
+                        {isAdvancedFiltersOpen && (
+                            <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-[540px] rounded-3xl border border-outline-variant/20 bg-[#FFFFFF] p-6 shadow-[0_12px_48px_rgba(0,0,0,0.12)]">
+                                <div className="flex gap-8 max-h-[60vh] overflow-y-auto pr-2" style={{scrollbarWidth: 'thin'}}>
+                                    
+                                    {/* Columna Idiomas */}
+                                    <div className="flex-1">
+                                        <h4 className="text-label-md font-bold mb-3 text-on-surface uppercase tracking-wider text-xs">Idiomas</h4>
+                                        <div className="flex flex-col gap-1">
+                                            {languagePicks.length > 0 ? languagePicks.map(lang => (
+                                                <label key={lang} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-surface-container-lowest cursor-pointer transition-colors group">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={selectedLanguages.includes(lang)}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) setSelectedLanguages(prev => [...prev, lang]);
+                                                            else setSelectedLanguages(prev => prev.filter(l => l !== lang));
+                                                        }}
+                                                        className="rounded-md border-outline-variant/50 text-primary focus:ring-primary focus:ring-offset-0 h-5 w-5 transition-colors cursor-pointer bg-transparent" 
+                                                    />
+                                                    <span className="text-body-md font-medium text-on-surface-variant group-hover:text-on-surface">{lang}</span>
+                                                </label>
+                                            )) : <span className="text-body-sm text-outline p-2.5">No hay idiomas registrados</span>}
                                         </div>
                                     </div>
+                                    
+                                    {/* Divisor vertical suave */}
+                                    <div className="w-[1px] bg-outline-variant/20"></div>
+
+                                    {/* Columna Aseguradoras */}
+                                    <div className="flex-1">
+                                        <h4 className="text-label-md font-bold mb-3 text-on-surface uppercase tracking-wider text-xs">Aseguradoras</h4>
+                                        <div className="flex flex-col gap-1">
+                                            {insurancePicks.length > 0 ? insurancePicks.map(ins => (
+                                                <label key={ins} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-surface-container-lowest cursor-pointer transition-colors group">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={selectedInsurances.includes(ins)}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) setSelectedInsurances(prev => [...prev, ins]);
+                                                            else setSelectedInsurances(prev => prev.filter(i => i !== ins));
+                                                        }}
+                                                        className="rounded-md border-outline-variant/50 text-primary focus:ring-primary focus:ring-offset-0 h-5 w-5 transition-colors cursor-pointer bg-transparent" 
+                                                    />
+                                                    <span className="text-body-md font-medium text-on-surface-variant group-hover:text-on-surface">{ins}</span>
+                                                </label>
+                                            )) : <span className="text-body-sm text-outline p-2.5">No hay aseguradoras registradas</span>}
+                                        </div>
+                                    </div>
+
                                 </div>
                             </div>
                         )}
@@ -707,7 +773,186 @@ function DashboardContent() {
             </div>
 
             <div className="mx-auto w-[90%] max-w-[1800px] py-8">
-                <div className="min-w-0 space-y-6">
+                <div className={`flex gap-8 items-start transition-all duration-300`}>
+                    {/* Sidebar */}
+                    <aside className={`hidden lg:flex shrink-0 transition-all duration-500 rounded-2xl bg-surface border border-outline-variant/20 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] h-fit overflow-visible sticky top-8 z-40 ${activeSidebarFilter ? 'w-[380px]' : 'w-[80px]'}`}>
+                        {/* Slim Icon Rail */}
+                        <div className="w-[80px] shrink-0 flex flex-col items-center gap-6 py-6 bg-surface z-10 relative border-r border-outline-variant/10">
+                            
+                            {/* Filter: Especialidad */}
+                            <div className="relative group">
+                                <button 
+                                    onClick={() => setActiveSidebarFilter(activeSidebarFilter === 'especialidad' ? null : 'especialidad')}
+                                    className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${activeSidebarFilter === 'especialidad' ? 'bg-[#0d9488]/10 text-[#0d9488]' : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-[#0d9488]'}`}
+                                >
+                                    <Filter className="w-5 h-5" />
+                                </button>
+                                <div className="absolute left-8 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-surface/95 backdrop-blur-sm border border-outline-variant/20 shadow-[0_8px_24px_rgba(13,148,136,0.15)] text-on-surface text-sm font-bold rounded-xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:translate-x-2 transition-all duration-300 whitespace-nowrap z-50 flex items-center gap-2">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-[#0d9488]"></div>
+                                    Especialidad
+                                </div>
+                            </div>
+
+                            <div className="w-8 border-b border-outline-variant/20"></div>
+
+                            {/* Filter: Disponibilidad */}
+                            <div className="relative group">
+                                <button 
+                                    onClick={() => setActiveSidebarFilter(activeSidebarFilter === 'disponibilidad' ? null : 'disponibilidad')}
+                                    className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${activeSidebarFilter === 'disponibilidad' ? 'bg-[#0284c7]/10 text-[#0284c7]' : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-[#0284c7]'}`}
+                                >
+                                    <Calendar className="w-5 h-5" />
+                                </button>
+                                <div className="absolute left-8 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-surface/95 backdrop-blur-sm border border-outline-variant/20 shadow-[0_8px_24px_rgba(2,132,199,0.15)] text-on-surface text-sm font-bold rounded-xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:translate-x-2 transition-all duration-300 whitespace-nowrap z-50 flex items-center gap-2">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-[#0284c7]"></div>
+                                    Disponibilidad
+                                </div>
+                            </div>
+
+                            <div className="w-8 border-b border-outline-variant/20"></div>
+
+                            {/* Filter: Modalidad */}
+                            <div className="relative group">
+                                <button 
+                                    onClick={() => setActiveSidebarFilter(activeSidebarFilter === 'modalidad' ? null : 'modalidad')}
+                                    className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${activeSidebarFilter === 'modalidad' ? 'bg-[#4f46e5]/10 text-[#4f46e5]' : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-[#4f46e5]'}`}
+                                >
+                                    <Video className="w-5 h-5" />
+                                </button>
+                                <div className="absolute left-8 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-surface/95 backdrop-blur-sm border border-outline-variant/20 shadow-[0_8px_24px_rgba(79,70,229,0.15)] text-on-surface text-sm font-bold rounded-xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:translate-x-2 transition-all duration-300 whitespace-nowrap z-50 flex items-center gap-2">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-[#4f46e5]"></div>
+                                    Modalidad
+                                </div>
+                            </div>
+
+                            <div className="w-8 border-b border-outline-variant/20"></div>
+
+                            {/* Filter: Precio */}
+                            <div className="relative group">
+                                <button 
+                                    onClick={() => setActiveSidebarFilter(activeSidebarFilter === 'precio' ? null : 'precio')}
+                                    className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${activeSidebarFilter === 'precio' ? 'bg-[#059669]/10 text-[#059669]' : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-[#059669]'}`}
+                                >
+                                    <DollarSign className="w-5 h-5" />
+                                </button>
+                                <div className="absolute left-8 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-surface/95 backdrop-blur-sm border border-outline-variant/20 shadow-[0_8px_24px_rgba(5,150,105,0.15)] text-on-surface text-sm font-bold rounded-xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:translate-x-2 transition-all duration-300 whitespace-nowrap z-50 flex items-center gap-2">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-[#059669]"></div>
+                                    Precio máximo
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Expanded Content Panel */}
+                        <div className={`flex-1 flex flex-col transition-opacity duration-300 bg-surface overflow-hidden ${activeSidebarFilter ? 'opacity-100' : 'opacity-0'}`}>
+                            <div className="p-5 flex-1 min-w-[300px] max-w-[300px]">
+                                {activeSidebarFilter === 'especialidad' && (
+                                    <div className="animate-in fade-in duration-300">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h3 className="font-semibold text-lg text-[#0d9488]">Especialidad</h3>
+                                            <button onClick={() => setActiveSidebarFilter(null)} className="p-1 hover:bg-surface-container rounded-lg text-outline"><X className="w-4 h-4"/></button>
+                                        </div>
+                                        <input 
+                                            type="text" 
+                                            placeholder="Buscar especialidad..." 
+                                            value={specialtySearch}
+                                            onChange={(e) => setSpecialtySearch(e.target.value)}
+                                            className="w-full bg-surface-container-lowest border border-outline-variant rounded-xl px-3 py-2 text-sm outline-none focus:border-primary mb-3"
+                                        />
+                                        <div className="flex flex-col gap-2 max-h-60 overflow-y-auto pr-2" style={{scrollbarWidth: 'thin'}}>
+                                            <label className="flex items-center gap-2 cursor-pointer group/item">
+                                                <div className={`w-4 h-4 rounded-full border ${specialtyParam === 'all' ? 'border-[#0d9488] border-[4px]' : 'border-outline group-hover/item:border-[#0d9488]'} transition-all`} onClick={() => setSpecialtyParam('all')}></div>
+                                                <span className="text-body-md text-on-surface-variant">Todas</span>
+                                            </label>
+                                            {specialtyPicks.filter(s => s.toLowerCase().includes(specialtySearch.toLowerCase())).map(opt => (
+                                                <label key={opt} className="flex items-center gap-2 cursor-pointer group/item">
+                                                    <div className={`w-4 h-4 rounded-full border ${specialtyParam === opt ? 'border-[#0d9488] border-[4px]' : 'border-outline group-hover/item:border-[#0d9488]'} transition-all`} onClick={() => setSpecialtyParam(opt)}></div>
+                                                    <span className="text-body-md text-on-surface-variant">{opt}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {activeSidebarFilter === 'disponibilidad' && (
+                                    <div className="animate-in fade-in duration-300">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h3 className="font-semibold text-lg text-[#0284c7]">Disponibilidad</h3>
+                                            <button onClick={() => setActiveSidebarFilter(null)} className="p-1 hover:bg-surface-container rounded-lg text-outline"><X className="w-4 h-4"/></button>
+                                        </div>
+                                        <div className="flex justify-center" style={{ '--rdp-cell-size': '38px', '--rdp-caption-font-size': '16px' } as React.CSSProperties}>
+                                            <DayPicker
+                                                mode="single"
+                                                locale={es}
+                                                selected={availability ? new Date(availability + 'T00:00:00') : undefined}
+                                                onSelect={(date) => setAvailability(date ? format(date, 'yyyy-MM-dd') : '')}
+                                                disabled={{ before: new Date() }}
+                                                className="!m-0"
+                                                classNames={{
+                                                    selected: "bg-[#0284c7] !text-white font-bold hover:bg-[#0284c7]/90",
+                                                    today: "font-bold text-[#0284c7]",
+                                                    day: "hover:bg-surface-container rounded-lg transition-colors",
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {activeSidebarFilter === 'modalidad' && (
+                                    <div className="animate-in fade-in duration-300">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h3 className="font-semibold text-lg text-[#4f46e5]">Modalidad</h3>
+                                            <button onClick={() => setActiveSidebarFilter(null)} className="p-1 hover:bg-surface-container rounded-lg text-outline"><X className="w-4 h-4"/></button>
+                                        </div>
+                                        <div className="flex flex-col gap-2">
+                                            {[{id: 'all', label: 'Todas', icon: <Search className="w-4 h-4"/>}, {id: 'presencial', label: 'Presencial', icon: <MapPin className="w-4 h-4"/>}, {id: 'virtual', label: 'Virtual', icon: <Video className="w-4 h-4"/>}, {id: 'domicilio', label: 'Domicilio', icon: <Home className="w-4 h-4"/>}].map(opt => (
+                                                <label
+                                                    key={opt.id}
+                                                    className={`flex items-center gap-3 p-3 cursor-pointer select-none group/item rounded-xl border transition-all ${modality === opt.id ? 'border-[#4f46e5] bg-[#4f46e5]/5' : 'border-outline-variant/50 hover:bg-surface-container'}`}
+                                                >
+                                                    <div className={`shrink-0 w-4 h-4 rounded-full border ${modality === opt.id ? 'border-[#4f46e5] border-[4px]' : 'border-outline group-hover/item:border-[#4f46e5]'} transition-all`} onClick={() => setModality(opt.id)}></div>
+                                                    <div className={`flex items-center gap-2 text-body-md font-medium ${modality === opt.id ? 'text-[#4f46e5]' : 'text-on-surface-variant'}`}>
+                                                        {opt.icon}
+                                                        {opt.label}
+                                                    </div>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {activeSidebarFilter === 'precio' && (
+                                    <div className="animate-in fade-in duration-300">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h3 className="font-semibold text-lg text-[#059669]">Precio máximo</h3>
+                                            <button onClick={() => setActiveSidebarFilter(null)} className="p-1 hover:bg-surface-container rounded-lg text-outline"><X className="w-4 h-4"/></button>
+                                        </div>
+                                        <div className="font-bold text-[#059669] text-xl mb-4 text-center">
+                                            Q{localPriceLimit}
+                                        </div>
+                                        <div className="relative pt-2 pb-2">
+                                            <input
+                                                type="range"
+                                                min={0}
+                                                max={PRICE_LIMIT_MAX}
+                                                step={50}
+                                                value={localPriceLimit}
+                                                onChange={(e) => setLocalPriceLimit(Number(e.target.value))}
+                                                onMouseUp={() => setPriceLimit(localPriceLimit)}
+                                                onTouchEnd={() => setPriceLimit(localPriceLimit)}
+                                                className="w-full accent-[#059669]"
+                                            />
+                                            <div className="flex justify-between text-caption text-outline mt-2">
+                                                <span>Q0</span>
+                                                <span>Q{PRICE_LIMIT_MAX}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </aside>
+
+                    <div className="flex-1 min-w-0 space-y-6">
                     {error ? (
                         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                             No fue posible cargar la lista de médicos.
@@ -715,14 +960,14 @@ function DashboardContent() {
                     ) : null}
 
                     <section id="doctores" className="space-y-5 relative min-h-[400px]">
-                        {isPaginating ? (
+                        {isPaginating || isChangingView ? (
                             <div className="flex h-[400px] flex-col items-center justify-center">
                                 <div className="h-20 w-20 animate-spin rounded-full border-8 border-slate-200 border-t-sky-600" />
                             </div>
                         ) : paginatedDoctors.length ? (
-                            <AnimatedList className="grid gap-6 lg:grid-cols-2 xl:grid-cols-2">
+                            <AnimatedList className={isListView ? "flex flex-col gap-4" : "grid gap-6 grid-cols-[repeat(auto-fill,minmax(280px,1fr))]"}>
                                 {paginatedDoctors.map((doctor) => (
-                                    <DoctorCard key={doctor.doctor.exp_codigo} data={doctor} onVisit={handleDoctorVisit} />
+                                    <DoctorCard key={doctor.doctor.exp_codigo} data={doctor} onVisit={handleDoctorVisit} isListView={isListView} />
                                 ))}
                             </AnimatedList>
                         ) : (
@@ -768,6 +1013,7 @@ function DashboardContent() {
                         ) : null}
                     </section>
                 </div>
+            </div>
             </div>
         </main>
     );

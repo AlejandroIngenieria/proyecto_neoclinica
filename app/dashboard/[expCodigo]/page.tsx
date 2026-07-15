@@ -243,7 +243,6 @@ function DoctorProfileContent() {
         backHref="/dashboard"
         navLinks={[
           { href: '/dashboard', label: 'Directorio' },
-          { href: '/dashboard/especialidades', label: 'Especialidades' },
           { href: '/dashboard/citas', label: 'Citas' },
           { href: '/dashboard/medicamentos', label: 'Medicamentos' },
         ]}
