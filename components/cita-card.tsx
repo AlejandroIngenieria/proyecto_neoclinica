@@ -16,7 +16,7 @@ type CitaCardProps = {
   isPast?: boolean;
   bottomActions?: React.ReactNode;
   size?: 'normal' | 'small';
-  layout?: 'card' | 'row';
+  layout?: 'card' | 'row' | 'series-child';
 };
 
 export function CitaCard({ cita, onModify, onCancel, isPast = false, bottomActions, size = 'normal', layout = 'card' }: CitaCardProps) {
