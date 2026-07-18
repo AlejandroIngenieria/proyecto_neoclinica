@@ -40,7 +40,7 @@ export function AnimatedModal({ isOpen, onClose, children, title, subtitle, labe
           <motion.div
             role="dialog"
             aria-modal="true"
-            aria-label={title ?? 'Modal'}
+            aria-label={typeof title === 'string' ? title : 'Modal'}
             onClick={(e) => e.stopPropagation()}
             className="relative w-full max-w-5xl overflow-hidden rounded-[2.5rem] border border-slate-200 bg-white shadow-[0_35px_120px_rgba(15,23,42,0.3)]"
             initial={{ opacity: 0, scale: 0.95, y: 30 }}
