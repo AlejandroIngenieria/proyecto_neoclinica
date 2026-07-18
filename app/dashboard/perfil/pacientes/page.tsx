@@ -132,7 +132,7 @@ function PatientCard({
     >
       <div className="relative flex flex-col md:flex-row h-full">
         {/* === IMAGEN === */}
-        <div className="relative h-64 md:h-auto md:w-5/12 overflow-hidden shrink-0">
+        <div className="relative h-48 sm:h-56 md:h-auto md:w-5/12 overflow-hidden shrink-0">
           {paciente.pac_foto_perfil_url ? (
             <img
               src={paciente.pac_foto_perfil_url}
@@ -140,8 +140,8 @@ function PatientCard({
               className="h-full w-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-800 to-slate-950 text-slate-600">
-              <User className="h-20 w-20 opacity-50" />
+            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-800 to-slate-950 text-slate-600 min-h-[180px]">
+              <User className="h-16 w-16 sm:h-20 sm:w-20 opacity-50" />
             </div>
           )}
 
@@ -481,7 +481,7 @@ function PacienteForm({
             <User className="h-4 w-4" />
             Datos Personales
           </legend>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
               <div>
                 <label className={labelClasses}>Primer nombre *</label>
@@ -504,7 +504,7 @@ function PacienteForm({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className={labelClasses}>Primer apellido *</label>
                 <input
@@ -527,7 +527,7 @@ function PacienteForm({
             </div>
 
             {/* Date + Gender */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className={labelClasses}>Fecha de nacimiento *</label>
                 <input
@@ -556,7 +556,7 @@ function PacienteForm({
             </div>
 
             {/* Blood type + Parentesco */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className={labelClasses}>Tipo de sangre</label>
                 <select {...register('pac_tipo_sangre')} className={inputClasses}>

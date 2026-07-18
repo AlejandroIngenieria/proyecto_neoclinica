@@ -10,7 +10,7 @@ export default function PerfilLayout({ children }: { children: React.ReactNode }
     <div className="flex min-h-screen">
       <ProfileSidebar />
       <main className="flex-1 w-full min-w-0">
-        <div className="mx-auto w-[85%] max-w-[1800px]">
+        <div className="mx-auto w-full px-4 sm:px-6 lg:w-[90%] xl:w-[85%] max-w-[1800px] py-4 sm:py-6">
           {children}
         </div>
       </main>

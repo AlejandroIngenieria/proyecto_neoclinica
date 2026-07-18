@@ -31,7 +31,6 @@ function MedicamentosContent() {
 
   return (
     <div className="min-h-screen text-slate-900">
-      <Navbar subtitle="Medicamentos" navLinks={NAV_LINKS} />
 
       <motion.main
         className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8"
@@ -93,8 +92,9 @@ function MedicamentosContent() {
                 <Pill className="h-5 w-5" />
               </div>
               <div className="min-w-0 flex-1">
-                <h3 className="text-base font-black text-slate-900">{med.name}</h3>
-                <p className="text-sm text-slate-500">{med.category}</p>
+                <h3 className="text-sm sm:text-base font-black text-slate-900">{med.name}</h3>
+                <p className="text-xs sm:text-sm text-slate-500">{med.category}</p>
+                <p className="text-xs font-semibold text-slate-400 sm:hidden mt-0.5">{med.frequency}</p>
               </div>
               <div className="hidden text-right sm:block">
                 <p className="text-sm font-semibold text-slate-700">{med.frequency}</p>

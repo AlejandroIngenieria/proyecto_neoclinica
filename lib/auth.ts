@@ -98,21 +98,26 @@ export const authOptions: NextAuthOptions = {
         password: { label: 'Contraseña', type: 'password' },
       },
       async authorize(credentials) {
+        console.log("=> NextAuth authorize start", { correo: credentials?.correo });
         if (!credentials?.correo || !credentials.password) {
+          console.log("=> Missing credentials");
           return null;
         }
 
-        const { data } = await api.post<BackendAuthResponse>(
-          `${apiBaseUrl}/api/Autenticacion/login`,
-          {
-            correo: credentials.correo,
-            password: credentials.password,
-          },
-        );
+        try {
+          const { data } = await api.post<BackendAuthResponse>(
+            `${apiBaseUrl}/api/Autenticacion/login`,
+            {
+              correo: credentials.correo,
+              password: credentials.password,
+            },
+          );
+          console.log("=> Backend login response data:", data);
 
-        if (!data.token) {
-          return null;
-        }
+          if (!data.token) {
+            console.log("=> Missing token in response");
+            return null;
+          }
 
         let resolvedUser = null;
 
@@ -141,13 +146,19 @@ export const authOptions: NextAuthOptions = {
         }
 
         if (!resolvedUser || !resolvedUser.id) {
+          console.log("=> resolvedUser is invalid or missing id:", resolvedUser);
           return null;
         }
 
+        console.log("=> Login successful for user:", resolvedUser.email);
         return {
           ...resolvedUser,
           accessToken: data.token,
         };
+      } catch (error: any) {
+        console.log("=> Error during backend login request:", error?.message || error);
+        return null;
+      }
       },
     }),
   ],

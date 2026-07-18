@@ -12,6 +12,8 @@ export interface ClinicaCitaDto {
   cliDireccionCompleta: string;
   cliZona: string;
   mclPrecioBase: number;
+  cliUrlGoogleMaps?: string | null;
+  cliUrlWaze?: string | null;
 }
 
 export interface AreaDomicilioDto {
@@ -34,12 +36,18 @@ export interface PacienteSeleccionDto {
   pacTitular: boolean;
   nombreCompleto: string;
   pacFechaNacimiento: string | null;
+  pacFotoPerfilUrl?: string;
 }
 
 export interface GrupoCitaDto {
-  grcCodigo: string;
-  grcTema: string;
-  grcTituloTema: string;
+  grupoId: string;
+  titulo: string;
+  descripcion: string;
+  citaId?: string | null;
+  fecha?: string | null;
+  hora?: string | null;
+  modalidad?: string | null;
+  estado?: string | null;
 }
 
 export interface CrearCitaRequest {
@@ -51,7 +59,10 @@ export interface CrearCitaRequest {
   hora: string; // HH:mm:ss
   modalidad: ModalidadCita;
   precio: number;
-  motivo?: string;
+  motivo?: string | null;
+  direccionDomicilio?: string | null;
+  referenciasDomicilio?: string | null;
+  enlaceVideollamada?: string | null;
 }
 
 export type CitaEstado = 'programada' | 'confirmada' | 'pospuesta' | 'completada' | 'cancelada' | 'rechazada' | 'no_asistio';
@@ -74,31 +85,70 @@ export interface CitaListDto {
   ctaCoddoc: string;
   medicoNombre: string;
   medicoEspecialidad: string;
-  ctaGrupoId: string | null;
-  ctaConsultorioId: number | null;
-  clinicaNombre: string | null;
+  ctaGrupoId?: string | null;
+  ctaConsultorioId?: number | null;
+  clinicaNombre?: string | null;
+  cliUrlGoogleMaps?: string | null;
+  cliUrlWaze?: string | null;
   ctaFecha: string; // "YYYY-MM-DDTHH:mm:ss"
   ctaHora: string; // "HH:mm:ss"
   ctaEstado: CitaEstado;
   ctaTipo: string;
   ctaModalidad: ModalidadCita;
   ctaPrecio: number;
-  ctaMotivo: string | null;
+  ctaMotivo?: string | null;
+  direccionDomicilio?: string | null;
+  referenciasDomicilio?: string | null;
+  enlaceVideollamada?: string | null;
   ctaEtapaActual: number;
   ctaTotalEtapas: number;
-  ctaCalificacion: number | null;
+  ctaCalificacion?: number | null;
   fechaGrabacion: string;
-  grupoTema?: string | null; // Keep optional if it might be populated later
+  grupoTema?: string | null;
   etapas?: CitaEtapaDto[];
   documentos?: CitaDocumentoDto[];
 }
 
 export interface UpdateCitaRequest {
-  consultorioId: number | null;
+  consultorioId?: number | null;
   fecha: string; // YYYY-MM-DD
   hora: string; // HH:mm:ss
   modalidad: ModalidadCita;
   precio: number;
-  motivo: string | null;
-  grupoId: string | null;
+  motivo?: string | null;
+  grupoId?: string | null;
+  direccionDomicilio?: string | null;
+  referenciasDomicilio?: string | null;
+  enlaceVideollamada?: string | null;
+}
+
+export interface MetodoPagoDto {
+  tipoPagoId: number;
+  descripcion: string;
+  observaciones: string;
+}
+
+export interface PagarCitaRequest {
+  codTpp: number;
+  estadoPago: 'pendiente' | 'pagado' | 'fallido' | 'reembolsado';
+  referenciaPago?: string | null;
+}
+
+export interface BilleteraMetodoDto {
+  id_metodo: string; // UUID
+  tipo: 'TARJETA' | 'SEGURO';
+  proveedor: string; // "Visa", "GNP", etc.
+  descripcion: string; // "**** 1234" o "Póliza: 98765"
+  es_principal: boolean;
+}
+
+export interface GuardarSeguroRequest {
+  codAse: number;
+  numeroPoliza: string;
+}
+
+export interface GuardarTarjetaRequest {
+  tokenProcesador: string;
+  ultimos4: string;
+  tipoTarjeta: string; // "visa", "mastercard", etc.
 }

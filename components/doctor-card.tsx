@@ -16,7 +16,7 @@ export type DoctorCardData = {
   locationPreview: string[];
   matchedLocation?: string;
   matchedSpecialty?: string;
-  searchHighlight?: string;
+  searchHighlight?: string | string[];
 };
 
 type DoctorCardProps = {
@@ -33,23 +33,30 @@ function getLowestPrice(doctor: DoctorResponse): number | null {
   return prices.length ? Math.min(...prices) : null;
 }
 
-function HighlightText({ text, highlight }: { text: string; highlight?: string }) {
-  if (!highlight || !highlight.trim()) {
+function HighlightText({ text, highlight }: { text: string; highlight?: string | string[] }) {
+  if (!highlight || (Array.isArray(highlight) ? highlight.length === 0 : !highlight.trim())) {
     return <>{text}</>;
   }
   
-  const escapedHighlight = highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const parts = text.split(new RegExp(`(${escapedHighlight})`, 'gi'));
+  const terms = Array.isArray(highlight) ? highlight : [highlight];
+  const validTerms = terms.map(t => t.trim()).filter(Boolean);
+  
+  if (validTerms.length === 0) return <>{text}</>;
+
+  const escapedTerms = validTerms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const regex = new RegExp(`(${escapedTerms.join('|')})`, 'gi');
+  const parts = text.split(regex);
   
   return (
     <>
-      {parts.map((part, i) => 
-        part.toLowerCase() === highlight.toLowerCase() ? (
+      {parts.map((part, i) => {
+        const isMatch = validTerms.some(term => part.toLowerCase() === term.toLowerCase());
+        return isMatch ? (
           <mark key={i} className="bg-primary/20 text-primary font-bold rounded-sm px-0.5">{part}</mark>
         ) : (
           <span key={i}>{part}</span>
-        )
-      )}
+        );
+      })}
     </>
   );
 }
@@ -202,11 +209,11 @@ export function DoctorCard({ data, onVisit, isListView = false }: DoctorCardProp
         <div className="p-4 flex flex-col sm:flex-row gap-4 items-center w-full min-w-0 flex-grow">
           <div className="flex flex-col flex-grow min-w-0">
             <div className="min-w-0">
-              <h2 className="font-display text-[18px] md:text-[22px] font-bold text-primary leading-tight truncate" title={fullName}>
+              <h2 className="font-display text-[18px] md:text-[22px] font-bold text-slate-900 leading-tight truncate" title={fullName}>
                 <HighlightText text={fullName} highlight={searchHighlight} />
               </h2>
               <div className="flex items-center gap-1.5 mt-1 relative">
-                <p className="text-secondary font-medium text-sm md:text-base truncate max-w-[150px] md:max-w-[250px]">
+                <p className="text-slate-500 font-medium text-sm md:text-base truncate max-w-[150px] md:max-w-[250px]">
                   <HighlightText text={data.matchedSpecialty || specialtyPreview[0] || 'General'} highlight={searchHighlight} />
                 </p>
                 {specialtyPreview.length > 1 && (
@@ -236,17 +243,20 @@ export function DoctorCard({ data, onVisit, isListView = false }: DoctorCardProp
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2 mt-4">
-              {modalityPreview.map((modality, idx) => (
-                <div key={idx} className="flex items-center gap-1">
-                  {getModalityIcon(modality)}
-                  <span className="text-xs text-on-surface-variant capitalize">{modality.toLowerCase()}</span>
-                </div>
-              ))}
+            <div className="flex flex-wrap gap-1.5 mt-4 shrink-0">
+              {modalityPreview.map((modality, idx) => {
+                const displayModality = modality.toLowerCase() === 'a domicilio' ? 'domicilio' : modality.toLowerCase();
+                return (
+                  <div key={idx} className="flex items-center gap-1">
+                    {getModalityIcon(modality)}
+                    <span className="text-[11px] text-on-surface-variant capitalize">{displayModality}</span>
+                  </div>
+                );
+              })}
               {modalityPreview.length === 0 && (
                  <div className="flex items-center gap-1">
-                   <MapPin className="text-outline text-[16px] h-[16px] w-[16px]" />
-                   <span className="text-xs text-on-surface-variant">Presencial</span>
+                   <MapPin className="text-outline text-[14px] h-[14px] w-[14px]" />
+                   <span className="text-[11px] text-on-surface-variant">Presencial</span>
                  </div>
               )}
             </div>
@@ -254,16 +264,24 @@ export function DoctorCard({ data, onVisit, isListView = false }: DoctorCardProp
 
           <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center w-full sm:w-auto shrink-0 gap-3 sm:pl-4 sm:border-l border-outline-variant/30">
             <div className="flex flex-col items-start sm:items-end w-full">
-              {doctor.promedio_valoracion > 0 && (
-                <div className="flex items-center gap-1 mb-2">
-                  <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
-                  <span className="text-sm font-bold text-slate-700">{doctor.promedio_valoracion.toFixed(1)}</span>
-                  <span className="text-xs text-slate-500">({doctor.total_resenas})</span>
-                </div>
-              )}
+              <div className="flex items-center gap-2 mb-2">
+                {doctor.promedio_valoracion > 0 && (
+                  <div className="flex items-center gap-1">
+                    <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+                    <span className="text-sm font-bold text-slate-700">{doctor.promedio_valoracion.toFixed(1)}</span>
+                    <span className="text-xs text-slate-500">({doctor.total_resenas})</span>
+                  </div>
+                )}
+                {doctor.exp_anios_experiencia ? (
+                  <div className="flex items-center gap-1 px-1.5 py-0.5 bg-slate-50 rounded text-[10px] font-bold text-slate-600 border border-slate-200">
+                    <Award className="h-3 w-3 text-slate-400" />
+                    {doctor.exp_anios_experiencia} años
+                  </div>
+                ) : null}
+              </div>
               <div className="flex flex-col items-start sm:items-end w-full mt-1">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-outline">Consulta desde</span>
-                <span className="font-bold text-primary text-[20px] md:text-[24px]">{priceLabel}</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Consulta desde</span>
+                <span className="font-bold text-blue-600 text-[20px] md:text-[24px]">{priceLabel}</span>
               </div>
             </div>
             <div className="flex flex-col lg:flex-row w-full sm:w-auto gap-2">
@@ -280,13 +298,13 @@ export function DoctorCard({ data, onVisit, isListView = false }: DoctorCardProp
                   onVisit?.(data);
                   router.push(`/dashboard/${doctor.exp_codigo}`);
                 }}
-                className="px-4 py-2.5 w-full sm:w-auto border border-outline-variant rounded-xl font-bold text-sm hover:bg-surface-container transition-colors text-on-surface text-center whitespace-nowrap"
+                className="px-4 py-2.5 w-full sm:w-auto bg-blue-100 text-blue-600 rounded-xl font-bold text-sm hover:bg-blue-200 transition-colors text-center whitespace-nowrap"
               >
                 Ver Perfil
               </button>
               <button
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/dashboard/agendar/${doctor.exp_codigo}`); }}
-                className="px-4 py-2.5 w-full sm:w-auto bg-secondary text-on-primary rounded-xl font-bold text-sm hover:opacity-90 transition-opacity text-center whitespace-nowrap"
+                className="px-4 py-2.5 w-full sm:w-auto bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-800 transition-colors text-center whitespace-nowrap"
               >
                 Agendar
               </button>
@@ -335,11 +353,11 @@ export function DoctorCard({ data, onVisit, isListView = false }: DoctorCardProp
 
       <div className="flex flex-col flex-1 p-5">
         <div className="text-center mb-4">
-          <h3 className="font-display text-[20px] font-bold text-primary mb-1 leading-tight truncate" title={fullName}>
+          <h3 className="font-display text-[20px] font-bold text-slate-900 mb-1 leading-tight truncate" title={fullName}>
             <HighlightText text={fullName} highlight={searchHighlight} />
           </h3>
           <div className="flex justify-center items-center gap-1.5 h-[20px] relative">
-            <p className="text-secondary font-medium text-sm truncate max-w-[180px]">
+            <p className="text-slate-500 font-medium text-sm truncate max-w-[180px]">
               <HighlightText text={data.matchedSpecialty || specialtyPreview[0] || 'General'} highlight={searchHighlight} />
             </p>
             {specialtyPreview.length > 1 && (
@@ -376,12 +394,36 @@ export function DoctorCard({ data, onVisit, isListView = false }: DoctorCardProp
               <span className="text-xs text-slate-500">({doctor.total_resenas})</span>
             </div>
           )}
+          {doctor.exp_anios_experiencia ? (
+            <div className="flex items-center gap-1 px-1.5 py-0.5 bg-slate-50 rounded text-[10px] font-bold text-slate-600 border border-slate-200">
+              <Award className="h-3 w-3 text-slate-400" />
+              {doctor.exp_anios_experiencia} años
+            </div>
+          ) : null}
+        </div>
+
+        <div className="flex flex-wrap shrink-0 items-center justify-center gap-1.5 mb-4 px-2">
+          {modalityPreview.map((modality, idx) => {
+            const displayModality = modality.toLowerCase() === 'a domicilio' ? 'domicilio' : modality.toLowerCase();
+            return (
+              <div key={idx} className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800/50 px-1.5 py-0.5 rounded-md border border-slate-100 dark:border-slate-800">
+                {getModalityIcon(modality)}
+                <span className="text-[10px] font-medium text-slate-600 dark:text-slate-400 capitalize">{displayModality}</span>
+              </div>
+            );
+          })}
+          {modalityPreview.length === 0 && (
+             <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800/50 px-1.5 py-0.5 rounded-md border border-slate-100 dark:border-slate-800">
+               <MapPin className="text-slate-400 text-[12px] h-[12px] w-[12px]" />
+               <span className="text-[10px] font-medium text-slate-600 dark:text-slate-400">Presencial</span>
+             </div>
+          )}
         </div>
 
         <div className="mt-auto flex flex-col gap-3 pt-4 border-t border-outline-variant/20">
           <div className="flex flex-col items-center mb-2">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-outline">Consulta desde</span>
-            <span className="font-bold text-primary text-xl">{priceLabel}</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Consulta desde</span>
+            <span className="font-bold text-blue-600 text-xl">{priceLabel}</span>
           </div>
           <div className="flex flex-col gap-2">
             <button
@@ -398,13 +440,13 @@ export function DoctorCard({ data, onVisit, isListView = false }: DoctorCardProp
                   if (onVisit) onVisit(data);
                   router.push(`/dashboard/${doctor.exp_codigo}`);
                 }}
-                className="flex-1 bg-primary/10 text-primary py-2.5 rounded-xl text-sm font-bold hover:bg-primary hover:text-white transition-colors border border-transparent"
+                className="flex-1 bg-blue-100 text-blue-600 py-2.5 rounded-xl text-sm font-bold hover:bg-blue-200 transition-colors border border-transparent"
               >
                 Ver Perfil
               </button>
               <button
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/dashboard/agendar/${doctor.exp_codigo}`); }}
-                className="flex-1 bg-secondary text-on-primary py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-opacity"
+                className="flex-1 bg-blue-600 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-blue-800 transition-colors"
               >
                 Agendar
               </button>

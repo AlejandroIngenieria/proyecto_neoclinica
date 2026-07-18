@@ -56,7 +56,16 @@ async function proxyRequest(request: NextRequest, context: RouteContext, method:
     }
   }
 
-  const response = await fetch(targetUrl.toString(), fetchOptions);
+  let response: Response;
+  try {
+    response = await fetch(targetUrl.toString(), fetchOptions);
+  } catch (error: any) {
+    console.error(`[PROXY ERROR] Failed to connect to backend at ${targetUrl.toString()}:`, error.message);
+    return NextResponse.json(
+      { message: 'Error de conexión con el backend', error: error.message },
+      { status: 502 }
+    );
+  }
 
   const responseContentType = response.headers.get('content-type') ?? '';
   const textBody = await response.text();

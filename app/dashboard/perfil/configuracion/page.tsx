@@ -90,11 +90,11 @@ export default function ConfiguracionPage() {
 
   return (
     <div
-      className="px-6 py-8 lg:px-10 animate-in fade-in slide-in-from-bottom-4 duration-500"
+      className="px-2 py-4 sm:px-6 sm:py-8 lg:px-10 animate-in fade-in slide-in-from-bottom-4 duration-500"
     >
       {/* Sticky Header */}
       <div className="sticky top-0 z-30 -mt-4 md:-mt-8 -mx-4 md:-mx-8 px-4 md:px-8 pt-4 md:pt-8 pb-4 mb-8 rounded-3xl bg-white/10 backdrop-blur-lg">
-        <h1 className="text-3xl md:text-5xl font-black tracking-tight text-slate-900">Configuración</h1>
+        <h1 className="text-2xl sm:text-3xl md:text-5xl font-black tracking-tight text-slate-900">Configuración</h1>
       </div>
 
       {/* Settings sections */}
@@ -108,8 +108,8 @@ export default function ConfiguracionPage() {
             className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white/60 backdrop-blur-xl shadow-xl shadow-slate-900/5"
           >
             {/* Section header */}
-            <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+            <div className="flex items-center gap-3 border-b border-slate-100 px-4 sm:px-5 py-4">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600 shrink-0">
                 <section.icon className="h-[18px] w-[18px]" />
               </div>
               <h2 className="text-sm font-bold text-slate-900">{section.title}</h2>
@@ -118,7 +118,7 @@ export default function ConfiguracionPage() {
             {/* Items */}
             <div className="divide-y divide-slate-100">
               {section.items.map((item) => (
-                <div key={item.label} className="flex items-center justify-between gap-4 px-5 py-4">
+                <div key={item.label} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-5 py-4">
                   <div className="flex items-center gap-3">
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-500">
                       <item.icon className="h-[18px] w-[18px]" />
@@ -128,7 +128,9 @@ export default function ConfiguracionPage() {
                       <p className="text-xs text-slate-500">{item.description}</p>
                     </div>
                   </div>
-                  {item.action}
+                  <div className="self-end sm:self-auto shrink-0">
+                    {item.action}
+                  </div>
                 </div>
               ))}
             </div>

@@ -305,7 +305,7 @@ function EspecialidadesContent() {
     <div className="min-h-screen text-slate-900 pb-20">
       <Navbar subtitle="Especialidades médicas" navLinks={NAV_LINKS} />
 
-      <div className="mx-auto w-[90%] max-w-[1800px] mt-8">
+      <div className="mx-auto w-full px-4 sm:px-6 lg:w-[90%] lg:px-0 max-w-[1800px] mt-6 sm:mt-8">
         
         {/* Barra superior de filtros e inputs */}
         <div className="grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] lg:items-end">

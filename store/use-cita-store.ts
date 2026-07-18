@@ -23,8 +23,12 @@ interface CitaState {
   pacienteSeleccionado: PacienteSeleccionDto | null;
   grupoId: string | null;
   motivo: string;
+  direccionDomicilio: string;
+  referenciasDomicilio: string;
   
   archivos: File[];
+  tipoPagoId: number | null;
+  billeteraItemId: string | null;
   
   // Acciones
   setStep: (step: CitaStep) => void;
@@ -42,6 +46,8 @@ interface CitaState {
   setPaciente: (paciente: PacienteSeleccionDto | null) => void;
   setGrupo: (grupoId: string | null) => void;
   setMotivo: (motivo: string) => void;
+  setDireccionDomicilio: (direccion: string) => void;
+  setReferenciasDomicilio: (referencias: string) => void;
   
   creandoNuevoGrupo: boolean;
   nuevoGrupoTema: string;
@@ -49,6 +55,8 @@ interface CitaState {
   setNuevoGrupoTema: (val: string) => void;
 
   setArchivos: (archivos: File[]) => void;
+  setTipoPagoId: (id: number | null) => void;
+  setBilleteraItemId: (id: string | null) => void;
   
   reset: () => void;
 }
@@ -68,11 +76,15 @@ const initialState = {
   pacienteSeleccionado: null,
   grupoId: null,
   motivo: '',
+  direccionDomicilio: '',
+  referenciasDomicilio: '',
   
   creandoNuevoGrupo: false,
   nuevoGrupoTema: '',
 
   archivos: [],
+  tipoPagoId: null,
+  billeteraItemId: null,
 };
 
 export const useCitaStore = create<CitaState>((set, get) => ({
@@ -106,11 +118,15 @@ export const useCitaStore = create<CitaState>((set, get) => ({
   setPaciente: (paciente) => set({ pacienteSeleccionado: paciente }),
   setGrupo: (grupoId) => set({ grupoId, creandoNuevoGrupo: false, nuevoGrupoTema: '' }),
   setMotivo: (motivo) => set({ motivo }),
+  setDireccionDomicilio: (direccion) => set({ direccionDomicilio: direccion }),
+  setReferenciasDomicilio: (referencias) => set({ referenciasDomicilio: referencias }),
   
   setCreandoNuevoGrupo: (val) => set({ creandoNuevoGrupo: val, grupoId: val ? null : get().grupoId }),
   setNuevoGrupoTema: (val) => set({ nuevoGrupoTema: val }),
 
   setArchivos: (archivos) => set({ archivos }),
+  setTipoPagoId: (id) => set({ tipoPagoId: id, billeteraItemId: null }),
+  setBilleteraItemId: (id) => set({ billeteraItemId: id }),
   
   reset: () => set(initialState),
 }));

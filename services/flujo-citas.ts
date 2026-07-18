@@ -1,14 +1,19 @@
 import { expedientesApi, getAuthHeaders } from '@/lib/api-client';
-import type { 
-  ModalidadDto, 
-  ClinicaCitaDto, 
-  AreaDomicilioDto, 
-  HorarioCitaDto, 
-  PacienteSeleccionDto, 
-  GrupoCitaDto, 
+import type {
+  ModalidadDto,
+  ClinicaCitaDto,
+  AreaDomicilioDto,
+  HorarioCitaDto,
+  PacienteSeleccionDto,
+  GrupoCitaDto,
   CrearCitaRequest,
   CitaListDto,
-  UpdateCitaRequest
+  UpdateCitaRequest,
+  MetodoPagoDto,
+  PagarCitaRequest,
+  BilleteraMetodoDto,
+  GuardarSeguroRequest,
+  GuardarTarjetaRequest
 } from '@/types/citas';
 
 export async function fetchModalidades(token: string, codMedico: string): Promise<ModalidadDto[]> {
@@ -38,6 +43,14 @@ export async function fetchAreasDomicilio(token: string, codMedico: string): Pro
 export async function fetchHorarios(token: string, mclCodigo: number): Promise<HorarioCitaDto[]> {
   const { data } = await expedientesApi.get<HorarioCitaDto[]>(
     `/api/flujo-citas/clinicas/${mclCodigo}/horarios`,
+    getAuthHeaders(token)
+  );
+  return Array.isArray(data) ? data : [];
+}
+
+export async function fetchHorasOcupadas(token: string, codMedico: string, fecha: string): Promise<string[]> {
+  const { data } = await expedientesApi.get<string[]>(
+    `/api/flujo-citas/medicos/${codMedico}/horas-ocupadas?fecha=${fecha}`,
     getAuthHeaders(token)
   );
   return Array.isArray(data) ? data : [];
@@ -78,9 +91,9 @@ export async function createCita(token: string, request: CrearCitaRequest): Prom
 }
 
 export async function uploadDocumentoCita(
-  token: string, 
-  codPaciente: string, 
-  codCita: string, 
+  token: string,
+  codPaciente: string,
+  codCita: string,
   file: File
 ): Promise<void> {
   const formData = new FormData();
@@ -104,9 +117,6 @@ export async function uploadDocumentoCita(
   );
 }
 export async function fetchCitasPaciente(token: string, codPaciente: string): Promise<CitaListDto[]> {
-  // Using the Next.js API route as a proxy
-  // Alternatively, just hit the backend directly if expedientesApi is configured for it.
-  // We'll use expedientesApi which prepends the backend URL
   const { data } = await expedientesApi.get<CitaListDto[]>(`/api/flujo-citas?codPaciente=${codPaciente}`, getAuthHeaders(token));
   return data;
 }
@@ -117,4 +127,44 @@ export async function cancelarCita(token: string, citaId: string): Promise<void>
 
 export async function updateCita(token: string, citaId: string, payload: UpdateCitaRequest): Promise<void> {
   await expedientesApi.put(`/api/flujo-citas/${citaId}`, payload, getAuthHeaders(token));
+}
+
+export async function fetchMetodosPago(token: string, codMedico: string): Promise<MetodoPagoDto[]> {
+  const { data } = await expedientesApi.get<MetodoPagoDto[]>(
+    `/api/flujo-citas/medico/${codMedico}/metodos-pago`,
+    getAuthHeaders(token)
+  );
+  return Array.isArray(data) ? data : [];
+}
+
+export async function pagarCita(token: string, citaId: string, request: PagarCitaRequest): Promise<void> {
+  await expedientesApi.put(
+    `/api/flujo-citas/cita/${citaId}/pago`,
+    request,
+    getAuthHeaders(token)
+  );
+}
+
+export async function fetchBilletera(token: string, codPac: string): Promise<BilleteraMetodoDto[]> {
+  const { data } = await expedientesApi.get<BilleteraMetodoDto[]>(
+    `/api/flujo-citas/paciente/${codPac}/billetera`,
+    getAuthHeaders(token)
+  );
+  return Array.isArray(data) ? data : [];
+}
+
+export async function guardarSeguro(token: string, codPac: string, request: GuardarSeguroRequest): Promise<void> {
+  await expedientesApi.post(
+    `/api/flujo-citas/paciente/${codPac}/seguro`,
+    request,
+    getAuthHeaders(token)
+  );
+}
+
+export async function guardarTarjeta(token: string, codPac: string, request: GuardarTarjetaRequest): Promise<void> {
+  await expedientesApi.post(
+    `/api/flujo-citas/paciente/${codPac}/tarjeta`,
+    request,
+    getAuthHeaders(token)
+  );
 }

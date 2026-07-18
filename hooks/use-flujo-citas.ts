@@ -7,6 +7,7 @@ import {
   fetchClinicas,
   fetchAreasDomicilio,
   fetchHorarios,
+  fetchHorasOcupadas,
   fetchPacientesSeleccion,
   fetchGruposCita,
   createGrupo,
@@ -14,9 +15,18 @@ import {
   uploadDocumentoCita,
   fetchCitasPaciente,
   cancelarCita,
-  updateCita
+  updateCita,
+  fetchMetodosPago,
+  pagarCita,
+  fetchBilletera,
+  guardarSeguro,
+  guardarTarjeta
 } from '@/services/flujo-citas';
-import type { CrearCitaRequest, CitaListDto, UpdateCitaRequest, GrupoCitaDto } from '@/types/citas';
+import type {
+  CrearCitaRequest, CitaListDto, UpdateCitaRequest,
+  GrupoCitaDto, MetodoPagoDto, PagarCitaRequest,
+  BilleteraMetodoDto, GuardarSeguroRequest, GuardarTarjetaRequest
+} from '@/types/citas';
 
 function useAuthInfo() {
   const { data: session } = useSession();
@@ -64,6 +74,16 @@ export function useHorarios(mclCodigo: number | null) {
   });
 }
 
+export function useHorasOcupadas(codMedico: string | null, fecha: string | null) {
+  const { token, isAuthenticated } = useAuthInfo();
+  return useQuery({
+    queryKey: ['horasOcupadas', codMedico, fecha],
+    queryFn: () => fetchHorasOcupadas(token!, codMedico!, fecha!),
+    enabled: isAuthenticated && !!codMedico && !!fecha,
+    staleTime: 0,
+  });
+}
+
 export function usePacientesSeleccion() {
   const { token, isAuthenticated } = useAuthInfo();
   return useQuery({
@@ -96,7 +116,7 @@ export function useGruposMap(codPaciente: string | null, medicosUnicos: string[]
       const results = await Promise.all(promises);
       const map = new Map<string, string>();
       results.flat().forEach(g => {
-        map.set(g.grcCodigo.toLowerCase(), g.grcTema);
+        map.set(g.grupoId.toLowerCase(), g.titulo);
       });
       return map;
     },
@@ -114,6 +134,22 @@ export function useCitasPaciente(codPaciente: string | null) {
   });
 }
 
+export function useAllCitasPacientes(codigosPacientes: string[]) {
+  const { token, isAuthenticated } = useAuthInfo();
+  return useQuery<CitaListDto[]>({
+    queryKey: ['citasTodosPacientes', codigosPacientes],
+    queryFn: async () => {
+      const promesas = codigosPacientes.map(cod => fetchCitasPaciente(token!, cod));
+      const resultados = await Promise.all(promesas);
+      
+      const flattened = resultados.flat();
+      const unique = Array.from(new Map(flattened.map(item => [item.ctaCodigo, item])).values());
+      return unique;
+    },
+    enabled: isAuthenticated && codigosPacientes.length > 0,
+  });
+}
+
 export function useCreateGrupo() {
   const { token } = useAuthInfo();
   return useMutation({
@@ -124,8 +160,13 @@ export function useCreateGrupo() {
 
 export function useCreateCita() {
   const { token } = useAuthInfo();
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (request: CrearCitaRequest) => createCita(token!, request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['citasPaciente'] });
+      queryClient.invalidateQueries({ queryKey: ['citasTodosPacientes'] });
+    }
   });
 }
 
@@ -144,6 +185,7 @@ export function useCancelarCita() {
     mutationFn: (citaId: string) => cancelarCita(token!, citaId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['citasPaciente'] });
+      queryClient.invalidateQueries({ queryKey: ['citasTodosPacientes'] });
     },
   });
 }
@@ -155,6 +197,61 @@ export function useUpdateCita() {
     mutationFn: (data: { citaId: string; payload: UpdateCitaRequest }) => updateCita(token!, data.citaId, data.payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['citasPaciente'] });
+      queryClient.invalidateQueries({ queryKey: ['citasTodosPacientes'] });
     },
+  });
+}
+
+export function useMetodosPago(codMedico: string | null) {
+  const { token, isAuthenticated } = useAuthInfo();
+  return useQuery<MetodoPagoDto[]>({
+    queryKey: ['metodosPago', codMedico],
+    queryFn: () => fetchMetodosPago(token!, codMedico!),
+    enabled: isAuthenticated && !!codMedico,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function usePagarCita() {
+  const { token } = useAuthInfo();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { citaId: string; payload: PagarCitaRequest }) => pagarCita(token!, data.citaId, data.payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['citasPaciente'] });
+      queryClient.invalidateQueries({ queryKey: ['citasTodosPacientes'] });
+    }
+  });
+}
+
+export function useBilletera(codPac: string | null) {
+  const { token, isAuthenticated } = useAuthInfo();
+  return useQuery<BilleteraMetodoDto[]>({
+    queryKey: ['billetera', codPac],
+    queryFn: () => fetchBilletera(token!, codPac!),
+    enabled: isAuthenticated && !!codPac,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useGuardarSeguro() {
+  const { token } = useAuthInfo();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { codPac: string; payload: GuardarSeguroRequest }) => guardarSeguro(token!, data.codPac, data.payload),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['billetera', variables.codPac] });
+    }
+  });
+}
+
+export function useGuardarTarjeta() {
+  const { token } = useAuthInfo();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { codPac: string; payload: GuardarTarjetaRequest }) => guardarTarjeta(token!, data.codPac, data.payload),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['billetera', variables.codPac] });
+    }
   });
 }

@@ -637,8 +637,8 @@ function PerfilContent() {
           
           {/* Profile Header Card (Sticky) */}
           <div className="sticky top-0 z-30 -mt-4 md:-mt-8 -mx-4 md:-mx-8 px-4 md:px-8 pt-4 md:pt-8 pb-4 mb-8 rounded-3xl bg-white/10 backdrop-blur-lg">
-            <div className="flex flex-col md:flex-row items-end gap-6 max-w-5xl mx-auto">
-            <div className="relative">
+            <div className="flex flex-col items-center text-center sm:items-start sm:text-left md:flex-row md:items-end gap-4 sm:gap-6 max-w-5xl mx-auto">
+            <div className="relative shrink-0">
               <div className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-slate-200 bg-slate-100 flex items-center justify-center text-blue-600 font-bold text-3xl md:text-5xl shadow-lg overflow-hidden">
                 {titular.pac_foto_perfil_url ? (
                   <img
@@ -652,19 +652,19 @@ function PerfilContent() {
               </div>
             </div>
             <div className="flex-1 pb-2">
-              <div className="flex flex-col gap-2 mb-1">
-                <h1 className="text-3xl md:text-4xl font-black tracking-tight text-slate-900">{fullName}</h1>
+              <div className="flex flex-col items-center sm:items-start gap-2 mb-1">
+                <h1 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight text-slate-900">{fullName}</h1>
                 <div>
-                  <span className="inline-block bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-[16px] font-bold uppercase tracking-wider">
+                  <span className="inline-block bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider">
                     TITULAR DE LA CUENTA
                   </span>
                 </div>
               </div>
             </div>
-            <div className="pb-2">
+            <div className="pb-2 w-full sm:w-auto flex justify-center sm:justify-start">
               <button
                 onClick={() => setIsEditing(true)}
-                className="flex items-center gap-2 bg-slate-900 text-white py-2.5 px-6 rounded-xl hover:bg-slate-800 transition-colors font-semibold shadow-md active:scale-95"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-slate-900 text-white py-2.5 px-6 rounded-xl hover:bg-slate-800 transition-colors font-semibold shadow-md active:scale-95 text-sm"
               >
                 <Edit3 className="h-4 w-4" />
                 Editar Perfil
@@ -710,14 +710,14 @@ function PerfilContent() {
             <div className="md:col-span-7 space-y-6">
               
               {/* Personal Info Card */}
-              <div className="bg-white p-6 md:p-8 rounded-3xl border border-slate-200 shadow-sm transition-transform hover:scale-[1.01] duration-300">
-                <div className="flex items-center gap-3 mb-8">
-                  <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+              <div className="bg-white p-5 sm:p-6 md:p-8 rounded-3xl border border-slate-200 shadow-sm transition-transform hover:scale-[1.01] duration-300">
+                <div className="flex items-center gap-3 mb-6 sm:mb-8">
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
                     <User className="h-5 w-5" />
                   </div>
-                  <h2 className="text-lg font-bold text-slate-900">Información Personal</h2>
+                  <h2 className="text-base sm:text-lg font-bold text-slate-900">Información Personal</h2>
                 </div>
-                <div className="grid grid-cols-2 gap-y-8 gap-x-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-6 sm:gap-y-8 gap-x-4">
                   <div className="space-y-1">
                     <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400">Nombre Completo</p>
                     <p className="text-sm font-semibold text-slate-900">{fullName}</p>

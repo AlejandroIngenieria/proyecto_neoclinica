@@ -9,11 +9,11 @@ type AnimatedModalProps = {
   onClose: () => void;
   children: ReactNode;
   /** Título que aparece en el header del modal */
-  title?: string;
+  title?: ReactNode;
   /** Subtítulo debajo del título */
-  subtitle?: string;
+  subtitle?: ReactNode;
   /** Texto del label superior */
-  label?: string;
+  label?: ReactNode;
 };
 
 export function AnimatedModal({ isOpen, onClose, children, title, subtitle, label }: AnimatedModalProps) {

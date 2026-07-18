@@ -3,9 +3,11 @@
 import Image from 'next/image';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { CalendarDays, Clock, MapPin, Video, Home, Edit2, XCircle, Loader2 } from 'lucide-react';
+import { CalendarDays, Clock, MapPin, Video, Home, Edit2, XCircle, Loader2, MoreVertical, FileText } from 'lucide-react';
 import type { CitaListDto } from '@/types/citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
+import { useState, useRef, useEffect } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 
 type CitaCardProps = {
   cita: CitaListDto;
@@ -14,9 +16,10 @@ type CitaCardProps = {
   isPast?: boolean;
   bottomActions?: React.ReactNode;
   size?: 'normal' | 'small';
+  layout?: 'card' | 'row';
 };
 
-export function CitaCard({ cita, onModify, onCancel, isPast = false, bottomActions, size = 'normal' }: CitaCardProps) {
+export function CitaCard({ cita, onModify, onCancel, isPast = false, bottomActions, size = 'normal', layout = 'card' }: CitaCardProps) {
   const { data: doctor, isLoading } = useDoctorByCode(cita.ctaCoddoc);
 
   const getModalityIcon = (tipo: string) => {
@@ -50,6 +53,200 @@ export function CitaCard({ cita, onModify, onCancel, isPast = false, bottomActio
 
   const canModify = !isPast && ['programada', 'confirmada', 'pospuesta'].includes(cita.ctaEstado);
 
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  if (layout === 'row') {
+    return (
+      <div className="group relative flex flex-col sm:flex-row bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-sky-200 transition-all overflow-visible">
+        {/* Franja de estado */}
+        <div className={`w-1.5 sm:w-2 shrink-0 rounded-l-2xl ${getEstadoColor(cita.ctaEstado).split(' ')[0]}`} />
+        
+        <div className="flex flex-1 flex-col sm:flex-row items-start sm:items-center p-4 gap-4 sm:gap-6">
+          
+          {/* Col 1: Cuándo */}
+          <div className="flex flex-col min-w-[130px] shrink-0">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Fecha y Hora</p>
+            <p className="text-sm font-black text-slate-900 capitalize leading-tight">
+              {format(dateObj, "EEE d MMM", { locale: es })}
+            </p>
+            <p className="text-sm font-bold text-sky-600">
+              {cita.ctaHora.slice(0, 5)}
+            </p>
+          </div>
+
+          {/* Col 2: Quién */}
+          <div className="flex items-center gap-3 flex-1 min-w-[200px]">
+            <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 shrink-0 overflow-hidden relative flex items-center justify-center">
+              {doctor?.exp_foto_perfil ? (
+                <Image src={doctor.exp_foto_perfil} alt={cita.medicoNombre} fill sizes="40px" className="object-cover" />
+              ) : (
+                <span className="text-xs font-black text-slate-500">{initials}</span>
+              )}
+            </div>
+            <div className="flex flex-col">
+              <p className="text-sm font-bold text-slate-900 leading-tight">Dr. {cita.medicoNombre.split(' ').slice(0,2).join(' ')}</p>
+              <p className="text-xs font-medium text-slate-500 truncate max-w-[150px]">{cita.medicoEspecialidad}</p>
+            </div>
+          </div>
+
+          {/* Col 3: Dónde */}
+          <div className="flex items-center gap-2.5 flex-1 min-w-[180px]">
+            <div className="w-8 h-8 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center shrink-0">
+              {getModalityIcon(cita.ctaModalidad)}
+            </div>
+            <div className="flex flex-col">
+              <p className="text-xs font-bold text-slate-700 capitalize leading-tight">{cita.ctaModalidad}</p>
+              {cita.ctaModalidad === 'presencial' && cita.clinicaNombre && (
+                <p className="text-[11px] font-medium text-slate-500 truncate max-w-[150px]">{cita.clinicaNombre}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Col 4: Estado y Acciones */}
+          <div className="flex items-center gap-3 sm:ml-auto w-full sm:w-auto justify-between sm:justify-end mt-2 sm:mt-0 pt-3 sm:pt-0 border-t sm:border-0 border-slate-100">
+            <span className={`inline-flex px-2 py-1 text-[10px] font-black uppercase tracking-wider rounded-lg ${getEstadoColor(cita.ctaEstado)}`}>
+              {cita.ctaEstado}
+            </span>
+            
+            <div className="relative flex items-center gap-1" ref={menuRef}>
+              {canModify && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
+                  className="p-2 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-xl transition-colors"
+                >
+                  <MoreVertical className="w-5 h-5" />
+                </button>
+              )}
+              {bottomActions && (
+                <div className="flex gap-2">
+                  {bottomActions}
+                </div>
+              )}
+              
+              <AnimatePresence>
+                {menuOpen && canModify && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden z-20 py-2"
+                  >
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onModify(cita); }}
+                      className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-700 flex items-center gap-3 transition-colors"
+                    >
+                      <Edit2 className="w-4 h-4" /> Modificar cita
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onCancel(cita); }}
+                      className="w-full text-left px-4 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-3 transition-colors"
+                    >
+                      <XCircle className="w-4 h-4" /> Cancelar cita
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (layout === 'series-child') {
+    return (
+      <div className="group relative flex flex-col sm:flex-row bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow hover:border-sky-200 transition-all overflow-visible py-3 px-4 w-full">
+        <div className="flex flex-1 flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6">
+          
+          {/* Col 1: Cuándo */}
+          <div className="flex flex-col min-w-[120px] shrink-0">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Fecha y Hora</p>
+            <p className="text-sm font-black text-slate-900 capitalize leading-tight">
+              {format(dateObj, "EEE d MMM", { locale: es })}
+            </p>
+            <p className="text-xs font-bold text-sky-600">
+              {cita.ctaHora.slice(0, 5)}
+            </p>
+          </div>
+
+          {/* Col 2: Dónde (Modalidad) */}
+          <div className="flex items-center gap-2.5 flex-1 min-w-[150px]">
+            <div className="w-7 h-7 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center shrink-0">
+              {getModalityIcon(cita.ctaModalidad)}
+            </div>
+            <div className="flex flex-col">
+              <p className="text-xs font-bold text-slate-700 capitalize leading-tight">{cita.ctaModalidad}</p>
+              {cita.ctaModalidad === 'presencial' && cita.clinicaNombre && (
+                <p className="text-[10px] font-medium text-slate-500 truncate max-w-[130px]">{cita.clinicaNombre}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Col 3: Estado y Acciones */}
+          <div className="flex items-center gap-3 sm:ml-auto w-full sm:w-auto justify-between sm:justify-end mt-2 sm:mt-0 pt-2 sm:pt-0 border-t sm:border-0 border-slate-100">
+            <span className={`inline-flex px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-md ${getEstadoColor(cita.ctaEstado)}`}>
+              {cita.ctaEstado}
+            </span>
+            
+            <div className="relative flex items-center gap-1" ref={menuRef}>
+              {canModify && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
+                  className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition-colors"
+                >
+                  <MoreVertical className="w-4 h-4" />
+                </button>
+              )}
+              {bottomActions && (
+                <div className="flex gap-2">
+                  {bottomActions}
+                </div>
+              )}
+              
+              <AnimatePresence>
+                {menuOpen && canModify && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute right-0 top-full mt-1 w-40 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden z-20 py-1"
+                  >
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onModify(cita); }}
+                      className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-700 flex items-center gap-2 transition-colors"
+                    >
+                      <Edit2 className="w-3 h-3" /> Modificar
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onCancel(cita); }}
+                      className="w-full text-left px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-2 transition-colors"
+                    >
+                      <XCircle className="w-3 h-3" /> Cancelar
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // === CARD LAYOUT (Original) ===
   return (
     <div className={`group relative block overflow-hidden rounded-3xl bg-white shadow-xl shadow-slate-900/5 transition-all duration-300 hover:shadow-2xl border border-slate-100 ${
       size === 'small' ? 'opacity-95 hover:opacity-100' : ''

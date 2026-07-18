@@ -137,7 +137,11 @@ function resolveDoctor(doctor: DoctorResponse): ResolvedDoctor {
     const specialty = doctor.exp_profesion || 'Especialidad médica';
     const locationLabel = [doctor.pais_nacimiento, doctor.nacionalidad].filter(Boolean).join(' · ') || 'Ubicación no registrada';
     const specialtyPreview = doctor.especialidades.map((item) => item.especialidad).filter(Boolean);
-    const modalityPreview = doctor.modalidades.map((item) => item.modalidad).filter(Boolean).slice(0, 2);
+    const modalitySet = new Set(doctor.modalidades.map((item) => item.modalidad).filter(Boolean));
+    if (doctor.atencion_domicilio && doctor.atencion_domicilio.length > 0) {
+        modalitySet.add('Domicilio');
+    }
+    const modalityPreview = Array.from(modalitySet).slice(0, 3);
     const languagePreview = doctor.idiomas.map((item) => item.idioma).filter(Boolean).slice(0, 2);
     const locationPreview = Array.from(new Set([
         ...doctor.clinicas.map(c => [c.cli_descripcion, c.cli_zona ? `Zona ${c.cli_zona}` : ''].filter(Boolean).join(', ')).filter(Boolean),
@@ -336,19 +340,7 @@ function DashboardContent() {
         }
     };
 
-    const toggleSpecialty = (id: string) => {
-        if (id === 'all') {
-            setSpecialtyParam('all');
-        } else {
-            let next = activeSpecialties.filter(s => s !== 'all');
-            if (next.includes(id)) {
-                next = next.filter(s => s !== id);
-            } else {
-                next.push(id);
-            }
-            setSpecialtyParam(next.length === 0 ? 'all' : next.join(','));
-        }
-    };
+
 
     const [showOnlyActive, setShowOnlyActive] = useParamBoolean('active');
     const [showOnlyFavorites, setShowOnlyFavorites] = useParamBoolean('favorites');
@@ -501,6 +493,9 @@ function DashboardContent() {
             if (showOnlyFavorites && !isFavorite) return null;
             
             const doctorModalities = doctor.doctor.modalidades.map((item) => normalizeText(item.modalidad));
+            if (doctor.doctor.atencion_domicilio && doctor.doctor.atencion_domicilio.length > 0) {
+                doctorModalities.push('domicilio');
+            }
             let matchesModality = true;
             if (!activeModalities.includes('all')) {
                 matchesModality = activeModalities.some(m => {
@@ -533,9 +528,9 @@ function DashboardContent() {
                 locationPreview: doctor.locationPreview,
                 matchedSpecialty,
                 matchedLocation,
-                searchHighlight: deferredSearchTerm.trim() || undefined,
+                searchHighlight: [...searchTags, deferredSearchTerm.trim()].filter(Boolean),
             };
-        }).filter(Boolean) as (typeof resolvedDoctors[0] & { matchedSpecialty?: string, matchedLocation?: string, searchHighlight?: string })[];
+        }).filter(Boolean) as (typeof resolvedDoctors[0] & { matchedSpecialty?: string, matchedLocation?: string, searchHighlight?: string[] })[];
 
         return filteredDoctors.sort((leftDoctor, rightDoctor) => {
             if (sortBy === 'name-desc') {
@@ -639,26 +634,34 @@ function DashboardContent() {
         [resolvedDoctors],
     );
 
+    const toggleSpecialty = (id: string) => {
+        if (id === 'all') {
+            setSpecialtyParam('all');
+            setSearchTags(prev => prev.filter(tag => !specialtyPicks.includes(tag)));
+        } else {
+            let next = activeSpecialties.filter(s => s !== 'all');
+            if (next.includes(id)) {
+                next = next.filter(s => s !== id);
+                setSearchTags(prev => prev.filter(tag => tag !== id));
+            } else {
+                next.push(id);
+                setSearchTags(prev => [...prev, id]);
+            }
+            setSpecialtyParam(next.length === 0 ? 'all' : next.join(','));
+        }
+    };
+
     if (status === 'loading' || (status === 'authenticated' && isLoading)) {
         return <NeoLoader />;
     }
 
     return (
-        <main className="min-h-screen text-slate-900">
-            <Navbar
-                subtitle="Directorio médico"
-                navLinks={[
-                    { href: '/dashboard', label: 'Directorio' },
-                    { href: '/dashboard/citas', label: 'Citas' },
-                    { href: '/dashboard/medicamentos', label: 'Medicamentos' },
-                ]}
-            />
-
+        <main className="min-h-screen text-slate-900 pb-16">
             <div className="mx-auto w-[90%] max-w-[1800px] mt-8 flex flex-col gap-8">
                 {/* 1. Hero Header */}
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
                     <div>
-                        <h1 className="text-3xl md:text-4xl font-display font-black text-primary leading-tight">Encuentra a tu especialista</h1>
+                        <h1 className="text-3xl md:text-4xl font-display font-black text-slate-900 leading-tight">Encuentra a tu especialista</h1>
                         <p className="text-on-surface-variant text-body-md mt-2">Más de 200 profesionales de la salud listos para atenderte hoy.</p>
                     </div>
                     <div className="flex items-center gap-4">
@@ -742,7 +745,14 @@ function DashboardContent() {
                                     {tag}
                                     <button 
                                         type="button" 
-                                        onClick={() => setSearchTags(tags => tags.filter((_, i) => i !== idx))}
+                                        onClick={() => {
+                                            const tagToRemove = tag;
+                                            setSearchTags(tags => tags.filter((_, i) => i !== idx));
+                                            if (specialtyPicks.includes(tagToRemove)) {
+                                                let next = activeSpecialties.filter(s => s !== 'all' && s !== tagToRemove);
+                                                setSpecialtyParam(next.length === 0 ? 'all' : next.join(','));
+                                            }
+                                        }}
                                         className="hover:bg-primary/20 rounded-full p-0.5"
                                     >
                                         <X className="h-3 w-3" />
@@ -762,12 +772,23 @@ function DashboardContent() {
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter' && searchTerm.trim()) {
                                     e.preventDefault();
-                                    if (!searchTags.includes(searchTerm.trim())) {
-                                        setSearchTags(prev => [...prev, searchTerm.trim()]);
+                                    const term = searchTerm.trim();
+                                    if (!searchTags.includes(term)) {
+                                        setSearchTags(prev => [...prev, term]);
+                                        if (specialtyPicks.includes(term)) {
+                                            let next = activeSpecialties.filter(s => s !== 'all');
+                                            if (!next.includes(term)) next.push(term);
+                                            setSpecialtyParam(next.join(','));
+                                        }
                                     }
                                     setSearchTerm('');
                                 } else if (e.key === 'Backspace' && !searchTerm && searchTags.length > 0) {
+                                    const tagToRemove = searchTags[searchTags.length - 1];
                                     setSearchTags(prev => prev.slice(0, -1));
+                                    if (specialtyPicks.includes(tagToRemove)) {
+                                        let next = activeSpecialties.filter(s => s !== 'all' && s !== tagToRemove);
+                                        setSpecialtyParam(next.length === 0 ? 'all' : next.join(','));
+                                    }
                                 }
                             }}
                             placeholder={searchTags.length === 0 ? "Buscar por doctor, especialidad o ubicación..." : "Añadir filtro..."}
@@ -809,7 +830,13 @@ function DashboardContent() {
                                             type="button"
                                             onClick={() => {
                                                 if (!searchTags.includes(suggestion.label)) {
-                                                    setSearchTags(prev => [...prev, suggestion.label]);
+                                                    const term = suggestion.label;
+                                                    setSearchTags(prev => [...prev, term]);
+                                                    if (suggestion.type === 'specialty' || specialtyPicks.includes(term)) {
+                                                        let next = activeSpecialties.filter(s => s !== 'all');
+                                                        if (!next.includes(term)) next.push(term);
+                                                        setSpecialtyParam(next.join(','));
+                                                    }
                                                 }
                                                 setSearchTerm('');
                                                 setIsSearchFocused(false);
@@ -883,8 +910,8 @@ function DashboardContent() {
                             <ChevronDown className={`w-4 h-4 ml-2 transition-transform ${isAdvancedFiltersOpen ? 'rotate-180' : ''}`} />
                         </button>
                         {isAdvancedFiltersOpen && (
-                            <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-[540px] rounded-3xl border border-outline-variant/20 bg-surface-container-lowest p-6 shadow-[0_12px_48px_rgba(0,0,0,0.12)]">
-                                <div className="flex gap-8 max-h-[60vh] overflow-y-auto pr-2" style={{scrollbarWidth: 'thin'}}>
+                            <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-[calc(100vw-2rem)] sm:w-[540px] max-w-lg rounded-3xl border border-outline-variant/20 bg-surface-container-lowest p-4 sm:p-6 shadow-[0_12px_48px_rgba(0,0,0,0.12)]">
+                                <div className="flex flex-col sm:flex-row gap-4 sm:gap-8 max-h-[60vh] overflow-y-auto pr-2" style={{scrollbarWidth: 'thin'}}>
                                     
                                     {/* Columna Idiomas */}
                                     <div className="flex-1">
@@ -949,12 +976,12 @@ function DashboardContent() {
                             <div className="relative group">
                                 <button 
                                     onClick={() => setActiveSidebarFilter(activeSidebarFilter === 'especialidad' ? null : 'especialidad')}
-                                    className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${activeSidebarFilter === 'especialidad' ? 'bg-[#0d9488]/10 text-[#0d9488]' : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-[#0d9488]'}`}
+                                    className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${activeSidebarFilter === 'especialidad' ? 'bg-[#2563EB]/10 text-[#2563EB]' : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-[#2563EB]'}`}
                                 >
                                     <Filter className="w-5 h-5" />
                                 </button>
                                 <div className="absolute left-8 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-surface/95 backdrop-blur-sm border border-outline-variant/20 shadow-[0_8px_24px_rgba(13,148,136,0.15)] text-on-surface text-sm font-bold rounded-xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:translate-x-2 transition-all duration-300 whitespace-nowrap z-50 flex items-center gap-2">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-[#0d9488]"></div>
+                                    <div className="w-1.5 h-1.5 rounded-full bg-[#2563EB]"></div>
                                     Especialidad
                                 </div>
                             </div>
@@ -1014,28 +1041,21 @@ function DashboardContent() {
                                 {activeSidebarFilter === 'especialidad' && (
                                     <div className="animate-in fade-in duration-300">
                                         <div className="flex justify-between items-center mb-4">
-                                            <h3 className="font-semibold text-lg text-[#0d9488]">Especialidad</h3>
+                                            <h3 className="font-semibold text-lg text-[#2563EB]">Especialidad</h3>
                                             <button onClick={() => setActiveSidebarFilter(null)} className="p-1 hover:bg-surface-container rounded-lg text-outline"><X className="w-4 h-4"/></button>
                                         </div>
-                                        <input 
-                                            type="text" 
-                                            placeholder="Buscar especialidad..." 
-                                            value={specialtySearch}
-                                            onChange={(e) => setSpecialtySearch(e.target.value)}
-                                            className="w-full bg-surface-container-lowest border border-outline-variant rounded-xl px-3 py-2 text-sm outline-none focus:border-primary mb-3"
-                                        />
-                                        <div className="flex flex-col max-h-60 overflow-y-auto pr-2 gap-0.5" style={{scrollbarWidth: 'thin'}}>
+                                        <div className="flex flex-col max-h-[320px] overflow-y-auto pr-2 gap-0.5" style={{scrollbarWidth: 'thin'}}>
                                             <button 
                                                 onClick={() => toggleSpecialty('all')}
-                                                className={`flex items-center w-full text-left px-3 py-2.5 rounded-xl transition-all ${activeSpecialties.includes('all') ? 'bg-[#0d9488]/10 border border-[#0d9488]/30 text-[#0d9488] font-bold' : 'border border-transparent text-on-surface-variant hover:bg-surface-container'}`}
+                                                className={`flex items-center w-full text-left px-3 py-2.5 rounded-xl transition-all ${activeSpecialties.includes('all') ? 'bg-[#2563EB]/10 border border-[#2563EB]/30 text-[#2563EB] font-bold' : 'border border-transparent text-on-surface-variant hover:bg-surface-container'}`}
                                             >
                                                 Todas
                                             </button>
-                                            {specialtyPicks.filter(s => s.toLowerCase().includes(specialtySearch.toLowerCase())).map(opt => (
+                                            {specialtyPicks.map(opt => (
                                                 <button 
                                                     key={opt}
                                                     onClick={() => toggleSpecialty(opt)}
-                                                    className={`flex items-center w-full text-left px-3 py-2.5 rounded-xl transition-all ${activeSpecialties.includes(opt) ? 'bg-[#0d9488]/10 border border-[#0d9488]/30 text-[#0d9488] font-bold' : 'border border-transparent text-on-surface-variant hover:bg-surface-container'}`}
+                                                    className={`flex items-center w-full text-left px-3 py-2.5 rounded-xl transition-all ${activeSpecialties.includes(opt) ? 'bg-[#2563EB]/10 border border-[#2563EB]/30 text-[#2563EB] font-bold' : 'border border-transparent text-on-surface-variant hover:bg-surface-container'}`}
                                                 >
                                                     {opt}
                                                 </button>
@@ -1095,8 +1115,27 @@ function DashboardContent() {
                                             <h3 className="font-semibold text-lg text-[#059669]">Precio máximo</h3>
                                             <button onClick={() => setActiveSidebarFilter(null)} className="p-1 hover:bg-surface-container rounded-lg text-outline"><X className="w-4 h-4"/></button>
                                         </div>
-                                        <div className="font-bold text-[#059669] text-xl mb-4 text-center">
-                                            Q{localPriceLimit}
+                                        <div className="flex justify-center items-center gap-1 mb-4">
+                                            <span className="font-bold text-[#059669] text-xl">Q</span>
+                                            <input 
+                                                type="number"
+                                                min={0}
+                                                max={PRICE_LIMIT_MAX}
+                                                value={localPriceLimit}
+                                                onChange={(e) => {
+                                                    const val = Math.min(PRICE_LIMIT_MAX, Math.max(0, Number(e.target.value)));
+                                                    setLocalPriceLimit(val);
+                                                }}
+                                                onBlur={(e) => {
+                                                    setPriceLimit(Number(e.target.value));
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        setPriceLimit(localPriceLimit);
+                                                    }
+                                                }}
+                                                className="w-24 bg-surface-container-lowest border border-outline-variant/50 rounded-xl px-2 py-1 text-center text-xl font-bold text-[#059669] outline-none focus:border-[#059669] transition-colors"
+                                            />
                                         </div>
                                         <div className="relative pt-2 pb-2">
                                             <input

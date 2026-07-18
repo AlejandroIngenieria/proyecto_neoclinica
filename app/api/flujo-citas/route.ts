@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
   if (contentType.includes('application/json') && responseBody) {
     try {
       responseBody = JSON.parse(responseBody);
-    } catch {}
+    } catch { }
   }
 
   return NextResponse.json(responseBody, { status: response.status });
@@ -59,7 +59,11 @@ export async function GET(request: NextRequest) {
     targetUrl.searchParams.set(key, value);
   });
 
+  console.log(`[Proxy] Forwarding GET to: ${targetUrl.toString()}`);
+
   const response = await fetch(targetUrl.toString(), fetchOptions);
+
+  console.log(`[Proxy] Backend returned: ${response.status}`);
 
   const contentType = response.headers.get('content-type') ?? '';
   let responseBody: any = await response.text();
@@ -67,7 +71,7 @@ export async function GET(request: NextRequest) {
   if (contentType.includes('application/json') && responseBody) {
     try {
       responseBody = JSON.parse(responseBody);
-    } catch {}
+    } catch { }
   }
 
   return NextResponse.json(responseBody, { status: response.status });

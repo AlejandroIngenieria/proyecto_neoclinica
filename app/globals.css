@@ -7,9 +7,9 @@
   --background: #F9FAFB;
   --foreground: #111827;
   
-  --primary: #0D9488;
+  --primary: #2563EB;
   --on-primary: #ffffff;
-  --secondary: #2563EB;
+  --secondary: #1E40AF;
   --on-secondary: #ffffff;
   
   --surface: #FFFFFF;
@@ -33,9 +33,9 @@
   --background: #111827;
   --foreground: #F9FAFB;
   
-  --primary: #14B8A6; /* Lighter primary for dark mode */
+  --primary: #3B82F6; /* Lighter primary for dark mode */
   --on-primary: #ffffff;
-  --secondary: #3B82F6; /* Lighter secondary for dark mode */
+  --secondary: #60A5FA; /* Lighter secondary for dark mode */
   --on-secondary: #ffffff;
   
   --surface: #1F2937;
@@ -97,7 +97,7 @@
 body {
   background-color: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), var(--font-geist-sans), sans-serif;
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 

@@ -21,12 +21,16 @@ import {
   Video,
   Home,
   Star,
-  GraduationCap
+  GraduationCap,
+  ChevronLeft,
+  X,
+  FileText,
+  CheckCircle,
+  XCircle
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { DoctorClinica, DoctorResponse } from '@/types';
 import { buildDoctorFullName, isDoctorActive } from '@/types/doctor';
-import { Navbar } from '@/components/navbar';
 import { NeoLoader } from '@/components/neo-loader';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { addRecentDoctor } from '@/lib/recent-doctors';
@@ -135,7 +139,7 @@ function buildMapsLinks(clinic: DoctorClinica | null, query: string) {
 
 function BlockCard({ children, id }: { children: React.ReactNode, id?: string }) {
   return (
-    <section id={id} className="bg-white border border-slate-200 rounded-[24px] p-7 shadow-[0_8px_30px_rgb(0,0,0,0.04)] mb-8">
+    <section id={id} className="bg-white border border-slate-200 rounded-[24px] p-7 shadow-md">
       {children}
     </section>
   );
@@ -144,7 +148,7 @@ function BlockCard({ children, id }: { children: React.ReactNode, id?: string })
 function BlockHeader({ title, icon: Icon }: { title: string; icon: any }) {
   return (
     <div className="flex items-center gap-3 mb-6">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#ECFEFF] text-[#0D9488]">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#DBEAFE] text-[#2563EB]">
         <Icon className="h-5 w-5" />
       </div>
       <h2 className="text-[22px] font-semibold text-slate-900">{title}</h2>
@@ -158,6 +162,8 @@ function DoctorProfileContent() {
 
   const { data: doctor, isLoading, error } = useDoctorByCode(expCodigo);
   const [selectedClinicIndex, setSelectedClinicIndex] = useState(0);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [showFullTrajectory, setShowFullTrajectory] = useState(false);
 
   const { titular } = usePacienteTitular();
   const codPac = titular?.pac_codigo;
@@ -196,7 +202,7 @@ function DoctorProfileContent() {
         <div className="text-center">
           <h2 className="text-xl font-black text-slate-900">Error al cargar el perfil</h2>
           <p className="mt-2 text-sm text-slate-500">{error.message}</p>
-          <Link href="/dashboard" className="mt-4 inline-block rounded-full bg-[#0D9488] px-6 py-2 text-sm font-semibold text-white hover:bg-[#0F766E]">
+          <Link href="/dashboard" className="mt-4 inline-block rounded-full bg-[#2563EB] px-6 py-2 text-sm font-semibold text-white hover:bg-[#1E40AF]">
             Volver al directorio
           </Link>
         </div>
@@ -215,118 +221,161 @@ function DoctorProfileContent() {
     
   const validStartingPrice = startingPrice !== Infinity && startingPrice !== null ? startingPrice : null;
 
+  const trajectoryItems = doctor 
+    ? [
+        ...doctor.educacion.map(edu => ({ type: 'educacion', data: edu, key: edu.edu_titulo_obtenido })),
+        ...doctor.cursos.map(cur => ({ type: 'curso', data: cur, key: cur.cur_titulo_obtenido })),
+        ...doctor.reconocimientos.map(rec => ({ type: 'reconocimiento', data: rec, key: rec.descripcion }))
+      ]
+    : [];
+  const formalEducationItems = trajectoryItems.filter(item => item.type === 'educacion').slice(0, 3);
+  const visibleTrajectoryItems = showFullTrajectory ? trajectoryItems : trajectoryItems.slice(0, 5);
+
+  const combinedSpecialties = [doctor.exp_profesion, ...doctor.especialidades.map(e => e.especialidad)]
+    .filter(Boolean)
+    .filter((val, index, arr) => arr.findIndex(v => typeof v === 'string' && typeof val === 'string' && v.toLowerCase() === val.toLowerCase()) === index) as string[];
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-20">
-      <Navbar
-        subtitle="Perfil médico"
-        backHref="/dashboard"
-        navLinks={[
-          { href: '/dashboard', label: 'Directorio' },
-          { href: '/dashboard/citas', label: 'Citas' },
-          { href: '/dashboard/medicamentos', label: 'Medicamentos' },
-        ]}
-      />
+    <div className="min-h-screen bg-transparent text-slate-900 font-sans relative">
+      
+      {/* 1. Fondo Fijo (45% verde, 55% blanco) */}
+      <div className="fixed top-0 left-0 w-full h-[45vh] bg-blue-800 -z-10"></div>
+      <div className="fixed top-[45vh] left-0 w-full h-[55vh] bg-slate-100 -z-10"></div>
 
+      {/* 2. Main Layout Container (70% / 30% split) */}
       <motion.main
-        className="mx-auto w-[90%] max-w-[1440px] pt-8"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        className="mx-auto w-[90%] max-w-[1440px] relative z-10"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.4, delay: 0.1 }}
       >
-        {/* HERO SECTION */}
-        <section className="relative overflow-hidden bg-white border border-slate-200 rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] mb-4">
-          <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-[#0D9488] to-[#0B7D74]"></div>
-          
-          <div className="p-8 md:p-10 flex flex-col md:flex-row gap-8 items-start mt-2">
-            <div className="shrink-0">
-              <div className="relative h-40 w-40 md:h-48 md:w-48 rounded-[20px] overflow-hidden bg-slate-100 border border-slate-200 shadow-sm">
-                {doctor.exp_foto_perfil ? (
-                  <Image
-                    src={doctor.exp_foto_perfil}
-                    alt={fullName}
-                    fill
-                    sizes="(max-width: 768px) 160px, 192px"
-                    className="object-cover"
-                    priority
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-4xl font-bold text-slate-400">
-                    {fullName.charAt(0)}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex-1 min-w-0 flex flex-col justify-center">
-              <h1 className="text-[28px] md:text-[36px] font-bold tracking-tight text-slate-900 leading-tight">
-                {fullName}
-              </h1>
-              <p className="mt-2 text-lg text-slate-500">
-                {doctor.exp_profesion || 'Especialidad médica'}
-              </p>
-
-              <div className="mt-6 flex flex-wrap gap-3 items-center text-sm font-medium">
-                {doctor.promedio_valoracion > 0 && (
-                  <span className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 rounded-full text-slate-700">
-                    <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
-                    {doctor.promedio_valoracion.toFixed(1)} <span className="text-slate-500 font-normal">({doctor.total_resenas} reseñas)</span>
-                  </span>
-                )}
-                {doctor.exp_anios_experiencia ? (
-                  <span className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 rounded-full text-slate-700">
-                    <Award className="w-4 h-4 text-slate-500" />
-                    {doctor.exp_anios_experiencia} años de exp.
-                  </span>
-                ) : null}
-                {doctor.idiomas.length > 0 && (
-                  <span className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 rounded-full text-slate-700">
-                    <Globe2 className="w-4 h-4 text-slate-500" />
-                    {doctor.idiomas.map(i => i.idioma).join(', ')}
-                  </span>
-                )}
-                <span className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 rounded-full text-slate-700">
-                  <MapPin className="w-4 h-4 text-slate-500" />
-                  A 1.8 km de ti
-                </span>
-              </div>
-              
-              <div className="mt-6 flex flex-wrap gap-3 items-center text-sm font-medium border-t border-slate-100 dark:border-slate-800 pt-6">
-                {titular && (
-                  <button 
-                    onClick={toggleFavorite}
-                    className={`flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-xl transition-colors border shadow-sm mr-2 ${isFavorito ? 'text-rose-600 bg-rose-50 border-rose-200 dark:bg-rose-900/20 dark:border-rose-900/50' : 'text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-300 bg-white dark:bg-slate-900 dark:text-slate-300'}`}
-                  >
-                    <Heart className={`w-4 h-4 ${isFavorito ? 'fill-rose-500 text-rose-500' : 'text-slate-500 dark:text-slate-400'}`} />
-                    {isFavorito ? 'Guardado en favoritos' : 'Guardar en favoritos'}
-                  </button>
-                )}
-                  {doctor.redes_sociales.map((item) => (
-                    <a
-                      key={`${item.red_social}-${item.url}`}
-                      href={item.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center gap-2 text-sm font-medium text-slate-500 px-3 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                    >
-                      {getSocialIcon(item.red_social, "w-4 h-4")}
-                      {item.red_social}
-                    </a>
-                  ))}
-              </div>
-            </div>
-            
-          </div>
-        </section>
-
         <div className="grid lg:grid-cols-[1fr_360px] gap-8 items-start">
           
-          {/* MAIN COLUMN */}
-          <div className="flex flex-col">
+          {/* LEFT COLUMN (70% - Header y Contenido) */}
+          <div className="flex flex-col space-y-4 md:space-y-5 pb-20">
+            
+            {/* Encabezado Sticky */}
+            <div className="sticky top-0 z-40 bg-blue-800 pt-6 pb-4 md:pt-10 md:pb-6 px-8 md:px-14 -mx-4 md:-mx-6">
+              <div className="flex flex-col md:flex-row gap-6 md:gap-8 items-center md:items-start">
+                
+                {/* Botón regresar (Desktop) */}
+                <Link href="/dashboard" className="hidden md:flex shrink-0 h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors mt-2" title="Volver al directorio">
+                  <ChevronLeft className="h-6 w-6" />
+                </Link>
+
+                <div className="shrink-0 w-full md:w-auto relative">
+                  {/* Botón regresar (Mobile) */}
+                  <div className="md:hidden absolute -top-8 left-0">
+                    <Link href="/dashboard" className="inline-flex items-center gap-1 text-sm font-medium text-white/80 hover:text-white">
+                      <ChevronLeft className="h-5 w-5" /> Volver
+                    </Link>
+                  </div>
+
+                  {/* Foto de perfil */}
+                  <div className="relative h-28 w-28 md:h-36 md:w-36 rounded-[20px] overflow-hidden bg-blue-700 border-4 border-blue-700/50 shadow-lg mx-auto md:mx-0">
+                    {doctor.exp_foto_perfil ? (
+                      <Image
+                        src={doctor.exp_foto_perfil}
+                        alt={fullName}
+                        fill
+                        sizes="(max-width: 768px) 112px, 144px"
+                        className="object-cover"
+                        priority
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-4xl font-bold text-white/50">
+                        {fullName.charAt(0)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex-1 min-w-0 flex flex-col justify-center text-center md:text-left mt-4 md:mt-0">
+                  <h1 className="text-[28px] md:text-[32px] font-bold tracking-tight text-white leading-tight">
+                    {fullName}
+                  </h1>
+                  <div className="mt-1 text-base md:text-lg text-blue-100 font-medium">
+                    {combinedSpecialties.join(' · ') || 'Especialidad médica'}
+                  </div>
+
+                  {/* Fila compacta de datos rápidos tipo "pastillas" */}
+                  <div className="mt-4 flex flex-wrap justify-center md:justify-start gap-2 items-center text-xs font-semibold">
+                    {doctor.exp_colegiado_gt && (
+                       <span className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700/50 rounded-full text-white border border-blue-600/50">
+                         <FileText className="w-3.5 h-3.5 text-blue-300" />
+                         Col. {doctor.exp_colegiado_gt}
+                       </span>
+                    )}
+                    {doctor.nacionalidad && (
+                       <span className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700/50 rounded-full text-white border border-blue-600/50">
+                         <MapPin className="w-3.5 h-3.5 text-blue-300" />
+                         {doctor.nacionalidad}
+                       </span>
+                    )}
+                    {doctor.exp_anios_experiencia ? (
+                       <span className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700/50 rounded-full text-white border border-blue-600/50">
+                         <Award className="w-3.5 h-3.5 text-blue-300" />
+                         {doctor.exp_anios_experiencia} años de exp.
+                       </span>
+                    ) : null}
+                    {doctor.exp_estado === 'A' ? (
+                       <span className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700/50 rounded-full text-white border border-blue-600/50">
+                         <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                         Activo
+                       </span>
+                    ) : (
+                       <span className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700/50 rounded-full text-white border border-blue-600/50">
+                         <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                         Inactivo
+                       </span>
+                    )}
+                    {doctor.promedio_valoracion > 0 && (
+                      <span className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700/50 rounded-full text-white border border-blue-600/50">
+                        <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                        {doctor.promedio_valoracion.toFixed(1)} <span className="text-blue-200/70 font-normal">({doctor.total_resenas})</span>
+                      </span>
+                    )}
+                    {doctor.idiomas.length > 0 && (
+                      <span className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700/50 rounded-full text-white border border-blue-600/50">
+                        <Globe2 className="w-3.5 h-3.5 text-blue-300" />
+                        {doctor.idiomas.map(i => i.idioma).join(', ')}
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="mt-4 flex flex-wrap justify-center md:justify-start gap-3 items-center text-sm font-medium">
+                    {titular && (
+                      <button 
+                        onClick={toggleFavorite}
+                        className={`flex items-center gap-2 text-sm font-medium px-4 py-1.5 rounded-full transition-colors border shadow-sm ${isFavorito ? 'text-blue-900 bg-blue-100 border-blue-200' : 'text-white hover:bg-blue-700 border-blue-600 bg-blue-700/50'}`}
+                      >
+                        <Heart className={`w-4 h-4 ${isFavorito ? 'fill-blue-400 text-blue-400' : 'text-blue-200'}`} />
+                        {isFavorito ? 'Guardado' : 'Guardar'}
+                      </button>
+                    )}
+                    <div className="flex flex-wrap gap-2 justify-center">
+                      {doctor.redes_sociales.map((item) => (
+                        <a
+                          key={`${item.red_social}-${item.url}`}
+                          href={item.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-2 text-xs font-medium text-white/80 px-3 py-1.5 rounded-full bg-blue-700/30 hover:bg-blue-700/70 border border-blue-600/30 transition-colors"
+                        >
+                          {getSocialIcon(item.red_social, "w-3.5 h-3.5")}
+                          {item.red_social}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
             
             {/* 1. Acerca del Médico */}
             <BlockCard>
               <BlockHeader title="Acerca del Doctor" icon={Users} />
-              <div className="space-y-6 text-[16px] text-slate-700 leading-relaxed">
+              <div className="space-y-6 text-lg text-slate-700 leading-loose">
                 {doctor.exp_presentacion ? (
                   <p>{doctor.exp_presentacion}</p>
                 ) : (
@@ -348,7 +397,7 @@ function DoctorProfileContent() {
                    </div>
                    <div>
                       <p className="text-sm text-slate-500 mb-1">Estado</p>
-                      <p className="font-medium text-[#0D9488]">{isDoctorActive(doctor) ? 'Activo' : 'Inactivo'}</p>
+                      <p className="font-medium text-[#2563EB]">{isDoctorActive(doctor) ? 'Activo' : 'Inactivo'}</p>
                    </div>
                 </div>
               </div>
@@ -360,12 +409,12 @@ function DoctorProfileContent() {
               <div className="space-y-6">
                 <div>
                   <h3 className="text-sm font-semibold text-slate-900 mb-3">Especialidades</h3>
-                  {doctor.especialidades.length > 0 ? (
+                  {combinedSpecialties.length > 0 ? (
                     <div className="flex flex-wrap gap-2">
-                      {doctor.especialidades.map(item => (
-                        <span key={item.especialidad} className="px-4 py-2 bg-slate-50 border border-slate-200 text-slate-700 rounded-full text-sm font-medium flex items-center gap-2">
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#0D9488]"></span>
-                          {item.especialidad}
+                      {combinedSpecialties.map(item => (
+                        <span key={item} className="px-4 py-2 bg-slate-100 border border-slate-200 text-slate-700 rounded-full text-sm font-medium flex items-center gap-2 shadow-sm">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#2563EB]"></span>
+                          {item}
                         </span>
                       ))}
                     </div>
@@ -379,7 +428,7 @@ function DoctorProfileContent() {
                     <h3 className="text-sm font-semibold text-slate-900 mb-3">Síntomas frecuentes que atiende</h3>
                     <div className="flex flex-wrap gap-2">
                       {doctor.sintomas.map((item, i) => (
-                        <span key={i} className="px-4 py-2 bg-white border border-slate-200 text-slate-500 rounded-full text-sm font-medium">
+                        <span key={i} className="px-4 py-2 bg-slate-50 border border-slate-200 text-slate-600 rounded-full text-sm font-medium shadow-sm">
                           {item.sintoma}
                         </span>
                       ))}
@@ -395,13 +444,18 @@ function DoctorProfileContent() {
               {doctor.servicios && doctor.servicios.length > 0 ? (
                 <div className="divide-y divide-slate-200">
                   {doctor.servicios.map((srv, idx) => (
-                    <div key={idx} className="py-4 flex justify-between items-center gap-4">
-                      <div>
+                    <div key={idx} className="py-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+                      <div className="flex-1">
                         <p className="font-medium text-slate-900 text-base">{srv.servicio}</p>
                         {srv.syp_observaciones && <p className="text-sm text-slate-500 mt-0.5">{srv.syp_observaciones}</p>}
                       </div>
-                      <div className="font-medium text-slate-900 whitespace-nowrap">
-                        {srv.syp_costo_total ? `Q${formatMoney(srv.syp_costo_total)}` : '-'}
+                      <div className="flex items-center justify-between sm:justify-end gap-6 w-full sm:w-auto">
+                        <span className="font-medium text-slate-900 whitespace-nowrap">
+                          {srv.syp_costo_total ? `Q${formatMoney(srv.syp_costo_total)}` : '-'}
+                        </span>
+                        <Link href={`/dashboard/agendar/${doctor.exp_codigo}?motivo=${encodeURIComponent(srv.servicio || '')}`} className="px-4 py-2 bg-blue-50 text-blue-600 text-sm font-semibold rounded-xl hover:bg-blue-200 transition-colors shrink-0">
+                          Agendar
+                        </Link>
                       </div>
                     </div>
                   ))}
@@ -423,7 +477,7 @@ function DoctorProfileContent() {
                           <Image src={asg.imagen} alt={asg.aseguradora} fill sizes="(max-width: 768px) 50vw, 25vw" className="object-contain" />
                         </div>
                       ) : (
-                        <ShieldCheck className="w-8 h-8 text-[#0D9488] mb-3" />
+                        <ShieldCheck className="w-8 h-8 text-[#2563EB] mb-3" />
                       )}
                       <span className="text-sm font-semibold text-slate-700">{asg.aseguradora}</span>
                     </div>
@@ -444,7 +498,10 @@ function DoctorProfileContent() {
                   return (
                     <div key={index} className="flex flex-col md:flex-row gap-6">
                       <div className="flex-1">
-                        <h3 className="font-semibold text-lg text-slate-900 mb-1">{clinic.cli_descripcion || `Clínica ${index + 1}`}</h3>
+                        <h3 className="font-semibold text-lg text-slate-900 mb-1">
+                          {clinic.cli_descripcion || `Clínica ${index + 1}`}
+                          {index === 0 && <span className="ml-3 inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20">Sede Principal</span>}
+                        </h3>
                         <p className="text-slate-500 text-sm leading-relaxed mb-4">
                           {[clinic.cli_direccion_completa, clinic.cli_zona].filter(Boolean).join(', ')}
                         </p>
@@ -486,7 +543,7 @@ function DoctorProfileContent() {
                 {doctor.atencion_domicilio && doctor.atencion_domicilio.length > 0 && (
                   <div className="pt-6 mt-6 border-t border-slate-200">
                     <h3 className="font-semibold text-lg text-slate-900 mb-4 flex items-center gap-2">
-                      <Home className="w-5 h-5 text-[#0D9488]" />
+                      <Home className="w-5 h-5 text-[#2563EB]" />
                       Atención a Domicilio
                     </h3>
                     <div className="grid gap-4 md:grid-cols-2">
@@ -505,42 +562,35 @@ function DoctorProfileContent() {
               </div>
             </BlockCard>
 
-            {/* 5. Trayectoria Profesional */}
+            {/* 5. Formación académica */}
             <BlockCard>
-              <BlockHeader title="Trayectoria Profesional" icon={GraduationCap} />
+              <BlockHeader title="Formación académica" icon={GraduationCap} />
               <div className="relative border-l border-slate-200 ml-3 space-y-8 pb-4 mt-2">
                 
-                {/* Educación */}
-                {doctor.educacion.length > 0 && doctor.educacion.map((edu, idx) => (
-                  <div key={`edu-${idx}`} className="relative pl-6">
-                    <span className="absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full bg-[#0D9488] ring-4 ring-white" />
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Educación • {edu.pais || 'Global'}</p>
-                    <h4 className="text-base font-semibold text-slate-900">{edu.edu_titulo_obtenido}</h4>
-                    <p className="text-sm text-slate-500 mt-0.5">{edu.edu_institucion}</p>
-                  </div>
-                ))}
-                
-                {/* Cursos */}
-                {doctor.cursos.length > 0 && doctor.cursos.map((cur, idx) => (
-                  <div key={`cur-${idx}`} className="relative pl-6">
-                    <span className="absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full bg-[#F59E0B] ring-4 ring-white" />
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Curso • {cur.tipo_curso}</p>
-                    <h4 className="text-base font-semibold text-slate-900">{cur.cur_titulo_obtenido}</h4>
-                    <p className="text-sm text-slate-500 mt-0.5">{cur.cur_institucion}</p>
-                  </div>
-                ))}
-                
-                {/* Reconocimientos */}
-                {doctor.reconocimientos.length > 0 && doctor.reconocimientos.map((rec, idx) => (
-                  <div key={`rec-${idx}`} className="relative pl-6">
-                    <span className="absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full bg-[#8B5CF6] ring-4 ring-white" />
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Reconocimiento • {rec.anio}</p>
-                    <h4 className="text-base font-semibold text-slate-900">{rec.descripcion}</h4>
-                    <p className="text-sm text-slate-500 mt-0.5">{rec.institucion}</p>
-                  </div>
-                ))}
+                {formalEducationItems.map((item, idx) => {
+                  const edu = item.data as any;
+                  return (
+                    <div key={`traj-${idx}`} className="relative pl-6">
+                      <span className="absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full bg-[#2563EB] ring-4 ring-white" />
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Educación formal • {edu.pais || 'Global'}</p>
+                      <h4 className="text-base font-semibold text-slate-900">{edu.edu_titulo_obtenido}</h4>
+                      <p className="text-sm text-slate-500 mt-0.5">{edu.edu_institucion}</p>
+                    </div>
+                  );
+                })}
 
-                {!doctor.educacion.length && !doctor.cursos.length && !doctor.reconocimientos.length && (
+                {trajectoryItems.length > formalEducationItems.length && (
+                  <div className="pt-4 pl-6">
+                    <button 
+                      onClick={() => setShowFullTrajectory(true)}
+                      className="text-sm font-semibold text-primary hover:text-primary/80 transition-colors flex items-center gap-1"
+                    >
+                      Ver currículum completo ({trajectoryItems.length} registros)
+                    </button>
+                  </div>
+                )}
+
+                {trajectoryItems.length === 0 && (
                    <p className="text-[#9CA3AF] text-sm pl-6">Sin trayectoria registrada.</p>
                 )}
               </div>
@@ -552,7 +602,7 @@ function DoctorProfileContent() {
                 <BlockHeader title="Galería" icon={Sparkles} />
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   {doctor.fotos_trabajo.map((photo, index) => (
-                    <div key={index} className="relative aspect-square overflow-hidden rounded-[20px] bg-slate-100 group cursor-pointer">
+                    <div key={index} onClick={() => setSelectedImage(photo.url)} className="relative aspect-square overflow-hidden rounded-[20px] bg-slate-100 group cursor-pointer">
                       <Image
                         src={photo.url}
                         alt={`Foto de trabajo ${index + 1}`}
@@ -567,35 +617,62 @@ function DoctorProfileContent() {
             )}
 
             {/* 7. Reseñas */}
-            <div className="mt-8 mb-4">
-              <div className="mb-6 flex items-center gap-4">
-                <h2 className="text-[28px] font-bold text-slate-900">Reseñas</h2>
-                {doctor.promedio_valoracion > 0 && (
-                  <span className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 rounded-full text-slate-700 font-medium border border-slate-200">
-                    <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
-                    {doctor.promedio_valoracion.toFixed(1)} <span className="text-slate-500 font-normal">({doctor.total_resenas} opiniones)</span>
-                  </span>
-                )}
+            {doctor.total_resenas > 0 && (
+              <div className="mt-8 mb-4">
+                <div className="mb-6 flex items-center gap-4">
+                  <h2 className="text-[28px] font-bold text-slate-900">Reseñas</h2>
+                  {doctor.promedio_valoracion > 0 && (
+                    <span className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 rounded-full text-slate-700 font-medium border border-slate-200">
+                      <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
+                      {doctor.promedio_valoracion.toFixed(1)} <span className="text-slate-500 font-normal">({doctor.total_resenas} opiniones)</span>
+                    </span>
+                  )}
+                </div>
+                <DoctorReviews doctor={doctor} minimalist={true} />
               </div>
-              <DoctorReviews doctor={doctor} minimalist={true} />
-            </div>
+            )}
 
           </div>
           
-          {/* SIDEBAR STICKY */}
-           <aside id="sidebar-agendar" className="hidden lg:block sticky top-24">
-            <div className="bg-white border border-slate-200 rounded-[24px] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-               
-               <Link href={`/dashboard/agendar/${doctor.exp_codigo}`} className="w-full flex justify-center bg-[#0D9488] hover:bg-[#0F766E] text-white px-6 py-4 rounded-[16px] font-semibold text-[16px] transition-colors mb-6">
-                 Agendar cita
-               </Link>
+          {/* RIGHT COLUMN (30% - Botones y Citas) */}
+          <div className="flex flex-col sticky top-0 lg:h-screen lg:pt-10 self-start z-50 w-full">
+            
+            {/* Contenedor central para Botones y Sidebar */}
+            <div className="flex-1 flex flex-col justify-center pb-20 w-full gap-6">
+              
+              {/* Acciones de Contacto Superiores */}
+              <div className="flex flex-row flex-wrap gap-2 items-center justify-center w-full">
+                 {doctor.exp_telefono1 && (
+                   <a href={`tel:${doctor.exp_telefono1}`} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors border border-white/30 shadow-sm" title="Llamar al médico">
+                     <Phone className="w-4 h-4" />
+                     <span className="hidden lg:inline">Llamar</span>
+                   </a>
+                 )}
+                 {doctor.exp_email && (
+                   <a href={`mailto:${doctor.exp_email}`} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors border border-white/30 shadow-sm" title="Enviar correo">
+                     <Mail className="w-4 h-4" />
+                     <span className="hidden lg:inline">Correo</span>
+                   </a>
+                 )}
+                 <button className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors border border-white/30 shadow-sm" title="Compartir perfil">
+                   <Share2 className="w-4 h-4" />
+                   <span className="hidden lg:inline">Compartir</span>
+                 </button>
+              </div>
 
+              <aside id="sidebar-agendar" className="hidden lg:block w-full">
+                <div className="bg-white border-2 border-blue-600 rounded-[24px] p-6 shadow-2xl shadow-blue-900/10 relative overflow-hidden">
+               
                {validStartingPrice !== null && (
-                 <div className="flex justify-between items-end border-b border-slate-200 pb-4 mb-4">
-                    <span className="text-slate-500 font-medium">Precio consulta</span>
-                    <span className="text-xl font-bold text-slate-900">Desde Q{formatMoney(validStartingPrice)}</span>
+                 <div className="flex flex-col items-center border-b border-slate-200 pb-5 mb-5">
+                    <span className="text-slate-500 font-medium text-sm">Precio de consulta</span>
+                    <span className="text-[32px] font-black text-slate-900 mt-1">Desde Q{formatMoney(validStartingPrice)}</span>
                  </div>
                )}
+
+               <Link href={`/dashboard/agendar/${doctor.exp_codigo}`} className="w-full flex justify-center bg-[#2563EB] hover:bg-[#1E40AF] text-white px-6 py-4 rounded-[16px] font-semibold text-[16px] transition-all mb-6 shadow-md hover:shadow-lg">
+                 Agendar cita ahora
+               </Link>
 
                <div className="border-b border-slate-200 pb-4 mb-4">
                   <h4 className="text-sm font-semibold text-slate-900 mb-3">Modalidades de atención</h4>
@@ -611,7 +688,7 @@ function DoctorProfileContent() {
                        
                        return (
                          <div key={idx} className="flex items-center gap-3 text-slate-700 text-sm font-medium">
-                            <Icon className="w-4 h-4 text-[#0D9488]" />
+                            <Icon className="w-4 h-4 text-[#2563EB]" />
                             {mod.modalidad}
                          </div>
                        )
@@ -628,7 +705,7 @@ function DoctorProfileContent() {
                   <div className="space-y-2">
                     {doctor.metodos_pago.length > 0 ? doctor.metodos_pago.map((pago, idx) => (
                       <div key={idx} className="flex items-start gap-2">
-                        <Check className="w-4 h-4 text-[#0D9488] mt-0.5 shrink-0" />
+                        <Check className="w-4 h-4 text-[#2563EB] mt-0.5 shrink-0" />
                         <span className="text-slate-700 text-sm">{pago.tipo_pago}</span>
                       </div>
                     )) : (
@@ -638,29 +715,128 @@ function DoctorProfileContent() {
                </div>
 
                <div className="space-y-3">
-                 {doctor.exp_telefono1 && (
-                   <a href={`tel:${doctor.exp_telefono1}`} className="w-full flex justify-center items-center gap-2 bg-white border border-slate-300 text-slate-700 px-4 py-3 rounded-[16px] font-medium transition-colors hover:bg-slate-50">
-                     <Phone className="w-4 h-4" />
-                     Llamar al médico
-                   </a>
-                 )}
-                 {doctor.exp_email && (
-                   <a href={`mailto:${doctor.exp_email}`} className="w-full flex justify-center items-center gap-2 bg-white border border-slate-300 text-slate-700 px-4 py-3 rounded-[16px] font-medium transition-colors hover:bg-slate-50">
-                     <Mail className="w-4 h-4" />
-                     Enviar correo
-                   </a>
-                 )}
-                 <button className="w-full flex justify-center items-center gap-2 bg-transparent border border-transparent text-blue-600 dark:text-blue-400 px-4 py-3 rounded-[16px] font-medium transition-colors hover:bg-slate-100 dark:hover:bg-slate-800">
-                   <Share2 className="w-4 h-4" />
-                   Compartir perfil
-                 </button>
+                 {/* Acciones de contacto movidas al header superior */}
                </div>
 
             </div>
           </aside>
+          </div>
           
+          </div>
+        </div>
+
+        {/* Floating sticky CTA bar for mobile booking */}
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0B1120]/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 p-3 px-4 flex items-center justify-between shadow-2xl lg:hidden">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">Consulta</span>
+            <span className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+              {validStartingPrice !== null ? `Desde Q${formatMoney(validStartingPrice)}` : 'Ver opciones'}
+            </span>
+          </div>
+          <Link
+            href={`/dashboard/agendar/${doctor.exp_codigo}`}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-5 py-2.5 rounded-xl shadow-md transition-all flex items-center gap-2"
+          >
+            <span>Agendar cita</span>
+            <CalendarDays className="w-4 h-4" />
+          </Link>
         </div>
       </motion.main>
+
+      <AnimatePresence>
+        {selectedImage && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/90 backdrop-blur-sm p-4" 
+            onClick={() => setSelectedImage(null)}
+          >
+            <button className="absolute top-4 right-4 md:top-8 md:right-8 p-2 text-white hover:text-slate-300 bg-white/10 rounded-full hover:bg-white/20 transition-colors" onClick={() => setSelectedImage(null)}>
+              <X className="w-6 h-6" />
+            </button>
+            <img src={selectedImage} alt="Galería" className="max-w-full max-h-[90vh] rounded-2xl object-contain shadow-2xl" />
+          </motion.div>
+        )}
+        {showFullTrajectory && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 md:p-6"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowFullTrajectory(false);
+            }}
+          >
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-[24px] w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl"
+            >
+              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-white sticky top-0 z-10">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#DBEAFE] text-[#2563EB]">
+                    <GraduationCap className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-slate-900">Currículum Completo</h3>
+                    <p className="text-sm text-slate-500 font-medium">{fullName}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowFullTrajectory(false)}
+                  className="h-10 w-10 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              
+              <div className="p-6 overflow-y-auto">
+                <div className="relative border-l border-slate-200 ml-3 space-y-8 pb-4 mt-2">
+                  {trajectoryItems.map((item, idx) => {
+                    if (item.type === 'educacion') {
+                      const edu = item.data as any;
+                      return (
+                        <div key={`traj-m-${idx}`} className="relative pl-6">
+                          <span className="absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full bg-[#2563EB] ring-4 ring-white" />
+                          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Educación formal • {edu.pais || 'Global'}</p>
+                          <h4 className="text-base font-semibold text-slate-900">{edu.edu_titulo_obtenido}</h4>
+                          <p className="text-sm text-slate-500 mt-0.5">{edu.edu_institucion}</p>
+                        </div>
+                      );
+                    }
+                    if (item.type === 'curso') {
+                      const cur = item.data as any;
+                      return (
+                        <div key={`traj-m-${idx}`} className="relative pl-6">
+                          <span className="absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full bg-[#F59E0B] ring-4 ring-white" />
+                          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Curso / Certificación • {cur.tipo_curso}</p>
+                          <h4 className="text-base font-semibold text-slate-900">{cur.cur_titulo_obtenido}</h4>
+                          <p className="text-sm text-slate-500 mt-0.5">{cur.cur_institucion}</p>
+                        </div>
+                      );
+                    }
+                    if (item.type === 'reconocimiento') {
+                      const rec = item.data as any;
+                      return (
+                        <div key={`traj-m-${idx}`} className="relative pl-6">
+                          <span className="absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full bg-[#8B5CF6] ring-4 ring-white" />
+                          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Reconocimiento • {rec.anio}</p>
+                          <h4 className="text-base font-semibold text-slate-900">{rec.descripcion}</h4>
+                          <p className="text-sm text-slate-500 mt-0.5">{rec.institucion}</p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }
