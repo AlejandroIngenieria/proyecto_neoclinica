@@ -794,12 +794,13 @@ function DashboardContent() {
                             placeholder={searchTags.length === 0 ? "Buscar por doctor, especialidad o ubicación..." : "Añadir filtro..."}
                             className="flex-1 h-full bg-transparent min-w-[140px] px-2 text-body-md font-medium text-on-surface outline-none placeholder:text-outline/70"
                         />
-                        {(searchTerm || searchTags.length > 0) && (
+                        {(searchTerm || searchTags.length > 0 || specialtyParam !== 'all') && (
                             <button
                                 type="button"
                                 onClick={() => {
                                     setSearchTerm('');
                                     setSearchTags([]);
+                                    setSpecialtyParam('all');
                                     setIsSearchFocused(true);
                                 }}
                                 className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-outline transition hover:bg-surface-container-high hover:text-on-surface ml-2"
