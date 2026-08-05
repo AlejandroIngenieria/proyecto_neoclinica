@@ -9,19 +9,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: 'Authorization header requerido' }, { status: 401 });
   }
 
+  const incomingContentType = request.headers.get('content-type') ?? '';
+
+  const headers: Record<string, string> = {
+    Authorization: authorization,
+    Accept: 'application/json',
+  };
+
+  if (incomingContentType) {
+    headers['Content-Type'] = incomingContentType;
+  }
+
   const fetchOptions: RequestInit = {
     method: 'POST',
-    headers: {
-      Authorization: authorization,
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
+    headers,
     cache: 'no-store',
   };
 
-  const body = await request.text();
-  if (body) {
-    fetchOptions.body = body;
+  const arrayBuffer = await request.arrayBuffer();
+  if (arrayBuffer.byteLength > 0) {
+    fetchOptions.body = arrayBuffer;
   }
 
   const response = await fetch(`${backendBaseUrl}/api/FlujoCitas`, fetchOptions);

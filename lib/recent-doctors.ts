@@ -8,7 +8,7 @@ export type RecentDoctorItem = {
 };
 
 const RECENT_DOCTORS_STORAGE_KEY = 'neoclinica:recent-doctors';
-const MAX_RECENT_DOCTORS = 3;
+const MAX_RECENT_DOCTORS = 6;
 
 function canUseStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -40,9 +40,14 @@ export function writeRecentDoctors(items: RecentDoctorItem[]) {
   window.localStorage.setItem(RECENT_DOCTORS_STORAGE_KEY, JSON.stringify(items.slice(0, MAX_RECENT_DOCTORS)));
 }
 
+export const RECENT_DOCTORS_EVENT = 'neoclinica:recent-doctors-updated';
+
 export function addRecentDoctor(item: RecentDoctorItem) {
   const current = readRecentDoctors();
   const next = [item, ...current.filter((doctor) => doctor.exp_codigo !== item.exp_codigo)].slice(0, MAX_RECENT_DOCTORS);
   writeRecentDoctors(next);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(RECENT_DOCTORS_EVENT, { detail: next }));
+  }
   return next;
 }

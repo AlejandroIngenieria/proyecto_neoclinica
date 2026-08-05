@@ -9,14 +9,17 @@ import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Navbar } from '@/components/navbar';
 import { NeoLoader } from '@/components/neo-loader';
-import { useCitasPaciente, useAllCitasPacientes, usePacientesSeleccion, useCancelarCita, useGruposMap } from '@/hooks/use-flujo-citas';
-import { useDoctorByCode } from '@/hooks/use-doctors';
-import type { CitaListDto, CitaEstado } from '@/types/citas';
+import { useSession } from 'next-auth/react';
+import { useCitasPaciente, useAllCitasPacientes, usePacientesSeleccion, useCancelarCita, useGruposMap, useUpdateCita } from '@/hooks/use-flujo-citas';
+import { useDoctorByCode, useDoctors } from '@/hooks/use-doctors';
+import { fetchGruposCita, createGrupo } from '@/services/flujo-citas';
+import type { CitaListDto, CitaEstado, GrupoCitaDto } from '@/types/citas';
+import { buildDoctorFullName } from '@/types/doctor';
 import { AnimatedModal } from '@/components/animated-modal';
-import { CitaDetailDrawer } from '@/components/citas/cita-detail-drawer';
 import { CitaCard } from '@/components/cita-card';
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
+import { Plus, FolderPlus } from 'lucide-react';
 
 const MySwal = withReactContent(Swal);
 
@@ -111,13 +114,11 @@ function CitasContent() {
   const [tabActual, setTabActual] = useState<'proximas' | 'historial'>('proximas');
   const [medicoSeleccionado, setMedicoSeleccionado] = useState<string>('');
   const [grupoSeleccionado, setGrupoSeleccionado] = useState<string>('');
-  const [citaSeleccionada, setCitaSeleccionada] = useState<CitaListDto | null>(null);
-  const [modalViewMode, setModalViewMode] = useState<'detalle'>('detalle');
+  const [linkGroupCita, setLinkGroupCita] = useState<CitaListDto | null>(null);
+  const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
   const [pacientesExpandidos, setPacientesExpandidos] = useState<Record<string, boolean>>({});
   const [quickFilter, setQuickFilter] = useState<'todas' | '24hrs' | 'semana'>('todas');
   const [viewFilter, setViewFilter] = useState<'todas' | 'unicas' | 'series'>('todas');
-
-  const { data: selectedDoctor } = useDoctorByCode(citaSeleccionada?.ctaCoddoc || "");
 
   const togglePaciente = (pacienteId: string) => {
     setPacientesExpandidos(prev => ({ ...prev, [pacienteId]: !prev[pacienteId] }));
@@ -127,15 +128,10 @@ function CitasContent() {
 
   const { mutateAsync: cancelarCita, isPending: isCanceling } = useCancelarCita();
 
-  const handleOpenModal = (cita: CitaListDto) => {
-    setCitaSeleccionada(cita);
-    setModalViewMode('detalle');
-  };
-
   const handleConfirmCancel = (cita: CitaListDto) => {
     MySwal.fire({
       title: '¿Cancelar Cita?',
-      html: `Estás a punto de cancelar tu cita con <strong>${cita.medicoNombre}</strong> el ${safeFormatDate(cita.ctaFecha, "d 'de' MMMM")}.<br/><br/>Esta acción removerá la cita de tu agenda permanentemente.`,
+      html: `Estás a punto de cancelar tu cita con <strong>${cita.medicoNombre}</strong> el ${safeFormatDate(cita.ctaFecha, "d 'de' MMMM")}.<br/><br/>Esta acción cambiará el estado de la cita a cancelada.`,
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#e11d48', // rose-600
@@ -170,11 +166,27 @@ function CitasContent() {
   const { data: gruposMap } = useGruposMap(pacientePrincipal?.pacCodigo || null, medicosUnicosIds);
 
   const citasConTemas = useMemo(() => {
-    if (!gruposMap) return citas;
-    return citas.map(c => ({
-      ...c,
-      grupoTema: c.ctaGrupoId ? gruposMap.get(c.ctaGrupoId.toLowerCase()) || c.grupoTema : c.grupoTema
-    }));
+    const now = new Date();
+    return citas.map(c => {
+      let estado = c.ctaEstado;
+      let isPast = false;
+      try {
+        const citaDateTime = new Date(`${c.ctaFecha.split('T')[0]}T${c.ctaHora || '00:00:00'}`);
+        if (citaDateTime < now) {
+          isPast = true;
+          if (['programada', 'confirmada', 'pospuesta'].includes(estado)) {
+            estado = 'completada' as CitaEstado;
+          }
+        }
+      } catch (e) {}
+
+      return {
+        ...c,
+        ctaEstado: estado,
+        isPast,
+        grupoTema: c.ctaGrupoId && gruposMap ? gruposMap.get(c.ctaGrupoId.toLowerCase()) || c.grupoTema : c.grupoTema
+      };
+    });
   }, [citas, gruposMap]);
 
   const medicosUnicos = useMemo(() => {
@@ -320,42 +332,30 @@ function CitasContent() {
         transition={{ duration: 0.4 }}
       >
 
-            <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between mb-8">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8">
               <div>
-                <h1 className="text-3xl font-black tracking-tight text-slate-900">Mis Citas</h1>
-                <p className="text-sm text-slate-500 mt-1">
+                <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white">Mis Citas</h1>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                   Consulta tus próximas citas, historial médico y seguimiento continuo.
                 </p>
               </div>
 
-              {/* Filtros */}
-              <div className="flex flex-col sm:flex-row gap-3">
-                <div className="flex items-center gap-2 bg-white rounded-xl border border-slate-200 p-2 shadow-sm">
-                  <Filter className="w-4 h-4 text-slate-400 ml-2" />
-                  <select
-                    className="bg-transparent text-sm font-semibold text-slate-700 outline-none pr-2 py-1"
-                    value={medicoSeleccionado}
-                    onChange={(e) => setMedicoSeleccionado(e.target.value)}
-                  >
-                    <option value="">Todos los Médicos</option>
-                    {medicosUnicos.map(m => (
-                      <option key={m.id} value={m.id}>{m.nombre}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex items-center gap-2 bg-white rounded-xl border border-slate-200 p-2 shadow-sm">
-                  <RefreshCw className="w-4 h-4 text-slate-400 ml-2" />
-                  <select
-                    className="bg-transparent text-sm font-semibold text-slate-700 outline-none pr-2 py-1"
-                    value={grupoSeleccionado}
-                    onChange={(e) => setGrupoSeleccionado(e.target.value)}
-                  >
-                    <option value="">Temas de Seguimiento</option>
-                    {gruposUnicos.map(g => (
-                      <option key={g.id} value={g.id}>{g.tema}</option>
-                    ))}
-                  </select>
-                </div>
+              {/* Área superior derecha: Únicamente botones de acción alineados */}
+              <div className="flex flex-wrap items-center gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => router.push('/dashboard')}
+                  className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-4 py-2.5 rounded-2xl shadow-sm transition active:scale-95"
+                >
+                  <Plus className="w-4 h-4" /> Nueva Cita
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsCreateGroupOpen(true)}
+                  className="inline-flex items-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 font-bold text-sm px-4 py-2.5 rounded-2xl border border-indigo-200/80 dark:border-indigo-800/60 transition active:scale-95"
+                >
+                  <FolderPlus className="w-4 h-4" /> Crear Tema de Seguimiento
+                </button>
               </div>
             </div>
 
@@ -375,57 +375,93 @@ function CitasContent() {
               </button>
             </div>
 
-            {/* Filtros de Vista y Tiempo */}
-            <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 mb-6 bg-slate-50 dark:bg-[#1E293B] p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
+            {/* Barra Central de Filtros: Vista, Tiempo, Médicos y Temas de Seguimiento */}
+            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-6 bg-slate-50 dark:bg-[#1E293B] p-3.5 rounded-2xl border border-slate-200/60 dark:border-slate-800">
               
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-1">Vista:</span>
-                <button
-                  onClick={() => setViewFilter('todas')}
-                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${viewFilter === 'todas' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'}`}
-                >
-                  Todas
-                </button>
-                <button
-                  onClick={() => setViewFilter('unicas')}
-                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${viewFilter === 'unicas' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'}`}
-                >
-                  Citas Únicas
-                </button>
-                <button
-                  onClick={() => setViewFilter('series')}
-                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${viewFilter === 'series' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'}`}
-                >
-                  Tratamientos/Series
-                </button>
+              <div className="flex flex-wrap items-center gap-4">
+                {/* Filtro Vista */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Vista:</span>
+                  <button
+                    onClick={() => setViewFilter('todas')}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${viewFilter === 'todas' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                  >
+                    Todas
+                  </button>
+                  <button
+                    onClick={() => setViewFilter('unicas')}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${viewFilter === 'unicas' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                  >
+                    Citas Únicas
+                  </button>
+                  <button
+                    onClick={() => setViewFilter('series')}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${viewFilter === 'series' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                  >
+                    Tratamientos/Series
+                  </button>
+                </div>
+
+                {/* Filtro Tiempo */}
+                {tabActual === 'proximas' && (
+                  <>
+                    <div className="hidden sm:block w-px h-5 bg-slate-200 dark:bg-slate-700 self-center"></div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Tiempo:</span>
+                      <button
+                        onClick={() => setQuickFilter('todas')}
+                        className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${quickFilter === 'todas' ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 shadow-xs' : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                      >
+                        Cualquier fecha
+                      </button>
+                      <button
+                        onClick={() => setQuickFilter('24hrs')}
+                        className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${quickFilter === '24hrs' ? 'bg-sky-600 text-white shadow-xs' : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                      >
+                        Próximas 24h
+                      </button>
+                      <button
+                        onClick={() => setQuickFilter('semana')}
+                        className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${quickFilter === 'semana' ? 'bg-sky-600 text-white shadow-xs' : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                      >
+                        Próxima semana
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
 
-              {tabActual === 'proximas' && (
-                <>
-                  <div className="hidden sm:block w-px bg-slate-200 self-stretch my-1"></div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-1">Tiempo:</span>
-                    <button
-                      onClick={() => setQuickFilter('todas')}
-                      className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${quickFilter === 'todas' ? 'bg-slate-800 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'}`}
-                    >
-                      Cualquier fecha
-                    </button>
-                    <button
-                      onClick={() => setQuickFilter('24hrs')}
-                      className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${quickFilter === '24hrs' ? 'bg-sky-600 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'}`}
-                    >
-                      Próximas 24h
-                    </button>
-                    <button
-                      onClick={() => setQuickFilter('semana')}
-                      className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${quickFilter === 'semana' ? 'bg-sky-600 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'}`}
-                    >
-                      Próxima semana
-                    </button>
-                  </div>
-                </>
-              )}
+              {/* Selectores de Filtro: Todos los Médicos & Temas de Seguimiento */}
+              <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto pt-2 lg:pt-0 border-t lg:border-0 border-slate-200/80 dark:border-slate-700">
+                <div className="flex items-center gap-2 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-1.5 shadow-2xs">
+                  <Filter className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 shrink-0" />
+                  <select
+                    className="bg-transparent text-xs font-semibold text-slate-700 dark:text-slate-200 outline-none pr-1 cursor-pointer"
+                    value={medicoSeleccionado}
+                    onChange={(e) => setMedicoSeleccionado(e.target.value)}
+                  >
+                    <option value="" className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200">Todos los Médicos</option>
+                    {medicosUnicos.map(m => (
+                      <option key={m.id} value={m.id} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200">{m.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-1.5 shadow-2xs">
+                  <RefreshCw className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 shrink-0" />
+                  <select
+                    className="bg-transparent text-xs font-semibold text-slate-700 dark:text-slate-200 outline-none pr-1 cursor-pointer"
+                    value={grupoSeleccionado}
+                    onChange={(e) => setGrupoSeleccionado(e.target.value)}
+                  >
+                    <option value="" className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200">Temas de Seguimiento</option>
+                    {gruposUnicos.map(g => (
+                      <option key={g.id} value={g.id} className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200">{g.tema}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
             </div>
 
             {/* Grid de Citas */}
@@ -477,7 +513,7 @@ function CitasContent() {
                             animate={{ height: 'auto', opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
                             transition={{ duration: 0.3 }}
-                            className="overflow-hidden"
+                            className="overflow-visible"
                           >
                             <div className="flex flex-col gap-8 pt-6 mt-6 border-t border-slate-100">
                               
@@ -485,18 +521,19 @@ function CitasContent() {
                               {standalone.length > 0 && (
                                 <div className="flex flex-col gap-3 relative before:absolute before:inset-y-0 before:left-3 sm:before:left-4 before:w-px before:bg-slate-200">
                                   {standalone.map((cita) => (
-                                    <div key={`standalone-${cita.ctaCodigo}`} onClick={() => handleOpenModal(cita)} className="cursor-pointer relative z-10 pl-8 sm:pl-10">
+                                    <div key={`standalone-${cita.ctaCodigo}`} className="relative z-10 pl-8 sm:pl-10">
                                       <div className="absolute left-2.5 sm:left-[15px] top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-sky-400 border-[3px] border-white shadow-sm" />
                                       <CitaCard
                                         cita={cita}
                                         layout="row"
-                                        isPast={!['programada', 'confirmada', 'pospuesta'].includes(cita.ctaEstado)}
+                                        isPast={(cita as any).isPast || !['programada', 'confirmada', 'pospuesta'].includes(cita.ctaEstado)}
                                         onModify={(c) => {
                                           router.push(`/dashboard/citas/${c.ctaCodigo}/editar`);
                                         }}
                                         onCancel={(c) => {
                                           handleConfirmCancel(c);
                                         }}
+                                        onLinkGroup={(c) => setLinkGroupCita(c)}
                                       />
                                     </div>
                                   ))}
@@ -510,9 +547,8 @@ function CitasContent() {
                                   grupoId={grupoId}
                                   citasGrupo={citasGrupo}
                                   router={router}
-                                  handleOpenModal={handleOpenModal}
-                                  setCitaSeleccionada={setCitaSeleccionada}
                                   handleConfirmCancel={handleConfirmCancel}
+                                  onLinkGroup={(c) => setLinkGroupCita(c)}
                                 />
                               ))}
                             </div>
@@ -524,24 +560,21 @@ function CitasContent() {
                 })}
               </div>
             )}
-
-
-
-
       </motion.main>
 
-      {/* Modal de Detalle (Drawer) */}
-      <CitaDetailDrawer
-        isOpen={!!citaSeleccionada}
-        onClose={() => setCitaSeleccionada(null)}
-        cita={citaSeleccionada}
-        onEdit={(cita) => {
-          router.push(`/dashboard/citas/${cita.ctaCodigo}/editar`);
-        }}
-        onCancel={(cita) => {
-          router.push(`/dashboard/citas/${cita.ctaCodigo}/editar`);
-        }}
-        doctorFoto={selectedDoctor?.exp_foto_perfil || ""}
+      <LinkGroupModal
+        isOpen={!!linkGroupCita}
+        onClose={() => setLinkGroupCita(null)}
+        cita={linkGroupCita}
+        onLinked={(msg) => setToast({ message: msg, type: 'success' })}
+      />
+
+      <CreateGroupModal
+        isOpen={isCreateGroupOpen}
+        onClose={() => setIsCreateGroupOpen(false)}
+        pacientes={pacientes || []}
+        citas={citasConTemas}
+        onCreated={(msg) => setToast({ message: msg, type: 'success' })}
       />
 
     </div>
@@ -552,16 +585,14 @@ function SeriesContainer({
   grupoId,
   citasGrupo,
   router,
-  handleOpenModal,
-  setCitaSeleccionada,
-  handleConfirmCancel
+  handleConfirmCancel,
+  onLinkGroup
 }: {
   grupoId: string;
   citasGrupo: CitaListDto[];
   router: any;
-  handleOpenModal: (c: CitaListDto) => void;
-  setCitaSeleccionada: (c: CitaListDto) => void;
   handleConfirmCancel: (c: CitaListDto) => void;
+  onLinkGroup: (c: CitaListDto) => void;
 }) {
   const doctorCode = citasGrupo[0]?.ctaCoddoc;
   const { data: doctor } = useDoctorByCode(doctorCode || '');
@@ -592,7 +623,7 @@ function SeriesContainer({
               )}
             </div>
             
-            {/* Tooltip del Médico (Simulado) */}
+            {/* Tooltip del Médico */}
             <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-48 bg-slate-800 text-white rounded-xl p-3 shadow-xl opacity-0 invisible group-hover/avatar:opacity-100 group-hover/avatar:visible transition-all z-20 pointer-events-none">
               <p className="text-xs font-bold mb-1">{medicoEspecialidad}</p>
               <p className="text-[10px] text-slate-300">+10 años de experiencia</p>
@@ -628,19 +659,336 @@ function SeriesContainer({
 
       <div className="flex flex-col gap-3 relative before:absolute before:inset-y-0 before:left-3 sm:before:left-4 before:w-px before:bg-sky-200 dark:before:bg-slate-600">
         {citasGrupo.map((cita) => (
-          <div key={`grupo-cita-${cita.ctaCodigo}`} onClick={() => handleOpenModal(cita)} className="cursor-pointer relative z-10 pl-8 sm:pl-10">
+          <div key={`grupo-cita-${cita.ctaCodigo}`} className="relative z-10 pl-8 sm:pl-10">
             <div className={`absolute left-2.5 sm:left-[15px] top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full border-[3px] border-white dark:border-[#1E293B] shadow-sm ${['programada', 'confirmada', 'pospuesta'].includes(cita.ctaEstado) ? 'bg-sky-400 dark:bg-blue-400' : 'bg-slate-300 dark:bg-slate-600'}`} />
             <CitaCard
               cita={cita}
               layout="row"
-              isPast={!['programada', 'confirmada', 'pospuesta'].includes(cita.ctaEstado)}
-              onModify={(c) => { setCitaSeleccionada(c); }}
+              isPast={(cita as any).isPast || !['programada', 'confirmada', 'pospuesta'].includes(cita.ctaEstado)}
+              onModify={(c) => { router.push(`/dashboard/citas/${c.ctaCodigo}/editar`); }}
               onCancel={(c) => { handleConfirmCancel(c); }}
+              onLinkGroup={onLinkGroup}
             />
           </div>
         ))}
       </div>
     </div>
+  );
+}
+
+function LinkGroupModal({
+  isOpen,
+  onClose,
+  cita,
+  onLinked
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  cita: CitaListDto | null;
+  onLinked: (msg: string) => void;
+}) {
+  const { data: session } = useSession();
+  const token = (session as any)?.accessToken || '';
+  const [loading, setLoading] = useState(false);
+  const [grupos, setGrupos] = useState<GrupoCitaDto[]>([]);
+  const [selectedGrupoId, setSelectedGrupoId] = useState<string>('');
+  const [mode, setMode] = useState<'select' | 'create'>('select');
+  const [newTitle, setNewTitle] = useState('');
+  const [newTopic, setNewTopic] = useState('');
+
+  const { mutateAsync: updateCita } = useUpdateCita();
+
+  useEffect(() => {
+    if (isOpen && cita && token) {
+      setLoading(true);
+      setSelectedGrupoId(cita.ctaGrupoId || '');
+      setMode('select');
+      setNewTitle('');
+      setNewTopic('');
+      fetchGruposCita(token, cita.ctaCodpac, cita.ctaCoddoc)
+        .then(res => setGrupos(res || []))
+        .catch(err => console.error(err))
+        .finally(() => setLoading(false));
+    }
+  }, [isOpen, cita, token]);
+
+  if (!isOpen || !cita) return null;
+
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      let finalGrupoId = selectedGrupoId;
+      if (mode === 'create') {
+        if (!newTitle.trim()) return;
+        const created = await createGrupo(token, cita.ctaCodpac, cita.ctaCoddoc, newTopic.trim() || newTitle.trim(), newTitle.trim());
+        finalGrupoId = created.grupoId;
+      }
+
+      await updateCita({
+        citaId: cita.ctaCodigo,
+        payload: {
+          fecha: cita.ctaFecha.split('T')[0],
+          hora: cita.ctaHora,
+          modalidad: cita.ctaModalidad,
+          precio: cita.ctaPrecio,
+          motivo: cita.ctaMotivo,
+          grupoId: finalGrupoId || null,
+          consultorioId: cita.ctaConsultorioId,
+          direccionDomicilio: cita.direccionDomicilio,
+          referenciasDomicilio: cita.referenciasDomicilio,
+          enlaceVideollamada: cita.enlaceVideollamada,
+        }
+      });
+      onLinked('Cita vinculada al tema de seguimiento correctamente');
+      onClose();
+    } catch (e) {
+      console.error(e);
+      alert('Error al vincular el tema de seguimiento');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 10 }}
+          className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-slate-200"
+        >
+          <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+            <div className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-indigo-600" />
+              <h3 className="font-bold text-slate-900 text-base">Tema de Seguimiento</h3>
+            </div>
+            <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-full text-slate-400">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <p className="text-xs text-slate-500 mb-4">
+            Anclar la cita con <strong>{cita.medicoNombre}</strong> a un tema de seguimiento. (Solo se muestran temas de este médico).
+          </p>
+
+          <div className="flex bg-slate-100 p-1 rounded-xl mb-4 text-xs font-bold">
+            <button
+              type="button"
+              onClick={() => setMode('select')}
+              className={`flex-1 py-2 rounded-lg transition ${mode === 'select' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}
+            >
+              Existente
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('create')}
+              className={`flex-1 py-2 rounded-lg transition ${mode === 'create' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}
+            >
+              + Crear Nuevo
+            </button>
+          </div>
+
+          {mode === 'select' ? (
+            <div className="space-y-3">
+              <label className="block text-xs font-bold text-slate-700 uppercase">Seleccionar Tema:</label>
+              {loading ? (
+                <div className="py-4 text-center text-xs text-slate-400">Cargando temas del médico...</div>
+              ) : (
+                <select
+                  value={selectedGrupoId}
+                  onChange={e => setSelectedGrupoId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">(Sin tema de seguimiento)</option>
+                  {grupos.map(g => (
+                    <option key={g.grupoId} value={g.grupoId}>{g.titulo}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Título del Tema:</label>
+                <input
+                  type="text"
+                  value={newTitle}
+                  onChange={e => setNewTitle(e.target.value)}
+                  placeholder="Ej. Rehabilitación Rodilla"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Descripción / Objetivos:</label>
+                <input
+                  type="text"
+                  value={newTopic}
+                  onChange={e => setNewTopic(e.target.value)}
+                  placeholder="Ej. Plan de 6 sesiones de fisioterapia"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-medium text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-6 mt-6 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={loading || (mode === 'create' && !newTitle.trim())}
+              className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Guardar y Vincular'}
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    </AnimatePresence>
+  );
+}
+
+function CreateGroupModal({
+  isOpen,
+  onClose,
+  pacientes,
+  citas,
+  onCreated
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  pacientes: any[];
+  citas: CitaListDto[];
+  onCreated: (msg: string) => void;
+}) {
+  const { data: session } = useSession();
+  const token = (session as any)?.accessToken || '';
+  const { data: doctorsList = [] } = useDoctors();
+  const [loading, setLoading] = useState(false);
+  const [selectedPac, setSelectedPac] = useState('');
+  const [selectedDoc, setSelectedDoc] = useState('');
+  const [titulo, setTitulo] = useState('');
+  const [tema, setTema] = useState('');
+
+  useEffect(() => {
+    if (pacientes.length && !selectedPac) setSelectedPac(pacientes[0].pacCodigo);
+    if (citas.length && !selectedDoc) setSelectedDoc(citas[0].ctaCoddoc);
+    else if (doctorsList.length && !selectedDoc) setSelectedDoc(doctorsList[0].exp_codigo);
+  }, [pacientes, citas, doctorsList, selectedPac, selectedDoc]);
+
+  if (!isOpen) return null;
+
+  const handleCreate = async () => {
+    if (!titulo.trim() || !selectedPac || !selectedDoc) return;
+    setLoading(true);
+    try {
+      await createGrupo(token, selectedPac, selectedDoc, tema.trim() || titulo.trim(), titulo.trim());
+      onCreated('Tema de seguimiento creado exitosamente');
+      onClose();
+    } catch (e) {
+      console.error(e);
+      alert('Error al crear tema de seguimiento');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 1, y: 0 }}
+          className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-slate-200"
+        >
+          <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+            <div className="flex items-center gap-2">
+              <FolderPlus className="w-5 h-5 text-indigo-600" />
+              <h3 className="font-bold text-slate-900 text-base">Crear Tema de Seguimiento</h3>
+            </div>
+            <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-full text-slate-400">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Paciente:</label>
+              <select
+                value={selectedPac}
+                onChange={e => setSelectedPac(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                {pacientes.map(p => (
+                  <option key={p.pacCodigo} value={p.pacCodigo}>{p.nombreCompleto}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Médico Especialista:</label>
+              <select
+                value={selectedDoc}
+                onChange={e => setSelectedDoc(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                {doctorsList.map(d => (
+                  <option key={d.exp_codigo} value={d.exp_codigo}>{buildDoctorFullName(d)} - {d.exp_profesion || 'General'}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Título del Tema / Tratamiento:</label>
+              <input
+                type="text"
+                value={titulo}
+                onChange={e => setTitulo(e.target.value)}
+                placeholder="Ej. Control de Diabetes Tipo 2"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Descripción / Objetivos:</label>
+              <input
+                type="text"
+                value={tema}
+                onChange={e => setTema(e.target.value)}
+                placeholder="Ej. Chequeos trimestrales de glucosa"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-medium text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-6 mt-6 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleCreate}
+              disabled={loading || !titulo.trim() || !selectedDoc}
+              className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Crear Tema'}
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    </AnimatePresence>
   );
 }
 

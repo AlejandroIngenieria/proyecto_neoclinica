@@ -12,7 +12,7 @@ export default function Providers({ children }: Readonly<{ children: React.React
           queries: {
             staleTime: 5 * 60 * 1000,
             gcTime: 15 * 60 * 1000,
-            refetchOnWindowFocus: true,
+            refetchOnWindowFocus: false,
             retry: 1,
           },
         },

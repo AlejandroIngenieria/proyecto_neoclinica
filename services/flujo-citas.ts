@@ -82,12 +82,46 @@ export async function createGrupo(token: string, codPaciente: string, codMedico:
 }
 
 export async function createCita(token: string, request: CrearCitaRequest): Promise<string> {
+  const formData = new FormData();
+
+  // 1. Campos obligatorios
+  formData.append('CodPaciente', request.codPaciente);
+  formData.append('CodMedico', request.codMedico);
+  formData.append('Fecha', request.fecha);
+  formData.append('Hora', request.hora);
+  formData.append('Modalidad', request.modalidad);
+  formData.append('Precio', String(request.precio));
+
+  // 2. Campos opcionales
+  if (request.grupoId) formData.append('GrupoId', request.grupoId);
+  if (request.consultorioId !== undefined && request.consultorioId !== null) {
+    formData.append('ConsultorioId', String(request.consultorioId));
+  }
+  if (request.motivo) formData.append('Motivo', request.motivo);
+  if (request.direccionDomicilio) formData.append('DireccionDomicilio', request.direccionDomicilio);
+  if (request.referenciasDomicilio) formData.append('ReferenciasDomicilio', request.referenciasDomicilio);
+  if (request.enlaceVideollamada) formData.append('EnlaceVideollamada', request.enlaceVideollamada);
+
+  // 3. Archivos adjuntos
+  if (request.archivos && request.archivos.length > 0) {
+    request.archivos.forEach((archivo) => {
+      formData.append('Archivos', archivo);
+    });
+  }
+
+  const authHeaders = getAuthHeaders(token).headers as any;
+
   const { data } = await expedientesApi.post<string | { id: string }>(
     `/api/flujo-citas`,
-    request,
-    getAuthHeaders(token)
+    formData,
+    {
+      headers: {
+        Authorization: authHeaders.Authorization,
+        'Content-Type': undefined, // Permite que Axios/browser asigne multipart/form-data con boundary
+      },
+    }
   );
-  return typeof data === 'string' ? data : data.id;
+  return typeof data === 'string' ? data : (data?.id || '');
 }
 
 export async function uploadDocumentoCita(
@@ -111,7 +145,7 @@ export async function uploadDocumentoCita(
     {
       headers: {
         Authorization: authHeaders.Authorization,
-        'Content-Type': undefined, // Let Axios handle it
+        'Content-Type': undefined,
       },
     }
   );
@@ -126,7 +160,44 @@ export async function cancelarCita(token: string, citaId: string): Promise<void>
 }
 
 export async function updateCita(token: string, citaId: string, payload: UpdateCitaRequest): Promise<void> {
-  await expedientesApi.put(`/api/flujo-citas/${citaId}`, payload, getAuthHeaders(token));
+  const formData = new FormData();
+
+  if (payload.fecha) formData.append('Fecha', payload.fecha);
+  if (payload.hora) formData.append('Hora', payload.hora);
+  if (payload.modalidad) formData.append('Modalidad', payload.modalidad);
+  if (payload.precio !== undefined) formData.append('Precio', String(payload.precio));
+
+  if (payload.grupoId) formData.append('GrupoId', payload.grupoId);
+  if (payload.consultorioId !== undefined && payload.consultorioId !== null) {
+    formData.append('ConsultorioId', String(payload.consultorioId));
+  }
+  if (payload.motivo) formData.append('Motivo', payload.motivo);
+  if (payload.direccionDomicilio) formData.append('DireccionDomicilio', payload.direccionDomicilio);
+  if (payload.referenciasDomicilio) formData.append('ReferenciasDomicilio', payload.referenciasDomicilio);
+  if (payload.enlaceVideollamada) formData.append('EnlaceVideollamada', payload.enlaceVideollamada);
+
+  if (payload.archivos && payload.archivos.length > 0) {
+    payload.archivos.forEach((archivo) => {
+      formData.append('Archivos', archivo);
+    });
+  }
+
+  if (payload.archivosConservados !== undefined) {
+    formData.append('ArchivosConservados', JSON.stringify(payload.archivosConservados));
+  }
+
+  const authHeaders = getAuthHeaders(token).headers as any;
+
+  await expedientesApi.put(
+    `/api/flujo-citas/${citaId}`,
+    formData,
+    {
+      headers: {
+        Authorization: authHeaders.Authorization,
+        'Content-Type': undefined,
+      },
+    }
+  );
 }
 
 export async function fetchMetodosPago(token: string, codMedico: string): Promise<MetodoPagoDto[]> {

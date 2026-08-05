@@ -60,11 +60,11 @@ export function ProfileSidebar() {
   };
 
   const sidebarContent = (
-    <div className="flex h-full flex-col w-72 relative">
+    <div className="flex h-full flex-col w-72 relative bg-white dark:bg-[#0B1120]">
       {/* ── Toggle Collapse Button (Centered Right) ── */}
       <button
         onClick={() => setIsDesktopOpen(false)}
-        className="absolute right-0 top-1/2 z-50 flex h-12 w-6 -translate-y-1/2 items-center justify-center rounded-l-lg border-y border-l border-slate-200 bg-white text-slate-400 shadow-sm transition hover:bg-slate-50 hover:text-blue-600 hidden lg:flex"
+        className="absolute right-0 top-1/2 z-50 flex h-12 w-6 -translate-y-1/2 items-center justify-center rounded-l-lg border-y border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0F172A] text-slate-400 dark:text-slate-400 shadow-sm transition hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 hidden lg:flex"
         aria-label="Ocultar menú"
       >
         <ChevronLeft className="h-4 w-4" />
@@ -74,7 +74,7 @@ export function ProfileSidebar() {
       <div className="pt-4 px-5">
         <Link
           href="/dashboard"
-          className="group flex w-fit items-center gap-2 rounded-lg px-2 py-2 text-blue-600 transition-colors hover:bg-blue-50"
+          className="group flex w-fit items-center gap-2 rounded-lg px-2 py-2 text-blue-600 dark:text-blue-400 transition-colors hover:bg-blue-50 dark:hover:bg-blue-950/40"
         >
           <ArrowLeft className="h-5 w-5 transition-transform group-hover:-translate-x-1" />
           <span className="text-sm font-semibold">Volver al menú</span>
@@ -93,10 +93,10 @@ export function ProfileSidebar() {
               className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-200 ${
                 active
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              <item.icon className={`h-[18px] w-[18px] shrink-0 ${active ? 'text-white' : 'text-slate-400 group-hover:text-blue-600'}`} />
+              <item.icon className={`h-[18px] w-[18px] shrink-0 ${active ? 'text-white' : 'text-slate-400 dark:text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400'}`} />
               <span className="truncate">{item.label}</span>
             </Link>
           );
@@ -104,21 +104,11 @@ export function ProfileSidebar() {
       </nav>
 
       {/* ── Bottom actions ── */}
-      <div className="border-t border-slate-100 px-3 py-4 space-y-2">
-
-        <Link
-          href="/dashboard/perfil/pacientes"
-          onClick={() => setIsMobileOpen(false)}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-blue-300 bg-blue-50/60 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:border-blue-400 hover:bg-blue-100/60"
-        >
-          <UserPlus className="h-4 w-4 shrink-0" />
-          <span className="truncate">Añadir Familiar</span>
-        </Link>
-
+      <div className="border-t border-slate-100 dark:border-slate-800 px-3 py-4 space-y-2">
         <button
           type="button"
           onClick={() => signOut({ callbackUrl: '/login' })}
-          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-rose-500 transition hover:bg-rose-50 hover:text-rose-700"
+          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-rose-500 dark:text-rose-400 transition hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-300"
         >
           <LogOut className="h-4 w-4 shrink-0" />
           <span className="truncate">Cerrar sesión</span>
@@ -152,7 +142,7 @@ export function ProfileSidebar() {
             animate={{ width: 288, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="hidden lg:flex lg:shrink-0 lg:flex-col border-r border-slate-200/60 bg-white/50 backdrop-blur-xl sticky top-0 h-screen overflow-hidden"
+            className="hidden lg:flex lg:shrink-0 lg:flex-col border-r border-slate-200/60 dark:border-slate-800 bg-white dark:bg-[#0B1120] backdrop-blur-xl sticky top-0 h-screen overflow-hidden"
           >
             {sidebarContent}
           </motion.aside>
@@ -174,7 +164,7 @@ export function ProfileSidebar() {
 
             {/* Panel */}
             <motion.aside
-              className="fixed inset-y-0 left-0 z-50 w-72 bg-white shadow-2xl lg:hidden"
+              className="fixed inset-y-0 left-0 z-50 w-72 bg-white dark:bg-[#0F172A] border-r border-slate-200 dark:border-slate-800 shadow-2xl lg:hidden"
               initial={{ x: '-100%' }}
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
@@ -184,7 +174,7 @@ export function ProfileSidebar() {
               <button
                 type="button"
                 onClick={() => setIsMobileOpen(false)}
-                className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 dark:text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-200"
                 aria-label="Cerrar menú"
               >
                 <X className="h-5 w-5" />

@@ -85,11 +85,13 @@ function getSocialIcon(name: string, className = "h-5 w-5") {
 }
 
 function buildRecentDoctorItem(doctor: DoctorResponse, fullName: string) {
+  const spec = doctor.exp_profesion || doctor.especialidades?.[0]?.especialidad || 'Especialidad médica';
+  const loc = doctor.clinicas?.[0]?.cli_descripcion || [doctor.pais_nacimiento, doctor.nacionalidad].filter(Boolean).join(' · ') || 'Guatemala';
   return {
     exp_codigo: doctor.exp_codigo,
     fullName,
-    specialty: doctor.exp_profesion || 'Especialidad médica',
-    locationLabel: [doctor.pais_nacimiento, doctor.nacionalidad].filter(Boolean).join(' · ') || 'Ubicación no registrada',
+    specialty: spec,
+    locationLabel: loc,
     image: doctor.exp_foto_perfil,
     visitedAt: new Date().toISOString(),
   };
@@ -215,11 +217,11 @@ function DoctorProfileContent() {
   const selectedClinicQuery = buildClinicQuery(primaryClinic, fullName || doctor.exp_profesion || 'Médico');
   const { googleMapsHref, wazeHref, mapEmbedSrc } = buildMapsLinks(primaryClinic, selectedClinicQuery);
 
-  const startingPrice = doctor.clinicas.length > 0 
-    ? Math.min(...doctor.clinicas.map(c => c.mcl_precio_base || Infinity)) 
-    : null;
-    
-  const validStartingPrice = startingPrice !== Infinity && startingPrice !== null ? startingPrice : null;
+  const startingPrices = [
+    ...doctor.servicios.map((s) => s.syp_costo_total),
+    ...doctor.clinicas.map((c) => c.mcl_precio_base),
+  ].filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p >= 0);
+  const validStartingPrice = startingPrices.length ? Math.min(...startingPrices) : null;
 
   const trajectoryItems = doctor 
     ? [

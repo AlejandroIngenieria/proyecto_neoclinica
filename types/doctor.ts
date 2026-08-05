@@ -67,6 +67,8 @@ export type DoctorClinica = {
   cli_latitud: number | null;
   cli_longitud: number | null;
   cli_telefono1: string | null;
+  cli_url_google_maps?: string | null;
+  cli_url_waze?: string | null;
   mcl_precio_base: number | null;
   horarios_atencion: DoctorClinicaHorario[];
 };

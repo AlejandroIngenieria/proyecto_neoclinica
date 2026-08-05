@@ -110,7 +110,7 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
   }, []);
 
   return (
-    <div className="relative z-50 w-full bg-transparent shadow-none">
+    <div className="relative z-[120] w-full bg-transparent shadow-none">
       <div className="mx-auto w-full px-4 sm:px-6 lg:w-[90%] lg:px-0 max-w-[1800px]">
         <header className="bg-transparent border-none shadow-none">
         <div className="flex items-center justify-between gap-2 sm:gap-4 py-3 sm:py-4">
@@ -173,7 +173,7 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
         {navLinks.length === 0 && <div className="flex-1" />}
 
         {/* ── Actions (Notificaciones y Usuario) ── */}
-        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0 z-[120]">
           <button
             type="button"
             className="relative flex h-9 w-9 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-full bg-transparent text-on-surface hover:bg-surface-container transition-all"
@@ -186,7 +186,7 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
           </button>
 
           {/* ── User menu ── */}
-          <div ref={userMenuRef} className="relative shrink-0">
+          <div ref={userMenuRef} className="relative shrink-0 z-[120]">
             <button
               type="button"
               onClick={() => setIsUserMenuOpen((v) => !v)}
@@ -211,7 +211,7 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
             <AnimatePresence>
             {isUserMenuOpen && (
               <motion.div
-                className="absolute right-0 z-50 mt-3 w-64 sm:w-72 overflow-hidden rounded-3xl border border-outline-variant/30 bg-surface-container-lowest shadow-[0_20px_60px_rgba(0,0,0,0.15)]"
+                className="absolute right-0 z-[120] mt-3 w-64 sm:w-72 overflow-hidden rounded-3xl border border-outline-variant/30 bg-surface-container-lowest shadow-[0_20px_60px_rgba(0,0,0,0.15)]"
                 initial={{ opacity: 0, y: -8, scale: 0.96 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -8, scale: 0.96 }}

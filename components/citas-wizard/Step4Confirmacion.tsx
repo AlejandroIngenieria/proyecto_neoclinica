@@ -72,13 +72,14 @@ export function Step4Confirmacion() {
         grupoId: grupoId || undefined,
         consultorioId,
         fecha: fecha.toISOString().split('T')[0],
-        hora: hora + ':00', // Asegurar formato HH:mm:ss si 'hora' es 'HH:mm'
+        hora: hora.length === 5 ? hora + ':00' : hora,
         modalidad,
         precio,
         motivo: motivo || undefined,
         direccionDomicilio: dirDomicilio,
         referenciasDomicilio: refDomicilio,
-        enlaceVideollamada: null
+        enlaceVideollamada: null,
+        archivos: archivos.length > 0 ? archivos : undefined,
       };
 
       // 2. Crear Cita
@@ -247,15 +248,15 @@ export function Step4Confirmacion() {
           <div className="bg-white dark:bg-[#0F172A] rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col gap-2">
             <div className="flex justify-between items-center text-sm">
               <span className="text-slate-500 dark:text-slate-400 font-medium">Subtotal de la consulta</span>
-              <span className="font-semibold text-slate-700 dark:text-slate-200">${precioBase.toFixed(2)} MXN</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-200">Q{precioBase.toFixed(2)}</span>
             </div>
             <div className="flex justify-between items-center text-sm">
-              <span className="text-slate-500 dark:text-slate-400 font-medium">Impuestos (16% IVA)</span>
-              <span className="font-semibold text-slate-700 dark:text-slate-200">${iva.toFixed(2)} MXN</span>
+              <span className="text-slate-500 dark:text-slate-400 font-medium">Impuestos (12% IVA)</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-200">Q{iva.toFixed(2)}</span>
             </div>
             <div className="border-t border-slate-100 dark:border-slate-800 my-1 pt-2 flex justify-between items-center">
               <span className="font-bold text-slate-900 dark:text-white">Total a Pagar</span>
-              <span className="font-black text-lg text-blue-600 dark:text-blue-400">${total.toFixed(2)} MXN</span>
+              <span className="font-black text-lg text-blue-600 dark:text-blue-400">Q{total.toFixed(2)}</span>
             </div>
           </div>
         </div>

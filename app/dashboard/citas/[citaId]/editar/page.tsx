@@ -3,8 +3,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useSession } from 'next-auth/react';
 import { 
-  ArrowLeft, Loader2, CalendarDays, Clock, MapPin, Monitor, CheckCircle2, AlertCircle, Home, Building2, CalendarClock, CreditCard
+  ArrowLeft, Loader2, CalendarDays, Clock, MapPin, Monitor, CheckCircle2, AlertCircle, Home, Building2, CalendarClock, CreditCard, Upload, FileText, Paperclip, FileCheck, Check, X
 } from 'lucide-react';
 import { Navbar } from '@/components/navbar';
 import Image from 'next/image';
@@ -16,11 +17,12 @@ import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/style.css';
 
 import { 
-  usePacientesSeleccion, useAllCitasPacientes, useUpdateCita, useCancelarCita, 
+  usePacientesSeleccion, useAllCitasPacientes, useCitaByCodigo, useUpdateCita, useCancelarCita, 
   useModalidades, useClinicas, useAreasDomicilio, useHorarios, useGruposCita, useHorasOcupadas
 } from '@/hooks/use-flujo-citas';
+import { uploadDocumentoCita } from '@/services/flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
-import type { ModalidadCita, UpdateCitaRequest, ClinicaCitaDto, AreaDomicilioDto, HorarioCitaDto } from '@/types/citas';
+import type { ModalidadCita, UpdateCitaRequest, ClinicaCitaDto, AreaDomicilioDto, HorarioCitaDto, CitaArchivoDto } from '@/types/citas';
 
 const MySwal = withReactContent(Swal);
 
@@ -36,14 +38,33 @@ function safeFormatDate(dateStr: string | undefined, formatStr: string): string 
 export default function EditWizardPage() {
   const params = useParams();
   const router = useRouter();
-  const citaId = params.citaId as string;
+  const rawCitaId = params.citaId as string;
+  const citaId = useMemo(() => {
+    try {
+      return decodeURIComponent(rawCitaId || '').trim();
+    } catch {
+      return (rawCitaId || '').trim();
+    }
+  }, [rawCitaId]);
+
+  const updateCitaMutation = useUpdateCita();
+  const cancelarCitaMutation = useCancelarCita();
+  const isUpdating = updateCitaMutation.isPending;
+  const isCanceling = cancelarCitaMutation.isPending;
 
   // -- 1. Data Fetching --
-  const { data: pacientes, isLoading: loadingPacientes } = usePacientesSeleccion();
-  const codigosPacientes = pacientes?.map(p => p.pacCodigo) || [];
-  const { data: citas, isLoading: loadingCitas } = useAllCitasPacientes(codigosPacientes);
+  const { data: citaDirecta, isLoading: loadingCitaDirecta, isFetching: fetchingCitaDirecta } = useCitaByCodigo(citaId);
+  const { data: pacientes, isLoading: loadingPacientes, isFetching: fetchingPacientes } = usePacientesSeleccion();
+  const codigosPacientes = useMemo(() => pacientes?.map(p => p.pacCodigo) || [], [pacientes]);
+  const { data: citas, isLoading: loadingCitas, isFetching: fetchingCitas } = useAllCitasPacientes(codigosPacientes);
 
-  const citaOriginal = citas?.find(c => c.ctaCodigo === citaId);
+  const citaOriginal = useMemo(() => {
+    if (citaDirecta) return citaDirecta;
+    if (!citas || !citaId) return undefined;
+    const target = citaId.toLowerCase();
+    return citas.find(c => String(c.ctaCodigo).trim().toLowerCase() === target);
+  }, [citaDirecta, citas, citaId]);
+
   const codMedico = citaOriginal?.ctaCoddoc || '';
   const codPaciente = citaOriginal?.ctaCodpac || '';
   const { data: doctor, isLoading: loadingDoctor } = useDoctorByCode(codMedico);
@@ -75,8 +96,43 @@ export default function EditWizardPage() {
   const { data: horariosClinica = [] } = useHorarios(mclCodigo);
   const { data: gruposList } = useGruposCita(codPaciente || null, codMedico || null);
 
-  const { mutateAsync: updateCita, isPending: isUpdating } = useUpdateCita();
-  const { mutateAsync: cancelarCita, isPending: isCanceling } = useCancelarCita();
+  const { data: session } = useSession();
+  const token = (session as any)?.accessToken || '';
+  const [uploadedDocs, setUploadedDocs] = useState<{ nombre: string; url?: string }[]>([]);
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !token || !codPaciente) return;
+
+    setIsUploadingDoc(true);
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        await uploadDocumentoCita(token, codPaciente, citaId, file);
+        setUploadedDocs(prev => [...prev, { nombre: file.name }]);
+      }
+      MySwal.fire({
+        title: '¡Documento Adjuntado!',
+        text: 'El archivo / examen se subió correctamente a la cita.',
+        icon: 'success',
+        confirmButtonColor: '#2563EB',
+      });
+    } catch (err: any) {
+      console.error(err);
+      MySwal.fire({
+        title: 'Error al subir',
+        text: 'Hubo un problema al adjuntar el archivo.',
+        icon: 'error',
+        confirmButtonColor: '#e11d48',
+      });
+    } finally {
+      setIsUploadingDoc(false);
+    }
+  };
+
+  const [archivosExistentes, setArchivosExistentes] = useState<CitaArchivoDto[]>([]);
+  const [nuevosArchivos, setNuevosArchivos] = useState<File[]>([]);
 
   // -- 4. Initialization --
   useEffect(() => {
@@ -95,6 +151,16 @@ export default function EditWizardPage() {
       setDireccion(citaOriginal.direccionDomicilio || '');
       setReferencias(citaOriginal.referenciasDomicilio || '');
       setPrecio(citaOriginal.ctaPrecio || 0);
+
+      const rawDocs = citaOriginal.archivos || citaOriginal.documentos || [];
+      const mappedDocs: CitaArchivoDto[] = rawDocs.map((a: any, idx: number) => ({
+        arcCodigo: a.arcCodigo || a.id || `doc-${idx}`,
+        arcNombre: a.arcNombre || a.nombre || `Archivo_${idx + 1}`,
+        arcUrl: a.arcUrl || a.url || '#',
+        arcTipoArchivo: a.arcTipoArchivo || a.tipo || 'application/pdf',
+      }));
+      setArchivosExistentes(mappedDocs);
+
       setIsInitialized(true);
     }
   }, [citaOriginal, isInitialized]);
@@ -102,19 +168,17 @@ export default function EditWizardPage() {
   // Set the selected clinic once the list is available
   useEffect(() => {
     if (isInitialized && citaOriginal?.ctaModalidad === 'presencial' && citaOriginal.ctaConsultorioId && clinicasList && !clinicaSeleccionada) {
-      const clinica = clinicasList.find(c => c.mclCodigo === citaOriginal.ctaConsultorioId);
+      const clinica = clinicasList.find(c => String(c.mclCodigo) === String(citaOriginal.ctaConsultorioId));
       if (clinica) setClinicaSeleccionada(clinica);
     }
   }, [isInitialized, citaOriginal, clinicasList, clinicaSeleccionada]);
 
-  // Adjust price
+  // Adjust price only when user changes clinic, preserving initial citaOriginal price
   useEffect(() => {
-    if (modalidad === 'presencial' && clinicaSeleccionada) {
+    if (isInitialized && modalidad === 'presencial' && clinicaSeleccionada) {
       setPrecio(clinicaSeleccionada.mclPrecioBase);
-    } else if (modalidad !== 'presencial') {
-      setPrecio(0);
     }
-  }, [modalidad, clinicaSeleccionada]);
+  }, [isInitialized, modalidad, clinicaSeleccionada]);
 
   // -- 5. Computed Availability --
   const horarios = useMemo(() => {
@@ -164,7 +228,7 @@ export default function EditWizardPage() {
     
     const uniqueSlots = Array.from(new Set(slots)).sort();
     
-    const isOriginalDate = citaOriginal && format(fecha, 'yyyy-MM-dd') === citaOriginal.ctaFecha;
+    const isOriginalDate = citaOriginal && format(fecha, 'yyyy-MM-dd') === citaOriginal.ctaFecha.split('T')[0];
     
     return uniqueSlots.map(slot => ({
       time: slot,
@@ -172,9 +236,27 @@ export default function EditWizardPage() {
     }));
   }, [fecha, horarios, horasOcupadas, citaOriginal]);
 
+  const handleNuevosArchivosChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setNuevosArchivos(prev => [...prev, ...Array.from(e.target.files!)]);
+    }
+  };
+
+  const handleRemoveNuevoArchivo = (index: number) => {
+    setNuevosArchivos(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleRemoveArchivoExistente = (arcCodigo: string) => {
+    setArchivosExistentes(prev => prev.filter(a => a.arcCodigo !== arcCodigo));
+  };
+
   // -- 6. Handlers --
   const handleSave = async () => {
     try {
+      const idsConservados = archivosExistentes
+        .map(a => a.arcCodigo)
+        .filter((id): id is string => Boolean(id));
+
       const payload: UpdateCitaRequest = {
         fecha: fecha ? format(fecha, 'yyyy-MM-dd') : '',
         hora,
@@ -186,9 +268,11 @@ export default function EditWizardPage() {
         direccionDomicilio: modalidad === 'domicilio' ? direccion : null,
         referenciasDomicilio: modalidad === 'domicilio' ? referencias : null,
         enlaceVideollamada: modalidad === 'virtual' ? enlace : null,
+        archivos: nuevosArchivos.length > 0 ? nuevosArchivos : undefined,
+        archivosConservados: idsConservados,
       };
 
-      await updateCita({ citaId, payload });
+      await updateCitaMutation.mutateAsync({ citaId, payload });
       
       MySwal.fire({
         title: '¡Cita modificada!',
@@ -222,7 +306,7 @@ export default function EditWizardPage() {
       showLoaderOnConfirm: true,
       preConfirm: async () => {
         try {
-          await cancelarCita(citaId);
+          await cancelarCitaMutation.mutateAsync(citaId);
           return true;
         } catch (err: any) {
           Swal.showValidationMessage('Hubo un problema al cancelar la cita.');
@@ -237,19 +321,38 @@ export default function EditWizardPage() {
     });
   };
 
-  if (loadingPacientes || loadingCitas || loadingDoctor || !isInitialized) {
+  const isStillLoading = loadingCitaDirecta || fetchingCitaDirecta || loadingPacientes || fetchingPacientes || (codigosPacientes.length > 0 && (loadingCitas || fetchingCitas)) || (!!codMedico && loadingDoctor);
+
+  if (isStillLoading && !citaOriginal) {
     return (
-      <div className="min-h-screen bg-[#F9FAFB] flex flex-col">
+      <div className="min-h-screen bg-[#F9FAFB] dark:bg-[#0B1120] flex flex-col">
         <Navbar />
         <main className="flex-1 flex flex-col items-center justify-center">
-          <Loader2 className="w-12 h-12 text-[#2563EB] animate-spin mb-4" />
-          <p className="font-bold text-[#6B7280]">Cargando expediente...</p>
+          <Loader2 className="w-12 h-12 text-[#2563EB] dark:text-blue-500 animate-spin mb-4" />
+          <p className="font-bold text-[#6B7280] dark:text-slate-400 animate-pulse">Cargando expediente de la cita...</p>
         </main>
       </div>
     );
   }
 
-  if (!citaOriginal) return null;
+  if (!citaOriginal) {
+    return (
+      <div className="min-h-screen bg-[#F9FAFB] dark:bg-[#0B1120] flex flex-col">
+        <Navbar />
+        <main className="flex-1 max-w-xl mx-auto w-full px-4 py-20 text-center flex flex-col items-center justify-center">
+          <AlertCircle className="w-16 h-16 text-rose-500 mb-4" />
+          <h2 className="text-2xl font-black text-slate-900 dark:text-white">Cita no encontrada</h2>
+          <p className="text-slate-500 dark:text-slate-400 mt-2 mb-6">No se encontró la cita solicitada o no tienes permisos para editarla.</p>
+          <button
+            onClick={() => router.push('/dashboard/citas')}
+            className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-md hover:bg-blue-700 transition"
+          >
+            Volver a Mis Citas
+          </button>
+        </main>
+      </div>
+    );
+  }
 
   // Validador de siguiente paso
   const canGoNext = () => {
@@ -479,40 +582,62 @@ export default function EditWizardPage() {
                   {/* CITA ANTERIOR */}
                   <div className="bg-[#F9FAFB] dark:bg-[#0F172A] rounded-2xl p-6 border border-[#E5E7EB] dark:border-slate-700 relative">
                     <span className="absolute -top-3 left-6 bg-[#6B7280] dark:bg-slate-600 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full shadow-sm">
-                      Antes
+                      Antes (Programada)
                     </span>
-                    <div className="space-y-4 mt-2 opacity-70 grayscale">
+                    <div className="space-y-4 mt-2">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden relative shrink-0">
+                          {doctor?.exp_foto_perfil ? (
+                            <Image src={doctor.exp_foto_perfil} alt={citaOriginal.medicoNombre} fill sizes="40px" className="object-cover" />
+                          ) : (
+                            <span className="flex items-center justify-center h-full font-bold text-xs text-slate-500">MD</span>
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-black text-[#111827] dark:text-white text-sm">Dr. {citaOriginal.medicoNombre}</p>
+                          <p className="text-xs text-slate-500 font-medium">{citaOriginal.medicoEspecialidad}</p>
+                        </div>
+                      </div>
+
                       <div className="flex items-center gap-3">
                         <CalendarDays className="w-5 h-5 text-[#6B7280] dark:text-slate-400" />
                         <div>
                           <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider">Fecha agendada</p>
-                          <p className="font-black text-[#111827] dark:text-white text-lg">{safeFormatDate(citaOriginal.ctaFecha, "d 'de' MMMM")}</p>
-                          <p className="text-sm font-medium text-[#6B7280] dark:text-slate-400">{citaOriginal.ctaHora.slice(0, 5)}</p>
+                          <p className="font-black text-[#111827] dark:text-white text-base">{safeFormatDate(citaOriginal.ctaFecha, "d 'de' MMMM, yyyy")}</p>
+                          <p className="text-xs font-semibold text-[#6B7280] dark:text-slate-400">{citaOriginal.ctaHora.slice(0, 5)} hrs</p>
                         </div>
                       </div>
+
                       <div className="flex items-center gap-3">
                         <Monitor className="w-5 h-5 text-[#6B7280] dark:text-slate-400" />
                         <div>
-                          <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider">Modalidad</p>
+                          <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider">Modalidad y Precio</p>
                           <p className="font-black text-[#111827] dark:text-white capitalize">{citaOriginal.ctaModalidad}</p>
-                          <p className="text-sm font-medium text-[#6B7280] dark:text-slate-400">${citaOriginal.ctaPrecio}</p>
+                          <p className="text-xs font-bold text-blue-600 dark:text-blue-400">${citaOriginal.ctaPrecio}</p>
                         </div>
                       </div>
+
+                      {citaOriginal.ctaMotivo && (
+                        <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">Motivo original:</p>
+                          <p className="text-xs text-slate-700 dark:text-slate-300 italic">{citaOriginal.ctaMotivo}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   {/* NUEVA CITA */}
                   <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-6 border-2 border-[#2563EB] shadow-lg relative">
                     <span className="absolute -top-3 left-6 bg-[#2563EB] text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full shadow-md">
-                      Nueva Cita
+                      Nueva Configuración
                     </span>
                     <div className="space-y-4 mt-2">
                       <div className="flex items-center gap-3">
                         <CalendarDays className="w-5 h-5 text-[#2563EB] dark:text-blue-400" />
                         <div>
                           <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider">Nueva Fecha</p>
-                          <p className="font-black text-[#111827] dark:text-white text-lg">{fecha ? format(fecha, "d 'de' MMMM", {locale:es}) : ''}</p>
-                          <p className="text-sm font-bold text-[#2563EB] dark:text-blue-400">{hora.slice(0, 5)}</p>
+                          <p className="font-black text-[#111827] dark:text-white text-base">{fecha ? format(fecha, "d 'de' MMMM, yyyy", {locale:es}) : ''}</p>
+                          <p className="text-xs font-bold text-[#2563EB] dark:text-blue-400">{hora.slice(0, 5)} hrs</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
@@ -520,7 +645,7 @@ export default function EditWizardPage() {
                         <div>
                           <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider">Nueva Modalidad</p>
                           <p className="font-black text-[#111827] dark:text-white capitalize">{modalidad}</p>
-                          <p className="text-sm font-black text-[#111827] dark:text-white">${precio}</p>
+                          <p className="text-xs font-black text-[#111827] dark:text-white">${precio}</p>
                         </div>
                       </div>
                     </div>
@@ -540,36 +665,64 @@ export default function EditWizardPage() {
           </AnimatePresence>
         </div>
 
-        {/* SUMMARY SIDEBAR */}
+        {/* SUMMARY SIDEBAR CON INFORMACIÓN DETALLADA DE LA CITA */}
         <div className="hidden lg:block bg-white dark:bg-[#1E293B] rounded-3xl p-6 shadow-sm border border-[#E5E7EB] dark:border-slate-700 sticky top-32">
-           <h3 className="font-black text-lg text-[#111827] dark:text-white mb-6">Detalles Actuales</h3>
-           <div className="space-y-6">
+           <div className="flex items-center justify-between pb-4 border-b border-[#E5E7EB] dark:border-slate-700 mb-6">
+             <h3 className="font-black text-lg text-[#111827] dark:text-white">Detalles de la Cita</h3>
+             <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/40">
+               {citaOriginal.ctaEstado || 'Programada'}
+             </span>
+           </div>
+
+           <div className="space-y-5">
+              {/* Información del Paciente */}
               <div>
-                <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-widest mb-1">Paciente (Fijo)</p>
+                <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-widest mb-1.5">Paciente</p>
                 <div className="flex items-center gap-3 p-3 bg-[#F8FAFC] dark:bg-[#0F172A] rounded-xl border border-[#E5E7EB] dark:border-slate-700">
-                  <div className="w-10 h-10 bg-[#E0E7FF] dark:bg-blue-900/30 text-[#4F46E5] dark:text-blue-400 rounded-full flex items-center justify-center font-bold">
+                  <div className="w-10 h-10 bg-[#E0E7FF] dark:bg-blue-900/30 text-[#4F46E5] dark:text-blue-400 rounded-full flex items-center justify-center font-bold shrink-0">
                     {citaOriginal.pacienteNombre.charAt(0)}
                   </div>
-                  <div>
-                    <p className="font-bold text-[#111827] dark:text-white leading-tight">{citaOriginal.pacienteNombre}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold text-[#111827] dark:text-white leading-tight truncate">{citaOriginal.pacienteNombre}</p>
+                    <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5">Consulta Médica</p>
                   </div>
                 </div>
               </div>
 
+              {/* Información del Médico Especialista */}
               <div>
-                <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-widest mb-1">Plan de Tratamiento</p>
+                <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-widest mb-1.5">Médico Atendente</p>
+                <div className="flex items-center gap-3 p-3 bg-[#F8FAFC] dark:bg-[#0F172A] rounded-xl border border-[#E5E7EB] dark:border-slate-700">
+                  <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden relative shrink-0">
+                    {doctor?.exp_foto_perfil ? (
+                      <Image src={doctor.exp_foto_perfil} alt={citaOriginal.medicoNombre} fill sizes="40px" className="object-cover" />
+                    ) : (
+                      <span className="flex items-center justify-center h-full font-bold text-xs text-slate-500">MD</span>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold text-[#111827] dark:text-white leading-tight truncate">Dr. {citaOriginal.medicoNombre}</p>
+                    <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-0.5 truncate">{citaOriginal.medicoEspecialidad}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tema de Seguimiento */}
+              <div>
+                <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-widest mb-1">Tema de Seguimiento</p>
                 <select
                   value={grupoId}
                   onChange={e => setGrupoId(e.target.value)}
                   className="w-full bg-[#F8FAFC] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-slate-700 p-3 rounded-xl text-sm font-bold text-[#111827] dark:text-white focus:outline-none focus:ring-1 focus:ring-[#2563EB] dark:focus:ring-blue-500"
                 >
-                  <option value="">(Ninguno)</option>
+                  <option value="">(Sin tema asignado)</option>
                   {gruposList?.map(g => (
                     <option key={g.grupoId} value={g.grupoId}>{g.titulo}</option>
                   ))}
                 </select>
               </div>
 
+              {/* Motivo de la Consulta */}
               <div>
                 <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-widest mb-1">Motivo Corto</p>
                 <input 
@@ -581,9 +734,78 @@ export default function EditWizardPage() {
                 />
               </div>
 
-              <div className="pt-6 border-t border-[#E5E7EB] dark:border-slate-700">
-                <p className="text-sm font-bold text-[#6B7280] dark:text-slate-400 mb-2 flex justify-between">
-                  Costo Final Estimado: <span className="font-black text-[#2563EB] dark:text-blue-400">${precio}</span>
+              {/* Adjuntar Archivos y Exámenes */}
+              <div className="pt-4 border-t border-[#E5E7EB] dark:border-slate-700">
+                <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-widest mb-2 flex items-center justify-between">
+                  <span>Archivos y Exámenes Adjuntos</span>
+                  <Paperclip className="w-3.5 h-3.5 text-blue-600" />
+                </p>
+                
+                <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-3 bg-slate-50 dark:bg-[#0F172A] hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer text-center group">
+                  <Upload className="w-5 h-5 text-blue-600 mb-1 group-hover:scale-110 transition-transform" />
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                    Seleccionar o soltar archivos
+                  </span>
+                  <span className="text-[10px] text-slate-400 mt-0.5">Exámenes médicos, PDFs o imágenes</span>
+                  <input type="file" multiple className="hidden" onChange={handleNuevosArchivosChange} accept=".pdf,.png,.jpg,.jpeg" />
+                </label>
+
+                {/* Lista de Archivos Nuevos a Enviar */}
+                {nuevosArchivos.length > 0 && (
+                  <div className="mt-3 space-y-1.5">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">Archivos para adjuntar:</p>
+                    {nuevosArchivos.map((file, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-2 bg-blue-50 dark:bg-blue-950/30 text-blue-800 dark:text-blue-300 text-xs rounded-xl font-medium border border-blue-200/80 dark:border-blue-900/60">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileText className="w-3.5 h-3.5 shrink-0 text-blue-600" />
+                          <span className="truncate">{file.name}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveNuevoArchivo(idx)}
+                          className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/60 rounded-full text-rose-500 transition ml-1 shrink-0"
+                          title="Quitar archivo"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Archivos Existentes Guardados en BD */}
+                {archivosExistentes.length > 0 && (
+                  <div className="mt-3 space-y-1.5">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Archivos existentes en cita:</p>
+                    {archivosExistentes.map((archivo) => (
+                      <div key={archivo.arcCodigo} className="flex items-center justify-between p-2 bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 text-xs rounded-xl font-medium border border-slate-200 dark:border-slate-700">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileCheck className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
+                          <a href={archivo.arcUrl} target="_blank" rel="noopener noreferrer" className="truncate hover:underline text-blue-600 dark:text-blue-400">
+                            {archivo.arcNombre}
+                          </a>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveArchivoExistente(archivo.arcCodigo!)}
+                          className="p-1 hover:bg-rose-100 dark:hover:bg-rose-950/60 rounded-full text-rose-500 transition ml-1 shrink-0"
+                          title="Eliminar archivo guardado"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Información de Cobro en Quetzales Q */}
+              <div className="pt-4 border-t border-[#E5E7EB] dark:border-slate-700">
+                <p className="text-sm font-bold text-[#6B7280] dark:text-slate-400 mb-1 flex justify-between">
+                  Costo de la Consulta: <span className="font-black text-[#2563EB] dark:text-blue-400">Q{precio.toFixed(2)}</span>
+                </p>
+                <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+                  Precios ajustados según modalidad en Quetzales (GT).
                 </p>
               </div>
            </div>

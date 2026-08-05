@@ -63,6 +63,7 @@ export interface CrearCitaRequest {
   direccionDomicilio?: string | null;
   referenciasDomicilio?: string | null;
   enlaceVideollamada?: string | null;
+  archivos?: File[];
 }
 
 export type CitaEstado = 'programada' | 'confirmada' | 'pospuesta' | 'completada' | 'cancelada' | 'rechazada' | 'no_asistio';
@@ -71,6 +72,17 @@ export interface CitaEtapaDto {
   fecha: string;
   estado: string;
   descripcion: string;
+}
+
+export interface CitaArchivoDto {
+  arcCodigo?: string;
+  arcNombre?: string;
+  arcUrl?: string;
+  arcTipoArchivo?: string;
+  id?: string;
+  nombre?: string;
+  url?: string;
+  tipo?: string;
 }
 
 export interface CitaDocumentoDto {
@@ -107,6 +119,7 @@ export interface CitaListDto {
   grupoTema?: string | null;
   etapas?: CitaEtapaDto[];
   documentos?: CitaDocumentoDto[];
+  archivos?: CitaArchivoDto[];
 }
 
 export interface UpdateCitaRequest {
@@ -120,6 +133,8 @@ export interface UpdateCitaRequest {
   direccionDomicilio?: string | null;
   referenciasDomicilio?: string | null;
   enlaceVideollamada?: string | null;
+  archivos?: File[];
+  archivosConservados?: string[];
 }
 
 export interface MetodoPagoDto {

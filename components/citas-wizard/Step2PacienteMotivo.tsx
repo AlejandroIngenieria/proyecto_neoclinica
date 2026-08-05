@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useDropzone } from 'react-dropzone';
 import {
@@ -11,6 +11,7 @@ import {
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { useCitaStore } from '@/store/use-cita-store';
 import { ChevronLeft, MapPin, Video, Home, Stethoscope, ArrowRight, CalendarDays, Building2, BriefcaseMedical, CalendarClock, Activity, ClipboardList, Plus, Loader2, UploadCloud, FileText, X } from 'lucide-react';
+import type { GrupoCitaDto } from '@/types/citas';
 import { NeoLoader } from '@/components/neo-loader';
 
 const MOTIVOS = [
@@ -67,6 +68,18 @@ export function Step2PacienteMotivo() {
   );
 
   const { mutateAsync: createGrupo, isPending: isCreatingGrupo } = useCreateGrupo();
+
+  const gruposUnicos = useMemo<GrupoCitaDto[]>(() => {
+    if (!grupos) return [];
+    const map = new Map<string, GrupoCitaDto>();
+    grupos.forEach((g: GrupoCitaDto) => {
+      const key = (g.grupoId ? String(g.grupoId) : (g.titulo || g.descripcion || '')).toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, g);
+      }
+    });
+    return Array.from(map.values());
+  }, [grupos]);
 
   const handleCreateGrupo = async () => {
     if (!newGrupoNombre.trim() || !pacienteSeleccionado || !codMedico) return;
@@ -246,14 +259,14 @@ export function Step2PacienteMotivo() {
                 ) : (
                   <div className="flex flex-col w-full space-y-5">
                     <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">Selecciona una consulta anterior</h4>
-                    {grupos.length === 0 && (
+                    {gruposUnicos.length === 0 && (
                       <p className="text-sm text-slate-500 dark:text-slate-400 italic">No tienes consultas previas registradas.</p>
                     )}
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {grupos.map(g => (
+                      {gruposUnicos.map((g, idx) => (
                         <button
-                          key={g.grupoId}
+                          key={`${g.grupoId || 'grupo'}-${idx}`}
                           onClick={() => { setGrupo(g.grupoId); setIsNewGrupoMode(false); }}
                           className={`text-left p-4 rounded-xl transition-all shadow-sm border ${grupoId === g.grupoId && !isNewGrupoMode
                             ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-600 dark:border-blue-500 ring-1 ring-blue-600 dark:ring-blue-500'

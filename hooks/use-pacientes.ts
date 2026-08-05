@@ -9,6 +9,7 @@ import {
   updatePaciente,
   createDependiente,
   deletePaciente,
+  independizarPaciente,
 } from '@/services/pacientes';
 import type { Paciente } from '@/types';
 
@@ -142,6 +143,22 @@ export function useDeletePaciente() {
   return useMutation({
     mutationFn: ({ titular, pacCodigo }: { titular: boolean; pacCodigo?: string }) =>
       deletePaciente(token!, titular, pacCodigo),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pacientes'] });
+    },
+  });
+}
+
+/**
+ * Mutation para independizar un paciente dependiente.
+ */
+export function useIndependizarPaciente() {
+  const { token } = useAuthInfo();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ pacCodigo, nuevoCorreo }: { pacCodigo: string; nuevoCorreo: string }) =>
+      independizarPaciente(token!, pacCodigo, nuevoCorreo),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pacientes'] });
     },

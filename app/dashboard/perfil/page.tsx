@@ -18,6 +18,10 @@ import {
   Droplets,
   AlertCircle,
   Star,
+  FileText,
+  ExternalLink,
+  Gift,
+  Sparkles,
 } from 'lucide-react';
 
 import { NeoLoader } from '@/components/neo-loader';
@@ -26,7 +30,9 @@ import { getPaises, getDepartamentosPorPais, getMunicipiosPorDepartamento, getPa
 import type { Paciente, Pais, Departamento, Municipio } from '@/types';
 import { buildPacienteFullName, calcularEdad, getPacienteInitials, isPacientePendiente } from '@/types';
 import { ImageDropzone } from '@/components/image-dropzone';
+import { DocumentDropzone } from '@/components/document-dropzone';
 import { useLealtadEstado } from '@/hooks/use-lealtad';
+import { useTotalPuntos } from '@/hooks/use-recompensas';
 import Link from 'next/link';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -72,6 +78,7 @@ type ProfileFormValues = {
   pac_segundo_nombre: string;
   pac_primer_apellido: string;
   pac_segundo_apellido: string;
+  pac_apellido_casado: string;
   pac_fecha_nacimiento: string;
   pac_genero: string;
   pac_tipo_sangre: string;
@@ -87,6 +94,13 @@ type ProfileFormValues = {
   pac_avenida: string;
   pac_calle: string;
   pac_numero_casa: string;
+  pac_contacto_emergencia_nombre: string;
+  pac_contacto_emergencia_relacion: string;
+  pac_contacto_emergencia_telefono: string;
+  pac_pais_nac_id: string;
+  pac_dep_nac_id: string;
+  pac_mun_nac_id: string;
+  pac_aldea: string;
 };
 
 // ─── Animations ──────────────────────────────────────────────────────────────
@@ -184,6 +198,7 @@ function EditProfileForm({
       pac_segundo_nombre: titular.pac_segundo_nombre || '',
       pac_primer_apellido: titular.pac_primer_apellido || '',
       pac_segundo_apellido: titular.pac_segundo_apellido || '',
+      pac_apellido_casado: titular.pac_apellido_casado || '',
       pac_fecha_nacimiento: toInputDate(titular.pac_fecha_nacimiento),
       pac_genero: titular.pac_genero || '',
       pac_tipo_sangre: titular.pac_tipo_sangre || '',
@@ -199,11 +214,20 @@ function EditProfileForm({
       pac_avenida: titular.pac_avenida || '',
       pac_calle: titular.pac_calle || '',
       pac_numero_casa: titular.pac_numero_casa || '',
+      pac_contacto_emergencia_nombre: titular.pac_contacto_emergencia_nombre || '',
+      pac_contacto_emergencia_relacion: titular.pac_contacto_emergencia_relacion || '',
+      pac_contacto_emergencia_telefono: titular.pac_contacto_emergencia_telefono || '',
+      pac_pais_nac_id: titular.pac_pais_nac_id?.toString() || '',
+      pac_dep_nac_id: titular.pac_dep_nac_id?.toString() || '',
+      pac_mun_nac_id: titular.pac_mun_nac_id?.toString() || '',
+      pac_aldea: titular.pac_aldea || '',
     },
   });
 
   const selectedPais = watch('pac_pais_dir_id');
   const selectedDep = watch('pac_dep_dir_id');
+  const selectedPaisNac = watch('pac_pais_nac_id');
+  const selectedDepNac = watch('pac_dep_nac_id');
 
   // ─── Geographic data queries ───
   const { data: paisesRes } = useQuery({
@@ -229,6 +253,23 @@ function EditProfileForm({
   });
   const municipios: Municipio[] = munsRes?.data ?? [];
 
+  // ─── Birthplace Geographic queries ───
+  const { data: depsNacRes } = useQuery({
+    queryKey: ['departamentos', selectedPaisNac],
+    queryFn: () => getDepartamentosPorPais(Number(selectedPaisNac)),
+    enabled: !!selectedPaisNac,
+    staleTime: 10 * 60 * 1000,
+  });
+  const departamentosNac: Departamento[] = depsNacRes?.data ?? [];
+
+  const { data: munsNacRes } = useQuery({
+    queryKey: ['municipios', selectedDepNac],
+    queryFn: () => getMunicipiosPorDepartamento(Number(selectedDepNac)),
+    enabled: !!selectedDepNac,
+    staleTime: 10 * 60 * 1000,
+  });
+  const municipiosNac: Municipio[] = munsNacRes?.data ?? [];
+
   // Reset dep/mun when parent changes
   const handlePaisChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -247,8 +288,26 @@ function EditProfileForm({
     [setValue],
   );
 
+  const handlePaisNacChange = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      setValue('pac_pais_nac_id', e.target.value);
+      setValue('pac_dep_nac_id', '');
+      setValue('pac_mun_nac_id', '');
+    },
+    [setValue],
+  );
+
+  const handleDepNacChange = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      setValue('pac_dep_nac_id', e.target.value);
+      setValue('pac_mun_nac_id', '');
+    },
+    [setValue],
+  );
+
   const [selectedPhoto, setSelectedPhoto] = useState<File | null>(null);
   const [selectedCarne, setSelectedCarne] = useState<File | null>(null);
+  const [selectedDocumento, setSelectedDocumento] = useState<File | null>(null);
 
   const onSubmit = async (values: ProfileFormValues) => {
     const formData = new FormData();
@@ -264,7 +323,7 @@ function EditProfileForm({
     appendSeguro('SegundoNombre', values.pac_segundo_nombre || titular.pac_segundo_nombre);
     appendSeguro('PrimerApellido', values.pac_primer_apellido || titular.pac_primer_apellido);
     appendSeguro('SegundoApellido', values.pac_segundo_apellido || titular.pac_segundo_apellido);
-    appendSeguro('ApellidoCasado', titular.pac_apellido_casado);
+    appendSeguro('ApellidoCasado', values.pac_apellido_casado || titular.pac_apellido_casado);
     
     const fechaNac = values.pac_fecha_nacimiento || titular.pac_fecha_nacimiento;
     if (fechaNac) {
@@ -275,14 +334,14 @@ function EditProfileForm({
     appendSeguro('TipoSangre', values.pac_tipo_sangre || titular.pac_tipo_sangre);
     appendSeguro('Ocupacion', values.pac_ocupacion || titular.pac_ocupacion);
 
-    appendSeguro('PaisNacId', titular.pac_pais_nac_id);
-    appendSeguro('DepNacId', titular.pac_dep_nac_id);
-    appendSeguro('MunNacId', titular.pac_mun_nac_id);
+    appendSeguro('PaisNacId', values.pac_pais_nac_id || titular.pac_pais_nac_id);
+    appendSeguro('DepNacId', values.pac_dep_nac_id || titular.pac_dep_nac_id);
+    appendSeguro('MunNacId', values.pac_mun_nac_id || titular.pac_mun_nac_id);
     appendSeguro('PaisDirId', values.pac_pais_dir_id || titular.pac_pais_dir_id);
     appendSeguro('DepDirId', values.pac_dep_dir_id || titular.pac_dep_dir_id);
     appendSeguro('MunDirId', values.pac_mun_dir_id || titular.pac_mun_dir_id);
 
-    appendSeguro('Aldea', titular.pac_aldea);
+    appendSeguro('Aldea', values.pac_aldea || titular.pac_aldea);
     appendSeguro('Zona', values.pac_zona || titular.pac_zona);
     appendSeguro('Colonia', values.pac_colonia || titular.pac_colonia);
     appendSeguro('Avenida', values.pac_avenida || titular.pac_avenida);
@@ -291,12 +350,18 @@ function EditProfileForm({
     appendSeguro('Celular', values.pac_celular || titular.pac_celular);
     appendSeguro('TelefonoCasa', values.pac_telefono_casa || titular.pac_telefono_casa);
     appendSeguro('TelefonoTrabajo', values.pac_telefono_trabajo || titular.pac_telefono_trabajo);
+    appendSeguro('ContactoEmergenciaNombre', values.pac_contacto_emergencia_nombre || titular.pac_contacto_emergencia_nombre);
+    appendSeguro('ContactoEmergenciaRelacion', values.pac_contacto_emergencia_relacion || titular.pac_contacto_emergencia_relacion);
+    appendSeguro('ContactoEmergenciaTelefono', values.pac_contacto_emergencia_telefono || titular.pac_contacto_emergencia_telefono);
 
     if (selectedPhoto) {
       formData.append('FotoPerfilArchivo', selectedPhoto);
     }
     if (selectedCarne) {
       formData.append('FotoCarneArchivo', selectedCarne);
+    }
+    if (selectedDocumento) {
+      formData.append('documentoIdentificacionArchivo', selectedDocumento);
     }
 
     // --- DEPURACIÓN: Ver el contenido exacto del FormData ---
@@ -339,6 +404,7 @@ function EditProfileForm({
             <div className="w-full max-w-md">
               <ImageDropzone 
                 label="Foto de Perfil" 
+                initialImageUrl={titular.pac_foto_perfil_url}
                 onImageDrop={(file) => setSelectedPhoto(file)} 
               />
             </div>
@@ -361,6 +427,9 @@ function EditProfileForm({
               </FormField>
               <FormField label="Segundo Apellido">
                 <input {...register('pac_segundo_apellido')} className={inputClass} placeholder="López" />
+              </FormField>
+              <FormField label="Apellido de Casada/o">
+                <input {...register('pac_apellido_casado')} className={inputClass} placeholder="Pérez" />
               </FormField>
               <FormField label="Fecha de Nacimiento" required>
                 <input type="date" {...register('pac_fecha_nacimiento', { required: true })} className={inputClass} />
@@ -388,9 +457,55 @@ function EditProfileForm({
               <FormField label="Ocupación">
                 <input {...register('pac_ocupacion')} className={inputClass} placeholder="Ingeniero, Maestro..." />
               </FormField>
-              <div className="col-span-full hidden">
-                {/* Removed photo/carne dropzones from here */}
-              </div>
+            </div>
+          </fieldset>
+
+          {/* Section: Lugar de Nacimiento */}
+          <fieldset className="mb-8 border-t border-slate-100 pt-8">
+            <legend className="mb-4 flex items-center gap-2 text-sm font-black uppercase tracking-[0.15em] text-blue-600">
+              <MapPin className="h-4 w-4" />
+              Lugar de Nacimiento
+            </legend>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <FormField label="País de Nacimiento">
+                <select
+                  value={selectedPaisNac}
+                  onChange={handlePaisNacChange}
+                  className={selectClass}
+                >
+                  <option value="">Seleccionar país...</option>
+                  {paises.map((p) => (
+                    <option key={p.pai_codigo} value={p.pai_codigo}>
+                      {p.pai_descripcion}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+              <FormField label="Departamento de Nacimiento">
+                <select
+                  value={selectedDepNac}
+                  onChange={handleDepNacChange}
+                  className={selectClass}
+                  disabled={!selectedPaisNac}
+                >
+                  <option value="">Seleccionar...</option>
+                  {departamentosNac.map((d) => (
+                    <option key={d.dep_codigo} value={d.dep_codigo}>
+                      {d.dep_descripcion}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+              <FormField label="Municipio de Nacimiento">
+                <select {...register('pac_mun_nac_id')} className={selectClass} disabled={!selectedDepNac}>
+                  <option value="">Seleccionar...</option>
+                  {municipiosNac.map((m) => (
+                    <option key={m.mun_codigo} value={m.mun_codigo}>
+                      {m.mun_descripcion}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
             </div>
           </fieldset>
 
@@ -409,6 +524,25 @@ function EditProfileForm({
               </FormField>
               <FormField label="Teléfono Trabajo">
                 <input {...register('pac_telefono_trabajo')} className={inputClass} placeholder="2233-4567" />
+              </FormField>
+            </div>
+          </fieldset>
+
+          {/* Section: Contacto de Emergencia */}
+          <fieldset className="mb-8">
+            <legend className="mb-4 flex items-center gap-2 text-sm font-black uppercase tracking-[0.15em] text-red-600">
+              <Heart className="h-4 w-4" />
+              Contacto de Emergencia
+            </legend>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <FormField label="Nombre Completo">
+                <input {...register('pac_contacto_emergencia_nombre')} className={inputClass} placeholder="Ej: María López" />
+              </FormField>
+              <FormField label="Relación / Parentesco">
+                <input {...register('pac_contacto_emergencia_relacion')} className={inputClass} placeholder="Ej: Madre, Cónyuge" />
+              </FormField>
+              <FormField label="Teléfono de Emergencia">
+                <input {...register('pac_contacto_emergencia_telefono')} className={inputClass} placeholder="5555-9999" />
               </FormField>
             </div>
           </fieldset>
@@ -476,19 +610,28 @@ function EditProfileForm({
               <FormField label="Número de Casa">
                 <input {...register('pac_numero_casa')} className={inputClass} placeholder="15-30" />
               </FormField>
+              <FormField label="Aldea">
+                <input {...register('pac_aldea')} className={inputClass} placeholder="Ej: San José" />
+              </FormField>
             </div>
           </fieldset>
 
-          {/* Insurance Card Dropzone at the End */}
+          {/* Insurance Card & Documento Identificación Dropzone */}
           <fieldset className="mb-8 border-t border-slate-100 pt-8">
             <legend className="mb-4 flex items-center gap-2 text-sm font-black uppercase tracking-[0.15em] text-blue-600">
               <Briefcase className="h-4 w-4" />
               Documentación
             </legend>
-            <div className="w-full max-w-md">
+            <div className="grid gap-6 md:grid-cols-2">
               <ImageDropzone 
                 label="Carné de Seguro (Opcional)" 
+                initialImageUrl={titular.pac_foto_carne_seguro}
                 onImageDrop={(file) => setSelectedCarne(file)} 
+              />
+              <DocumentDropzone 
+                label="Documento de Identificación (DPI/Pasaporte)" 
+                initialDocumentUrl={titular.pac_documento_identificacion_url}
+                onDocumentDrop={(file) => setSelectedDocumento(file)} 
               />
             </div>
           </fieldset>
@@ -560,6 +703,23 @@ function PerfilContent() {
   });
   const munDesc = (munsListaRes?.data || []).find((m: Municipio) => m.mun_codigo === titular?.pac_mun_dir_id)?.mun_descripcion;
 
+  // ─── Consultas Geográficas de Nacimiento ───
+  const paisNacDesc = (paisesListaRes?.data || []).find((p: Pais) => p.pai_codigo === titular?.pac_pais_nac_id)?.pai_descripcion;
+
+  const { data: depsNacListaRes } = useQuery({
+    queryKey: ['departamentos', titular?.pac_pais_nac_id],
+    queryFn: () => getDepartamentosPorPais(titular!.pac_pais_nac_id!),
+    enabled: !!titular?.pac_pais_nac_id,
+  });
+  const depNacDesc = (depsNacListaRes?.data || []).find((d: Departamento) => d.dep_codigo === titular?.pac_dep_nac_id)?.dep_descripcion;
+
+  const { data: munsNacListaRes } = useQuery({
+    queryKey: ['municipios', titular?.pac_dep_nac_id],
+    queryFn: () => getMunicipiosPorDepartamento(titular!.pac_dep_nac_id!),
+    enabled: !!titular?.pac_dep_nac_id,
+  });
+  const munNacDesc = (munsNacListaRes?.data || []).find((m: Municipio) => m.mun_codigo === titular?.pac_mun_nac_id)?.mun_descripcion;
+
   // ─── Loading State ───
   if (isLoading) {
     return <NeoLoader />;
@@ -603,19 +763,6 @@ function PerfilContent() {
         ? 'Femenino'
         : titular.pac_genero || '—';
 
-  const addressParts = [
-    titular.pac_calle,
-    titular.pac_avenida,
-    titular.pac_numero_casa,
-    titular.pac_colonia,
-    titular.pac_zona ? `Zona ${titular.pac_zona}` : null,
-    munDesc,
-    depDesc,
-    paisDesc,
-  ].filter(Boolean);
-  
-  const addressQuery = addressParts.join(', ');
-
   if (isEditing) {
     return (
       <motion.main
@@ -636,14 +783,15 @@ function PerfilContent() {
         <div className="max-w-5xl mx-auto space-y-8">
           
           {/* Profile Header Card (Sticky) */}
-          <div className="sticky top-0 z-30 -mt-4 md:-mt-8 -mx-4 md:-mx-8 px-4 md:px-8 pt-4 md:pt-8 pb-4 mb-8 rounded-3xl bg-white/10 backdrop-blur-lg">
+          <div className="sticky top-0 z-30 py-4 mb-6 backdrop-blur-md">
             <div className="flex flex-col items-center text-center sm:items-start sm:text-left md:flex-row md:items-end gap-4 sm:gap-6 max-w-5xl mx-auto">
             <div className="relative shrink-0">
-              <div className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-slate-200 bg-slate-100 flex items-center justify-center text-blue-600 font-bold text-3xl md:text-5xl shadow-lg overflow-hidden">
+              <div className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold text-3xl md:text-5xl shadow-lg overflow-hidden">
                 {titular.pac_foto_perfil_url ? (
                   <img
                     src={titular.pac_foto_perfil_url}
                     alt={fullName}
+                    loading="lazy"
                     className="h-full w-full object-cover"
                   />
                 ) : (
@@ -653,9 +801,9 @@ function PerfilContent() {
             </div>
             <div className="flex-1 pb-2">
               <div className="flex flex-col items-center sm:items-start gap-2 mb-1">
-                <h1 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight text-slate-900">{fullName}</h1>
+                <h1 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight text-slate-900 dark:text-white">{fullName}</h1>
                 <div>
-                  <span className="inline-block bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider">
+                  <span className="inline-block bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/40 px-3 py-1 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider">
                     TITULAR DE LA CUENTA
                   </span>
                 </div>
@@ -664,7 +812,7 @@ function PerfilContent() {
             <div className="pb-2 w-full sm:w-auto flex justify-center sm:justify-start">
               <button
                 onClick={() => setIsEditing(true)}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-slate-900 text-white py-2.5 px-6 rounded-xl hover:bg-slate-800 transition-colors font-semibold shadow-md active:scale-95 text-sm"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-6 rounded-xl transition-colors font-semibold shadow-md active:scale-95 text-sm"
               >
                 <Edit3 className="h-4 w-4" />
                 Editar Perfil
@@ -672,6 +820,9 @@ function PerfilContent() {
             </div>
           </div>
         </div>
+
+        {/* Resumen de Lealtad y Puntos Widget */}
+        <PerfilPuntosWidget pacCodigo={titular.pac_codigo} />
 
           {/* Onboarding Banner (shown when profile is pending) */}
           {isPending && (
@@ -710,99 +861,118 @@ function PerfilContent() {
             <div className="md:col-span-7 space-y-6">
               
               {/* Personal Info Card */}
-              <div className="bg-white p-5 sm:p-6 md:p-8 rounded-3xl border border-slate-200 shadow-sm transition-transform hover:scale-[1.01] duration-300">
+              <div className="bg-white dark:bg-[#1E293B] p-5 sm:p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm transition-transform hover:scale-[1.01] duration-300">
                 <div className="flex items-center gap-3 mb-6 sm:mb-8">
-                  <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
                     <User className="h-5 w-5" />
                   </div>
-                  <h2 className="text-base sm:text-lg font-bold text-slate-900">Información Personal</h2>
+                  <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Información Personal</h2>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-6 sm:gap-y-8 gap-x-4">
                   <div className="space-y-1">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400">Nombre Completo</p>
-                    <p className="text-sm font-semibold text-slate-900">{fullName}</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Nombre Completo</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{fullName}</p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400">Correo Electrónico</p>
-                    <p className="text-sm font-semibold text-slate-900">{userEmail}</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Correo Electrónico</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{userEmail}</p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400">Fecha de Nacimiento</p>
-                    <p className="text-sm font-semibold text-slate-900">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Fecha de Nacimiento</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                       {titular.pac_fecha_nacimiento ? `${formatDate(titular.pac_fecha_nacimiento)}${edad !== null ? ` (${edad} años)` : ''}` : '—'}
                     </p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400">Género</p>
-                    <p className="text-sm font-semibold text-slate-900">{genderLabel}</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Género</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{genderLabel}</p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400">Tipo de Sangre</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Tipo de Sangre</p>
                     {titular.pac_tipo_sangre ? (
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-red-100 text-red-700 font-bold text-xs">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 font-bold text-xs border border-red-200/50 dark:border-red-900/40">
                         {titular.pac_tipo_sangre}
                       </span>
                     ) : (
-                      <p className="text-sm font-semibold text-slate-900">—</p>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">—</p>
                     )}
                   </div>
+                  <div className="space-y-1 col-span-2 sm:col-span-1">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Ocupación</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{titular.pac_ocupacion || '—'}</p>
+                  </div>
                   <div className="space-y-1 col-span-2">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400">Ocupación</p>
-                    <p className="text-sm font-semibold text-slate-900">{titular.pac_ocupacion || '—'}</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Lugar de Nacimiento</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      {[munNacDesc, depNacDesc, paisNacDesc].filter(Boolean).join(', ') || '—'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Emergency Contact Card */}
+              <div className="bg-white dark:bg-[#1E293B] p-5 sm:p-6 md:p-8 rounded-3xl border border-rose-100 dark:border-rose-950/30 shadow-sm transition-transform hover:scale-[1.01] duration-300">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-900/30 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
+                    <Heart className="h-5 w-5" />
+                  </div>
+                  <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Contacto de Emergencia</h2>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-4 gap-x-4">
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Nombre</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{titular.pac_contacto_emergencia_nombre || '—'}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Relación</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{titular.pac_contacto_emergencia_relacion || '—'}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Teléfono</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{titular.pac_contacto_emergencia_telefono || '—'}</p>
                   </div>
                 </div>
               </div>
 
               {/* Address Card */}
-              <div className="bg-white p-6 md:p-8 rounded-3xl border border-slate-200 shadow-sm transition-transform hover:scale-[1.01] duration-300">
+              <div className="bg-white dark:bg-[#1E293B] p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm transition-transform hover:scale-[1.01] duration-300">
                 <div className="flex items-center gap-3 mb-8">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
                     <MapPin className="h-5 w-5" />
                   </div>
-                  <h2 className="text-lg font-bold text-slate-900">Dirección</h2>
+                  <h2 className="text-lg font-bold text-slate-900 dark:text-white">Dirección</h2>
                 </div>
                 
                 <div className="grid grid-cols-2 md:grid-cols-2 gap-y-6 gap-x-4 mb-6">
                   <div className="space-y-1">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400">Zona</p>
-                    <p className="text-sm font-semibold text-slate-900">{titular.pac_zona || '—'}</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Zona</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{titular.pac_zona || '—'}</p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400">Casa</p>
-                    <p className="text-sm font-semibold text-slate-900">{titular.pac_numero_casa || '—'}</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Casa</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{titular.pac_numero_casa || '—'}</p>
                   </div>
                   
                   {/* Geographic Lookups */}
                   <div className="space-y-1">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400">País</p>
-                    <p className="text-sm font-semibold text-slate-900">{paisDesc || '—'}</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">País</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{paisDesc || '—'}</p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400">Departamento</p>
-                    <p className="text-sm font-semibold text-slate-900">{depDesc || '—'}</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Departamento</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{depDesc || '—'}</p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400">Municipio</p>
-                    <p className="text-sm font-semibold text-slate-900">{munDesc || '—'}</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Municipio</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{munDesc || '—'}</p>
                   </div>
+                  {titular.pac_aldea ? (
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Aldea</p>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{titular.pac_aldea}</p>
+                    </div>
+                  ) : null}
                 </div>
-
-                {/* Map Embed */}
-                {addressQuery && (
-                  <div className="mt-6 rounded-2xl overflow-hidden h-48 relative group bg-slate-100 border border-slate-200">
-                    <iframe
-                      title="Ubicación del paciente"
-                      src={`https://maps.google.com/maps?q=${encodeURIComponent(addressQuery)}&t=&z=15&ie=UTF8&iwloc=&output=embed`}
-                      width="100%"
-                      height="100%"
-                      style={{ border: 0 }}
-                      allowFullScreen
-                      loading="lazy"
-                      referrerPolicy="no-referrer-when-downgrade"
-                      className="grayscale opacity-90 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-500"
-                    />
-                  </div>
-                )}
               </div>
             </div>
 
@@ -810,44 +980,44 @@ function PerfilContent() {
             <div className="md:col-span-5 space-y-6">
               
               {/* Contact Card */}
-              <div className="bg-white p-6 md:p-8 rounded-3xl border border-slate-200 shadow-sm transition-transform hover:scale-[1.01] duration-300">
+              <div className="bg-white dark:bg-[#1E293B] p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm transition-transform hover:scale-[1.01] duration-300">
                 <div className="flex items-center gap-3 mb-8">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
                     <Phone className="h-5 w-5" />
                   </div>
-                  <h2 className="text-lg font-bold text-slate-900">Contacto</h2>
+                  <h2 className="text-lg font-bold text-slate-900 dark:text-white">Contacto</h2>
                 </div>
                 
                 <div className="space-y-4">
-                  <div className={`flex items-center gap-4 p-4 rounded-2xl ${titular.pac_celular ? 'bg-slate-50 border border-slate-200' : 'opacity-50'}`}>
-                    <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-blue-600 shadow-sm border border-slate-100">
+                  <div className={`flex items-center gap-4 p-4 rounded-2xl ${titular.pac_celular ? 'bg-slate-50 dark:bg-[#0F172A] border border-slate-200 dark:border-slate-800' : 'opacity-50'}`}>
+                    <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center text-blue-600 dark:text-blue-400 shadow-sm border border-slate-100 dark:border-slate-700">
                       <Phone className="h-4 w-4" />
                     </div>
                     <div>
-                      <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400">Celular</p>
-                      <p className={`text-sm font-semibold ${titular.pac_celular ? 'text-slate-900' : 'text-slate-400 italic'}`}>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Celular</p>
+                      <p className={`text-sm font-semibold ${titular.pac_celular ? 'text-slate-900 dark:text-slate-100' : 'text-slate-400 italic'}`}>
                         {titular.pac_celular || 'No registrado'}
                       </p>
                     </div>
                   </div>
-                  <div className={`flex items-center gap-4 p-4 rounded-2xl ${titular.pac_telefono_casa ? 'bg-slate-50 border border-slate-200' : 'opacity-50'}`}>
-                    <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-slate-400 shadow-sm border border-slate-100">
+                  <div className={`flex items-center gap-4 p-4 rounded-2xl ${titular.pac_telefono_casa ? 'bg-slate-50 dark:bg-[#0F172A] border border-slate-200 dark:border-slate-800' : 'opacity-50'}`}>
+                    <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 shadow-sm border border-slate-100 dark:border-slate-700">
                       <Phone className="h-4 w-4" />
                     </div>
                     <div>
-                      <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400">Teléfono Casa</p>
-                      <p className={`text-sm font-semibold ${titular.pac_telefono_casa ? 'text-slate-900' : 'text-slate-400 italic'}`}>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Teléfono Casa</p>
+                      <p className={`text-sm font-semibold ${titular.pac_telefono_casa ? 'text-slate-900 dark:text-slate-100' : 'text-slate-400 italic'}`}>
                         {titular.pac_telefono_casa || 'No registrado'}
                       </p>
                     </div>
                   </div>
-                  <div className={`flex items-center gap-4 p-4 rounded-2xl ${titular.pac_telefono_trabajo ? 'bg-slate-50 border border-slate-200' : 'opacity-50'}`}>
-                    <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-slate-400 shadow-sm border border-slate-100">
+                  <div className={`flex items-center gap-4 p-4 rounded-2xl ${titular.pac_telefono_trabajo ? 'bg-slate-50 dark:bg-[#0F172A] border border-slate-200 dark:border-slate-800' : 'opacity-50'}`}>
+                    <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 shadow-sm border border-slate-100 dark:border-slate-700">
                       <Phone className="h-4 w-4" />
                     </div>
                     <div>
-                      <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400">Teléfono Trabajo</p>
-                      <p className={`text-sm font-semibold ${titular.pac_telefono_trabajo ? 'text-slate-900' : 'text-slate-400 italic'}`}>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Teléfono Trabajo</p>
+                      <p className={`text-sm font-semibold ${titular.pac_telefono_trabajo ? 'text-slate-900 dark:text-slate-100' : 'text-slate-400 italic'}`}>
                         {titular.pac_telefono_trabajo || 'No registrado'}
                       </p>
                     </div>
@@ -857,14 +1027,14 @@ function PerfilContent() {
 
               {/* Carné de Seguro Card */}
               {titular.pac_foto_carne_seguro && (
-                <div className="bg-white p-6 md:p-8 rounded-3xl border border-slate-200 shadow-sm transition-transform hover:scale-[1.01] duration-300">
+                <div className="bg-white dark:bg-[#1E293B] p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm transition-transform hover:scale-[1.01] duration-300">
                   <div className="flex items-center gap-3 mb-6">
-                    <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600">
+                    <div className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-950/40 flex items-center justify-center text-rose-600 dark:text-rose-400">
                       <Heart className="h-5 w-5" />
                     </div>
-                    <h2 className="text-lg font-bold text-slate-900">Carné de Seguro</h2>
+                    <h2 className="text-lg font-bold text-slate-900 dark:text-white">Carné de Seguro</h2>
                   </div>
-                  <div className="overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 p-2">
+                  <div className="overflow-hidden rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-[#0F172A] p-2">
                     <img 
                       src={titular.pac_foto_carne_seguro} 
                       alt="Carné de seguro médico" 
@@ -874,29 +1044,94 @@ function PerfilContent() {
                 </div>
               )}
 
-              {/* Loyalty Points Card (Placeholder according to design) */}
-              <div className="bg-slate-100 p-6 md:p-8 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden group">
+              {/* Documento de Identificación Card */}
+              {titular.pac_documento_identificacion_url ? (
+                <div className="bg-white dark:bg-[#1E293B] p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm transition-transform hover:scale-[1.01] duration-300">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/40 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                      <FileText className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-slate-900 dark:text-white">Documento de Identificación</h2>
+                      <p className="text-xs text-slate-500">DPI / Pasaporte registrado</p>
+                    </div>
+                  </div>
+
+                  {/* Previsualización visual: Imagen o visor PDF */}
+                  <div className="overflow-hidden rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-[#0F172A] p-2 mb-4">
+                    {titular.pac_documento_identificacion_url.toLowerCase().includes('.pdf') ? (
+                      <iframe
+                        src={titular.pac_documento_identificacion_url}
+                        title="Documento de Identificación PDF"
+                        className="w-full h-56 rounded-xl border border-slate-200 dark:border-slate-700"
+                      />
+                    ) : (
+                      <img
+                        src={titular.pac_documento_identificacion_url}
+                        alt="Documento de Identificación"
+                        className="w-full max-h-56 object-contain rounded-xl"
+                      />
+                    )}
+                  </div>
+
+                  <a
+                    href={titular.pac_documento_identificacion_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 font-semibold border border-blue-200 dark:border-blue-800 hover:bg-blue-100 transition-colors text-sm"
+                  >
+                    <FileText className="h-4 w-4" />
+                    <span>Abrir en nueva pestaña</span>
+                    <ExternalLink className="h-4 w-4" />
+                  </a>
+                </div>
+              ) : (
+                <div className="bg-white dark:bg-[#1E293B] p-6 md:p-8 rounded-3xl border border-dashed border-slate-300 dark:border-slate-700 shadow-sm">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/40 flex items-center justify-center text-amber-600 dark:text-amber-400">
+                      <FileText className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Documento de Identificación</h2>
+                      <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold">No se ha subido documento de identificación</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+                    Adjunta tu DPI o Pasaporte editando tu perfil para completar la información oficial de tu cuenta.
+                  </p>
+                  <button
+                    onClick={() => setIsEditing(true)}
+                    className="inline-flex items-center justify-center gap-2 w-full py-2 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors hover:bg-slate-200 dark:hover:bg-slate-700"
+                  >
+                    <Edit3 className="h-3.5 w-3.5" />
+                    <span>Subir Documento</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Loyalty Points Card */}
+              <div className="bg-slate-100 dark:bg-[#1E293B] p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden group">
                 <div className="relative z-10">
                   <div className="flex justify-between items-start mb-4">
                     <div>
-                      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Puntos NeoClínica</p>
-                      <h4 className="text-3xl md:text-4xl font-black text-blue-600 mt-1">
+                      <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Puntos NeoClínica</p>
+                      <h4 className="text-3xl md:text-4xl font-black text-blue-600 dark:text-blue-400 mt-1">
                         {lealtadEstado ? lealtadEstado.puntosActuales.toLocaleString() : '—'}
                       </h4>
                     </div>
-                    <div className="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-200">
+                    <div className="w-12 h-12 rounded-full bg-blue-600 dark:bg-blue-500 flex items-center justify-center text-white shadow-lg shadow-blue-200 dark:shadow-none">
                       <Star className="h-5 w-5" fill="currentColor" />
                     </div>
                   </div>
                   {lealtadEstado && (
                     <>
-                      <div className="w-full bg-white/50 h-2 rounded-full mb-4 overflow-hidden border border-slate-200">
+                      <div className="w-full bg-white/50 dark:bg-slate-800 h-2 rounded-full mb-4 overflow-hidden border border-slate-200 dark:border-slate-700">
                         <div 
-                          className="bg-blue-600 h-full rounded-full transition-all duration-1000" 
+                          className="bg-blue-600 dark:bg-blue-500 h-full rounded-full transition-all duration-1000" 
                           style={{ width: `${Math.min(100, Math.max(0, lealtadEstado.progresoPorcentaje))}%` }}
                         />
                       </div>
-                      <p className="text-xs text-slate-500 font-medium">
+                      <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                         {lealtadEstado.puntosMaximosNivel - lealtadEstado.puntosActuales > 0 
                           ? `Faltan ${lealtadEstado.puntosMaximosNivel - lealtadEstado.puntosActuales} puntos para tu próximo beneficio.`
                           : '¡Has alcanzado el nivel máximo de beneficios!'}
@@ -904,12 +1139,12 @@ function PerfilContent() {
                     </>
                   )}
                   <Link href="/dashboard/perfil/puntos">
-                    <button className="mt-5 w-full py-2.5 bg-white text-blue-600 font-bold rounded-xl shadow-sm border border-slate-200 hover:bg-blue-50 transition-colors">
+                    <button className="mt-5 w-full py-2.5 bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-bold rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 hover:bg-blue-50 dark:hover:bg-slate-700 transition-colors">
                       Ver recompensas
                     </button>
                   </Link>
                 </div>
-                <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-blue-200/20 rounded-full blur-3xl transition-transform group-hover:scale-150 duration-700"></div>
+                <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-blue-200/20 dark:bg-blue-900/20 rounded-full blur-3xl transition-transform group-hover:scale-150 duration-700"></div>
               </div>
 
             </div>
@@ -926,6 +1161,65 @@ export default function PerfilPage() {
     <Suspense fallback={<NeoLoader />}>
       <PerfilContent />
     </Suspense>
+  );
+}
+
+function PerfilPuntosWidget({ pacCodigo }: { pacCodigo: string }) {
+  const { data: puntosData } = useTotalPuntos(pacCodigo);
+  const { data: estadoData } = useLealtadEstado();
+
+  const totalPuntos = puntosData?.totalPuntos ?? estadoData?.puntosActuales ?? 0;
+  const nivelActual = estadoData?.nivelActual || (totalPuntos >= 1000 ? 'Platino' : totalPuntos >= 500 ? 'Oro' : totalPuntos >= 200 ? 'Plata' : 'Bronce');
+  const puntosMaximos = estadoData?.puntosMaximosNivel || 1000;
+  const porcentaje = Math.min(100, Math.max(0, Math.round((totalPuntos / puntosMaximos) * 100)));
+
+  return (
+    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 text-white shadow-xl shadow-indigo-950/20 border border-indigo-900/50 mb-6">
+      <div className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-blue-500/10 blur-2xl pointer-events-none" />
+      <div className="relative z-10 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+        {/* Indicador de Puntos & Nivel */}
+        <div className="flex items-center gap-4">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 font-black shadow-lg shadow-amber-500/20">
+            <Star className="h-7 w-7 fill-slate-950 text-slate-950" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-3xl font-black tracking-tight text-white">{totalPuntos}</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Puntos acumulados</span>
+            </div>
+            <div className="mt-0.5 flex items-center gap-2">
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-bold text-amber-300 backdrop-blur-md border border-white/10">
+                <Sparkles className="h-3 w-3" /> Liga {nivelActual}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Barra de progreso miniatura + CTA */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 sm:gap-6 min-w-[240px]">
+          <div className="flex-1 space-y-1.5">
+            <div className="flex justify-between text-[11px] font-bold text-slate-300">
+              <span>Progreso de Nivel</span>
+              <span>{totalPuntos} / {puntosMaximos} pts</span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-amber-400 to-amber-500 transition-all duration-700 shadow-sm"
+                style={{ width: `${porcentaje}%` }}
+              />
+            </div>
+          </div>
+
+          <Link
+            href="/dashboard/perfil/puntos"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 hover:bg-amber-400 px-5 py-2.5 text-xs font-black uppercase tracking-wider text-slate-950 transition-all active:scale-95 shadow-md shadow-amber-500/20 shrink-0"
+          >
+            <Gift className="h-4 w-4" />
+            Canjear Puntos
+          </Link>
+        </div>
+      </div>
+    </div>
   );
 }
 

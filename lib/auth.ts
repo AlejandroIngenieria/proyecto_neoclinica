@@ -20,7 +20,10 @@ type BackendAuthResponse = {
     activo?: boolean;
     usu_foto_perfil?: string | null;
     tipoTabla?: string | null;
+    usu_debe_cambiar_password?: boolean;
+    debeCambiarPassword?: boolean;
   };
+  debeCambiarPassword?: boolean;
 };
 
 type TokenWithAccess = JWT & {
@@ -28,6 +31,7 @@ type TokenWithAccess = JWT & {
   role?: string | null;
   name?: string | null;
   email?: string | null;
+  debeCambiarPassword?: boolean;
 };
 
 type SessionWithAccess = Session & {
@@ -36,6 +40,7 @@ type SessionWithAccess = Session & {
   user?: Session['user'] & {
     role?: string | null;
     image?: string | null;
+    debeCambiarPassword?: boolean;
   };
 };
 
@@ -69,6 +74,10 @@ function resolveAuthUser(user: AuthUserType) {
     return null;
   }
 
+  const debeCambiar =
+    user.usu_debe_cambiar_password === true ||
+    user.debeCambiarPassword === true;
+
   return {
     id: userId,
     name: email,
@@ -78,6 +87,7 @@ function resolveAuthUser(user: AuthUserType) {
     role,
     active: typeof active === 'boolean' ? active : null,
     tipoTabla: typeof user.tipoTabla === 'string' ? user.tipoTabla : null,
+    debeCambiarPassword: debeCambiar,
   };
 }
 
@@ -139,6 +149,7 @@ export const authOptions: NextAuthOptions = {
               role: data.rol || decoded.role || decoded.rol || '',
               active: true,
               tipoTabla: data.tipo || decoded.TipoTabla || null,
+              debeCambiarPassword: Boolean(decoded.DebeCambiarPassword || decoded.debe_cambiar_password || data.debeCambiarPassword),
             };
           } catch (e) {
             console.error('Error parsing JWT', e);
@@ -167,11 +178,12 @@ export const authOptions: NextAuthOptions = {
       const nextToken = token as TokenWithAccess;
 
       if (user) {
-        const typedUser = user as typeof user & { accessToken?: string; role?: string | null };
+        const typedUser = user as typeof user & { accessToken?: string; role?: string | null; debeCambiarPassword?: boolean };
         nextToken.accessToken = typedUser.accessToken;
         nextToken.name = typedUser.name ?? null;
         nextToken.email = typedUser.email ?? null;
         nextToken.role = typedUser.role ?? null;
+        nextToken.debeCambiarPassword = typedUser.debeCambiarPassword ?? false;
       }
 
       return nextToken;
@@ -188,6 +200,7 @@ export const authOptions: NextAuthOptions = {
         email: tokenWithAccess.email ?? sessionWithAccess.user?.email ?? null,
         image: sessionWithAccess.user?.image ?? null,
         role: tokenWithAccess.role ?? null,
+        debeCambiarPassword: tokenWithAccess.debeCambiarPassword ?? false,
       };
 
       return sessionWithAccess;

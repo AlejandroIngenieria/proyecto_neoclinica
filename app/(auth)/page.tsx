@@ -1,11 +1,11 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { signIn } from 'next-auth/react';
+import { signIn, signOut } from 'next-auth/react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { AlertTriangle, Eye, EyeOff, Loader2, Mail } from 'lucide-react';
 import { loginSchema, recoverySchema, type LoginFormValues, type RecoveryFormValues } from '../../lib/validations/auth';
@@ -26,6 +26,13 @@ export default function LoginPage() {
   const [recoveryNotice, setRecoveryNotice] = useState('');
   const [authView, setAuthView] = useState<AuthView>('choice');
   const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => {
+    if (reasonParam) {
+      // Limpiar cookies de sesión caducadas para evitar conflictos de credenciales
+      signOut({ redirect: false });
+    }
+  }, [reasonParam]);
 
   const {
     register,
@@ -108,12 +115,18 @@ export default function LoginPage() {
   };
 
   const closeReauthModal = () => {
-    router.replace('/login', { scroll: false });
+    signOut({ redirect: false }).then(() => {
+      window.location.href = '/login';
+    });
   };
 
   const openEmailLogin = () => {
-    setAuthView('login');
-    closeReauthModal();
+    signOut({ redirect: false }).then(() => {
+      setAuthView('login');
+      if (typeof window !== 'undefined') {
+        window.history.replaceState(null, '', '/login');
+      }
+    });
   };
 
   const openRecoveryForm = () => {
@@ -261,7 +274,7 @@ export default function LoginPage() {
     return (
       <>
         <div>
-          <label htmlFor="correo" className="sr-only">
+          <label htmlFor="correo" className="block mb-2 text-sm font-medium text-slate-200">
             Correo electrónico
           </label>
           <div className="flex h-14 items-center gap-3 rounded-2xl border border-sky-400/30 bg-[#0b234c] px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition focus-within:border-sky-300/70 focus-within:ring-2 focus-within:ring-sky-400/25">

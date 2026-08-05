@@ -99,7 +99,17 @@ export function useGruposCita(codPaciente: string | null, codMedico: string | nu
 
   return useQuery<GrupoCitaDto[]>({
     queryKey: ['gruposCita', codPaciente, codMedico],
-    queryFn: () => fetchGruposCita(token!, codPaciente!, codMedico!),
+    queryFn: async () => {
+      const data = await fetchGruposCita(token!, codPaciente!, codMedico!);
+      const map = new Map<string, GrupoCitaDto>();
+      data.forEach(g => {
+        const key = (g.grupoId ? String(g.grupoId) : (g.titulo || g.descripcion || '')).toLowerCase();
+        if (!map.has(key)) {
+          map.set(key, g);
+        }
+      });
+      return Array.from(map.values());
+    },
     enabled: isAuthenticated && !!codPaciente && !!codMedico,
     staleTime: 5 * 60 * 1000,
   });
@@ -147,6 +157,23 @@ export function useAllCitasPacientes(codigosPacientes: string[]) {
       return unique;
     },
     enabled: isAuthenticated && codigosPacientes.length > 0,
+  });
+}
+
+export function useCitaByCodigo(citaId: string | null) {
+  const { token, isAuthenticated } = useAuthInfo();
+  return useQuery<CitaListDto | null>({
+    queryKey: ['citaByCodigo', citaId],
+    queryFn: async () => {
+      if (!token || !citaId) return null;
+      try {
+        const list = await fetchCitasPaciente(token, '');
+        return list.find((c: CitaListDto) => String(c.ctaCodigo).toLowerCase() === String(citaId).toLowerCase()) || null;
+      } catch {
+        return null;
+      }
+    },
+    enabled: isAuthenticated && !!citaId,
   });
 }
 

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 import { useParams, useRouter } from 'next/navigation';
-import { useCitasPaciente, usePacientesSeleccion } from '@/hooks/use-flujo-citas';
+import { useCitasPaciente, useAllCitasPacientes, usePacientesSeleccion } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { Navbar } from '@/components/navbar';
 import { ArrowLeft, Loader2, CheckCircle2, AlertCircle, HelpCircle, User, CalendarDays, Monitor, MapPin, Clock } from 'lucide-react';
@@ -29,11 +29,11 @@ export default function GrupoDetailPage() {
   const [citaSeleccionada, setCitaSeleccionada] = useState<CitaListDto | null>(null);
 
   const { data: pacientes, isLoading: loadingPacientes } = usePacientesSeleccion();
-  const pacientePrincipal = pacientes?.find(p => p.pacTitular) || pacientes?.[0];
-  const { data: citasData, isLoading: loadingCitas } = useCitasPaciente(pacientePrincipal?.pacCodigo || null);
+  const codigosPacientes = pacientes?.map(p => p.pacCodigo) || [];
+  const { data: citasData, isLoading: loadingCitas } = useAllCitasPacientes(codigosPacientes);
 
   const citas = citasData || [];
-  const citasGrupo = citas.filter(c => c.ctaGrupoId === grupoId);
+  const citasGrupo = citas.filter(c => c.ctaGrupoId?.toLowerCase() === grupoId?.toLowerCase());
   const doctorCode = citasGrupo[0]?.ctaCoddoc;
   const { data: doctor } = useDoctorByCode(doctorCode);
 
@@ -284,10 +284,18 @@ export default function GrupoDetailPage() {
                   </div>
 
                   <div className="mt-8 space-y-3">
-                    <button className="w-full py-3 bg-[#2563EB] text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-colors shadow-sm">
+                    <button
+                      type="button"
+                      onClick={() => setCitaSeleccionada(citaPrincipal)}
+                      className="w-full py-3 bg-[#2563EB] text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-colors shadow-sm"
+                    >
                       Prepararme
                     </button>
-                    <button className="w-full py-3 bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-slate-700 text-[#111827] dark:text-slate-300 rounded-xl font-bold text-sm hover:bg-[#F9FAFB] dark:hover:bg-[#0B1120] transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/dashboard/citas/${citaPrincipal.ctaCodigo}/editar`)}
+                      className="w-full py-3 bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-slate-700 text-[#111827] dark:text-slate-300 rounded-xl font-bold text-sm hover:bg-[#F9FAFB] dark:hover:bg-[#0B1120] transition-colors"
+                    >
                       Reprogramar
                     </button>
                   </div>

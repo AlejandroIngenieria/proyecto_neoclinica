@@ -19,6 +19,7 @@ export type Paciente = {
   pac_ocupacion: string | null;
   pac_foto_perfil_url: string | null;
   pac_foto_carne_seguro: string | null;
+  pac_documento_identificacion_url?: string | null;
   // Ubicación de nacimiento
   pac_pais_nac_id: number | null;
   pac_dep_nac_id: number | null;
@@ -37,10 +38,18 @@ export type Paciente = {
   pac_celular: string | null;
   pac_telefono_casa: string | null;
   pac_telefono_trabajo: string | null;
+  // Contacto de Emergencia
+  pac_contacto_emergencia_nombre?: string | null;
+  pac_contacto_emergencia_relacion?: string | null;
+  pac_contacto_emergencia_telefono?: string | null;
 };
 
 /** Payload para crear un paciente (pac_codigo se genera en el backend). */
 export type PacienteCreatePayload = Partial<Pick<Paciente, 'pac_codigo'>> & Omit<Paciente, 'pac_codigo'>;
+
+export type IndependizarPacienteRequest = {
+  nuevoCorreo: string;
+};
 
 // ─── Parentesco ──────────────────────────────────────────────────────────────
 
@@ -82,6 +91,12 @@ export const PARENTESCO_MAP: Record<number, ParentescoInfo> = {
     badgeText: 'text-violet-700',
     badgeBorder: 'border-violet-200',
   },
+  6: {
+    label: 'OTRO',
+    badgeBg: 'bg-teal-50',
+    badgeText: 'text-teal-700',
+    badgeBorder: 'border-teal-200',
+  },
 };
 
 export const PARENTESCO_DEFAULT: ParentescoInfo = {
@@ -99,7 +114,13 @@ export function getParentescoInfo(codParentesco: number | null): ParentescoInfo 
 }
 
 export function buildPacienteFullName(p: Paciente): string {
-  return [p.pac_primer_nombre, p.pac_segundo_nombre, p.pac_primer_apellido, p.pac_segundo_apellido]
+  return [
+    p.pac_primer_nombre,
+    p.pac_segundo_nombre,
+    p.pac_primer_apellido,
+    p.pac_segundo_apellido,
+    p.pac_apellido_casado,
+  ]
     .filter(Boolean)
     .join(' ');
 }

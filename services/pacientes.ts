@@ -25,6 +25,7 @@ function mapPacienteFromApi(data: any): Paciente {
     pac_ocupacion: data.pacOcupacion || data.pac_ocupacion,
     pac_foto_perfil_url: data.pacFotoPerfilUrl || data.pac_foto_perfil_url,
     pac_foto_carne_seguro: data.pacFotoCarneSeguro || data.pac_foto_carne_seguro,
+    pac_documento_identificacion_url: data.pacDocumentoIdentificacionUrl || data.documentoIdentificacionUrl || data.pac_documento_identificacion_url,
     pac_pais_nac_id: data.pacPaisNacId || data.pac_pais_nac_id,
     pac_dep_nac_id: data.pacDepNacId || data.pac_dep_nac_id,
     pac_mun_nac_id: data.pacMunNacId || data.pac_mun_nac_id,
@@ -40,6 +41,9 @@ function mapPacienteFromApi(data: any): Paciente {
     pac_celular: data.pacCelular || data.pac_celular,
     pac_telefono_casa: data.pacTelefonoCasa || data.pac_telefono_casa,
     pac_telefono_trabajo: data.pacTelefonoTrabajo || data.pac_telefono_trabajo,
+    pac_contacto_emergencia_nombre: data.contactoEmergenciaNombre || data.pacContactoEmergenciaNombre || data.pac_contacto_emergencia_nombre,
+    pac_contacto_emergencia_relacion: data.contactoEmergenciaRelacion || data.pacContactoEmergenciaRelacion || data.pac_contacto_emergencia_relacion,
+    pac_contacto_emergencia_telefono: data.contactoEmergenciaTelefono || data.pacContactoEmergenciaTelefono || data.pac_contacto_emergencia_telefono,
   };
 }
 
@@ -171,6 +175,25 @@ export async function deletePaciente(
   const url = titular ? '/api/pacientes/cuenta' : `/api/pacientes/dependiente/${pacCodigo}`;
   const { data } = await expedientesApi.delete<{ mensaje: string }>(
     url,
+    getAuthHeaders(token),
+  );
+
+  return data;
+}
+
+/**
+ * Independiza a un paciente dependiente convirtiéndolo en usuario titular.
+ *
+ * Proxy: POST /api/pacientes/{pacCodigo}/independizar
+ */
+export async function independizarPaciente(
+  token: string,
+  pacCodigo: string,
+  nuevoCorreo: string,
+): Promise<{ mensaje: string }> {
+  const { data } = await expedientesApi.post<{ mensaje: string }>(
+    `/api/pacientes/${pacCodigo}/independizar`,
+    { nuevoCorreo },
     getAuthHeaders(token),
   );
 
