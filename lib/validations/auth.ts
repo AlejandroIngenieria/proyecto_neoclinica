@@ -23,6 +23,21 @@ export const recoverySchema = z.object({
   nuevaPassword: z.string().min(1, 'La contraseña es obligatoria').min(6, 'La contraseña debe tener al menos 6 caracteres'),
 });
 
+export const solicitarRecuperacionSchema = z.object({
+  correo: z.string().trim().min(1, 'El correo es obligatorio').email('El correo no es válido'),
+});
+
+export const restablecerPasswordSchema = z.object({
+  nuevaPassword: z.string().trim().regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[%&@\-_]).{8,15}$/, 'La contraseña no cumple con los requisitos'),
+  confirmarPassword: z.string().trim().min(1, 'Debes confirmar la contraseña'),
+}).refine((values) => values.nuevaPassword === values.confirmarPassword, {
+  message: 'Las contraseñas no coinciden',
+  path: ['confirmarPassword'],
+});
+
 export type LoginFormValues = z.infer<typeof loginSchema>;
 export type RegisterFormValues = z.infer<typeof registerSchema>;
 export type RecoveryFormValues = z.infer<typeof recoverySchema>;
+export type SolicitarRecuperacionFormValues = z.infer<typeof solicitarRecuperacionSchema>;
+export type RestablecerPasswordFormValues = z.infer<typeof restablecerPasswordSchema>;
+

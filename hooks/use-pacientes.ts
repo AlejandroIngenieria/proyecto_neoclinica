@@ -118,7 +118,7 @@ export function useUpdatePaciente() {
  * Mutation para crear un paciente dependiente.
  */
 export function useCreateDependiente() {
-  const { token } = useAuthInfo();
+  const { token, userId } = useAuthInfo();
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -126,7 +126,7 @@ export function useCreateDependiente() {
       body,
     }: {
       body: FormData;
-    }) => createDependiente(token!, body),
+    }) => createDependiente(token!, body, userId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pacientes'] });
     },

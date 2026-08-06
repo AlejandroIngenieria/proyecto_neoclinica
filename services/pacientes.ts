@@ -145,11 +145,40 @@ export async function updatePaciente(token: string, pacCodigo: string, body: For
 export async function createDependiente(
   token: string,
   body: FormData,
+  sessionUserId?: string,
 ): Promise<Paciente> {
   const authHeaders = getAuthHeaders(token).headers as any;
 
+  const usuarioGrabacion =
+    body.get('UsuarioGrabacion') ||
+    body.get('usuarioGrabacion') ||
+    body.get('usuario_grabacion_id') ||
+    body.get('UsuarioGrabacionId') ||
+    sessionUserId ||
+    body.get('TitularCodigo') ||
+    body.get('titularCodigo') ||
+    '';
+
+  const queryParams = new URLSearchParams();
+  if (usuarioGrabacion) {
+    queryParams.set('usuarioGrabacion', String(usuarioGrabacion));
+    queryParams.set('UsuarioGrabacion', String(usuarioGrabacion));
+    queryParams.set('usuario_grabacion_id', String(usuarioGrabacion));
+    queryParams.set('UsuarioGrabacionId', String(usuarioGrabacion));
+  }
+  const queryString = queryParams.toString() ? `?${queryParams.toString()}` : '';
+
+  if (usuarioGrabacion) {
+    if (!body.has('UsuarioGrabacion')) body.append('UsuarioGrabacion', String(usuarioGrabacion));
+    if (!body.has('usuarioGrabacion')) body.append('usuarioGrabacion', String(usuarioGrabacion));
+    if (!body.has('usuario_grabacion_id')) body.append('usuario_grabacion_id', String(usuarioGrabacion));
+    if (!body.has('UsuarioGrabacionId')) body.append('UsuarioGrabacionId', String(usuarioGrabacion));
+    if (!body.has('UsuCodigo')) body.append('UsuCodigo', String(usuarioGrabacion));
+    if (!body.has('usuCodigo')) body.append('usuCodigo', String(usuarioGrabacion));
+  }
+
   const { data } = await expedientesApi.post<Paciente>(
-    '/api/pacientes/dependiente',
+    `/api/pacientes/dependiente${queryString}`,
     body,
     {
       headers: {

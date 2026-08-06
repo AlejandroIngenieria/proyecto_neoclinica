@@ -592,6 +592,8 @@ function PacienteForm({
   titularCodigo: string;
   onClose: () => void;
 }) {
+  const { data: session } = useSession();
+  const sessionUserId = (session as any)?.userId;
   const createDep = useCreateDependiente();
   const updatePac = useUpdatePaciente();
 
@@ -746,9 +748,23 @@ function PacienteForm({
     }
 
     if (mode === 'add') {
-      // El backend espera estos campos dentro del FormData ([FromForm]), no como query params
-      formData.append('TitularCodigo', titularCodigo);
+      const usuarioGrabId = sessionUserId || titular?.pac_codusu || titular?.pac_codigo || titularCodigo;
+      const titularId = titular?.pac_codigo || titularCodigo || usuarioGrabId;
+
+      formData.append('TitularCodigo', titularId);
+      formData.append('titularCodigo', titularId);
+
       formData.append('CodParentesco', data.codParentesco);
+      formData.append('codParentesco', data.codParentesco);
+
+      formData.append('UsuarioGrabacion', usuarioGrabId);
+      formData.append('usuarioGrabacion', usuarioGrabId);
+      formData.append('UsuarioGrabacionId', usuarioGrabId);
+      formData.append('usuarioGrabacionId', usuarioGrabId);
+      formData.append('usuario_grabacion_id', usuarioGrabId);
+
+      formData.append('UsuCodigo', usuarioGrabId);
+      formData.append('usuCodigo', usuarioGrabId);
 
       await createDep.mutateAsync({
         body: formData,

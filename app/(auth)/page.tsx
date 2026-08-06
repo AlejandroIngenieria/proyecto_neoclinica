@@ -37,6 +37,7 @@ export default function LoginPage() {
   const {
     register,
     handleSubmit,
+    watch: watchLogin,
     getValues: getLoginValues,
     setValue: setLoginValue,
     formState: { errors, isSubmitting },
@@ -48,6 +49,8 @@ export default function LoginPage() {
     },
     mode: 'onTouched',
   });
+
+  const typedCorreo = watchLogin('correo')?.trim() || '';
 
   const {
     register: registerRecovery,
@@ -296,13 +299,12 @@ export default function LoginPage() {
             <label htmlFor="password" className="block text-sm font-medium text-slate-200">
               Contraseña
             </label>
-            <button
-              type="button"
-              onClick={openRecoveryForm}
+            <Link
+              href={typedCorreo ? `/olvide-password?correo=${encodeURIComponent(typedCorreo)}` : '/olvide-password'}
               className="text-sm font-medium text-cyan-300 transition hover:text-cyan-200"
             >
               Olvidé mi contraseña
-            </button>
+            </Link>
           </div>
           <div className="flex h-14 items-center gap-3 rounded-2xl border border-sky-400/30 bg-[#0b234c] px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition focus-within:border-sky-300/70 focus-within:ring-2 focus-within:ring-sky-400/25">
             <input
