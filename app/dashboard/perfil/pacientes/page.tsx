@@ -549,30 +549,23 @@ function PatientDetailsModal({
   );
 }
 
-function EmptyState({ onAdd }: { onAdd: () => void }) {
+function EmptyState() {
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-      className="col-span-full flex flex-col items-center justify-center rounded-3xl border-2 border-dashed border-slate-200 bg-white px-8 py-16 text-center"
+      className="col-span-full flex flex-col items-center justify-center rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 px-8 py-16 text-center"
     >
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50">
-        <Users className="h-8 w-8 text-blue-400" />
+      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 dark:bg-blue-950/50">
+        <Users className="h-8 w-8 text-blue-500 dark:text-blue-400" />
       </div>
-      <h3 className="mt-5 text-lg font-bold text-slate-800">
+      <h3 className="mt-5 text-lg font-bold text-slate-800 dark:text-slate-200">
         Aún no tienes pacientes afiliados
       </h3>
-      <p className="mt-2 max-w-md text-sm text-slate-500">
+      <p className="mt-2 max-w-md text-sm text-slate-500 dark:text-slate-400">
         Agrega los miembros de tu grupo familiar o dependientes para gestionar sus citas y expedientes desde tu cuenta.
       </p>
-      <button
-        onClick={onAdd}
-        className="mt-6 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
-      >
-        <UserPlus className="h-4 w-4" />
-        Agregar Paciente
-      </button>
     </motion.div>
   );
 }
@@ -1435,11 +1428,11 @@ function PacientesContent() {
                   onViewDetails={openDetails}
                 />
               ))
-            : !titular && <EmptyState onAdd={openAdd} />}
+            : !titular && <EmptyState />}
 
           {/* Show empty state when there's a titular but no dependientes */}
           {titular && dependientes.length === 0 && (
-            <EmptyState onAdd={openAdd} />
+            <EmptyState />
           )}
         </div>
       )}
