@@ -10,7 +10,7 @@ import { es } from 'date-fns/locale';
 import { Navbar } from '@/components/navbar';
 import { NeoLoader } from '@/components/neo-loader';
 import { useSession } from 'next-auth/react';
-import { useCitasPaciente, useAllCitasPacientes, usePacientesSeleccion, useCancelarCita, useGruposMap, useUpdateCita } from '@/hooks/use-flujo-citas';
+import { useCitasPaciente, useAllCitasPacientes, usePacientesSeleccion, useCancelarCita, useGruposMap, useUpdateCita, useAutoCompletarCitasPasadas } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode, useDoctors } from '@/hooks/use-doctors';
 import { fetchGruposCita, createGrupo } from '@/services/flujo-citas';
 import type { CitaListDto, CitaEstado, GrupoCitaDto } from '@/types/citas';
@@ -24,7 +24,8 @@ import { Plus, FolderPlus } from 'lucide-react';
 const MySwal = withReactContent(Swal);
 
 const NAV_LINKS = [
-  { href: '/dashboard', label: 'Directorio' },
+  { href: '/dashboard', label: 'Inicio' },
+  { href: '/dashboard/directorio', label: 'Directorio' },
   { href: '/dashboard/citas', label: 'Citas' },
   { href: '/dashboard/medicamentos', label: 'Medicamentos' },
 ];
@@ -105,6 +106,9 @@ function CitasContent() {
   const codigosPacientes = useMemo(() => pacientes?.map(p => p.pacCodigo) || [], [pacientes]);
   const { data: citasData, isLoading: loadingCitas } = useAllCitasPacientes(codigosPacientes);
   
+  // Auto-sincronizar en la base de datos las citas pasadas para que pasen al estado "completada"
+  useAutoCompletarCitasPasadas(citasData);
+
   // Sort all citas by date descending
   const citas = useMemo(() => {
     if (!citasData) return [];
@@ -344,7 +348,7 @@ function CitasContent() {
               <div className="flex flex-wrap items-center gap-3 shrink-0">
                 <button
                   type="button"
-                  onClick={() => router.push('/dashboard')}
+                  onClick={() => router.push('/dashboard/directorio')}
                   className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-4 py-2.5 rounded-2xl shadow-sm transition active:scale-95"
                 >
                   <Plus className="w-4 h-4" /> Nueva Cita

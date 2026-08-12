@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { useCitaStore } from '@/store/use-cita-store';
 import { useMetodosPago, useBilletera, useGuardarSeguro, useGuardarTarjeta, usePacientesSeleccion } from '@/hooks/use-flujo-citas';
-import { ChevronLeft, ArrowRight, CreditCard, Banknote, Landmark, Wallet, Plus, ShieldCheck, Loader2, Info } from 'lucide-react';
+import { useRecompensasDisponibles } from '@/hooks/use-recompensas';
+import { ChevronLeft, ArrowRight, CreditCard, Banknote, Landmark, Wallet, Plus, ShieldCheck, Loader2, Info, Tag, Gift, CheckCircle2 } from 'lucide-react';
 import { NeoLoader } from '@/components/neo-loader';
 
 export function Step3MetodoPago() {
@@ -287,6 +288,10 @@ export function Step3MetodoPago() {
                     )}
                 </div>
 
+                {/* Sección de Recompensas y Cupones Activos */}
+                <CuponesSeccion pacCodigo={pacienteSeleccionado?.pacCodigo || pacienteTitular?.pacCodigo} />
+            </div>
+
             {/* Footer Next Button */}
             <div className="sticky bottom-0 z-30 bg-transparent flex flex-col-reverse sm:flex-row justify-between items-center gap-3 py-4 border-t border-slate-200/60 dark:border-slate-800/40 mt-12 px-4 md:px-0">
                 <button
@@ -306,8 +311,77 @@ export function Step3MetodoPago() {
                 >
                     <span>Continuar al Siguiente Paso</span> <ArrowRight className="h-5 w-5" />
                 </button>
-            </div>      </div>
+            </div>    
 
+        </div>
+    );
+}
+
+function CuponesSeccion({ pacCodigo }: { pacCodigo?: string }) {
+    const { recompensaSeleccionada, setRecompensaSeleccionada } = useCitaStore();
+    const { data: recompensas = [], isLoading } = useRecompensasDisponibles(pacCodigo);
+
+    const cuponesDisponibles = recompensas.filter(
+        (r) => r.praEstado === 'disponible' || !r.praEstado
+    );
+
+    if (isLoading || cuponesDisponibles.length === 0) return null;
+
+    return (
+        <div className="mt-8 rounded-3xl border border-emerald-500/20 bg-emerald-950/10 p-6 backdrop-blur-xs">
+            <div className="flex items-center gap-3 mb-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-400">
+                    <Gift className="h-5 w-5" />
+                </div>
+                <div>
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white">Aplicar Recompensa o Cupón</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Tienes {cuponesDisponibles.length} cupón(es) disponible(s) en tu cuenta.</p>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                    type="button"
+                    onClick={() => setRecompensaSeleccionada(null)}
+                    className={`flex items-center gap-3 p-4 rounded-2xl border transition-all text-left ${
+                        !recompensaSeleccionada
+                            ? 'border-emerald-500 bg-emerald-500/10 text-emerald-900 dark:text-emerald-300 font-bold'
+                            : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] text-slate-700 dark:text-slate-300'
+                    }`}
+                >
+                    <Tag className="h-4 w-4 shrink-0 text-slate-400" />
+                    <span className="text-xs font-semibold">Sin cupón</span>
+                </button>
+
+                {cuponesDisponibles.map((cupon) => {
+                    const isSelected = recompensaSeleccionada?.praCodigo === cupon.praCodigo;
+                    return (
+                        <button
+                            key={cupon.praCodigo}
+                            type="button"
+                            onClick={() => setRecompensaSeleccionada(cupon)}
+                            className={`flex items-center justify-between gap-3 p-4 rounded-2xl border transition-all text-left ${
+                                isSelected
+                                    ? 'border-emerald-500 bg-emerald-500/15 text-emerald-900 dark:text-emerald-300 shadow-md'
+                                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] hover:border-emerald-400 text-slate-700 dark:text-slate-300'
+                            }`}
+                        >
+                            <div className="flex items-center gap-3 min-w-0">
+                                <Gift className="h-5 w-5 shrink-0 text-emerald-500" />
+                                <div className="truncate">
+                                    <p className="text-xs font-bold truncate text-slate-900 dark:text-white">
+                                        {cupon.tituloRecompensa || (cupon as any).titulo || 'Recompensa'}
+                                    </p>
+                                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                                        {cupon.codigoCanje ? `Código: ${cupon.codigoCanje}` : 'Cupón Activo'}
+                                    </p>
+                                </div>
+                            </div>
+                            {isSelected ? <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" /> : null}
+                        </button>
+                    );
+                })}
+            </div>
         </div>
     );
 }

@@ -7,7 +7,8 @@ import { Check, CalendarDays, ArrowRight } from 'lucide-react';
 import { Navbar } from '@/components/navbar';
 
 const NAV_LINKS = [
-  { href: '/dashboard', label: 'Directorio' },
+  { href: '/dashboard', label: 'Inicio' },
+  { href: '/dashboard/directorio', label: 'Directorio' },
   { href: '/dashboard/medicamentos', label: 'Medicamentos' },
   { href: '/dashboard/citas', label: 'Citas' },
 ];

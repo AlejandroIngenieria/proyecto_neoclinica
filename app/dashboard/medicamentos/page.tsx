@@ -7,7 +7,8 @@ import { Navbar } from '@/components/navbar';
 import { NeoLoader } from '@/components/neo-loader';
 
 const NAV_LINKS = [
-  { href: '/dashboard', label: 'Directorio' },
+  { href: '/dashboard', label: 'Inicio' },
+  { href: '/dashboard/directorio', label: 'Directorio' },
   { href: '/dashboard/citas', label: 'Citas' },
   { href: '/dashboard/medicamentos', label: 'Medicamentos' },
 ];

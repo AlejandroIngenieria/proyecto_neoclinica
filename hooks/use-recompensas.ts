@@ -20,11 +20,12 @@ function useAuthToken() {
  * Obtener Catálogo de Recompensas
  */
 export function useCatalogoRecompensas() {
-  const { token } = useAuthToken();
+  const { token, status } = useAuthToken();
 
   return useQuery({
-    queryKey: ['recompensas', 'catalogo'],
+    queryKey: ['recompensas', 'catalogo', token],
     queryFn: () => fetchCatalogoRecompensas(token),
+    enabled: status === 'authenticated' && !!token,
   });
 }
 
@@ -35,9 +36,9 @@ export function useRecompensasDisponibles(pacCodigo?: string) {
   const { token, status } = useAuthToken();
 
   return useQuery({
-    queryKey: ['recompensas', 'disponibles', pacCodigo],
+    queryKey: ['recompensas', 'disponibles', pacCodigo, token],
     queryFn: () => fetchRecompensasDisponibles(pacCodigo!, token),
-    enabled: status === 'authenticated' && !!pacCodigo,
+    enabled: status === 'authenticated' && !!pacCodigo && !!token,
   });
 }
 
@@ -48,9 +49,9 @@ export function useTotalPuntos(pacCodigo?: string) {
   const { token, status } = useAuthToken();
 
   return useQuery({
-    queryKey: ['recompensas', 'puntos', pacCodigo],
+    queryKey: ['recompensas', 'puntos', pacCodigo, token],
     queryFn: () => fetchTotalPuntos(pacCodigo!, token),
-    enabled: status === 'authenticated' && !!pacCodigo,
+    enabled: status === 'authenticated' && !!pacCodigo && !!token,
   });
 }
 
@@ -98,8 +99,8 @@ export function useHistorialPuntos(pacCodigo?: string) {
   const { token, status } = useAuthToken();
 
   return useQuery({
-    queryKey: ['recompensas', 'historial', pacCodigo],
+    queryKey: ['recompensas', 'historial', pacCodigo, token],
     queryFn: () => fetchHistorialPuntos(pacCodigo!, token),
-    enabled: status === 'authenticated' && !!pacCodigo,
+    enabled: status === 'authenticated' && !!pacCodigo && !!token,
   });
 }

@@ -1,29 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useSearchParams } from 'next/navigation';
 import {
   Star,
   Gift,
-  TrendingUp,
   Clock,
-  CheckCircle2,
-  ChevronRight,
   Sparkles,
-  Shield,
-  Lock,
   Copy,
   Check,
-  Share2,
   Users,
   Award,
   ArrowUpRight,
   ArrowDownRight,
   Tag,
-  Zap,
-  Calendar,
-  AlertCircle,
-  FileText,
+  CheckCircle2,
 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import Swal from 'sweetalert2';
@@ -38,66 +30,19 @@ import {
   useVincularReferido,
   useHistorialPuntos,
 } from '@/hooks/use-recompensas';
-import { useLealtadTareas, useCompletarTareaLealtad } from '@/hooks/use-lealtad';
-import type { Recompensa, RecompensaAdquirida, LigaNivel } from '@/types/recompensas';
+import { useLealtadEstado, useLealtadTareas, useLealtadNiveles } from '@/hooks/use-lealtad';
+import type { Recompensa } from '@/types/recompensas';
 
-// ─── Ligas / Niveles de Lealtad ──────────────────────────────────────────────
-
-const LIGAS_SISTEMA: LigaNivel[] = [
-  {
-    id: 'bronce',
-    nombre: 'Bronce',
-    puntosMinimos: 0,
-    puntosMaximos: 199,
-    colorGradient: 'from-amber-700 via-amber-800 to-amber-950',
-    badgeIcon: '🥉',
-    beneficios: ['Acceso al programa de lealtad', 'Recordatorios estándar por correo'],
-  },
-  {
-    id: 'plata',
-    nombre: 'Plata',
-    puntosMinimos: 200,
-    puntosMaximos: 499,
-    colorGradient: 'from-slate-400 via-slate-500 to-slate-700',
-    badgeIcon: '🥈',
-    beneficios: ['5% extra de puntos en cada cita', 'Notificaciones SMS personalizadas'],
-  },
-  {
-    id: 'oro',
-    nombre: 'Oro',
-    puntosMinimos: 500,
-    puntosMaximos: 999,
-    colorGradient: 'from-amber-400 via-yellow-500 to-amber-600',
-    badgeIcon: '🥇',
-    beneficios: ['10% de puntos extra', 'Atención preferencial en agenda', 'Descuentos en lab de 10%'],
-  },
-  {
-    id: 'platino',
-    nombre: 'Platino',
-    puntosMinimos: 1000,
-    puntosMaximos: 1999,
-    colorGradient: 'from-cyan-400 via-blue-500 to-indigo-700',
-    badgeIcon: '💎',
-    beneficios: ['15% de puntos extra', 'Almacenamiento HD ilimitado de expedientes', 'Recordatorios WhatsApp VIP'],
-  },
-  {
-    id: 'diamante',
-    nombre: 'Diamante',
-    puntosMinimos: 2000,
-    puntosMaximos: 99999,
-    colorGradient: 'from-purple-500 via-indigo-600 to-slate-900',
-    badgeIcon: '👑',
-    beneficios: ['20% de puntos extra', 'Consulta anual de revisión gratuita', 'Soporte prioritario 24/7'],
-  },
-];
-
-export default function PuntosPage() {
+function PuntosContent() {
   const { data: session } = useSession();
+  const searchParams = useSearchParams();
   const { titular, isLoading: isLoadingTitular } = usePacienteTitular();
 
   const pacCodigo = titular?.pac_codigo;
 
   // ─── Queries ───
+  const { data: lealtadEstado, isLoading: isLoadingLealtadState } = useLealtadEstado();
+  const { data: niveles = [], isLoading: isLoadingNiveles } = useLealtadNiveles();
   const { data: puntosData, isLoading: isLoadingPuntos } = useTotalPuntos(pacCodigo);
   const { data: catalogo = [], isLoading: isLoadingCatalogo } = useCatalogoRecompensas();
   const { data: misRecompensas = [], isLoading: isLoadingInventario } = useRecompensasDisponibles(pacCodigo);
@@ -107,29 +52,90 @@ export default function PuntosPage() {
   // ─── Mutations ───
   const canjearMutation = useCanjearRecompensa(pacCodigo);
   const referidoMutation = useVincularReferido(pacCodigo);
-  const completarTareaMutation = useCompletarTareaLealtad();
 
   // ─── Local State ───
   const [codigoReferidoInput, setCodigoReferidoInput] = useState('');
   const [copiedCode, setCopiedCode] = useState(false);
   const [selectedTab, setSelectedTab] = useState<'tienda' | 'inventario' | 'misiones' | 'ligas' | 'historial'>('tienda');
 
-  const totalPuntos = puntosData?.totalPuntos ?? 0;
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam === 'inventario' || tabParam === 'mis-recompensas' || tabParam === 'recompensas') {
+      setSelectedTab('inventario');
+    } else if (tabParam === 'tienda' || tabParam === 'catalogo') {
+      setSelectedTab('tienda');
+    } else if (tabParam === 'misiones') {
+      setSelectedTab('misiones');
+    } else if (tabParam === 'ligas' || tabParam === 'niveles') {
+      setSelectedTab('ligas');
+    } else if (tabParam === 'historial') {
+      setSelectedTab('historial');
+    }
+  }, [searchParams]);
 
-  // Determinar nivel actual
-  const ligaActual =
-    LIGAS_SISTEMA.find((l) => totalPuntos >= l.puntosMinimos && totalPuntos <= l.puntosMaximos) ||
-    LIGAS_SISTEMA[0];
+  // Backend state
+  const totalPuntos = lealtadEstado?.puntosActuales ?? puntosData?.totalPuntos ?? 0;
+  
+  // Sort levels array by nvlPuntosMin
+  const nivelesOrdenados = [...niveles].sort((a, b) => a.nvlPuntosMin - b.nvlPuntosMin);
 
-  const siguienteLiga = LIGAS_SISTEMA[LIGAS_SISTEMA.indexOf(ligaActual) + 1] || ligaActual;
-  const puntosParaSiguiente = Math.max(0, siguienteLiga.puntosMinimos - totalPuntos);
-  const progresoPorcentaje = Math.min(
-    100,
-    Math.max(0, Math.round(((totalPuntos - ligaActual.puntosMinimos) / (siguienteLiga.puntosMinimos - ligaActual.puntosMinimos || 1)) * 100))
-  );
+  // Match current level item by point range first
+  const nivelEncontrado =
+    nivelesOrdenados.find((n) => totalPuntos >= n.nvlPuntosMin && totalPuntos <= n.nvlPuntosMax) ||
+    nivelesOrdenados.find((n) => (lealtadEstado?.nivelActual || '').toLowerCase().includes(n.nvlDescripcion.toLowerCase())) ||
+    (nivelesOrdenados.length > 0 ? nivelesOrdenados[0] : null);
+
+  // Prioritize range match description over raw backend string if backend says "Sin Nivel"
+  const nivelActual = nivelEncontrado?.nvlDescripcion || lealtadEstado?.nivelActual || 'Sin Nivel';
+
+  // Next level target
+  const siguienteNivel = nivelEncontrado
+    ? nivelesOrdenados[nivelesOrdenados.indexOf(nivelEncontrado) + 1]
+    : null;
+
+  const puntosMinimos = nivelEncontrado?.nvlPuntosMin ?? lealtadEstado?.puntosMinimosNivel ?? 0;
+  const puntosMaximos = nivelEncontrado?.nvlPuntosMax ?? lealtadEstado?.puntosMaximosNivel ?? 0;
+
+  const puntosMetaSiguiente = siguienteNivel
+    ? siguienteNivel.nvlPuntosMin
+    : puntosMaximos;
+
+  const puntosFaltantes = siguienteNivel
+    ? Math.max(0, siguienteNivel.nvlPuntosMin - totalPuntos)
+    : (puntosMaximos > totalPuntos ? puntosMaximos - totalPuntos : 0);
+
+  // Real Progress calculation within current level range
+  let progresoNumerico = 0;
+  const rangoNivel = puntosMaximos - puntosMinimos;
+  if (rangoNivel > 0 && totalPuntos >= puntosMinimos) {
+    const progresoPuntos = totalPuntos - puntosMinimos;
+    progresoNumerico = (progresoPuntos / rangoNivel) * 100;
+  } else if (
+    typeof lealtadEstado?.progresoPorcentaje === 'number' &&
+    puntosMaximos > 0 &&
+    lealtadEstado.progresoPorcentaje < 100
+  ) {
+    progresoNumerico = lealtadEstado.progresoPorcentaje;
+  }
+
+  progresoNumerico = Math.min(100, Math.max(0, progresoNumerico));
+
+  const progresoPorcentajeTexto =
+    progresoNumerico > 0 && progresoNumerico < 1
+      ? progresoNumerico.toFixed(1)
+      : Math.round(progresoNumerico).toString();
+
+  const anchoBarraVisual =
+    progresoNumerico > 0
+      ? Math.max(2, Math.min(100, progresoNumerico))
+      : 0;
+
+  const nombreNivelLimpio = nivelActual.toLowerCase().startsWith('nivel')
+    ? nivelActual
+    : `Nivel ${nivelActual}`;
 
   // Código de referencia propio
-  const miCodigoReferido = pacCodigo ? `NEO-${pacCodigo.slice(0, 8).toUpperCase()}` : 'NEO-123456';
+  const miCodigoReferido = pacCodigo ? `NEO-${pacCodigo.slice(0, 8).toUpperCase()}` : 'N/A';
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(miCodigoReferido);
@@ -201,50 +207,38 @@ export default function PuntosPage() {
     }
   };
 
-  const handleCompletarTarea = async (codigoAccion: string) => {
-    try {
-      await completarTareaMutation.mutateAsync(codigoAccion);
-      Swal.fire({
-        icon: 'success',
-        title: '¡Misión Completada!',
-        text: 'Has ganado los puntos correspondientes a esta tarea.',
-        confirmButtonColor: '#16a34a',
-      });
-    } catch (err: any) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: 'No se pudo completar la tarea en este momento.',
-        confirmButtonColor: '#dc2626',
-      });
-    }
-  };
-
   if (isLoadingTitular || isLoadingPuntos || isLoadingCatalogo) {
     return <NeoLoader />;
   }
 
-  // Filtrar solo las recompensas disponibles en inventario
-  const recompensasDisponibles = misRecompensas.filter((r) => r.praEstado === 'disponible');
+  // Filtrar solo las recompensas disponibles en inventario con tolerancia a distintos formatos de estado del backend
+  const recompensasDisponibles = misRecompensas.filter((r) => {
+    if (!r) return false;
+    const estado = r.praEstado || (r as any).estado || (r as any).pra_estado;
+    if (!estado) return true;
+    const lower = String(estado).toLowerCase();
+    return lower === 'disponible' || lower === 'activa' || lower === 'activo' || lower === 'a';
+  });
 
   return (
-    <div className="min-h-screen px-4 py-6 sm:px-8 lg:px-10 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-7xl mx-auto space-y-8">
-      {/* Sticky Header Container */}
-      <div className="sticky top-0 z-30 py-4 mb-6 backdrop-blur-md">
+    <div className="min-h-screen px-4 py-6 sm:px-8 lg:px-10 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-7xl mx-auto space-y-8 bg-slate-50 dark:bg-[#0B1120]">
+      
+      {/* Header Container - Matching Page Background */}
+      <div className="bg-slate-50 dark:bg-[#0B1120] py-2 mb-2">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-3xl md:text-5xl font-black tracking-tight text-slate-900 dark:text-white">
               Puntos y Recompensas
             </h1>
             <p className="mt-1 text-sm sm:text-base text-slate-500 dark:text-slate-400 font-medium">
-              Acumula puntos por tus citas y misiones, sube de nivel y desbloquea beneficios exclusivos.
+              Acumula puntos por tus citas y misiones, sube de nivel y canjea tus beneficios.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               onClick={() => setSelectedTab('tienda')}
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 px-5 py-2.5 text-xs font-black uppercase tracking-wider text-slate-950 shadow-md transition-all hover:scale-105 active:scale-95 shrink-0"
+              className="inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-5 py-2.5 text-xs font-black uppercase tracking-wider text-white shadow-md transition-all active:scale-95 shrink-0"
             >
               <Gift className="h-4 w-4" />
               Canjear Puntos
@@ -253,58 +247,58 @@ export default function PuntosPage() {
         </div>
       </div>
 
-      {/* Header Dashboard Principal (Puntos, Nivel y Barra de Progreso) */}
-      <div className={`relative overflow-hidden rounded-3xl bg-gradient-to-br ${ligaActual.colorGradient} p-6 sm:p-8 text-white shadow-2xl shadow-indigo-950/20`}>
-        {/* Ambient Blur Overlays */}
-        <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-white/10 blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-white/10 blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-          {/* Nivel Icon & Info */}
+      {/* Header Dashboard Principal (Matching Page Background Card) */}
+      <div className="rounded-3xl bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-800 p-6 sm:p-8 text-slate-900 dark:text-white shadow-sm">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          {/* Nivel Info */}
           <div className="flex items-center gap-5">
-            <div className="flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-3xl bg-white/15 backdrop-blur-md border border-white/20 shadow-inner text-4xl sm:text-5xl shrink-0">
-              {ligaActual.badgeIcon}
+            <div className="flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-3xl bg-blue-50 dark:bg-blue-950/50 border border-blue-100 dark:border-blue-900/50 text-blue-600 dark:text-blue-400 shrink-0">
+              {lealtadEstado?.imagenNivelUrl ? (
+                <img src={lealtadEstado.imagenNivelUrl} alt={nivelActual} className="h-12 w-12 object-contain" />
+              ) : (
+                <Award className="h-10 w-10" />
+              )}
             </div>
             <div>
-              <p className="text-xs font-extrabold uppercase tracking-widest text-white/80">Nivel Actual</p>
+              <p className="text-xs font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">Nivel Actual</p>
               <div className="flex items-center gap-2.5 mt-0.5">
-                <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-white drop-shadow-md">
-                  Liga {ligaActual.nombre}
+                <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 dark:text-white">
+                  {nombreNivelLimpio}
                 </h2>
-                <Sparkles className="h-6 w-6 text-amber-300 animate-pulse" />
+                <Sparkles className="h-6 w-6 text-amber-500 animate-pulse" />
               </div>
-              <p className="mt-1 text-xs sm:text-sm text-white/90 font-medium">
-                {siguienteLiga.id !== ligaActual.id
-                  ? `Faltan ${puntosParaSiguiente} pts para ascender a Liga ${siguienteLiga.nombre}`
-                  : '¡Has alcanzado el nivel máximo de beneficios!'}
+              <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">
+                {puntosFaltantes > 0 && puntosMaximos > 0
+                  ? `Faltan ${puntosFaltantes} pts para el siguiente nivel`
+                  : `Tienes ${totalPuntos} pts acumulados`}
               </p>
             </div>
           </div>
 
           {/* Total Puntos Highlight */}
-          <div className="flex flex-col items-start lg:items-end bg-black/20 p-5 rounded-2xl border border-white/10 backdrop-blur-md shrink-0">
-            <span className="text-xs font-bold uppercase tracking-widest text-white/80">Puntos Disponibles</span>
+          <div className="flex flex-col items-start lg:items-end bg-slate-50 dark:bg-slate-900/60 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shrink-0">
+            <span className="text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">Puntos Disponibles</span>
             <div className="flex items-baseline gap-1.5 mt-1">
-              <span className="text-4xl sm:text-5xl font-black tracking-tighter text-amber-300 drop-shadow-md">
+              <span className="text-4xl sm:text-5xl font-black tracking-tighter text-blue-600 dark:text-blue-400">
                 {totalPuntos}
               </span>
-              <span className="text-base font-bold text-white/90">pts</span>
+              <span className="text-base font-bold text-slate-500 dark:text-slate-400">pts</span>
             </div>
           </div>
         </div>
 
         {/* Detailed Progress Bar */}
-        <div className="relative z-10 mt-8 pt-6 border-t border-white/15">
-          <div className="mb-2 flex justify-between text-xs font-bold text-white/90">
-            <span>{totalPuntos} / {siguienteLiga.puntosMinimos} pts</span>
-            <span>{progresoPorcentaje}% completado</span>
+        <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800">
+          <div className="mb-2 flex justify-between text-xs font-bold text-slate-600 dark:text-slate-400">
+            <span>{totalPuntos} {puntosMaximos > 0 ? `/ ${puntosMaximos}` : ''} pts</span>
+            <span>{progresoPorcentajeTexto}% completado</span>
           </div>
-          <div className="h-3.5 w-full overflow-hidden rounded-full bg-black/30 shadow-inner backdrop-blur-sm p-0.5 border border-white/10">
+          <div className="h-3.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800 p-0.5 border border-slate-200 dark:border-slate-700">
             <motion.div
-              className="h-full rounded-full bg-gradient-to-r from-amber-300 via-amber-400 to-yellow-300 shadow-[0_0_12px_rgba(251,191,36,0.8)]"
+              className="h-full rounded-full bg-blue-600 dark:bg-blue-500"
               initial={{ width: 0 }}
-              animate={{ width: `${progresoPorcentaje}%` }}
-              transition={{ duration: 1, ease: 'easeOut' }}
+              animate={{ width: `${anchoBarraVisual}%` }}
+              transition={{ duration: 0.8, ease: 'easeOut' }}
             />
           </div>
         </div>
@@ -317,7 +311,7 @@ export default function PuntosPage() {
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
             selectedTab === 'tienda'
               ? 'bg-blue-600 text-white shadow-md'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800'
           }`}
         >
           <Gift className="h-4 w-4" />
@@ -329,11 +323,11 @@ export default function PuntosPage() {
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
             selectedTab === 'inventario'
               ? 'bg-blue-600 text-white shadow-md'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800'
           }`}
         >
           <Tag className="h-4 w-4" />
-          Mis Recompensas ({recompensasDisponibles.length})
+          Recompensas Canjeadas ({recompensasDisponibles.length})
         </button>
 
         <button
@@ -341,7 +335,7 @@ export default function PuntosPage() {
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
             selectedTab === 'misiones'
               ? 'bg-blue-600 text-white shadow-md'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800'
           }`}
         >
           <Star className="h-4 w-4" />
@@ -353,11 +347,11 @@ export default function PuntosPage() {
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
             selectedTab === 'ligas'
               ? 'bg-blue-600 text-white shadow-md'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800'
           }`}
         >
           <Award className="h-4 w-4" />
-          Niveles y Ligas
+          Niveles
         </button>
 
         <button
@@ -365,155 +359,149 @@ export default function PuntosPage() {
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
             selectedTab === 'historial'
               ? 'bg-blue-600 text-white shadow-md'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800'
           }`}
         >
           <Clock className="h-4 w-4" />
-          Historial
+          Misiones Cumplidas
         </button>
       </div>
 
-      {/* Tab 1: Catálogo de Canje (Tienda) */}
+      {/* Tab 1: Tienda de Canje */}
       {selectedTab === 'tienda' && (
         <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Catálogo de Recompensas</h2>
-              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-                Intercambia tus puntos por beneficios en consultas y funciones premium.
-              </p>
-            </div>
-            <span className="text-xs font-semibold text-slate-500 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-full">
-              Saldo: <strong className="text-amber-600 dark:text-amber-400">{totalPuntos} pts</strong>
-            </span>
+          <div>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Catálogo de Recompensas</h2>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+              Canjea tus puntos acumulados por descuentos y consultas.
+            </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {catalogo.map((item) => {
-              const puedeCanjear = totalPuntos >= item.rcpCostoPuntos;
-              return (
-                <motion.div
-                  key={item.rcpCodigo}
-                  whileHover={{ y: -4 }}
-                  className={`flex flex-col justify-between rounded-3xl border p-6 bg-white dark:bg-[#1E293B] shadow-xl shadow-slate-900/5 transition-all ${
-                    puedeCanjear
-                      ? 'border-slate-200 dark:border-slate-800'
-                      : 'border-slate-200/60 dark:border-slate-800/60 opacity-80'
-                  }`}
-                >
-                  <div>
-                    {/* Badge tipo */}
-                    <div className="flex items-center justify-between gap-2 mb-4">
-                      <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 dark:bg-blue-950/60 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 border border-blue-200/50 dark:border-blue-900/40">
-                        <Zap className="h-3 w-3" />
-                        {item.rcpTipo.replace('_', ' ')}
-                      </span>
+          {catalogo.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {catalogo.map((item, idx) => {
+                const costo = item.rcpCostoPuntos ?? (item as any).costoPuntos ?? (item as any).rcp_costo_puntos ?? 0;
+                const titulo = item.rcpTitulo || (item as any).titulo || (item as any).rcp_titulo || (item as any).nombre || 'Recompensa';
+                const desc = item.descripcion || (item as any).rcpDescripcion || (item as any).rcp_descripcion;
+                const canAfford = totalPuntos >= costo;
+                const keyId = item.rcpCodigo || (item as any).id || (item as any).rcp_codigo || `cat-${idx}`;
 
-                      <div className="flex items-center gap-1 text-amber-500 font-extrabold text-sm bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 rounded-full border border-amber-200/50">
-                        <Star className="h-3.5 w-3.5 fill-amber-500" />
-                        <span>{item.rcpCostoPuntos} pts</span>
+                return (
+                  <div
+                    key={keyId}
+                    className="flex flex-col justify-between rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] p-6 shadow-sm hover:shadow-md transition-all"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-3 mb-4">
+                        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400">
+                          <Gift className="h-6 w-6" />
+                        </span>
+                        <span className="inline-flex items-center gap-1 font-extrabold text-xs bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 px-3 py-1.5 rounded-full border border-amber-200 dark:border-amber-900/40">
+                          <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
+                          {costo} pts
+                        </span>
                       </div>
+
+                      <h3 className="text-lg font-black text-slate-900 dark:text-white leading-tight">
+                        {titulo}
+                      </h3>
+                      {desc && (
+                        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                          {desc}
+                        </p>
+                      )}
                     </div>
 
-                    <h3 className="text-base font-black text-slate-900 dark:text-white leading-snug">
-                      {item.rcpTitulo}
-                    </h3>
-                    <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                      {item.descripcion || 'Beneficio canjeable inmediatamente para utilizar en la plataforma.'}
-                    </p>
-
-                    {item.rcpDiasDuracion && (
-                      <p className="mt-3 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
-                        <Clock className="h-3.5 w-3.5" /> Duración: {item.rcpDiasDuracion} días
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
-                    {puedeCanjear ? (
+                    <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
                       <button
                         onClick={() => handleCanjear(item)}
-                        disabled={canjearMutation.isPending}
-                        className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white py-2.5 text-xs font-bold transition-all shadow-md active:scale-95 disabled:opacity-50"
+                        disabled={!canAfford || canjearMutation.isPending}
+                        className={`w-full py-3 rounded-2xl text-xs font-bold transition-all ${
+                          canAfford
+                            ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-md active:scale-95'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'
+                        }`}
                       >
-                        <Gift className="h-4 w-4" />
-                        Canjear Recompensa
+                        {canAfford ? 'Canjear Recompensa' : 'Puntos Insuficientes'}
                       </button>
-                    ) : (
-                      <button
-                        disabled
-                        className="w-full flex items-center justify-center gap-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 text-slate-400 dark:text-slate-500 py-2.5 text-xs font-bold cursor-not-allowed border border-slate-200 dark:border-slate-700"
-                      >
-                        <Lock className="h-3.5 w-3.5" />
-                        Puntos Insuficientes
-                      </button>
-                    )}
+                    </div>
                   </div>
-                </motion.div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 p-12 text-center bg-white dark:bg-[#1E293B]">
+              <Gift className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+              <h3 className="text-base font-bold text-slate-700 dark:text-slate-300">No hay recompensas configuradas</h3>
+              <p className="mt-1 text-xs text-slate-400 max-w-md mx-auto">
+                Próximamente habrá nuevas opciones disponibles en el catálogo.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Tab 2: Mis Recompensas (Inventario) */}
+      {/* Tab 2: Recompensas Canjeadas (Inventario) */}
       {selectedTab === 'inventario' && (
         <div className="space-y-6">
           <div>
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Mis Recompensas Adquiridas</h2>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Recompensas Canjeadas</h2>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-              Recompensas y cupones disponibles para usar en tus próximas consultas.
+              Cupones activos y disponibles en tu cuenta para aplicar en tus citas.
             </p>
           </div>
 
           {recompensasDisponibles.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {recompensasDisponibles.map((r) => (
-                <div
-                  key={r.praCodigo}
-                  className="rounded-3xl border border-emerald-200 dark:border-emerald-900/50 bg-gradient-to-br from-emerald-50/50 via-white to-emerald-50/20 dark:from-emerald-950/20 dark:via-[#1E293B] dark:to-emerald-950/10 p-6 shadow-lg relative overflow-hidden"
-                >
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 px-3 py-0.5 text-[10px] font-black uppercase tracking-wider border border-emerald-300/50">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> Disponible
-                    </span>
-                    <span className="text-[11px] font-bold text-slate-400">
-                      {new Date(r.praFechaAdquisicion).toLocaleDateString()}
-                    </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {recompensasDisponibles.map((r, idx) => {
+                const titulo = r.tituloRecompensa || (r as any).titulo || (r as any).rcpTitulo || (r as any).rcp_titulo || (r as any).nombre || 'Recompensa';
+                const codigo = r.codigoCanje || (r as any).codigo || (r as any).codigo_canje || (r as any).praCodigoCanje || (r.praCodigo ? `CUPON-${r.praCodigo.slice(0, 6).toUpperCase()}` : `CUPON-${idx + 1}`);
+                const fechaExp = r.praFechaExpiracion || (r as any).fechaExpiracion || (r as any).pra_fecha_expiracion;
+                const keyId = r.praCodigo || (r as any).id || (r as any).pra_codigo || `rec-${idx}`;
+
+                return (
+                  <div
+                    key={keyId}
+                    className="flex flex-col justify-between rounded-3xl border border-emerald-500/20 bg-white dark:bg-[#1E293B] p-6 shadow-sm hover:shadow-md transition-all"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-3 mb-4">
+                        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400">
+                          <Tag className="h-5 w-5" />
+                        </span>
+                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-1 rounded-lg">
+                          Disponible
+                        </span>
+                      </div>
+
+                      <h3 className="text-lg font-black text-slate-900 dark:text-white leading-tight">
+                        {titulo}
+                      </h3>
+
+                      {fechaExp && (
+                        <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1">
+                          <Clock className="h-3.5 w-3.5" /> Vence: {new Date(fechaExp).toLocaleDateString()}
+                        </p>
+                      )}
+
+                      <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+                        <span className="text-xs font-semibold text-slate-500">Código de Cupón:</span>
+                        <code className="bg-slate-900 text-amber-300 px-3 py-1 rounded-xl text-xs font-mono font-bold tracking-wider">
+                          {codigo}
+                        </code>
+                      </div>
+                    </div>
                   </div>
-
-                  <h3 className="text-lg font-black text-slate-900 dark:text-white leading-tight">
-                    {r.tituloRecompensa}
-                  </h3>
-
-                  {r.praFechaExpiracion && (
-                    <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1">
-                      <Clock className="h-3.5 w-3.5" /> Vence: {new Date(r.praFechaExpiracion).toLocaleDateString()}
-                    </p>
-                  )}
-
-                  <div className="mt-6 pt-4 border-t border-slate-200/60 dark:border-slate-800 flex items-center justify-between gap-3">
-                    <span className="text-xs font-semibold text-slate-500">Código de Cupon:</span>
-                    <code className="bg-slate-900 text-amber-300 px-3 py-1 rounded-xl text-xs font-mono font-bold tracking-wider">
-                      {r.codigoCanje || `CUPON-${r.praCodigo.slice(0, 6).toUpperCase()}`}
-                    </code>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
-            <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 p-12 text-center bg-white/40 dark:bg-[#1E293B]/40">
+            <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 p-12 text-center bg-white dark:bg-[#1E293B]">
               <Gift className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
               <h3 className="text-base font-bold text-slate-700 dark:text-slate-300">Aún no tienes recompensas en inventario</h3>
               <p className="mt-1 text-xs text-slate-400 max-w-md mx-auto">
                 Acumula puntos completando misiones o asistiendo a tus citas y canjéalos en la pestaña de tienda.
               </p>
-              <button
-                onClick={() => setSelectedTab('tienda')}
-                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition-colors"
-              >
-                Ver Tienda de Canje
-              </button>
             </div>
           )}
         </div>
@@ -525,69 +513,59 @@ export default function PuntosPage() {
           {/* Misiones List */}
           <div className="lg:col-span-7 space-y-6">
             <div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Misiones y Logros</h2>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Misiones y Tareas</h2>
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-                Completa estas acciones para ganar puntos de inmediato.
+                Puntaje otorgado por cada actividad en la plataforma.
               </p>
             </div>
 
-            <div className="space-y-4">
-              {tareas.map((tarea) => (
-                <div
-                  key={tarea.tareaId}
-                  className={`flex flex-col sm:flex-row sm:items-center justify-between p-5 rounded-2xl border ${
-                    tarea.completada
-                      ? 'border-emerald-200 dark:border-emerald-950 bg-emerald-50/40 dark:bg-emerald-950/20'
-                      : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B]'
-                  } shadow-sm gap-4`}
-                >
-                  <div className="flex items-start gap-4">
-                    <div className={`h-12 w-12 rounded-2xl flex items-center justify-center shrink-0 ${
-                      tarea.completada ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-50 text-blue-600'
-                    }`}>
-                      {tarea.completada ? <CheckCircle2 className="h-6 w-6" /> : <Star className="h-6 w-6" />}
+            {tareas.length > 0 ? (
+              <div className="space-y-4">
+                {tareas.map((tarea) => (
+                  <div
+                    key={tarea.tareaId}
+                    className="flex items-center justify-between p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] shadow-sm gap-4"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="h-12 w-12 rounded-2xl flex items-center justify-center shrink-0 bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400">
+                        <Star className="h-6 w-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold text-slate-900 dark:text-white">{tarea.titulo}</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{tarea.descripcion}</p>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="text-base font-bold text-slate-900 dark:text-white">{tarea.titulo}</h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{tarea.descripcion}</p>
-                    </div>
-                  </div>
 
-                  <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
-                    <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 font-extrabold text-xs bg-amber-50 dark:bg-amber-950/40 px-3 py-1.5 rounded-full border border-amber-200/50">
-                      +{tarea.puntosRecompensa} pts
-                    </span>
-
-                    {tarea.completada ? (
-                      <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                        <CheckCircle2 className="h-4 w-4" /> Completada
+                    <div className="shrink-0">
+                      <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 font-extrabold text-xs bg-amber-50 dark:bg-amber-950/40 px-3 py-1.5 rounded-full border border-amber-200 dark:border-amber-900/40">
+                        +{tarea.puntosRecompensa} pts
                       </span>
-                    ) : (
-                      <button
-                        onClick={() => handleCompletarTarea(tarea.codigoAccion)}
-                        disabled={completarTareaMutation.isPending}
-                        className="rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 px-4 py-2 text-xs font-bold transition hover:bg-slate-800 disabled:opacity-50"
-                      >
-                        Completar
-                      </button>
-                    )}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 p-12 text-center bg-white dark:bg-[#1E293B]">
+                <Star className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                <h3 className="text-base font-bold text-slate-700 dark:text-slate-300">No hay misiones disponibles</h3>
+                <p className="mt-1 text-xs text-slate-400 max-w-md mx-auto">
+                  Actualmente no existen misiones o tareas configuradas.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Referidos Column */}
           <div className="lg:col-span-5 space-y-6">
             {/* Mi Código de Referido */}
-            <div className="rounded-3xl border border-blue-200 dark:border-blue-900/50 bg-gradient-to-br from-blue-50/50 via-white to-blue-50/20 dark:from-blue-950/30 dark:via-[#1E293B] p-6 shadow-xl space-y-4">
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] p-6 shadow-sm space-y-4">
               <div className="flex items-center gap-3">
                 <div className="h-10 w-10 rounded-xl bg-blue-600 text-white flex items-center justify-center">
                   <Users className="h-5 w-5" />
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-slate-900 dark:text-white">Invita a tus Amigos</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Gana 200 pts por cada amigo referido.</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Comparte tu código con tus familiares o amigos.</p>
                 </div>
               </div>
 
@@ -608,10 +586,10 @@ export default function PuntosPage() {
             </div>
 
             {/* Vincular Código de Referido */}
-            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] p-6 shadow-xl space-y-4">
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] p-6 shadow-sm space-y-4">
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-white">¿Tienes un Código de Referido?</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Ingresa el código que te compartió tu familiar o amigo para recibir puntos de bienvenida.</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Ingresa el código que te compartió un amigo.</p>
               </div>
 
               <form onSubmit={handleVincularReferido} className="space-y-3">
@@ -624,10 +602,10 @@ export default function PuntosPage() {
                 />
                 <button
                   type="submit"
-                  disabled={referidoMutation.isPending || !codigoReferidoInput.trim()}
-                  className="w-full rounded-xl bg-blue-600 hover:bg-blue-700 text-white py-2.5 text-xs font-bold transition-all shadow-md disabled:opacity-50"
+                  disabled={!codigoReferidoInput.trim() || referidoMutation.isPending}
+                  className="w-full rounded-xl bg-blue-600 hover:bg-blue-700 text-white py-2.5 text-xs font-bold transition-all active:scale-95 disabled:opacity-50"
                 >
-                  Vincular Código
+                  {referidoMutation.isPending ? 'Vinculando...' : 'Aplicar Código'}
                 </button>
               </form>
             </div>
@@ -635,107 +613,152 @@ export default function PuntosPage() {
         </div>
       )}
 
-      {/* Tab 4: Sistema de Ligas y Niveles */}
+      {/* Tab 4: Niveles */}
       {selectedTab === 'ligas' && (
         <div className="space-y-6">
           <div>
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Sistema de Ligas y Niveles</h2>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Niveles de Lealtad</h2>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-              Conoce los beneficios pasivos desbloqueados en cada nivel según tu total de puntos.
+              Niveles y rangos de puntos oficiales configurados en el sistema.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
-            {LIGAS_SISTEMA.map((liga) => {
-              const esActual = liga.id === ligaActual.id;
-              return (
-                <div
-                  key={liga.id}
-                  className={`rounded-3xl p-6 border transition-all flex flex-col justify-between ${
-                    esActual
-                      ? 'border-amber-400 dark:border-amber-500 bg-gradient-to-b from-amber-500/10 via-white to-amber-500/5 dark:via-[#1E293B] shadow-xl ring-2 ring-amber-400/50'
-                      : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B]'
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-center justify-between mb-4">
-                      <span className="text-4xl">{liga.badgeIcon}</span>
+          {nivelesOrdenados.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {nivelesOrdenados.map((n) => {
+                const esActual = nivelEncontrado?.nvlCodigo === n.nvlCodigo || (totalPuntos >= n.nvlPuntosMin && totalPuntos <= n.nvlPuntosMax);
+                return (
+                  <div
+                    key={n.nvlCodigo}
+                    className={`rounded-3xl border p-6 bg-white dark:bg-[#1E293B] shadow-sm transition-all ${
+                      esActual
+                        ? 'border-blue-500 dark:border-blue-500 ring-2 ring-blue-500/20'
+                        : 'border-slate-200 dark:border-slate-800'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 shrink-0">
+                        {n.nvlImagenUrl ? (
+                          <img src={n.nvlImagenUrl} alt={n.nvlDescripcion} className="h-8 w-8 object-contain" />
+                        ) : (
+                          <Award className="h-6 w-6" />
+                        )}
+                      </span>
                       {esActual && (
-                        <span className="rounded-full bg-amber-400 text-slate-950 px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider">
+                        <span className="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-3 py-1 rounded-full border border-blue-200/60 dark:border-blue-900/50">
                           Nivel Actual
                         </span>
                       )}
                     </div>
 
                     <h3 className="text-lg font-black text-slate-900 dark:text-white">
-                      Liga {liga.nombre}
+                      Nivel {n.nvlDescripcion}
                     </h3>
-                    <p className="text-xs font-extrabold text-amber-600 dark:text-amber-400 mt-1">
-                      {liga.puntosMinimos} - {liga.puntosMaximos === 99999 ? '∞' : liga.puntosMaximos} pts
-                    </p>
 
-                    <ul className="mt-4 space-y-2">
-                      {liga.beneficios.map((b, i) => (
-                        <li key={i} className="text-xs text-slate-600 dark:text-slate-400 flex items-start gap-1.5">
-                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
-                          <span>{b}</span>
-                        </li>
-                      ))}
-                    </ul>
+                    <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      Puntos requeridos: <strong className="text-blue-600 dark:text-blue-400">{n.nvlPuntosMin} - {n.nvlPuntosMax} pts</strong>
+                    </p>
                   </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] p-8 shadow-sm space-y-6">
+              <div className="flex items-center gap-6">
+                <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 text-4xl shrink-0 border border-blue-100 dark:border-blue-900/50">
+                  {lealtadEstado?.imagenNivelUrl ? (
+                    <img src={lealtadEstado.imagenNivelUrl} alt={nivelActual} className="h-12 w-12 object-contain" />
+                  ) : (
+                    <Award className="h-10 w-10" />
+                  )}
                 </div>
-              );
-            })}
-          </div>
+
+                <div>
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Nivel Registrado</span>
+                  <h3 className="text-3xl font-black text-slate-900 dark:text-white mt-0.5">
+                    {nombreNivelLimpio}
+                  </h3>
+                  <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 mt-1">
+                    Puntos actuales: {totalPuntos} pts
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex justify-between text-xs font-bold text-slate-600 dark:text-slate-400">
+                  <span>Progreso hacia el siguiente nivel</span>
+                  <span>{progresoPorcentajeTexto}%</span>
+                </div>
+                <div className="h-3 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden border border-slate-200 dark:border-slate-700">
+                  <motion.div
+                    className="h-full rounded-full bg-blue-600 dark:bg-blue-500"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${anchoBarraVisual}%` }}
+                    transition={{ duration: 0.8, ease: 'easeOut' }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Tab 5: Historial de Movimientos */}
+      {/* Tab 5: Historial / Misiones Cumplidas */}
       {selectedTab === 'historial' && (
         <div className="space-y-6">
           <div>
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Estado de Cuenta de Puntos</h2>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Misiones Cumplidas e Historial</h2>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
               Registro histórico de abonos y canjes de puntos.
             </p>
           </div>
 
-          <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] overflow-hidden shadow-xl">
+          <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] overflow-hidden shadow-sm">
             {historial.length > 0 ? (
               <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                {historial.map((item, idx) => (
-                  <div key={item.id || idx} className="p-4 sm:p-5 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`h-10 w-10 rounded-2xl flex items-center justify-center shrink-0 ${
-                          item.tipo === 'ganancia'
-                            ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400'
-                            : 'bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400'
+                {historial.map((item, idx) => {
+                  const ptsRaw = item.trpPuntos ?? item.TrpPuntos ?? item.puntos ?? item.hisPuntos ?? item.hspPuntos ?? item.montoPuntos ?? item.cantidadPuntos ?? 0;
+                  const pts = Math.abs(ptsRaw);
+                  const rawTipo = String(item.trpTipo ?? item.TrpTipo ?? item.tipo ?? item.hisTipo ?? item.hspTipo ?? item.tipoMovimiento ?? '').toLowerCase();
+                  const esGanancia = rawTipo === 'ganancia' || rawTipo === 'g' || rawTipo === 'abono' || rawTipo === 'ingreso' || rawTipo === 'entrada' || (pts > 0 && rawTipo !== 'canje' && rawTipo !== 'c' && rawTipo !== 'salida' && rawTipo !== 'egreso');
+                  const motivoStr = item.trpMotivo || item.TrpMotivo || item.motivo || item.hisMotivo || item.hisDescripcion || item.descripcion || item.concepto || (esGanancia ? 'Abono de puntos' : 'Canje de recompensa');
+                  const rawFecha = item.fechaGrabacion || item.FechaGrabacion || item.fecha || item.hisFecha || item.hspFecha || item.fechaMovimiento;
+                  const fechaStr = rawFecha && !isNaN(new Date(rawFecha).getTime()) ? new Date(rawFecha).toLocaleString() : 'Fecha no especificada';
+
+                  return (
+                    <div key={item.trpCodigo || item.TrpCodigo || item.id || item.hisCodigo || idx} className="p-4 sm:p-5 flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`h-10 w-10 rounded-2xl flex items-center justify-center shrink-0 ${
+                            esGanancia
+                              ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400'
+                              : 'bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400'
+                          }`}
+                        >
+                          {esGanancia ? (
+                            <ArrowUpRight className="h-5 w-5" />
+                          ) : (
+                            <ArrowDownRight className="h-5 w-5" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-slate-900 dark:text-white">{motivoStr}</p>
+                          <p className="text-xs text-slate-400">{fechaStr}</p>
+                        </div>
+                      </div>
+
+                      <span
+                        className={`text-base font-black ${
+                          esGanancia
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-rose-600 dark:text-rose-400'
                         }`}
                       >
-                        {item.tipo === 'ganancia' ? (
-                          <ArrowUpRight className="h-5 w-5" />
-                        ) : (
-                          <ArrowDownRight className="h-5 w-5" />
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-slate-900 dark:text-white">{item.motivo}</p>
-                        <p className="text-xs text-slate-400">{new Date(item.fecha).toLocaleString()}</p>
-                      </div>
+                        {esGanancia ? `+${pts}` : `-${pts}`} pts
+                      </span>
                     </div>
-
-                    <span
-                      className={`text-base font-black ${
-                        item.tipo === 'ganancia'
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : 'text-rose-600 dark:text-rose-400'
-                      }`}
-                    >
-                      {item.tipo === 'ganancia' ? `+${item.puntos}` : `-${item.puntos}`} pts
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="p-12 text-center text-slate-400 text-sm">
@@ -746,5 +769,13 @@ export default function PuntosPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function PuntosPage() {
+  return (
+    <Suspense fallback={<NeoLoader />}>
+      <PuntosContent />
+    </Suspense>
   );
 }

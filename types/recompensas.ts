@@ -50,9 +50,35 @@ export interface LigaNivel {
 }
 
 export interface HistorialMovimientoPuntos {
-  id: string;
-  fecha: string;
-  motivo: string;
-  tipo: 'ganancia' | 'canje' | 'ajuste';
-  puntos: number;
+  id?: string;
+  hisCodigo?: number;
+  trpCodigo?: string;
+  TrpCodigo?: string;
+  fecha?: string;
+  hisFecha?: string;
+  hspFecha?: string;
+  fechaMovimiento?: string;
+  fechaGrabacion?: string;
+  FechaGrabacion?: string;
+  motivo?: string;
+  hisMotivo?: string;
+  hisDescripcion?: string;
+  descripcion?: string;
+  concepto?: string;
+  trpMotivo?: string;
+  TrpMotivo?: string;
+  tipo?: 'ganancia' | 'canje' | 'ajuste' | string;
+  hisTipo?: string;
+  hspTipo?: string;
+  tipoMovimiento?: string;
+  trpTipo?: string;
+  TrpTipo?: string;
+  puntos?: number;
+  hisPuntos?: number;
+  hspPuntos?: number;
+  montoPuntos?: number;
+  cantidadPuntos?: number;
+  trpPuntos?: number;
+  TrpPuntos?: number;
 }
+

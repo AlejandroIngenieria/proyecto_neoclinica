@@ -1,1395 +1,557 @@
 'use client';
 
-import Image from 'next/image';
+import { Suspense, useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Suspense, useEffect, useMemo, useRef, useState, useDeferredValue } from 'react';
+import { motion } from 'framer-motion';
 import { useSession } from 'next-auth/react';
 import {
-    BadgeCheck,
-    ChevronRight,
-    Filter,
-    MapPin,
-    Search,
-    ShieldCheck,
-    Sparkles,
-    Users,
-    X,
-    ArrowDownUp,
-    Calendar,
-    Video,
-    DollarSign,
-    Target,
-    ChevronDown,
-    Grid,
-    List,
-    Home,
-    Heart,
+  CalendarDays,
+  Clock,
+  Star,
+  Gift,
+  Search,
+  Stethoscope,
+  Users,
+  ChevronRight,
+  MapPin,
+  Award,
+  Sparkles,
+  ArrowRight,
+  BookUser,
+  Video,
+  Home as HomeIcon,
+  Monitor,
 } from 'lucide-react';
-import { DayPicker } from 'react-day-picker';
-import 'react-day-picker/dist/style.css';
-import { format } from 'date-fns';
-import { es } from 'date-fns/locale/es';
+import { format, parseISO, isAfter } from 'date-fns';
+import { es } from 'date-fns/locale';
 
-import type { DoctorResponse } from '@/types';
-import { buildDoctorFullName, isDoctorActive } from '@/types/doctor';
-import { Navbar } from '@/components/navbar';
-import { DoctorCard, type DoctorCardData } from '@/components/doctor-card';
-import { AnimatedList } from '@/components/animated-list';
-import { AnimatedModal } from '@/components/animated-modal';
 import { NeoLoader } from '@/components/neo-loader';
-import { useDoctors } from '@/hooks/use-doctors';
-import { useParamString, useParamBoolean, useParamNumber, useResetParams } from '@/hooks/use-search-params-state';
-import { useUIStore } from '@/stores/ui-store';
-import { addRecentDoctor, readRecentDoctors, RECENT_DOCTORS_EVENT, type RecentDoctorItem } from '@/lib/recent-doctors';
-import { useFavoritos } from '@/hooks/use-favoritos';
 import { usePacienteTitular } from '@/hooks/use-pacientes';
+import { useCitasPaciente } from '@/hooks/use-flujo-citas';
+import { useLealtadEstado, useLealtadNiveles } from '@/hooks/use-lealtad';
+import { useTotalPuntos } from '@/hooks/use-recompensas';
+import { readRecentDoctors, type RecentDoctorItem } from '@/lib/recent-doctors';
+import { buildPacienteFullName, getPacienteInitials } from '@/types';
+import type { CitaListDto } from '@/types/citas';
 
-type ResolvedDoctor = {
-    doctor: DoctorResponse;
-    fullName: string;
-    specialty: string;
-    locationLabel: string;
-    locationPreview: string[];
-    specialtyPreview: string[];
-    modalityPreview: string[];
-    languagePreview: string[];
-    serviceCount: number;
-    educationCount: number;
-    recognitionCount: number;
-    activeLabel: string;
-    searchIndex: string;
-};
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-type SortOption = 'name-asc' | 'name-desc' | 'rating-desc' | 'price-asc';
-
-const PRICE_LIMIT_MAX = 5000;
-
-function normalizeText(value: string) {
-    return value
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '');
+function safeFormatDate(dateStr: string | undefined, formatStr: string): string {
+  if (!dateStr) return 'Sin fecha';
+  try {
+    return format(parseISO(dateStr), formatStr, { locale: es });
+  } catch {
+    return 'Fecha inválida';
+  }
 }
 
-const specialtyHomologues: Record<string, string[]> = {
-    'traumatologo': ['traumatología', 'traumatologia', 'traumatologo', 'ortopedia'],
-    'urologo': ['urología', 'urologia', 'urologo'],
-    'cardiologo': ['cardiología', 'cardiologia', 'cardiologo'],
-    'ginecologo': ['ginecología', 'ginecologia', 'ginecologo', 'obstetricia'],
-    'pediatra': ['pediatría', 'pediatria', 'pediatra'],
-    'dermatologo': ['dermatología', 'dermatologia', 'dermatologo'],
-    'oftalmologo': ['oftalmología', 'oftalmologia', 'oftalmologo'],
-    'neurologo': ['neurología', 'neurologia', 'neurologo'],
-    'psiquiatra': ['psiquiatría', 'psiquiatria', 'psiquiatra'],
-    'psicologo': ['psicología', 'psicologia', 'psicologo'],
-    'gastroenterologo': ['gastroenterología', 'gastroenterologia', 'gastroenterologo'],
-    'otorrino': ['otorrinolaringología', 'otorrinolaringologia', 'otorrinolaringologo', 'otorrino'],
-    'endocrinologo': ['endocrinología', 'endocrinologia', 'endocrinologo'],
-    'oncologo': ['oncología', 'oncologia', 'oncologo'],
-    'neumologo': ['neumología', 'neumologia', 'neumologo'],
-    'nefrologo': ['nefrología', 'nefrologia', 'nefrologo'],
-    'reumatologo': ['reumatología', 'reumatologia', 'reumatologo'],
-    'alergologo': ['alergología', 'alergologia', 'alergologo'],
-    'odontologo': ['odontología', 'odontologia', 'odontologo', 'dentista'],
-    'nutricionista': ['nutrición', 'nutricion', 'nutricionista']
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Buenos días';
+  if (hour < 18) return 'Buenas tardes';
+  return 'Buenas noches';
+}
+
+function getModalityIcon(modalidad: string) {
+  const m = modalidad?.toLowerCase() || '';
+  if (m.includes('video') || m.includes('virtual')) return <Video className="h-3.5 w-3.5" />;
+  if (m.includes('domicilio')) return <HomeIcon className="h-3.5 w-3.5" />;
+  return <Monitor className="h-3.5 w-3.5" />;
+}
+
+function getDoctorInitials(name: string | undefined): string {
+  if (!name) return 'Dr';
+  const parts = name.replace(/^Dr\(a\)\.\s*|^Dr\.\s*|^Dra\.\s*/i, '').trim().split(' ');
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+// ─── Animation Variants ─────────────────────────────────────────────────────
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.08, delayChildren: 0.1 },
+  },
 };
 
-function getNormalizedHomologues(term: string): string[] {
-    const normalized = normalizeText(term);
-    
-    // Si el término encaja en una de nuestras llaves o valores de homólogos, devolvemos todo ese grupo normalizado
-    for (const [key, values] of Object.entries(specialtyHomologues)) {
-        const normalizedValues = values.map(normalizeText);
-        if (normalizeText(key) === normalized || normalizedValues.includes(normalized)) {
-            return [normalizeText(key), ...normalizedValues];
+const itemVariants = {
+  hidden: { opacity: 0, y: 16 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] as const } },
+};
+
+// ─── Quick Action Card (Responsive & Unified Theme) ─────────────────────────
+
+function QuickAction({
+  href,
+  icon: Icon,
+  label,
+  description,
+}: {
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  description: string;
+}) {
+  return (
+    <Link href={href} className="h-full block">
+      <motion.div
+        variants={itemVariants}
+        whileHover={{ scale: 1.02, y: -3 }}
+        whileTap={{ scale: 0.98 }}
+        className="group relative flex flex-col justify-between rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] p-4 sm:p-5 lg:p-6 shadow-xs hover:shadow-xl hover:border-blue-400 dark:hover:border-blue-600 transition-all duration-300 h-full cursor-pointer overflow-hidden"
+      >
+        <div>
+          <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl sm:rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-900/50 mb-3 sm:mb-4 shadow-xs group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600 transition-all duration-300">
+            <Icon className="h-5 w-5 sm:h-6 sm:w-6 transition-colors duration-300" />
+          </div>
+          <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+            {label}
+          </h3>
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+            {description}
+          </p>
+        </div>
+      </motion.div>
+    </Link>
+  );
+}
+
+// ─── Upcoming Cita Card (Responsive Doctor Avatar & Badge) ─────────────────
+
+function UpcomingCitaCard({
+  cita,
+  isFirst,
+  doctorImageMap,
+}: {
+  cita: CitaListDto;
+  isFirst: boolean;
+  doctorImageMap: Record<string, string>;
+}) {
+  const fechaFormateada = safeFormatDate(cita.ctaFecha, "EEEE d 'de' MMMM");
+  const horaFormateada = cita.ctaHora ? cita.ctaHora.slice(0, 5) : '--:--';
+  const doctorPhoto = doctorImageMap[cita.ctaCoddoc];
+  const initials = getDoctorInitials(cita.medicoNombre);
+
+  return (
+    <Link href="/dashboard/citas">
+      <motion.div
+        variants={itemVariants}
+        whileHover={{ scale: 1.015, y: -2 }}
+        className={`group relative rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-xs hover:shadow-lg transition-all cursor-pointer ${
+          isFirst
+            ? 'border-2 border-blue-500 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-950/20 shadow-md'
+            : 'border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B]'
+        }`}
+      >
+        {/* Badge para la cita más urgente */}
+        {isFirst && (
+          <div className="absolute -top-3 left-4 sm:left-5">
+            <span className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-xs">
+              <Sparkles className="h-2.5 w-2.5" /> Más Próxima
+            </span>
+          </div>
+        )}
+
+        <div className="flex items-start justify-between gap-3 pt-1">
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Humanized Avatar: Doctor Photograph or Styled Initials */}
+            <div className="relative flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white text-sm sm:text-base font-black shadow-sm overflow-hidden border-2 border-white dark:border-slate-800">
+              {doctorPhoto ? (
+                <img src={doctorPhoto} alt={cita.medicoNombre} className="h-full w-full object-cover" />
+              ) : (
+                <span className="tracking-tighter">{initials}</span>
+              )}
+            </div>
+
+            <div className="min-w-0">
+              <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                {cita.medicoNombre || 'Médico'}
+              </h4>
+              <p className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-300 font-semibold truncate">
+                {cita.medicoEspecialidad || 'Especialidad médica'}
+              </p>
+              {cita.clinicaNombre && (
+                <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5 truncate">
+                  <MapPin className="h-3 w-3 shrink-0 text-slate-400" /> {cita.clinicaNombre}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="shrink-0 text-right">
+            <div className="inline-flex items-center gap-1 rounded-lg sm:rounded-xl bg-blue-100/80 dark:bg-blue-900/60 px-2.5 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-xs font-bold text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-800">
+              <Clock className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+              {horaFormateada}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 sm:mt-4 pt-3 border-t border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-200 capitalize">{fechaFormateada}</p>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md sm:rounded-lg border border-slate-200/60 dark:border-slate-700">
+              {getModalityIcon(cita.ctaModalidad)} {cita.ctaModalidad || 'Presencial'}
+            </span>
+          </div>
+        </div>
+      </motion.div>
+    </Link>
+  );
+}
+
+// ─── Recent Doctor Mini Card (Responsive) ───────────────────────────────────
+
+function RecentDoctorMini({ doctor }: { doctor: RecentDoctorItem }) {
+  return (
+    <Link href={`/dashboard/${doctor.exp_codigo}`}>
+      <motion.div
+        variants={itemVariants}
+        whileHover={{ scale: 1.02 }}
+        className="group flex items-center gap-3 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0F172A]/60 p-3 sm:p-3.5 shadow-xs hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800 transition-all cursor-pointer"
+      >
+        <div className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 overflow-hidden shadow-xs">
+          {doctor.image ? (
+            <img src={doctor.image} alt={doctor.fullName} className="h-full w-full object-cover" />
+          ) : (
+            <Stethoscope className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 dark:text-blue-400" />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-black text-slate-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+            {doctor.fullName}
+          </p>
+          <p className="text-[11px] text-slate-600 dark:text-slate-300 font-medium truncate">{doctor.specialty}</p>
+        </div>
+        <ChevronRight className="h-4 w-4 text-slate-400 dark:text-slate-500 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors shrink-0" />
+      </motion.div>
+    </Link>
+  );
+}
+
+// ─── Main Content ────────────────────────────────────────────────────────────
+
+function HomeContent() {
+  const { data: session } = useSession();
+  const { titular, isLoading: isLoadingTitular } = usePacienteTitular();
+  const pacCodigo = titular?.pac_codigo || null;
+
+  // Citas
+  const { data: citas = [], isLoading: isLoadingCitas } = useCitasPaciente(pacCodigo);
+
+  // Lealtad
+  const { data: lealtadEstado } = useLealtadEstado();
+  const { data: puntosData } = useTotalPuntos(pacCodigo ?? undefined);
+  const { data: niveles = [] } = useLealtadNiveles();
+
+  // Recent doctors
+  const [recentDoctors, setRecentDoctors] = useState<RecentDoctorItem[]>([]);
+  useEffect(() => {
+    setRecentDoctors(readRecentDoctors());
+  }, []);
+
+  // Map of doctor photos from recent doctors for fast lookup
+  const doctorImageMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    recentDoctors.forEach((doc) => {
+      if (doc.image) {
+        map[doc.exp_codigo] = doc.image;
+      }
+    });
+    return map;
+  }, [recentDoctors]);
+
+  // Computed
+  const totalPuntos = lealtadEstado?.puntosActuales ?? puntosData?.totalPuntos ?? 0;
+
+  const nivelesOrdenados = useMemo(() => [...niveles].sort((a, b) => a.nvlPuntosMin - b.nvlPuntosMin), [niveles]);
+  const nivelEncontrado = useMemo(
+    () =>
+      nivelesOrdenados.find((n) => totalPuntos >= n.nvlPuntosMin && totalPuntos <= n.nvlPuntosMax) ||
+      nivelesOrdenados.find((n) => (lealtadEstado?.nivelActual || '').toLowerCase().includes(n.nvlDescripcion.toLowerCase())) ||
+      (nivelesOrdenados.length > 0 ? nivelesOrdenados[0] : null),
+    [nivelesOrdenados, totalPuntos, lealtadEstado],
+  );
+
+  const nivelActual = nivelEncontrado?.nvlDescripcion || lealtadEstado?.nivelActual || 'Sin Nivel';
+  const nombreNivel = nivelActual.toLowerCase().startsWith('nivel') ? nivelActual : `Nivel ${nivelActual}`;
+  const puntosMax = nivelEncontrado?.nvlPuntosMax ?? lealtadEstado?.puntosMaximosNivel ?? 0;
+  const puntosMin = nivelEncontrado?.nvlPuntosMin ?? lealtadEstado?.puntosMinimosNivel ?? 0;
+  const rango = puntosMax - puntosMin;
+  let progreso = 0;
+  if (rango > 0 && totalPuntos >= puntosMin) {
+    progreso = ((totalPuntos - puntosMin) / rango) * 100;
+  }
+  progreso = Math.min(100, Math.max(0, progreso));
+  const anchoProgreso = progreso > 0 ? Math.max(2, progreso) : 0;
+
+  // Upcoming citas (only future ones, sorted by date)
+  const upcomingCitas = useMemo(() => {
+    const now = new Date();
+    return citas
+      .filter((c) => {
+        const estado = c.ctaEstado?.toLowerCase();
+        if (estado === 'cancelada' || estado === 'rechazada' || estado === 'completada' || estado === 'no_asistio') return false;
+        try {
+          return isAfter(parseISO(c.ctaFecha), new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+        } catch {
+          return false;
         }
-    }
-    return [normalized];
-}
+      })
+      .sort((a, b) => new Date(a.ctaFecha).getTime() - new Date(b.ctaFecha).getTime())
+      .slice(0, 3);
+  }, [citas]);
 
+  const fullName = titular ? buildPacienteFullName(titular) : session?.user?.name || 'Usuario';
+  const firstName = titular?.pac_primer_nombre || session?.user?.name?.split(' ')[0] || 'Usuario';
+  const initials = titular ? getPacienteInitials(titular) : '?';
 
-function formatCount(value: number) {
-    return new Intl.NumberFormat('es-GT').format(value);
-}
+  if (isLoadingTitular) {
+    return <NeoLoader />;
+  }
 
-function getDoctorPricePoints(doctor: DoctorResponse) {
-    return [
-        ...doctor.servicios.map((s) => s.syp_costo_total),
-        ...doctor.clinicas.map((c) => c.mcl_precio_base),
-    ].filter((price): price is number => typeof price === 'number' && Number.isFinite(price) && price >= 0);
-}
-
-function matchesPriceLimit(prices: number[], priceLimit: number) {
-    if (priceLimit >= PRICE_LIMIT_MAX) {
-        return true;
-    }
-
-    if (!prices.length) {
-        return false;
-    }
-
-    return prices.some((price) => price <= priceLimit);
-}
-
-function resolveDoctor(doctor: DoctorResponse): ResolvedDoctor {
-    const fullName = buildDoctorFullName(doctor) || 'Médico sin nombre';
-    const specialty = doctor.exp_profesion || 'Especialidad médica';
-    const locationLabel = [doctor.pais_nacimiento, doctor.nacionalidad].filter(Boolean).join(' · ') || 'Ubicación no registrada';
-    const specialtyPreview = doctor.especialidades.map((item) => item.especialidad).filter(Boolean);
-    const modalitySet = new Set(doctor.modalidades.map((item) => item.modalidad).filter(Boolean));
-    if (doctor.atencion_domicilio && doctor.atencion_domicilio.length > 0) {
-        modalitySet.add('Domicilio');
-    }
-    const modalityPreview = Array.from(modalitySet).slice(0, 3);
-    const languagePreview = doctor.idiomas.map((item) => item.idioma).filter(Boolean).slice(0, 2);
-    const locationPreview = Array.from(new Set([
-        ...doctor.clinicas.map(c => [c.cli_descripcion, c.cli_zona ? `Zona ${c.cli_zona}` : ''].filter(Boolean).join(', ')).filter(Boolean),
-        ...(doctor.atencion_domicilio || []).map(d => `Domicilio: ${[d.mun_descripcion, d.lad_zonas ? `Zonas ${d.lad_zonas}` : ''].filter(Boolean).join(', ')}`).filter(Boolean)
-    ]));
-
-    // Restringimos el índice a lo que el usuario realmente buscaría: Nombres, Especialidades y Colegiado
-    const searchIndex = normalizeText(
-        [
-            fullName,
-            doctor.exp_colegiado_gt ?? '',
-            ...doctor.especialidades.map((item) => item.especialidad),
-            ...locationPreview
-        ]
-            .filter(Boolean)
-            .join(' '),
-    );
-
-    return {
-        doctor,
-        fullName,
-        specialty,
-        locationLabel,
-        locationPreview,
-        specialtyPreview,
-        modalityPreview,
-        languagePreview,
-        serviceCount: doctor.servicios.length,
-        educationCount: doctor.educacion.length,
-        recognitionCount: doctor.reconocimientos.length,
-        activeLabel: isDoctorActive(doctor) ? 'Activo' : 'Inactivo',
-        searchIndex,
-    };
-}
-
-function SummaryChip({
-    icon: Icon,
-    label,
-    value,
-}: {
-    icon: React.ComponentType<{ className?: string }>;
-    label: string;
-    value: string;
-}) {
-    return (
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.22em] text-slate-500">
-                <Icon className="h-4 w-4 text-sky-600" />
-                {label}
+  return (
+    <div className="min-h-screen text-slate-900 dark:text-white">
+      <motion.main
+        className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8 space-y-6 sm:space-y-8"
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+      >
+        {/* ── Welcome Header (Responsive Layout & Padding) ── */}
+        <motion.div variants={itemVariants} className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3.5 sm:gap-4">
+            <div className="flex h-14 w-14 sm:h-18 sm:w-18 md:h-20 md:w-20 shrink-0 items-center justify-center rounded-2xl sm:rounded-3xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white text-lg sm:text-2xl font-black shadow-lg shadow-blue-600/20 overflow-hidden">
+              {titular?.pac_foto_perfil_url ? (
+                <img src={titular.pac_foto_perfil_url} alt={fullName} className="h-full w-full object-cover" />
+              ) : (
+                initials
+              )}
             </div>
-            <div className="mt-3 wrap-break-word text-sm font-semibold leading-6 text-slate-900">{value}</div>
-        </div>
-    );
-}
-
-function SummarySection({
-    title,
-    items,
-    fallback,
-}: {
-    title: string;
-    items: string[];
-    fallback: string;
-}) {
-    return (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">{title}</div>
-            <div className="mt-3 flex flex-wrap gap-2">
-                {items.length ? (
-                    items.map((item) => (
-                        <span key={item} className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700">
-                            {item}
-                        </span>
-                    ))
-                ) : (
-                    <span className="text-sm text-slate-500">{fallback}</span>
-                )}
+            <div>
+              <p className="text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300">{getGreeting()}</p>
+              <h1 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-black tracking-tight text-slate-900 dark:text-white">
+                {firstName} 👋
+              </h1>
+              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 font-semibold mt-0.5">
+                Tu salud, en un solo lugar.
+              </p>
             </div>
-        </div>
-    );
-}
+          </div>
 
-function CustomDropdown({
-    icon: Icon,
-    title,
-    options,
-    value,
-    onChange
-}: {
-    icon: any;
-    title: string;
-    options: { value: string; label: string }[];
-    value: string;
-    onChange: (val: string) => void;
-}) {
-    const [isOpen, setIsOpen] = useState(false);
-    const dropdownRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                setIsOpen(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
-
-    const selectedOption = options.find(o => o.value === value) || options[0];
-
-    return (
-        <div ref={dropdownRef} className="relative w-full">
-            <button 
-                type="button" 
-                onClick={() => setIsOpen(!isOpen)}
-                className="flex w-full items-center justify-between py-1 transition hover:opacity-80"
+          <Link href="/dashboard/directorio" className="w-full sm:w-auto">
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="w-full sm:w-auto justify-center inline-flex items-center gap-2 rounded-xl sm:rounded-2xl bg-blue-600 hover:bg-blue-700 px-5 py-3 text-xs sm:text-sm font-bold text-white shadow-lg shadow-blue-600/20 transition-all active:scale-95 cursor-pointer"
             >
-                <div className="flex items-center gap-4">
-                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 backdrop-blur-sm`}>
-                        <Icon className={`h-5 w-5 text-white`} />
-                    </div>
-                    <div className="text-left">
-                        <div className="text-[0.95rem] font-bold text-white">{title}</div>
-                        <div className="text-sm font-medium text-sky-100">{selectedOption.label}</div>
-                    </div>
-                </div>
-                <ChevronDown className={`h-4 w-4 text-white/50 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-            </button>
+              <Search className="h-4 w-4" />
+              Buscar Médico
+            </motion.button>
+          </Link>
+        </motion.div>
 
-            {isOpen && (
-                <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/95 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.5)]">
-                    <div className="max-h-60 overflow-y-auto p-2 space-y-1">
-                        {options.map((option) => {
-                            const isSelected = value === option.value;
-                            return (
-                                <button
-                                    key={option.value}
-                                    type="button"
-                                    onClick={() => {
-                                        onChange(option.value);
-                                        setIsOpen(false);
-                                    }}
-                                    className={`flex w-full items-center justify-between rounded-xl px-4 py-3 text-left text-sm font-bold transition ${
-                                        isSelected 
-                                        ? 'bg-sky-500/20 text-sky-300' 
-                                        : 'text-slate-300 hover:bg-white/5 hover:text-white'
-                                    }`}
-                                >
-                                    <span className={`flex items-center gap-2`}>
-                                        {isSelected && title === 'Ordenar por' && <ArrowDownUp className="h-4 w-4" />}
-                                        {option.label}
-                                    </span>
-                                    {isSelected && <div className="h-1.5 w-1.5 rounded-full bg-sky-400"></div>}
-                                </button>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-}
+        {/* ── Upcoming Appointments (Responsive Grid: 1 col on mobile, 2 on tablet, 3 on desktop) ── */}
+        <motion.section variants={itemVariants}>
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <div className="flex items-center gap-2">
+              <CalendarDays className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              <h2 className="text-base sm:text-lg md:text-xl font-black text-slate-900 dark:text-white">Próximas Citas</h2>
+            </div>
+            <Link
+              href="/dashboard/citas"
+              className="flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 hover:gap-2 transition-all"
+            >
+              Ver todas <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
 
-function DashboardContent() {
-    const router = useRouter();
-    const { status } = useSession();
+          {isLoadingCitas ? (
+            <div className="rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] p-6 sm:p-8 text-center">
+              <div className="animate-pulse flex flex-col items-center gap-3">
+                <div className="h-12 w-12 rounded-full bg-slate-200 dark:bg-slate-700" />
+                <div className="h-4 w-32 rounded bg-slate-200 dark:bg-slate-700" />
+              </div>
+            </div>
+          ) : upcomingCitas.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
+              {upcomingCitas.map((cita, idx) => (
+                <UpcomingCitaCard
+                  key={cita.ctaCodigo}
+                  cita={cita}
+                  isFirst={idx === 0}
+                  doctorImageMap={doctorImageMap}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl sm:rounded-3xl border border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1E293B] p-6 sm:p-10 text-center">
+              <CalendarDays className="h-8 w-8 sm:h-10 sm:w-10 text-slate-400 dark:text-slate-500 mx-auto mb-2 sm:mb-3" />
+              <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-200">No tienes citas próximas</h3>
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 max-w-md mx-auto">
+                Agenda una cita con el médico de tu elección desde el directorio.
+              </p>
+              <Link href="/dashboard/directorio">
+                <button className="mt-4 inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-2 sm:px-5 sm:py-2.5 text-xs font-bold text-white shadow-md transition-all active:scale-95 cursor-pointer">
+                  <Search className="h-4 w-4" /> Buscar Médico
+                </button>
+              </Link>
+            </div>
+          )}
+        </motion.section>
 
-    // React Query — datos del servidor
-    const { data: doctors = [], isLoading, error } = useDoctors();
-    const { titular } = usePacienteTitular();
-    const codPac = titular?.pac_codigo || undefined;
-    const { data: favoritos = [] } = useFavoritos(codPac);
+        {/* ── Quick Actions (Responsive Grid: 1 col on small phones, 2 on mobile/tablet, 4 on desktop) ── */}
+        <motion.section variants={itemVariants}>
+          <h2 className="text-base sm:text-lg md:text-xl font-black text-slate-900 dark:text-white mb-3 sm:mb-4 flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-blue-600 dark:text-blue-400" /> Acciones Rápidas
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <QuickAction
+              href="/dashboard/directorio"
+              icon={BookUser}
+              label="Directorio Médico"
+              description="Explora y encuentra al mejor especialista."
+            />
+            <QuickAction
+              href="/dashboard/citas"
+              icon={CalendarDays}
+              label="Mis Citas"
+              description="Consulta y gestiona tus citas médicas."
+            />
+            <QuickAction
+              href="/dashboard/perfil/puntos"
+              icon={Star}
+              label="Puntos y Nivel"
+              description="Canjea recompensas y sube de nivel."
+            />
+            <QuickAction
+              href="/dashboard/especialidades"
+              icon={Stethoscope}
+              label="Especialidades"
+              description="Busca por área médica específica."
+            />
+          </div>
+        </motion.section>
 
-    // Local search state for ultra-fast typing
-    const [searchTerm, setSearchTerm] = useState('');
-    const [locationTerm, setLocationTerm] = useParamString('location');
-    const [sortBy, setSortBy] = useParamString('sort', 'name-asc') as [SortOption, (v: string) => void];
-    const [availability, setAvailability] = useParamString('availability', '');
-    const [modality, setModality] = useParamString('modality', 'all');
-    const [specialtyParam, setSpecialtyParam] = useParamString('specialty', 'all');
-    
-    const activeModalities = useMemo(() => modality ? modality.split(',') : ['all'], [modality]);
-    const activeSpecialties = useMemo(() => specialtyParam ? specialtyParam.split(',') : ['all'], [specialtyParam]);
+        {/* ── Bottom Row: Points + Recent Doctors (Responsive 12-col grid) ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-stretch">
 
-    const toggleModality = (id: string) => {
-        if (id === 'all') {
-            setModality('all');
-        } else {
-            let next = activeModalities.filter(m => m !== 'all');
-            if (next.includes(id)) {
-                next = next.filter(m => m !== id);
-            } else {
-                next.push(id);
-            }
-            setModality(next.length === 0 ? 'all' : next.join(','));
-        }
-    };
-
-
-
-    const [showOnlyActive, setShowOnlyActive] = useParamBoolean('active');
-    const [showOnlyFavorites, setShowOnlyFavorites] = useParamBoolean('favorites');
-    const [priceLimit, setPriceLimit] = useParamNumber('price', PRICE_LIMIT_MAX);
-    const [localPriceLimit, setLocalPriceLimit] = useState(priceLimit);
-    useEffect(() => {
-        setLocalPriceLimit(priceLimit);
-    }, [priceLimit]);
-    const [activeSidebarFilter, setActiveSidebarFilter] = useState<'disponibilidad' | 'modalidad' | 'precio' | null>(null);
-
-    const [currentPage, setCurrentPage] = useParamNumber('page', 1);
-    const resetParams = useResetParams();
-
-    const [targetPage, setTargetPage] = useState<number | null>(null);
-    const isPaginating = targetPage !== null;
-
-    const handlePageChange = (newPage: number) => {
-        setTargetPage(newPage);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        setCurrentPage(newPage); // Actualiza la URL de forma asíncrona en Next.js
-    };
-
-    // Desactivar el loader solo cuando la URL realmente se haya actualizado
-    useEffect(() => {
-        if (targetPage !== null && currentPage === targetPage) {
-            const timer = setTimeout(() => {
-                setTargetPage(null);
-            }, 300); // Pequeño retraso estético
-            return () => clearTimeout(timer);
-        }
-    }, [currentPage, targetPage]);
-
-    // Zustand — UI global
-    const { isFiltersOpen, openFilters, closeFilters } = useUIStore();
-
-    // Local state — only truly local UI
-    const searchMenuRef = useRef<HTMLDivElement | null>(null);
-    const [isSearchFocused, setIsSearchFocused] = useState(false);
-    const [recentDoctors, setRecentDoctors] = useState<RecentDoctorItem[]>(() => readRecentDoctors());
-    
-    const [isSidebarMinimized, setIsSidebarMinimized] = useState(false);
-    const [isAdvancedFiltersOpen, setIsAdvancedFiltersOpen] = useState(false);
-    const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
-    const [isListView, setIsListView] = useState(false);
-    const [isChangingView, setIsChangingView] = useState(false);
-    const [specialtySearch, setSpecialtySearch] = useState('');
-    const [searchTags, setSearchTags] = useState<string[]>([]);
-    const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]);
-    const [selectedInsurances, setSelectedInsurances] = useState<string[]>([]);
-    
-    const deferredSearchTerm = useDeferredValue(searchTerm);
-
-    const hasActiveFilters = 
-        searchTags.length > 0 || 
-        searchTerm !== '' || 
-        sortBy !== 'name-asc' || 
-        selectedLanguages.length > 0 || 
-        selectedInsurances.length > 0 || 
-        priceLimit !== PRICE_LIMIT_MAX || 
-        modality !== 'all' || 
-        specialtyParam !== 'all' || 
-        availability !== '' || 
-        showOnlyFavorites ||
-        showOnlyActive;
-
-    const advancedFiltersRef = useRef<HTMLDivElement | null>(null);
-    const sortMenuRef = useRef<HTMLDivElement | null>(null);
-
-    useEffect(() => {
-        const handlePointerDown = (event: PointerEvent) => {
-            const target = event.target as Node;
-            if (searchMenuRef.current && !searchMenuRef.current.contains(target)) {
-                setIsSearchFocused(false);
-            }
-            if (advancedFiltersRef.current && !advancedFiltersRef.current.contains(target)) {
-                setIsAdvancedFiltersOpen(false);
-            }
-            if (sortMenuRef.current && !sortMenuRef.current.contains(target)) {
-                setIsSortMenuOpen(false);
-            }
-        };
-
-        const handleEscape = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                setIsSearchFocused(false);
-                closeFilters();
-                setIsAdvancedFiltersOpen(false);
-                setIsSortMenuOpen(false);
-            }
-        };
-
-        document.addEventListener('pointerdown', handlePointerDown);
-        document.addEventListener('keydown', handleEscape);
-
-        return () => {
-            document.removeEventListener('pointerdown', handlePointerDown);
-            document.removeEventListener('keydown', handleEscape);
-        };
-    }, [closeFilters]);
-
-    useEffect(() => {
-        const handleRecentUpdate = () => {
-            const stored = readRecentDoctors();
-            if (stored.length > 0) {
-                setRecentDoctors(stored);
-            }
-        };
-        window.addEventListener(RECENT_DOCTORS_EVENT, handleRecentUpdate);
-        window.addEventListener('focus', handleRecentUpdate);
-        return () => {
-            window.removeEventListener(RECENT_DOCTORS_EVENT, handleRecentUpdate);
-            window.removeEventListener('focus', handleRecentUpdate);
-        };
-    }, []);
-
-    useEffect(() => {
-        if (status === 'unauthenticated') {
-            router.replace('/login');
-        }
-    }, [router, status]);
-
-    const resolvedDoctors = useMemo(
-        () => doctors.map((doctor) => resolveDoctor(doctor)).sort((a, b) => a.fullName.localeCompare(b.fullName, 'es')),
-        [doctors],
-    );
-
-    const hasInitializedRecentRef = useRef(false);
-
-    useEffect(() => {
-        if (hasInitializedRecentRef.current) return;
-
-        const stored = readRecentDoctors();
-        if (stored.length > 0) {
-            setRecentDoctors(stored);
-            hasInitializedRecentRef.current = true;
-        } else if (resolvedDoctors.length > 0) {
-            const initialPicks: RecentDoctorItem[] = resolvedDoctors.slice(0, 3).map(doc => ({
-                exp_codigo: doc.doctor.exp_codigo,
-                fullName: doc.fullName,
-                specialty: doc.specialtyPreview[0] || doc.specialty || 'Especialidad médica',
-                locationLabel: doc.locationPreview[0] || doc.locationLabel || 'Guatemala',
-                image: doc.doctor.exp_foto_perfil,
-                visitedAt: new Date().toISOString(),
-            }));
-            setRecentDoctors(initialPicks);
-            hasInitializedRecentRef.current = true;
-        }
-    }, [resolvedDoctors]);
-
-    const visibleDoctors = useMemo(() => {
-        const activeTags = [...searchTags, deferredSearchTerm.trim()].filter(Boolean);
-        const normalizedLocation = normalizeText(locationTerm.trim());
-
-        const filteredDoctors = resolvedDoctors.map((doctor) => {
-            let isMatch = true;
-            let matchedSpecialty: string | undefined = undefined;
-            let matchedLocation: string | undefined = undefined;
-
-            for (const tag of activeTags) {
-                const homs = getNormalizedHomologues(tag);
-                const isBroadMatch = homs.some(h => doctor.searchIndex.includes(h));
-                
-                if (!isBroadMatch) {
-                    isMatch = false;
-                    break;
-                }
-
-                const specMatch = doctor.doctor.especialidades.find(
-                    (s) => homs.some(h => normalizeText(s.especialidad).includes(h))
-                );
-                if (specMatch) {
-                    matchedSpecialty = specMatch.especialidad;
-                }
-
-                const locMatch = doctor.locationPreview.find(
-                    (l) => homs.some(h => normalizeText(l).includes(h))
-                );
-                if (locMatch) {
-                    matchedLocation = locMatch;
-                }
-            }
-
-            if (!isMatch) return null;
-
-            const matchesLocation = !normalizedLocation || normalizeText(doctor.locationLabel).includes(normalizedLocation);
-            const matchesActive = !showOnlyActive || isDoctorActive(doctor.doctor);
-            const isFavorite = favoritos.some(f => f.expCodigo === doctor.doctor.exp_codigo);
-            if (showOnlyFavorites && !isFavorite) return null;
-            
-            const doctorModalities = doctor.doctor.modalidades.map((item) => normalizeText(item.modalidad));
-            if (doctor.doctor.atencion_domicilio && doctor.doctor.atencion_domicilio.length > 0) {
-                doctorModalities.push('domicilio');
-            }
-            let matchesModality = true;
-            if (!activeModalities.includes('all')) {
-                matchesModality = activeModalities.some(m => {
-                    if (m === 'virtual') return doctorModalities.some((item) => item.includes('telemedicina') || item.includes('virtual'));
-                    if (m === 'presencial') return doctorModalities.some((item) => item.includes('presencial'));
-                    if (m === 'hybrid') return doctorModalities.some((item) => item.includes('telemedicina') || item.includes('virtual')) && doctorModalities.some((item) => item.includes('presencial'));
-                    if (m === 'domicilio') return doctorModalities.some((item) => item.includes('domicilio'));
-                    return true;
-                });
-            }
-            
-            const matchesAvailability = true; 
-            
-            const matchesPrice = matchesPriceLimit(getDoctorPricePoints(doctor.doctor), priceLimit);
-
-            const matchesSpecialtyParam = activeSpecialties.includes('all') || doctor.specialtyPreview.some((s) => activeSpecialties.includes(s));
-            
-            const matchesLanguages = selectedLanguages.length === 0 || selectedLanguages.some(lang => doctor.languagePreview?.includes(lang));
-            const matchesInsurances = selectedInsurances.length === 0 || selectedInsurances.some(ins => doctor.doctor.aseguradoras?.some(a => a.aseguradora === ins));
-
-            if (!(matchesLocation && matchesActive && matchesModality && matchesAvailability && matchesPrice && matchesSpecialtyParam && matchesLanguages && matchesInsurances)) {
-                return null;
-            }
-
-            return {
-                doctor: doctor.doctor,
-                fullName: doctor.fullName,
-                specialtyPreview: doctor.specialtyPreview,
-                modalityPreview: doctor.modalityPreview,
-                locationPreview: doctor.locationPreview,
-                matchedSpecialty,
-                matchedLocation,
-                searchHighlight: [...searchTags, deferredSearchTerm.trim()].filter(Boolean),
-            };
-        }).filter(Boolean) as (typeof resolvedDoctors[0] & { matchedSpecialty?: string, matchedLocation?: string, searchHighlight?: string[] })[];
-
-        return filteredDoctors.sort((leftDoctor, rightDoctor) => {
-            if (sortBy === 'name-desc') {
-                return rightDoctor.fullName.localeCompare(leftDoctor.fullName, 'es');
-            }
-            if (sortBy === 'rating-desc') {
-                return rightDoctor.recognitionCount - leftDoctor.recognitionCount;
-            }
-            if (sortBy === 'price-asc') {
-                const minPriceL = Math.min(...getDoctorPricePoints(leftDoctor.doctor)) || Infinity;
-                const minPriceR = Math.min(...getDoctorPricePoints(rightDoctor.doctor)) || Infinity;
-                return minPriceL - minPriceR;
-            }
-
-            return leftDoctor.fullName.localeCompare(rightDoctor.fullName, 'es');
-        });
-    }, [locationTerm, activeModalities, availability, priceLimit, resolvedDoctors, deferredSearchTerm, showOnlyActive, showOnlyFavorites, favoritos, sortBy, activeSpecialties, searchTags, selectedLanguages, selectedInsurances]);
-
-    const matchingRecentDoctors = useMemo(() => {
-        const query = normalizeText(searchTerm.trim());
-        if (!query) return [];
-        return recentDoctors.filter(doc => 
-            normalizeText(doc.fullName).includes(query) ||
-            normalizeText(doc.specialty).includes(query) ||
-            normalizeText(doc.locationLabel).includes(query)
-        );
-    }, [recentDoctors, searchTerm]);
-
-    const searchSuggestions = useMemo(() => {
-        const query = searchTerm.trim();
-        const normalizedQuery = normalizeText(query);
-        
-        if (!normalizedQuery) {
-            return [];
-        }
-
-        const suggestions = new Map<string, { type: 'specialty' | 'location' | 'doctor', label: string, sublabel?: string }>();
-        
-        resolvedDoctors.forEach(doc => {
-            // Check specialty
-            doc.specialtyPreview.forEach(s => {
-                if (normalizeText(s).includes(normalizedQuery) && !searchTags.includes(s)) {
-                    suggestions.set(`spec_${s}`, { type: 'specialty', label: s });
-                }
-            });
-            // Check location
-            if (normalizeText(doc.locationLabel).includes(normalizedQuery) && !searchTags.includes(doc.locationLabel)) {
-                suggestions.set(`loc_${doc.locationLabel}`, { type: 'location', label: doc.locationLabel });
-            }
-            // Check name
-            if (normalizeText(doc.fullName).includes(normalizedQuery) && !searchTags.includes(doc.fullName)) {
-                suggestions.set(`doc_${doc.fullName}`, { type: 'doctor', label: doc.fullName, sublabel: doc.specialtyPreview[0] });
-            }
-        });
-
-        return Array.from(suggestions.values()).slice(0, 8);
-    }, [searchTerm, resolvedDoctors, searchTags]);
-
-    const handleDoctorVisit = (cardData: DoctorCardData) => {
-        const item: RecentDoctorItem = {
-            exp_codigo: cardData.doctor.exp_codigo,
-            fullName: cardData.fullName,
-            specialty: cardData.doctor.exp_profesion || 'Especialidad médica',
-            locationLabel: [cardData.doctor.pais_nacimiento, cardData.doctor.nacionalidad].filter(Boolean).join(' · ') || 'Ubicación no registrada',
-            image: cardData.doctor.exp_foto_perfil,
-            visitedAt: new Date().toISOString(),
-        };
-        setRecentDoctors(addRecentDoctor(item));
-    };
-
-    const itemsPerPage = 8;
-    const totalPages = Math.max(1, Math.ceil(visibleDoctors.length / itemsPerPage));
-    const currentPageForView = Math.min(currentPage, totalPages);
-    const paginatedDoctors = useMemo(
-        () => visibleDoctors.slice((currentPageForView - 1) * itemsPerPage, currentPageForView * itemsPerPage),
-        [currentPageForView, visibleDoctors],
-    );
-
-    const totalSpecialties = useMemo(
-        () => new Set(resolvedDoctors.flatMap((doctor) => doctor.specialtyPreview)).size,
-        [resolvedDoctors],
-    );
-    const activeDoctors = useMemo(
-        () => resolvedDoctors.filter((doctor) => isDoctorActive(doctor.doctor)).length,
-        [resolvedDoctors],
-    );
-    const specialtyPicks = useMemo(
-        () => Array.from(new Set(resolvedDoctors.flatMap((doctor) => doctor.specialtyPreview))).sort(),
-        [resolvedDoctors],
-    );
-    const locationPicks = useMemo(
-        () =>
-            Array.from(
-                new Set(
-                    resolvedDoctors.flatMap((doctor) => {
-                        const picks = [doctor.doctor.pais_nacimiento, doctor.doctor.nacionalidad].filter(Boolean) as string[];
-                        return picks;
-                    }),
-                ),
-            ).slice(0, 8),
-        [resolvedDoctors],
-    );
-    
-    const languagePicks = useMemo(
-        () => Array.from(new Set(resolvedDoctors.flatMap((doctor) => doctor.languagePreview || []))).sort(),
-        [resolvedDoctors],
-    );
-    const insurancePicks = useMemo(
-        () => Array.from(new Set(resolvedDoctors.flatMap((doctor) => doctor.doctor.aseguradoras?.map(a => a.aseguradora) || []))).sort(),
-        [resolvedDoctors],
-    );
-
-    const toggleSpecialty = (id: string) => {
-        if (id === 'all') {
-            setSpecialtyParam('all');
-            setSearchTags(prev => prev.filter(tag => !specialtyPicks.includes(tag)));
-        } else {
-            let next = activeSpecialties.filter(s => s !== 'all');
-            if (next.includes(id)) {
-                next = next.filter(s => s !== id);
-                setSearchTags(prev => prev.filter(tag => tag !== id));
-            } else {
-                next.push(id);
-                setSearchTags(prev => [...prev, id]);
-            }
-            setSpecialtyParam(next.length === 0 ? 'all' : next.join(','));
-        }
-    };
-
-    if (status === 'loading' || (status === 'authenticated' && isLoading)) {
-        return <NeoLoader />;
-    }
-
-    return (
-        <main className="min-h-screen text-slate-900 pb-16">
-            <div className="mx-auto w-[90%] max-w-[1800px] mt-8 flex flex-col gap-8">
-                {/* 1. Hero Header */}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
-                    <div>
-                        <h1 className="text-3xl md:text-4xl font-display font-black text-slate-900 leading-tight">Encuentra a tu especialista</h1>
-                        <p className="text-on-surface-variant text-body-md mt-2">Más de 200 profesionales de la salud listos para atenderte hoy.</p>
-                    </div>
-                    <div className="flex items-center gap-4">
-                        <div className="relative z-40" ref={sortMenuRef}>
-                            <button
-                                onClick={() => setIsSortMenuOpen(!isSortMenuOpen)}
-                                className={`inline-flex items-center gap-3 bg-surface rounded-xl pl-4 pr-3 py-2.5 text-label-md font-semibold focus:outline-none transition-all shadow-[0_2px_4px_rgba(0,0,0,0.02)] border ${
-                                    isSortMenuOpen ? 'border-primary text-primary ring-2 ring-primary/20' : 'border-outline-variant/30 text-on-surface hover:border-outline-variant/60 hover:bg-surface-container'
-                                }`}
-                            >
-                                <span>
-                                    {sortBy === 'name-asc' && 'Nombre A-Z'}
-                                    {sortBy === 'name-desc' && 'Nombre Z-A'}
-                                    {sortBy === 'rating-desc' && 'Mejor valorados'}
-                                    {sortBy === 'price-asc' && 'Precio menor'}
-                                </span>
-                                <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isSortMenuOpen ? 'rotate-180 text-primary' : 'text-on-surface-variant'}`} />
-                            </button>
-                            
-                            {isSortMenuOpen && (
-                                <div className="absolute right-0 top-[calc(100%+8px)] w-48 rounded-2xl border border-outline-variant/20 bg-surface-container-lowest p-2 shadow-[0_8px_32px_rgba(0,0,0,0.08)]">
-                                    {[
-                                        { id: 'name-asc', label: 'Nombre A-Z' },
-                                        { id: 'name-desc', label: 'Nombre Z-A' },
-                                        { id: 'rating-desc', label: 'Mejor valorados' },
-                                        { id: 'price-asc', label: 'Precio menor' }
-                                    ].map(opt => (
-                                        <button
-                                            key={opt.id}
-                                            onClick={() => {
-                                                setSortBy(opt.id as SortOption);
-                                                setIsSortMenuOpen(false);
-                                            }}
-                                            className={`w-full text-left px-3 py-2.5 rounded-xl text-body-md font-medium transition-colors ${
-                                                sortBy === opt.id 
-                                                    ? 'bg-primary/10 text-primary' 
-                                                    : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
-                                            }`}
-                                        >
-                                            {opt.label}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                        <div className="flex bg-surface-container-high rounded-xl p-1 border border-outline-variant/30">
-                            <button
-                                onClick={() => {
-                                    if (!isListView) return;
-                                    setIsChangingView(true);
-                                    setTimeout(() => { setIsListView(false); setTimeout(() => setIsChangingView(false), 300); }, 50);
-                                }}
-                                className={`p-2 rounded-lg transition-colors ${!isListView ? 'bg-surface text-primary shadow-sm' : 'text-on-surface-variant hover:text-primary'}`}
-                                aria-label="Vista en cuadrícula"
-                            >
-                                <Grid className="w-5 h-5" />
-                            </button>
-                            <button
-                                onClick={() => {
-                                    if (isListView) return;
-                                    setIsChangingView(true);
-                                    setTimeout(() => { setIsListView(true); setTimeout(() => setIsChangingView(false), 300); }, 50);
-                                }}
-                                className={`p-2 rounded-lg transition-colors ${isListView ? 'bg-surface text-primary shadow-sm' : 'text-on-surface-variant hover:text-primary'}`}
-                                aria-label="Vista en lista"
-                            >
-                                <List className="w-5 h-5" />
-                            </button>
-                        </div>
-                    </div>
+          {/* Points Widget */}
+          <motion.section variants={itemVariants} className="lg:col-span-5 flex">
+            <div className="flex flex-col justify-between w-full rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] p-5 sm:p-6 shadow-xs">
+              <div>
+                <div className="flex items-center justify-between mb-4 sm:mb-5">
+                  <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <Award className="h-5 w-5 text-blue-600 dark:text-blue-400" /> Mi Nivel
+                  </h2>
+                  <Link
+                    href="/dashboard/perfil/puntos"
+                    className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    Ver más →
+                  </Link>
                 </div>
 
-                {/* 2. Barra de búsqueda */}
-                <div className="flex flex-col lg:flex-row gap-4 relative z-50">
-                    <div ref={searchMenuRef} className="relative flex-1 rounded-2xl bg-surface border border-outline-variant/30 shadow-sm flex items-center px-4 h-14 z-[100]">
-                        <Search className="h-5 w-5 shrink-0 text-outline mr-2" />
-                        
-                        <div className="flex items-center gap-2 h-full flex-nowrap shrink-0 overflow-x-auto no-scrollbar max-w-[50%]">
-                            {searchTags.map((tag, idx) => (
-                                <span key={idx} className="inline-flex items-center gap-1 h-8 rounded-lg bg-primary/10 text-primary px-3 text-sm font-medium whitespace-nowrap">
-                                    {tag}
-                                    <button 
-                                        type="button" 
-                                        onClick={() => {
-                                            const tagToRemove = tag;
-                                            setSearchTags(tags => tags.filter((_, i) => i !== idx));
-                                            if (specialtyPicks.includes(tagToRemove)) {
-                                                let next = activeSpecialties.filter(s => s !== 'all' && s !== tagToRemove);
-                                                setSpecialtyParam(next.length === 0 ? 'all' : next.join(','));
-                                            }
-                                        }}
-                                        className="hover:bg-primary/20 rounded-full p-0.5"
-                                    >
-                                        <X className="h-3 w-3" />
-                                    </button>
-                                </span>
-                            ))}
-                        </div>
-
-                        <input
-                            id="searchTerm"
-                            value={searchTerm}
-                            onClick={() => {
-                                setRecentDoctors(readRecentDoctors());
-                                setIsSearchFocused(true);
-                            }}
-                            onFocus={() => {
-                                setRecentDoctors(readRecentDoctors());
-                                setIsSearchFocused(true);
-                            }}
-                            onChange={(event) => {
-                                setSearchTerm(event.target.value);
-                                setIsSearchFocused(true);
-                            }}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && searchTerm.trim()) {
-                                    e.preventDefault();
-                                    const term = searchTerm.trim();
-                                    if (!searchTags.includes(term)) {
-                                        setSearchTags(prev => [...prev, term]);
-                                        if (specialtyPicks.includes(term)) {
-                                            let next = activeSpecialties.filter(s => s !== 'all');
-                                            if (!next.includes(term)) next.push(term);
-                                            setSpecialtyParam(next.join(','));
-                                        }
-                                    }
-                                    setSearchTerm('');
-                                } else if (e.key === 'Backspace' && !searchTerm && searchTags.length > 0) {
-                                    const tagToRemove = searchTags[searchTags.length - 1];
-                                    setSearchTags(prev => prev.slice(0, -1));
-                                    if (specialtyPicks.includes(tagToRemove)) {
-                                        let next = activeSpecialties.filter(s => s !== 'all' && s !== tagToRemove);
-                                        setSpecialtyParam(next.length === 0 ? 'all' : next.join(','));
-                                    }
-                                }
-                            }}
-                            placeholder={searchTags.length === 0 ? "Buscar por doctor, especialidad o ubicación..." : "Añadir filtro..."}
-                            className="flex-1 h-full bg-transparent min-w-[140px] px-2 text-body-md font-medium text-on-surface outline-none placeholder:text-outline/70"
-                        />
-                        {(searchTerm || searchTags.length > 0 || specialtyParam !== 'all') && (
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setSearchTerm('');
-                                    setSearchTags([]);
-                                    setSpecialtyParam('all');
-                                    setIsSearchFocused(true);
-                                }}
-                                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-outline transition hover:bg-surface-container-high hover:text-on-surface ml-2"
-                            >
-                                <X className="h-4 w-4" />
-                            </button>
-                        )}
-
-                        {/* Search Suggestions Dropdown */}
-                        {isSearchFocused && (
-                            <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface dark:bg-slate-900 shadow-2xl text-on-surface dark:text-slate-100">
-                                {!searchTerm.trim() ? (
-                                    <div className="p-3 space-y-4 max-h-[380px] overflow-y-auto">
-                                        <div>
-                                            <p className="text-[11px] font-bold uppercase tracking-wider text-outline dark:text-slate-400 px-3 py-1 flex items-center gap-1.5">
-                                                <Users className="w-3.5 h-3.5 text-primary" /> Médicos Vistos Recientemente
-                                            </p>
-                                            {recentDoctors.length > 0 ? (
-                                                <div className="mt-1 space-y-1">
-                                                    {recentDoctors.map((doc) => (
-                                                        <button
-                                                            key={doc.exp_codigo}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                handleDoctorVisit({
-                                                                    doctor: resolvedDoctors.find(d => d.doctor.exp_codigo === doc.exp_codigo)?.doctor || ({} as any),
-                                                                    fullName: doc.fullName,
-                                                                    specialtyPreview: [doc.specialty],
-                                                                    modalityPreview: [],
-                                                                    locationPreview: [doc.locationLabel],
-                                                                });
-                                                                router.push(`/dashboard/${doc.exp_codigo}`);
-                                                                setIsSearchFocused(false);
-                                                            }}
-                                                            className="flex w-full items-center justify-between px-3 py-2 rounded-xl hover:bg-surface-container-high dark:hover:bg-slate-800 transition text-left group"
-                                                        >
-                                                            <div className="flex items-center gap-3 min-w-0">
-                                                                <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden relative border border-outline-variant/20">
-                                                                    {doc.image ? (
-                                                                        <Image src={doc.image} alt={doc.fullName} fill sizes="36px" className="object-cover" />
-                                                                    ) : (
-                                                                        doc.fullName.charAt(0)
-                                                                    )}
-                                                                </div>
-                                                                <div className="min-w-0">
-                                                                    <p className="text-sm font-bold text-on-surface dark:text-white leading-tight truncate group-hover:text-primary transition-colors">{doc.fullName}</p>
-                                                                    <p className="text-xs text-outline dark:text-slate-400 truncate">{doc.specialty} · {doc.locationLabel}</p>
-                                                                </div>
-                                                            </div>
-                                                            <ChevronRight className="w-4 h-4 text-outline dark:text-slate-400 shrink-0 group-hover:translate-x-0.5 transition-transform" />
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                                <div className="mx-3 my-1.5 p-3 rounded-xl bg-surface-container/60 dark:bg-slate-800/60 border border-outline-variant/20 dark:border-slate-800 flex items-center gap-3">
-                                                    <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                                                        <Users className="w-4 h-4 text-primary" />
-                                                    </div>
-                                                    <p className="text-xs text-outline dark:text-slate-400 font-medium leading-relaxed">
-                                                        Tus perfiles de médicos visitados aparecerán aquí automáticamente al hacer clic en <span className="font-bold text-primary">"Ver Perfil"</span>.
-                                                    </p>
-                                                </div>
-                                            )}
-                                        </div>
-                                        {specialtyPicks.length > 0 && (
-                                            <div>
-                                                <p className="text-[11px] font-bold uppercase tracking-wider text-outline dark:text-slate-400 px-3 py-1 flex items-center gap-1.5">
-                                                    <Sparkles className="w-3.5 h-3.5 text-primary" /> Especialidades Populares
-                                                </p>
-                                                <div className="mt-1 flex flex-wrap gap-1.5 px-3 py-1">
-                                                    {specialtyPicks.slice(0, 8).map((spec) => (
-                                                        <button
-                                                            key={spec}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                if (!searchTags.includes(spec)) {
-                                                                    setSearchTags(prev => [...prev, spec]);
-                                                                    let next = activeSpecialties.filter(s => s !== 'all');
-                                                                    if (!next.includes(spec)) next.push(spec);
-                                                                    setSpecialtyParam(next.join(','));
-                                                                }
-                                                                setIsSearchFocused(false);
-                                                            }}
-                                                            className="px-3 py-1.5 bg-surface-container hover:bg-primary/10 hover:text-primary dark:bg-slate-800 dark:hover:bg-slate-700 rounded-xl text-xs font-semibold text-on-surface dark:text-slate-200 transition"
-                                                        >
-                                                            {spec}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div className="p-3 space-y-4 max-h-[380px] overflow-y-auto">
-                                        {/* Sección Superior: Médicos Vistos Recientemente al escribir */}
-                                        {recentDoctors.length > 0 && (
-                                            <div>
-                                                <p className="text-[11px] font-bold uppercase tracking-wider text-primary px-3 py-1 flex items-center gap-1.5">
-                                                    <Users className="w-3.5 h-3.5 text-primary" /> Médicos Vistos Recientemente
-                                                </p>
-                                                <div className="mt-1 space-y-1">
-                                                    {(matchingRecentDoctors.length > 0 ? matchingRecentDoctors : recentDoctors.slice(0, 3)).map((doc) => (
-                                                        <button
-                                                            key={`rec_${doc.exp_codigo}`}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                handleDoctorVisit({
-                                                                    doctor: resolvedDoctors.find(d => d.doctor.exp_codigo === doc.exp_codigo)?.doctor || ({} as any),
-                                                                    fullName: doc.fullName,
-                                                                    specialtyPreview: [doc.specialty],
-                                                                    modalityPreview: [],
-                                                                    locationPreview: [doc.locationLabel],
-                                                                });
-                                                                router.push(`/dashboard/${doc.exp_codigo}`);
-                                                                setIsSearchFocused(false);
-                                                            }}
-                                                            className="flex w-full items-center justify-between px-3 py-2 rounded-xl bg-primary/5 dark:bg-primary/10 hover:bg-primary/10 dark:hover:bg-primary/20 transition text-left group border border-primary/20"
-                                                        >
-                                                            <div className="flex items-center gap-3 min-w-0">
-                                                                <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden relative border border-primary/20">
-                                                                    {doc.image ? (
-                                                                        <Image src={doc.image} alt={doc.fullName} fill sizes="36px" className="object-cover" />
-                                                                    ) : (
-                                                                        doc.fullName.charAt(0)
-                                                                    )}
-                                                                </div>
-                                                                <div className="min-w-0">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <p className="text-sm font-bold text-on-surface dark:text-white leading-tight truncate group-hover:text-primary transition-colors">{doc.fullName}</p>
-                                                                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-primary/20 text-primary uppercase shrink-0">Reciente</span>
-                                                                    </div>
-                                                                    <p className="text-xs text-outline dark:text-slate-400 truncate">{doc.specialty} · {doc.locationLabel}</p>
-                                                                </div>
-                                                            </div>
-                                                            <ChevronRight className="w-4 h-4 text-primary shrink-0 group-hover:translate-x-0.5 transition-transform" />
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                        <div>
-                                            <p className="text-[11px] font-bold uppercase tracking-wider text-outline dark:text-slate-400 px-3 py-1 flex items-center gap-1.5">
-                                                <Sparkles className="w-3.5 h-3.5 text-primary" /> Sugerencias para "{searchTerm}"
-                                            </p>
-                                            <div className="mt-1 space-y-0.5">
-                                                {searchSuggestions.length > 0 ? searchSuggestions.map((suggestion, idx) => (
-                                                    <button
-                                                        key={idx}
-                                                        type="button"
-                                                        onClick={() => {
-                                                            if (suggestion.type === 'doctor') {
-                                                                const docMatch = resolvedDoctors.find(d => d.fullName === suggestion.label);
-                                                                if (docMatch) {
-                                                                    handleDoctorVisit({
-                                                                        doctor: docMatch.doctor,
-                                                                        fullName: docMatch.fullName,
-                                                                        specialtyPreview: docMatch.specialtyPreview,
-                                                                        modalityPreview: docMatch.modalityPreview,
-                                                                        locationPreview: docMatch.locationPreview,
-                                                                    });
-                                                                    router.push(`/dashboard/${docMatch.doctor.exp_codigo}`);
-                                                                    setIsSearchFocused(false);
-                                                                    return;
-                                                                }
-                                                            }
-                                                            if (!searchTags.includes(suggestion.label)) {
-                                                                const term = suggestion.label;
-                                                                setSearchTags(prev => [...prev, term]);
-                                                                if (suggestion.type === 'specialty' || specialtyPicks.includes(term)) {
-                                                                    let next = activeSpecialties.filter(s => s !== 'all');
-                                                                    if (!next.includes(term)) next.push(term);
-                                                                    setSpecialtyParam(next.join(','));
-                                                                }
-                                                            }
-                                                            setSearchTerm('');
-                                                            setIsSearchFocused(false);
-                                                        }}
-                                                        className="flex w-full items-center gap-3 px-3 py-2.5 rounded-xl text-left transition hover:bg-surface-container-high dark:hover:bg-slate-800"
-                                                    >
-                                                        <Search className="h-4 w-4 text-primary shrink-0" />
-                                                        <div className="min-w-0 flex-1">
-                                                            <span className="text-sm font-medium text-on-surface dark:text-slate-100">{suggestion.label}</span>
-                                                            {suggestion.sublabel && (
-                                                                <span className="ml-2 text-xs text-outline dark:text-slate-400">({suggestion.sublabel})</span>
-                                                            )}
-                                                        </div>
-                                                    </button>
-                                                )) : (
-                                                    <div className="px-3 py-2 text-sm text-outline dark:text-slate-400">Sin coincidencias exactas</div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                    
-                    <button
-                        type="button"
-                        onClick={() => alert('Buscando médicos cerca de tu ubicación actual...')}
-                        className="inline-flex h-14 shrink-0 items-center gap-2 rounded-2xl bg-secondary-container px-6 text-label-md font-semibold text-on-secondary-container transition hover:bg-secondary-container/90"
-                    >
-                        <Target className="h-5 w-5" />
-                        Cerca de ti
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => setShowOnlyFavorites(!showOnlyFavorites)}
-                        className={`inline-flex h-14 shrink-0 items-center gap-2 rounded-2xl px-6 text-label-md font-semibold transition ${
-                            showOnlyFavorites
-                                ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20'
-                                : 'border border-outline-variant/20 bg-surface text-on-surface hover:bg-surface-container'
-                        }`}
-                    >
-                        <Heart className={`h-5 w-5 ${showOnlyFavorites ? 'fill-current' : ''}`} />
-                        Mis Favoritos
-                    </button>
-
-                    {hasActiveFilters && (
-                        <button
-                            type="button"
-                            onClick={() => {
-                                resetParams(); // Limpia todos los parámetros de la URL
-                                // Limpia los estados puramente locales:
-                                setSearchTerm('');
-                                setSearchTags([]);
-                                setSelectedLanguages([]);
-                                setSelectedInsurances([]);
-                                setLocalPriceLimit(PRICE_LIMIT_MAX);
-                                setSpecialtySearch('');
-                                setActiveSidebarFilter(null);
-                            }}
-                            className="inline-flex h-14 shrink-0 items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-6 text-label-md font-semibold text-red-600 transition hover:bg-red-100"
-                        >
-                            <X className="h-5 w-5" />
-                            Limpiar
-                        </button>
+                <div className="flex items-center gap-3.5 sm:gap-4 mb-4 sm:mb-5">
+                  <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-xl sm:rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-900/50 shrink-0">
+                    {lealtadEstado?.imagenNivelUrl ? (
+                      <img src={lealtadEstado.imagenNivelUrl} alt={nivelActual} className="h-9 w-9 sm:h-10 sm:w-10 object-contain" />
+                    ) : (
+                      <Award className="h-7 w-7 sm:h-8 sm:w-8" />
                     )}
-
-                    <div className="relative" ref={advancedFiltersRef}>
-                        <button
-                            type="button"
-                            onClick={() => setIsAdvancedFiltersOpen(!isAdvancedFiltersOpen)}
-                            className={`inline-flex h-14 shrink-0 items-center gap-2 rounded-2xl border px-6 text-label-md font-semibold transition ${
-                                isAdvancedFiltersOpen
-                                    ? 'border-primary bg-primary text-on-primary'
-                                    : 'border-outline-variant bg-surface text-on-surface hover:bg-surface-container'
-                            }`}
-                        >
-                            <Filter className="h-5 w-5" />
-                            Filtros Avanzados
-                            <ChevronDown className={`w-4 h-4 ml-2 transition-transform ${isAdvancedFiltersOpen ? 'rotate-180' : ''}`} />
-                        </button>
-                        {isAdvancedFiltersOpen && (
-                            <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-[calc(100vw-2rem)] sm:w-[540px] max-w-lg rounded-3xl border border-outline-variant/20 bg-surface-container-lowest p-4 sm:p-6 shadow-[0_12px_48px_rgba(0,0,0,0.12)]">
-                                <div className="flex flex-col sm:flex-row gap-4 sm:gap-8 max-h-[60vh] overflow-y-auto pr-2" style={{scrollbarWidth: 'thin'}}>
-                                    
-                                    {/* Columna Idiomas */}
-                                    <div className="flex-1">
-                                        <h4 className="text-label-md font-bold mb-3 text-on-surface uppercase tracking-wider text-xs">Idiomas</h4>
-                                        <div className="flex flex-col gap-1">
-                                            {languagePicks.length > 0 ? languagePicks.map(lang => (
-                                                <label key={lang} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-surface-container-lowest cursor-pointer transition-colors group">
-                                                    <input 
-                                                        type="checkbox" 
-                                                        checked={selectedLanguages.includes(lang)}
-                                                        onChange={(e) => {
-                                                            if (e.target.checked) setSelectedLanguages(prev => [...prev, lang]);
-                                                            else setSelectedLanguages(prev => prev.filter(l => l !== lang));
-                                                        }}
-                                                        className="rounded-md border-outline-variant/50 text-primary focus:ring-primary focus:ring-offset-0 h-5 w-5 transition-colors cursor-pointer bg-transparent" 
-                                                    />
-                                                    <span className="text-body-md font-medium text-on-surface-variant group-hover:text-on-surface">{lang}</span>
-                                                </label>
-                                            )) : <span className="text-body-sm text-outline p-2.5">No hay idiomas registrados</span>}
-                                        </div>
-                                    </div>
-                                    
-                                    {/* Divisor vertical suave */}
-                                    <div className="w-[1px] bg-outline-variant/20"></div>
-
-                                    {/* Columna Aseguradoras */}
-                                    <div className="flex-1">
-                                        <h4 className="text-label-md font-bold mb-3 text-on-surface uppercase tracking-wider text-xs">Aseguradoras</h4>
-                                        <div className="flex flex-col gap-1">
-                                            {insurancePicks.length > 0 ? insurancePicks.map(ins => (
-                                                <label key={ins} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-surface-container-lowest cursor-pointer transition-colors group">
-                                                    <input 
-                                                        type="checkbox" 
-                                                        checked={selectedInsurances.includes(ins)}
-                                                        onChange={(e) => {
-                                                            if (e.target.checked) setSelectedInsurances(prev => [...prev, ins]);
-                                                            else setSelectedInsurances(prev => prev.filter(i => i !== ins));
-                                                        }}
-                                                        className="rounded-md border-outline-variant/50 text-primary focus:ring-primary focus:ring-offset-0 h-5 w-5 transition-colors cursor-pointer bg-transparent" 
-                                                    />
-                                                    <span className="text-body-md font-medium text-on-surface-variant group-hover:text-on-surface">{ins}</span>
-                                                </label>
-                                            )) : <span className="text-body-sm text-outline p-2.5">No hay aseguradoras registradas</span>}
-                                        </div>
-                                    </div>
-
-                                </div>
-                            </div>
-                        )}
-                    </div>
+                  </div>
+                  <div>
+                    <p className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">{nombreNivel}</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 font-semibold mt-0.5">
+                      <span className="text-blue-600 dark:text-blue-400 font-black">{totalPuntos}</span> puntos acumulados
+                    </p>
+                  </div>
                 </div>
-            </div>
 
-            <div className="mx-auto w-[90%] max-w-[1800px] py-8">
-                <div className={`flex gap-8 items-start transition-all duration-300`}>
-                    {/* Sidebar */}
-                    <aside className={`hidden lg:flex shrink-0 transition-all duration-500 rounded-2xl bg-surface border border-outline-variant/20 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] h-fit overflow-visible sticky top-8 z-40 ${activeSidebarFilter ? 'w-[380px]' : 'w-[80px]'}`}>
-                        {/* Slim Icon Rail */}
-                        <div className="w-[80px] shrink-0 flex flex-col items-center gap-6 py-6 bg-surface z-10 relative border-r border-outline-variant/10">
-                            
-                            {/* Filter: Disponibilidad */}
-                            <div className="relative group">
-                                <button 
-                                    onClick={() => setActiveSidebarFilter(activeSidebarFilter === 'disponibilidad' ? null : 'disponibilidad')}
-                                    className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${activeSidebarFilter === 'disponibilidad' ? 'bg-[#0284c7]/10 text-[#0284c7]' : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-[#0284c7]'}`}
-                                >
-                                    <Calendar className="w-5 h-5" />
-                                </button>
-                                <div className="absolute left-8 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-surface/95 backdrop-blur-sm border border-outline-variant/20 shadow-[0_8px_24px_rgba(2,132,199,0.15)] text-on-surface text-sm font-bold rounded-xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:translate-x-2 transition-all duration-300 whitespace-nowrap z-50 flex items-center gap-2">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-[#0284c7]"></div>
-                                    Disponibilidad
-                                </div>
-                            </div>
-
-                            <div className="w-8 border-b border-outline-variant/20"></div>
-
-                            {/* Filter: Modalidad */}
-                            <div className="relative group">
-                                <button 
-                                    onClick={() => setActiveSidebarFilter(activeSidebarFilter === 'modalidad' ? null : 'modalidad')}
-                                    className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${activeSidebarFilter === 'modalidad' ? 'bg-[#4f46e5]/10 text-[#4f46e5]' : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-[#4f46e5]'}`}
-                                >
-                                    <Video className="w-5 h-5" />
-                                </button>
-                                <div className="absolute left-8 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-surface/95 backdrop-blur-sm border border-outline-variant/20 shadow-[0_8px_24px_rgba(79,70,229,0.15)] text-on-surface text-sm font-bold rounded-xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:translate-x-2 transition-all duration-300 whitespace-nowrap z-50 flex items-center gap-2">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-[#4f46e5]"></div>
-                                    Modalidad
-                                </div>
-                            </div>
-
-                            <div className="w-8 border-b border-outline-variant/20"></div>
-
-                            {/* Filter: Precio */}
-                            <div className="relative group">
-                                <button 
-                                    onClick={() => setActiveSidebarFilter(activeSidebarFilter === 'precio' ? null : 'precio')}
-                                    className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${activeSidebarFilter === 'precio' ? 'bg-[#059669]/10 text-[#059669]' : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-[#059669]'}`}
-                                >
-                                    <DollarSign className="w-5 h-5" />
-                                </button>
-                                <div className="absolute left-8 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-surface/95 backdrop-blur-sm border border-outline-variant/20 shadow-[0_8px_24px_rgba(5,150,105,0.15)] text-on-surface text-sm font-bold rounded-xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:translate-x-2 transition-all duration-300 whitespace-nowrap z-50 flex items-center gap-2">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-[#059669]"></div>
-                                    Precio máximo
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Expanded Content Panel */}
-                        <div className={`flex-1 flex flex-col transition-opacity duration-300 bg-surface overflow-hidden ${activeSidebarFilter ? 'opacity-100' : 'opacity-0'}`}>
-                            <div className="p-5 flex-1 min-w-[300px] max-w-[300px]">
-                                {activeSidebarFilter === 'disponibilidad' && (
-                                    <div className="animate-in fade-in duration-300">
-                                        <div className="flex justify-between items-center mb-4">
-                                            <h3 className="font-semibold text-lg text-[#0284c7]">Disponibilidad</h3>
-                                            <button onClick={() => setActiveSidebarFilter(null)} className="p-1 hover:bg-surface-container rounded-lg text-outline"><X className="w-4 h-4"/></button>
-                                        </div>
-                                        <div className="flex justify-center" style={{ '--rdp-cell-size': '38px', '--rdp-caption-font-size': '16px' } as React.CSSProperties}>
-                                            <DayPicker
-                                                mode="single"
-                                                locale={es}
-                                                selected={availability ? new Date(availability + 'T00:00:00') : undefined}
-                                                onSelect={(date) => setAvailability(date ? format(date, 'yyyy-MM-dd') : '')}
-                                                disabled={{ before: new Date() }}
-                                                className="!m-0"
-                                                classNames={{
-                                                    selected: "bg-[#0284c7] !text-white font-bold hover:bg-[#0284c7]/90",
-                                                    today: "font-bold text-[#0284c7]",
-                                                    day: "hover:bg-surface-container rounded-lg transition-colors",
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
-                                )}
-
-                                {activeSidebarFilter === 'modalidad' && (
-                                    <div className="animate-in fade-in duration-300">
-                                        <div className="flex justify-between items-center mb-4">
-                                            <h3 className="font-semibold text-lg text-[#4f46e5]">Modalidad</h3>
-                                            <button onClick={() => setActiveSidebarFilter(null)} className="p-1 hover:bg-surface-container rounded-lg text-outline"><X className="w-4 h-4"/></button>
-                                        </div>
-                                        <div className="flex flex-col gap-0.5">
-                                            {[{id: 'all', label: 'Todas', icon: <Search className="w-4 h-4"/>}, {id: 'presencial', label: 'Presencial', icon: <MapPin className="w-4 h-4"/>}, {id: 'virtual', label: 'Virtual', icon: <Video className="w-4 h-4"/>}, {id: 'domicilio', label: 'Domicilio', icon: <Home className="w-4 h-4"/>}].map(opt => (
-                                                <button
-                                                    key={opt.id}
-                                                    onClick={() => toggleModality(opt.id)}
-                                                    className={`flex items-center gap-3 px-3 py-2.5 w-full text-left rounded-xl transition-all ${activeModalities.includes(opt.id) ? 'bg-[#4f46e5]/10 border border-[#4f46e5]/30 text-[#4f46e5] font-bold' : 'border border-transparent text-on-surface-variant hover:bg-surface-container'}`}
-                                                >
-                                                    {opt.icon}
-                                                    {opt.label}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {activeSidebarFilter === 'precio' && (
-                                    <div className="animate-in fade-in duration-300">
-                                        <div className="flex justify-between items-center mb-4">
-                                            <h3 className="font-semibold text-lg text-[#059669]">Precio máximo</h3>
-                                            <button onClick={() => setActiveSidebarFilter(null)} className="p-1 hover:bg-surface-container rounded-lg text-outline"><X className="w-4 h-4"/></button>
-                                        </div>
-                                        <div className="flex justify-center items-center gap-1 mb-4">
-                                            <span className="font-bold text-[#059669] text-xl">Q</span>
-                                            <input 
-                                                type="number"
-                                                min={0}
-                                                max={PRICE_LIMIT_MAX}
-                                                value={localPriceLimit}
-                                                onChange={(e) => {
-                                                    const val = Math.min(PRICE_LIMIT_MAX, Math.max(0, Number(e.target.value)));
-                                                    setLocalPriceLimit(val);
-                                                }}
-                                                onBlur={(e) => {
-                                                    setPriceLimit(Number(e.target.value));
-                                                }}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') {
-                                                        setPriceLimit(localPriceLimit);
-                                                    }
-                                                }}
-                                                className="w-24 bg-surface-container-lowest border border-outline-variant/50 rounded-xl px-2 py-1 text-center text-xl font-bold text-[#059669] outline-none focus:border-[#059669] transition-colors"
-                                            />
-                                        </div>
-                                        <div className="relative pt-2 pb-2">
-                                            <input
-                                                type="range"
-                                                min={0}
-                                                max={PRICE_LIMIT_MAX}
-                                                step={50}
-                                                value={localPriceLimit}
-                                                onChange={(e) => setLocalPriceLimit(Number(e.target.value))}
-                                                onMouseUp={() => setPriceLimit(localPriceLimit)}
-                                                onTouchEnd={() => setPriceLimit(localPriceLimit)}
-                                                className="w-full accent-[#059669]"
-                                            />
-                                            <div className="flex justify-between text-caption text-outline mt-2">
-                                                <span>Q0</span>
-                                                <span>Q{PRICE_LIMIT_MAX}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </aside>
-
-                    <div className="flex-1 min-w-0 space-y-6">
-                    {error ? (
-                        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                            No fue posible cargar la lista de médicos.
-                        </div>
-                    ) : null}
-
-                    <section id="doctores" className="space-y-5 relative min-h-[400px]">
-                        {isPaginating || isChangingView ? (
-                            <div className="flex h-[400px] flex-col items-center justify-center">
-                                <div className="h-20 w-20 animate-spin rounded-full border-8 border-slate-200 border-t-sky-600" />
-                            </div>
-                        ) : paginatedDoctors.length ? (
-                            <AnimatedList className={isListView ? "grid grid-cols-1 xl:grid-cols-2 gap-4 max-w-7xl mx-auto w-full" : "grid gap-6 grid-cols-[repeat(auto-fill,minmax(280px,1fr))] max-w-[1360px] mx-auto w-full"}>
-                                {paginatedDoctors.map((doctor) => (
-                                    <DoctorCard key={doctor.doctor.exp_codigo} data={doctor} onVisit={handleDoctorVisit} isListView={isListView} />
-                                ))}
-                            </AnimatedList>
-                        ) : (
-                            <section className="rounded-4xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-                                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-sky-50 text-sky-700">
-                                    <Search className="h-7 w-7" />
-                                </div>
-                                <h4 className="mt-4 text-2xl font-black tracking-tight text-slate-900">No hay coincidencias</h4>
-                                <p className="mx-auto mt-2 max-w-2xl text-sm leading-7 text-slate-600">
-                                    Prueba con otro nombre, especialidad, correo o colegiado.
-                                </p>
-                            </section>
-                        )}
-
-                        {visibleDoctors.length > itemsPerPage ? (
-                            <div className="flex items-center justify-center px-4 py-4">
-                                <div className="flex items-center justify-center gap-3">
-                                    <button
-                                        type="button"
-                                        onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
-                                        disabled={currentPageForView === 1}
-                                        className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                                        aria-label="Página anterior"
-                                    >
-                                        <ChevronRight className="h-4 w-4 rotate-180" />
-                                    </button>
-
-                                    <div className="flex h-12 w-12 items-center justify-center rounded-full border border-sky-200 bg-sky-50 text-sm font-black text-sky-700 shadow-sm">
-                                        {currentPageForView}
-                                    </div>
-
-                                    <button
-                                        type="button"
-                                        onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
-                                        disabled={currentPageForView >= totalPages}
-                                        className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                                        aria-label="Página siguiente"
-                                    >
-                                        <ChevronRight className="h-4 w-4" />
-                                    </button>
-                                </div>
-                            </div>
-                        ) : null}
-                    </section>
+                {/* Progress bar */}
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs font-black text-slate-700 dark:text-slate-200">
+                    <span>{totalPuntos} / {puntosMax > 0 ? puntosMax : '—'} pts</span>
+                    <span>{progreso > 0 && progreso < 1 ? progreso.toFixed(1) : Math.round(progreso)}%</span>
+                  </div>
+                  <div className="h-3 sm:h-3.5 w-full rounded-full bg-slate-200 dark:bg-slate-700/80 overflow-hidden border border-slate-300 dark:border-slate-600 p-0.5">
+                    <motion.div
+                      className="h-full rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-500 dark:to-indigo-400 shadow-xs"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${anchoProgreso}%` }}
+                      transition={{ duration: 0.8, ease: 'easeOut' }}
+                    />
+                  </div>
                 </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2 sm:gap-2.5 mt-5 sm:mt-6 pt-2">
+                <Link href="/dashboard/perfil/puntos?tab=tienda" className="flex-1">
+                  <button className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all active:scale-95 shadow-md flex items-center justify-center gap-1.5 cursor-pointer">
+                    <Gift className="h-4 w-4" /> Canjear Puntos
+                  </button>
+                </Link>
+                <Link href="/dashboard/perfil/puntos?tab=misiones" className="flex-1">
+                  <button className="w-full py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-bold transition-all hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 flex items-center justify-center gap-1.5 cursor-pointer">
+                    <Star className="h-4 w-4" /> Misiones
+                  </button>
+                </Link>
+              </div>
             </div>
+          </motion.section>
+
+          {/* Recent Doctors */}
+          <motion.section variants={itemVariants} className="lg:col-span-7 flex">
+            <div className="flex flex-col justify-between w-full rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] p-5 sm:p-6 shadow-xs">
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <Stethoscope className="h-5 w-5 text-blue-600 dark:text-blue-400" /> Médicos Recientes
+                  </h2>
+                  <Link
+                    href="/dashboard/directorio"
+                    className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    Ver directorio →
+                  </Link>
+                </div>
+
+                {recentDoctors.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
+                    {recentDoctors.slice(0, 4).map((doc) => (
+                      <RecentDoctorMini key={doc.exp_codigo} doctor={doc} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-6 sm:p-8 text-center my-auto">
+                    <Users className="h-7 w-7 sm:h-8 sm:w-8 text-slate-400 dark:text-slate-500 mx-auto mb-2" />
+                    <p className="text-xs text-slate-600 dark:text-slate-300 font-semibold">
+                      Los médicos que visites aparecerán aquí.
+                    </p>
+                    <Link href="/dashboard/directorio">
+                      <button className="mt-3 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer">
+                        Explorar directorio →
+                      </button>
+                    </Link>
+                  </div>
+                )}
+              </div>
             </div>
-        </main>
-    );
+          </motion.section>
+
+        </div>
+      </motion.main>
+    </div>
+  );
 }
 
-export default function DashboardPage() {
-    return (
-        <Suspense fallback={<NeoLoader />}>
-            <DashboardContent />
-        </Suspense>
-    );
+// ─── Default Export ──────────────────────────────────────────────────────────
+
+export default function HomePage() {
+  return (
+    <Suspense fallback={<NeoLoader />}>
+      <HomeContent />
+    </Suspense>
+  );
 }

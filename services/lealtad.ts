@@ -39,3 +39,16 @@ export async function completarTareaLealtad(token: string, codigoAccion: string)
   );
   return data;
 }
+
+export interface NivelLealtad {
+  nvlCodigo: number;
+  nvlDescripcion: string;
+  nvlPuntosMin: number;
+  nvlPuntosMax: number;
+  nvlImagenUrl: string | null;
+}
+
+export async function fetchNivelesLealtad(token: string): Promise<NivelLealtad[]> {
+  const { data } = await expedientesApi.get<NivelLealtad[]>('/api/lealtad/niveles', getAuthHeaders(token));
+  return data;
+}

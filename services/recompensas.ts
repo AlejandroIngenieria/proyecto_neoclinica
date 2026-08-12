@@ -15,47 +15,14 @@ import type {
  */
 export async function fetchCatalogoRecompensas(token?: string): Promise<Recompensa[]> {
   try {
-    const { data } = await expedientesApi.get<Recompensa[]>(
+    const { data } = await expedientesApi.get<any>(
       '/api/recompensas/catalogo',
       token ? getAuthHeaders(token) : undefined
     );
-    return data;
+    return Array.isArray(data) ? data : (data?.data || data?.result || data?.recompensas || []);
   } catch (error) {
-    console.warn('Fallback o error al consultar catálogo de recompensas:', error);
-    // Fallback con datos por defecto si el backend aún no responde
-    return [
-      {
-        rcpCodigo: 1,
-        rcpTitulo: '15% de Descuento en Consulta',
-        rcpCostoPuntos: 350,
-        rcpTipo: 'descuento',
-        rcpValorDescuento: 15,
-        descripcion: 'Aplica un 15% de descuento en el total de tu próxima consulta médica.',
-      },
-      {
-        rcpCodigo: 2,
-        rcpTitulo: 'Cita Médica General Gratis',
-        rcpCostoPuntos: 800,
-        rcpTipo: 'cita_gratis',
-        descripcion: 'Canjea tus puntos por una consulta de medicina general totalmente gratuita.',
-      },
-      {
-        rcpCodigo: 3,
-        rcpTitulo: 'Recordatorios Premium (30 Días)',
-        rcpCostoPuntos: 200,
-        rcpTipo: 'premium_recordatorios',
-        rcpDiasDuracion: 30,
-        descripcion: 'Alertas SMS y WhatsApp personalizadas para la toma de medicamentos.',
-      },
-      {
-        rcpCodigo: 4,
-        rcpTitulo: 'Almacenamiento de Archivos Ilimitado (90 Días)',
-        rcpCostoPuntos: 500,
-        rcpTipo: 'premium_archivos',
-        rcpDiasDuracion: 90,
-        descripcion: 'Guarda tus exámenes, laboratorios y radiografías en HD sin límite de espacio.',
-      },
-    ];
+    console.warn('Error al consultar catálogo de recompensas:', error);
+    return [];
   }
 }
 
@@ -68,11 +35,11 @@ export async function fetchRecompensasDisponibles(
   token?: string
 ): Promise<RecompensaAdquirida[]> {
   try {
-    const { data } = await expedientesApi.get<RecompensaAdquirida[]>(
+    const { data } = await expedientesApi.get<any>(
       `/api/recompensas/${pacCodigo}/disponibles`,
       token ? getAuthHeaders(token) : undefined
     );
-    return data;
+    return Array.isArray(data) ? data : (data?.data || data?.result || data?.recompensas || []);
   } catch (error) {
     console.warn('Fallback o error al consultar inventario de recompensas:', error);
     return [];
@@ -94,8 +61,8 @@ export async function fetchTotalPuntos(
     );
     return data;
   } catch (error) {
-    console.warn('Fallback o error al consultar total de puntos:', error);
-    return { totalPuntos: 450 }; // Valor demostrativo por defecto
+    console.warn('Error al consultar total de puntos:', error);
+    return { totalPuntos: 0 };
   }
 }
 
@@ -177,27 +144,13 @@ export async function fetchHistorialPuntos(
   token?: string
 ): Promise<HistorialMovimientoPuntos[]> {
   try {
-    const { data } = await expedientesApi.get<HistorialMovimientoPuntos[]>(
+    const { data } = await expedientesApi.get<any>(
       `/api/recompensas/${pacCodigo}/historial`,
       token ? getAuthHeaders(token) : undefined
     );
-    return data;
+    return Array.isArray(data) ? data : (data?.data || data?.result || data?.historial || []);
   } catch (error) {
-    return [
-      {
-        id: '1',
-        fecha: new Date(Date.now() - 86400000 * 2).toISOString(),
-        motivo: 'Completar datos de perfil',
-        tipo: 'ganancia',
-        puntos: 150,
-      },
-      {
-        id: '2',
-        fecha: new Date(Date.now() - 86400000 * 5).toISOString(),
-        motivo: 'Primera cita concluidas',
-        tipo: 'ganancia',
-        puntos: 300,
-      },
-    ];
+    console.warn('Error al consultar historial de puntos:', error);
+    return [];
   }
 }

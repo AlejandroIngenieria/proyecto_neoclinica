@@ -6,6 +6,8 @@ import type {
   PacienteSeleccionDto 
 } from '@/types/citas';
 
+import type { RecompensaAdquirida } from '@/types/recompensas';
+
 export type CitaStep = 1 | 2 | 3 | 4;
 
 interface CitaState {
@@ -30,6 +32,8 @@ interface CitaState {
   tipoPagoId: number | null;
   billeteraItemId: string | null;
   
+  recompensaSeleccionada: RecompensaAdquirida | null;
+
   // Acciones
   setStep: (step: CitaStep) => void;
   nextStep: () => void;
@@ -57,6 +61,7 @@ interface CitaState {
   setArchivos: (archivos: File[]) => void;
   setTipoPagoId: (id: number | null) => void;
   setBilleteraItemId: (id: string | null) => void;
+  setRecompensaSeleccionada: (rec: RecompensaAdquirida | null) => void;
   
   reset: () => void;
 }
@@ -85,6 +90,7 @@ const initialState = {
   archivos: [],
   tipoPagoId: null,
   billeteraItemId: null,
+  recompensaSeleccionada: null,
 };
 
 export const useCitaStore = create<CitaState>((set, get) => ({
@@ -127,6 +133,7 @@ export const useCitaStore = create<CitaState>((set, get) => ({
   setArchivos: (archivos) => set({ archivos }),
   setTipoPagoId: (id) => set({ tipoPagoId: id, billeteraItemId: null }),
   setBilleteraItemId: (id) => set({ billeteraItemId: id }),
+  setRecompensaSeleccionada: (rec) => set({ recompensaSeleccionada: rec }),
   
   reset: () => set(initialState),
 }));

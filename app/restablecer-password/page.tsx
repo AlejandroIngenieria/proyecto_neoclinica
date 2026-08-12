@@ -132,11 +132,13 @@ function RestablecerPasswordForm() {
           </div>
         </div>
       ) : successMsg ? (
-        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-950/40 p-5 text-center shadow-lg backdrop-blur-xs">
-          <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-400" />
-          <h2 className="mt-3 text-lg font-bold text-white">¡Contraseña Guardada!</h2>
-          <p className="mt-2 text-sm leading-relaxed text-emerald-200">{successMsg}</p>
-          <div className="mt-6">
+        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-950/40 p-6 text-center shadow-lg backdrop-blur-xs space-y-4">
+          <CheckCircle2 className="mx-auto h-14 w-14 text-emerald-400" />
+          <h2 className="text-xl font-bold text-white">¡Contraseña Guardada con Éxito!</h2>
+          <p className="text-sm leading-relaxed text-emerald-200">
+            Tu contraseña ha sido restablecida correctamente. Ya puedes iniciar sesión con tus nuevas credenciales. Puede cerrar esta pestaña.
+          </p>
+          <div className="pt-2">
             <Link
               href="/login"
               className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-sky-500 to-blue-600 text-sm font-bold text-white shadow-md transition hover:brightness-110"

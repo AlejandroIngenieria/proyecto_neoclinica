@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
-import { fetchEstadoLealtad, fetchTareasLealtad, completarTareaLealtad } from '@/services/lealtad';
+import { fetchEstadoLealtad, fetchTareasLealtad, completarTareaLealtad, fetchNivelesLealtad } from '@/services/lealtad';
 
 function useAuthToken() {
   const { data: session, status } = useSession();
@@ -28,6 +28,16 @@ export function useLealtadTareas() {
   });
 }
 
+export function useLealtadNiveles() {
+  const { token, status } = useAuthToken();
+
+  return useQuery({
+    queryKey: ['lealtad', 'niveles'],
+    queryFn: () => fetchNivelesLealtad(token!),
+    enabled: status === 'authenticated' && !!token,
+  });
+}
+
 export function useCompletarTareaLealtad() {
   const { token } = useAuthToken();
   const queryClient = useQueryClient();
@@ -37,6 +47,7 @@ export function useCompletarTareaLealtad() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lealtad', 'estado'] });
       queryClient.invalidateQueries({ queryKey: ['lealtad', 'tareas'] });
+      queryClient.invalidateQueries({ queryKey: ['lealtad', 'niveles'] });
     },
   });
 }

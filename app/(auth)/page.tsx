@@ -86,7 +86,8 @@ export default function LoginPage() {
         return;
       }
 
-      router.replace('/dashboard');
+      const returnUrl = searchParams.get('returnUrl') || searchParams.get('callbackUrl');
+      router.replace(returnUrl || '/dashboard');
     } catch {
       setAuthError('No se pudo contactar al servidor de autenticación. Revisa tu conexión o intenta de nuevo.');
     }

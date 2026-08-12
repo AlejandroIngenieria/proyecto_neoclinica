@@ -15,6 +15,7 @@ export function CitaSummarySidebar() {
     fecha,
     hora,
     pacienteSeleccionado,
+    recompensaSeleccionada,
   } = useCitaStore();
 
   let precioBase = 0;
@@ -28,11 +29,25 @@ export function CitaSummarySidebar() {
     precioBase = 0; // El costo de domicilio se definirá después
     ubicacionStr = `Domicilio: ${areaDomicilio.municipio}`;
   } else if (modalidad === 'virtual') {
-    // Si tuvieramos precio base de virtual en el store, lo usaríamos
     ubicacionStr = 'Videollamada';
   }
 
-  const precioTotal = precioBase + recargo;
+  // Cálculo de Descuento por Recompensa / Cupón
+  let descuento = 0;
+  if (recompensaSeleccionada) {
+    const tipo = (recompensaSeleccionada.tipoRecompensa || (recompensaSeleccionada as any).rcpTipo || '').toLowerCase();
+    const valDesc = (recompensaSeleccionada as any).rcpValorDescuento ?? (recompensaSeleccionada as any).valorDescuento;
+    if (tipo.includes('gratis') || tipo.includes('cita')) {
+      descuento = precioBase;
+    } else if (typeof valDesc === 'number' && valDesc > 0) {
+      descuento = valDesc <= 1 ? precioBase * valDesc : valDesc;
+    } else {
+      descuento = 50; // Descuento estándar por defecto si no especifica monto
+    }
+  }
+
+  const subtotal = precioBase + recargo;
+  const precioTotal = Math.max(0, subtotal - descuento);
 
   return (
     <div className="rounded-3xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] shadow-xl shadow-slate-900/5 dark:shadow-black/20 overflow-hidden">
@@ -110,8 +125,21 @@ export function CitaSummarySidebar() {
       </div>
 
       {/* Footer / Precio */}
-      <div className="bg-slate-50 dark:bg-[#0F172A] p-6 border-t border-slate-100 dark:border-slate-800">
-        <div className="flex items-center justify-between">
+      <div className="bg-slate-50 dark:bg-[#0F172A] p-6 border-t border-slate-100 dark:border-slate-800 space-y-2">
+        {recompensaSeleccionada ? (
+          <>
+            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+              <span>Subtotal:</span>
+              <span>Q{subtotal.toFixed(2)}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs font-bold text-emerald-600 dark:text-emerald-400">
+              <span>Cupón ({recompensaSeleccionada.tituloRecompensa || (recompensaSeleccionada as any).titulo || 'Recompensa'}):</span>
+              <span>-Q{descuento.toFixed(2)}</span>
+            </div>
+          </>
+        ) : null}
+
+        <div className="flex items-center justify-between pt-1">
           <span className="text-sm font-bold text-slate-500 dark:text-slate-400">Total a pagar</span>
           <span className="text-2xl font-black text-slate-900 dark:text-white">
             Q{precioTotal.toFixed(2)}
@@ -125,3 +153,4 @@ export function CitaSummarySidebar() {
     </div>
   );
 }
+

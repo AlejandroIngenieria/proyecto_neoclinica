@@ -160,14 +160,28 @@ export default function RegisterPage() {
                     <div className="flex-1">
                       <label className="sr-only">Primer Nombre</label>
                       <div className="flex h-14 items-center gap-3 rounded-2xl border border-sky-400/30 bg-[#0b234c] px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                        <input {...register('primerNombre')} disabled={isSubmitting} placeholder="Primer Nombre*" className="autofill-fix h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 disabled:cursor-not-allowed disabled:opacity-70 sm:text-[0.95rem]" />
+                        <input
+                          type="text"
+                          autoComplete="given-name"
+                          {...register('primerNombre')}
+                          disabled={isSubmitting}
+                          placeholder="Primer Nombre*"
+                          className="autofill-fix h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 disabled:cursor-not-allowed disabled:opacity-70 sm:text-[0.95rem]"
+                        />
                       </div>
                       {errors.primerNombre ? <p className="mt-2 text-sm text-rose-300">{errors.primerNombre.message}</p> : null}
                     </div>
                     <div className="flex-1">
                       <label className="sr-only">Segundo Nombre</label>
                       <div className="flex h-14 items-center gap-3 rounded-2xl border border-sky-400/30 bg-[#0b234c] px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                        <input {...register('segundoNombre')} disabled={isSubmitting} placeholder="Segundo Nombre" className="autofill-fix h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 disabled:cursor-not-allowed disabled:opacity-70 sm:text-[0.95rem]" />
+                        <input
+                          type="text"
+                          autoComplete="additional-name"
+                          {...register('segundoNombre')}
+                          disabled={isSubmitting}
+                          placeholder="Segundo Nombre"
+                          className="autofill-fix h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 disabled:cursor-not-allowed disabled:opacity-70 sm:text-[0.95rem]"
+                        />
                       </div>
                     </div>
                   </div>
@@ -177,14 +191,28 @@ export default function RegisterPage() {
                     <div className="flex-1">
                       <label className="sr-only">Primer Apellido</label>
                       <div className="flex h-14 items-center gap-3 rounded-2xl border border-sky-400/30 bg-[#0b234c] px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                        <input {...register('primerApellido')} disabled={isSubmitting} placeholder="Primer Apellido*" className="autofill-fix h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 disabled:cursor-not-allowed disabled:opacity-70 sm:text-[0.95rem]" />
+                        <input
+                          type="text"
+                          autoComplete="family-name"
+                          {...register('primerApellido')}
+                          disabled={isSubmitting}
+                          placeholder="Primer Apellido*"
+                          className="autofill-fix h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 disabled:cursor-not-allowed disabled:opacity-70 sm:text-[0.95rem]"
+                        />
                       </div>
                       {errors.primerApellido ? <p className="mt-2 text-sm text-rose-300">{errors.primerApellido.message}</p> : null}
                     </div>
                     <div className="flex-1">
                       <label className="sr-only">Segundo Apellido</label>
                       <div className="flex h-14 items-center gap-3 rounded-2xl border border-sky-400/30 bg-[#0b234c] px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                        <input {...register('segundoApellido')} disabled={isSubmitting} placeholder="Segundo Apellido" className="autofill-fix h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 disabled:cursor-not-allowed disabled:opacity-70 sm:text-[0.95rem]" />
+                        <input
+                          type="text"
+                          autoComplete="off"
+                          {...register('segundoApellido')}
+                          disabled={isSubmitting}
+                          placeholder="Segundo Apellido"
+                          className="autofill-fix h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 disabled:cursor-not-allowed disabled:opacity-70 sm:text-[0.95rem]"
+                        />
                       </div>
                     </div>
                   </div>
@@ -193,7 +221,14 @@ export default function RegisterPage() {
                   <div>
                     <label className="sr-only">Apellido de Casado(a)</label>
                     <div className="flex h-14 items-center gap-3 rounded-2xl border border-sky-400/30 bg-[#0b234c] px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                      <input {...register('apellidoCasado')} disabled={isSubmitting} placeholder="Apellido de Casado(a)" className="autofill-fix h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 disabled:cursor-not-allowed disabled:opacity-70 sm:text-[0.95rem]" />
+                      <input
+                        type="text"
+                        autoComplete="off"
+                        {...register('apellidoCasado')}
+                        disabled={isSubmitting}
+                        placeholder="Apellido de Casado(a)"
+                        className="autofill-fix h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 disabled:cursor-not-allowed disabled:opacity-70 sm:text-[0.95rem]"
+                      />
                     </div>
                   </div>
 

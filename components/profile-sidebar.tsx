@@ -25,7 +25,7 @@ import { useMemo, useState } from 'react';
 const NAV_ITEMS = [
   { href: '/dashboard/perfil', label: 'Datos Personales', icon: UserRound },
   { href: '/dashboard/perfil/pacientes', label: 'Pacientes', icon: Users },
-  { href: '/dashboard/perfil/puntos', label: 'Puntos', icon: Star },
+  { href: '/dashboard/perfil/puntos', label: 'Puntos y Recompensas', icon: Star },
   { href: '/dashboard/perfil/configuracion', label: 'Configuración', icon: Settings },
 ];
 

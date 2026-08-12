@@ -101,6 +101,8 @@ export async function createCita(token: string, request: CrearCitaRequest): Prom
   if (request.direccionDomicilio) formData.append('DireccionDomicilio', request.direccionDomicilio);
   if (request.referenciasDomicilio) formData.append('ReferenciasDomicilio', request.referenciasDomicilio);
   if (request.enlaceVideollamada) formData.append('EnlaceVideollamada', request.enlaceVideollamada);
+  if (request.recompensaCodigo) formData.append('RecompensaCodigo', String(request.recompensaCodigo));
+  if (request.rcpCodigo) formData.append('RcpCodigo', String(request.rcpCodigo));
 
   // 3. Archivos adjuntos
   if (request.archivos && request.archivos.length > 0) {
@@ -157,6 +159,18 @@ export async function fetchCitasPaciente(token: string, codPaciente: string): Pr
 
 export async function cancelarCita(token: string, citaId: string): Promise<void> {
   await expedientesApi.post(`/api/flujo-citas/${citaId}/cancelar`, undefined, getAuthHeaders(token));
+}
+
+export async function completarCita(token: string, citaId: string): Promise<void> {
+  try {
+    await expedientesApi.post(`/api/flujo-citas/${citaId}/completar`, undefined, getAuthHeaders(token));
+  } catch (err: any) {
+    if (err?.response?.status === 404 || err?.response?.status === 405) {
+      await expedientesApi.put(`/api/flujo-citas/${citaId}/completar`, undefined, getAuthHeaders(token));
+    } else {
+      throw err;
+    }
+  }
 }
 
 export async function updateCita(token: string, citaId: string, payload: UpdateCitaRequest): Promise<void> {

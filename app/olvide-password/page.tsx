@@ -61,19 +61,22 @@ function OlvidePasswordForm() {
       </div>
 
       {submitted ? (
-        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-950/40 p-5 text-center shadow-lg backdrop-blur-xs">
-          <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-400" />
-          <h2 className="mt-3 text-lg font-bold text-white">Solicitud enviada</h2>
-          <p className="mt-2 text-sm leading-relaxed text-emerald-200">
-            Si el correo está registrado, recibirás las instrucciones en tu bandeja de entrada.
+        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-950/40 p-6 text-center shadow-lg backdrop-blur-xs space-y-4">
+          <CheckCircle2 className="mx-auto h-14 w-14 text-emerald-400" />
+          <h2 className="text-xl font-bold text-white">¡Correo Enviado Exitosamente!</h2>
+          <p className="text-sm leading-relaxed text-emerald-200">
+            Hemos enviado un correo a la dirección de correo electrónico con el link del restablecimiento de la contraseña asociada a esta cuenta.
           </p>
-          <div className="mt-6">
+          <p className="text-xs text-slate-300 bg-slate-900/60 p-3 rounded-xl border border-slate-700/50">
+            Por favor revisa tu bandeja de entrada o carpeta de spam. Puede cerrar esta pestaña.
+          </p>
+          <div className="pt-2">
             <Link
               href="/login"
               className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-800 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700"
             >
               <ArrowLeft className="h-4 w-4" />
-              Volver a Iniciar Sesión
+              Volver al inicio de sesión
             </Link>
           </div>
         </div>

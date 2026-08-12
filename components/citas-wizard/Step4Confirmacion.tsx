@@ -2,18 +2,21 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { useCreateCita, useUploadDocumentoCita, usePagarCita, useMetodosPago, useBilletera } from '@/hooks/use-flujo-citas';
 import { useCitaStore } from '@/store/use-cita-store';
+import { completarTareaLealtad } from '@/services/lealtad';
 import { ChevronLeft, Check, FileText, Loader2, Info, Calendar, MapPin, CreditCard, Building2, Stethoscope, Activity, Wallet, AlertCircle } from 'lucide-react';
 import type { CrearCitaRequest } from '@/types/citas';
 
 export function Step4Confirmacion() {
   const router = useRouter();
+  const { data: session } = useSession();
   const {
     codMedico, medicoName, modalidad, clinicaSeleccionada, areaDomicilio,
     fecha, hora, pacienteSeleccionado, grupoId, motivo,
     archivos, prevStep, tipoPagoId, billeteraItemId,
-    direccionDomicilio, referenciasDomicilio
+    direccionDomicilio, referenciasDomicilio, recompensaSeleccionada
   } = useCitaStore();
 
   const { mutateAsync: createCita } = useCreateCita();
@@ -66,6 +69,8 @@ export function Step4Confirmacion() {
         consultorioId = null;
       }
 
+      const rcpCod = recompensaSeleccionada ? (recompensaSeleccionada.praCodrcp || (recompensaSeleccionada as any).rcpCodigo || (recompensaSeleccionada as any).rcp_codigo) : undefined;
+
       const request: CrearCitaRequest = {
         codPaciente: pacienteSeleccionado.pacCodigo,
         codMedico,
@@ -79,11 +84,20 @@ export function Step4Confirmacion() {
         direccionDomicilio: dirDomicilio,
         referenciasDomicilio: refDomicilio,
         enlaceVideollamada: null,
+        recompensaCodigo: rcpCod,
+        rcpCodigo: rcpCod,
         archivos: archivos.length > 0 ? archivos : undefined,
       };
 
       // 2. Crear Cita
       const citaId = await createCita(request);
+
+      // Trigger automatic loyalty task for creating appointment
+      const sessionToken = (session as any)?.accessToken;
+      if (sessionToken) {
+        completarTareaLealtad(sessionToken, 'CREAR_CITA').catch(() => {});
+        completarTareaLealtad(sessionToken, 'CITA_PROGRAMADA').catch(() => {});
+      }
 
       // 3. Registrar Pago
       await pagarCita({

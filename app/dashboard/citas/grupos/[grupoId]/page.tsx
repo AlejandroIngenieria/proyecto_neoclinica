@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 import { useParams, useRouter } from 'next/navigation';
-import { useCitasPaciente, useAllCitasPacientes, usePacientesSeleccion } from '@/hooks/use-flujo-citas';
+import { useCitasPaciente, useAllCitasPacientes, usePacientesSeleccion, useAutoCompletarCitasPasadas } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { Navbar } from '@/components/navbar';
 import { ArrowLeft, Loader2, CheckCircle2, AlertCircle, HelpCircle, User, CalendarDays, Monitor, MapPin, Clock } from 'lucide-react';
@@ -31,6 +31,8 @@ export default function GrupoDetailPage() {
   const { data: pacientes, isLoading: loadingPacientes } = usePacientesSeleccion();
   const codigosPacientes = pacientes?.map(p => p.pacCodigo) || [];
   const { data: citasData, isLoading: loadingCitas } = useAllCitasPacientes(codigosPacientes);
+
+  useAutoCompletarCitasPasadas(citasData);
 
   const citas = citasData || [];
   const citasGrupo = citas.filter(c => c.ctaGrupoId?.toLowerCase() === grupoId?.toLowerCase());

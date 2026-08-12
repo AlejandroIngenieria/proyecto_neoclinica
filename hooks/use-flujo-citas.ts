@@ -1,5 +1,4 @@
-'use client';
-
+import { useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
 import {
@@ -15,6 +14,7 @@ import {
   uploadDocumentoCita,
   fetchCitasPaciente,
   cancelarCita,
+  completarCita,
   updateCita,
   fetchMetodosPago,
   pagarCita,
@@ -215,6 +215,60 @@ export function useCancelarCita() {
       queryClient.invalidateQueries({ queryKey: ['citasTodosPacientes'] });
     },
   });
+}
+
+export function useCompletarCita() {
+  const { token } = useAuthInfo();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (citaId: string) => completarCita(token!, citaId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['citasPaciente'] });
+      queryClient.invalidateQueries({ queryKey: ['citasTodosPacientes'] });
+    },
+  });
+}
+
+export function useAutoCompletarCitasPasadas(citas: CitaListDto[] | undefined) {
+  const { token, isAuthenticated } = useAuthInfo();
+  const queryClient = useQueryClient();
+  const processedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!isAuthenticated || !token || !citas || citas.length === 0) return;
+
+    const now = new Date();
+    const citasPasadas = citas.filter((c) => {
+      if (!c.ctaCodigo || processedRef.current.has(c.ctaCodigo)) return false;
+      const estadoActual = (c.ctaEstado || '').toLowerCase();
+      if (!['programada', 'confirmada', 'pospuesta'].includes(estadoActual)) return false;
+
+      try {
+        const fechaOnly = c.ctaFecha ? c.ctaFecha.split('T')[0] : '';
+        const horaOnly = c.ctaHora || '00:00:00';
+        if (!fechaOnly) return false;
+        const citaDateTime = new Date(`${fechaOnly}T${horaOnly}`);
+        return citaDateTime < now;
+      } catch {
+        return false;
+      }
+    });
+
+    if (citasPasadas.length === 0) return;
+
+    citasPasadas.forEach((c) => processedRef.current.add(c.ctaCodigo));
+
+    Promise.all(
+      citasPasadas.map((c) =>
+        completarCita(token, c.ctaCodigo).catch((err) => {
+          console.warn(`[AutoCompletar] Error al completar cita ${c.ctaCodigo}:`, err);
+        })
+      )
+    ).then(() => {
+      queryClient.invalidateQueries({ queryKey: ['citasPaciente'] });
+      queryClient.invalidateQueries({ queryKey: ['citasTodosPacientes'] });
+    });
+  }, [citas, token, isAuthenticated, queryClient]);
 }
 
 export function useUpdateCita() {

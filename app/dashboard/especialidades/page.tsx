@@ -14,7 +14,8 @@ import { useParamString, useParamBoolean, useParamNumber, useResetParams } from 
 import { useUIStore } from '@/stores/ui-store';
 
 const NAV_LINKS = [
-  { href: '/dashboard', label: 'Directorio' },
+  { href: '/dashboard', label: 'Inicio' },
+  { href: '/dashboard/directorio', label: 'Directorio' },
   { href: '/dashboard/especialidades', label: 'Especialidades' },
   { href: '/dashboard/citas', label: 'Citas' },
   { href: '/dashboard/medicamentos', label: 'Medicamentos' },

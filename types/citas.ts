@@ -63,6 +63,8 @@ export interface CrearCitaRequest {
   direccionDomicilio?: string | null;
   referenciasDomicilio?: string | null;
   enlaceVideollamada?: string | null;
+  recompensaCodigo?: number | null;
+  rcpCodigo?: number | null;
   archivos?: File[];
 }
 

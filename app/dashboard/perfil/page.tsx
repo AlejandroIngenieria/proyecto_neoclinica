@@ -17,11 +17,8 @@ import {
   Save,
   Droplets,
   AlertCircle,
-  Star,
   FileText,
   ExternalLink,
-  Gift,
-  Sparkles,
 } from 'lucide-react';
 
 import { NeoLoader } from '@/components/neo-loader';
@@ -31,8 +28,6 @@ import type { Paciente, Pais, Departamento, Municipio } from '@/types';
 import { buildPacienteFullName, calcularEdad, getPacienteInitials, isPacientePendiente } from '@/types';
 import { ImageDropzone } from '@/components/image-dropzone';
 import { DocumentDropzone } from '@/components/document-dropzone';
-import { useLealtadEstado } from '@/hooks/use-lealtad';
-import { useTotalPuntos } from '@/hooks/use-recompensas';
 import Link from 'next/link';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -679,9 +674,6 @@ function PerfilContent() {
   // Detectar si el perfil está pendiente de completar
   const isPending = titular ? isPacientePendiente(titular) : false;
 
-  // ─── Estado de Lealtad ───
-  const { data: lealtadEstado } = useLealtadEstado();
-
   // ─── Consultas Geográficas ───
   const { data: paisesListaRes } = useQuery({
     queryKey: ['paises'],
@@ -820,9 +812,6 @@ function PerfilContent() {
             </div>
           </div>
         </div>
-
-        {/* Resumen de Lealtad y Puntos Widget */}
-        <PerfilPuntosWidget pacCodigo={titular.pac_codigo} />
 
           {/* Onboarding Banner (shown when profile is pending) */}
           {isPending && (
@@ -1109,43 +1098,7 @@ function PerfilContent() {
                 </div>
               )}
 
-              {/* Loyalty Points Card */}
-              <div className="bg-slate-100 dark:bg-[#1E293B] p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden group">
-                <div className="relative z-10">
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Puntos NeoClínica</p>
-                      <h4 className="text-3xl md:text-4xl font-black text-blue-600 dark:text-blue-400 mt-1">
-                        {lealtadEstado ? lealtadEstado.puntosActuales.toLocaleString() : '—'}
-                      </h4>
-                    </div>
-                    <div className="w-12 h-12 rounded-full bg-blue-600 dark:bg-blue-500 flex items-center justify-center text-white shadow-lg shadow-blue-200 dark:shadow-none">
-                      <Star className="h-5 w-5" fill="currentColor" />
-                    </div>
-                  </div>
-                  {lealtadEstado && (
-                    <>
-                      <div className="w-full bg-white/50 dark:bg-slate-800 h-2 rounded-full mb-4 overflow-hidden border border-slate-200 dark:border-slate-700">
-                        <div 
-                          className="bg-blue-600 dark:bg-blue-500 h-full rounded-full transition-all duration-1000" 
-                          style={{ width: `${Math.min(100, Math.max(0, lealtadEstado.progresoPorcentaje))}%` }}
-                        />
-                      </div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                        {lealtadEstado.puntosMaximosNivel - lealtadEstado.puntosActuales > 0 
-                          ? `Faltan ${lealtadEstado.puntosMaximosNivel - lealtadEstado.puntosActuales} puntos para tu próximo beneficio.`
-                          : '¡Has alcanzado el nivel máximo de beneficios!'}
-                      </p>
-                    </>
-                  )}
-                  <Link href="/dashboard/perfil/puntos">
-                    <button className="mt-5 w-full py-2.5 bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-bold rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 hover:bg-blue-50 dark:hover:bg-slate-700 transition-colors">
-                      Ver recompensas
-                    </button>
-                  </Link>
-                </div>
-                <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-blue-200/20 dark:bg-blue-900/20 rounded-full blur-3xl transition-transform group-hover:scale-150 duration-700"></div>
-              </div>
+
 
             </div>
           </div>
@@ -1161,65 +1114,6 @@ export default function PerfilPage() {
     <Suspense fallback={<NeoLoader />}>
       <PerfilContent />
     </Suspense>
-  );
-}
-
-function PerfilPuntosWidget({ pacCodigo }: { pacCodigo: string }) {
-  const { data: puntosData } = useTotalPuntos(pacCodigo);
-  const { data: estadoData } = useLealtadEstado();
-
-  const totalPuntos = puntosData?.totalPuntos ?? estadoData?.puntosActuales ?? 0;
-  const nivelActual = estadoData?.nivelActual || (totalPuntos >= 1000 ? 'Platino' : totalPuntos >= 500 ? 'Oro' : totalPuntos >= 200 ? 'Plata' : 'Bronce');
-  const puntosMaximos = estadoData?.puntosMaximosNivel || 1000;
-  const porcentaje = Math.min(100, Math.max(0, Math.round((totalPuntos / puntosMaximos) * 100)));
-
-  return (
-    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 text-white shadow-xl shadow-indigo-950/20 border border-indigo-900/50 mb-6">
-      <div className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-blue-500/10 blur-2xl pointer-events-none" />
-      <div className="relative z-10 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-        {/* Indicador de Puntos & Nivel */}
-        <div className="flex items-center gap-4">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 font-black shadow-lg shadow-amber-500/20">
-            <Star className="h-7 w-7 fill-slate-950 text-slate-950" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-3xl font-black tracking-tight text-white">{totalPuntos}</span>
-              <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Puntos acumulados</span>
-            </div>
-            <div className="mt-0.5 flex items-center gap-2">
-              <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-bold text-amber-300 backdrop-blur-md border border-white/10">
-                <Sparkles className="h-3 w-3" /> Liga {nivelActual}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Barra de progreso miniatura + CTA */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 sm:gap-6 min-w-[240px]">
-          <div className="flex-1 space-y-1.5">
-            <div className="flex justify-between text-[11px] font-bold text-slate-300">
-              <span>Progreso de Nivel</span>
-              <span>{totalPuntos} / {puntosMaximos} pts</span>
-            </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-amber-400 to-amber-500 transition-all duration-700 shadow-sm"
-                style={{ width: `${porcentaje}%` }}
-              />
-            </div>
-          </div>
-
-          <Link
-            href="/dashboard/perfil/puntos"
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 hover:bg-amber-400 px-5 py-2.5 text-xs font-black uppercase tracking-wider text-slate-950 transition-all active:scale-95 shadow-md shadow-amber-500/20 shrink-0"
-          >
-            <Gift className="h-4 w-4" />
-            Canjear Puntos
-          </Link>
-        </div>
-      </div>
-    </div>
   );
 }
 

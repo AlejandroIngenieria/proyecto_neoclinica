@@ -141,7 +141,7 @@ function buildMapsLinks(clinic: DoctorClinica | null, query: string) {
 
 function BlockCard({ children, id }: { children: React.ReactNode, id?: string }) {
   return (
-    <section id={id} className="bg-white border border-slate-200 rounded-[24px] p-7 shadow-md">
+    <section id={id} className="bg-white border border-slate-200 rounded-[20px] p-5 md:p-6 shadow-sm">
       {children}
     </section>
   );
@@ -149,11 +149,11 @@ function BlockCard({ children, id }: { children: React.ReactNode, id?: string })
 
 function BlockHeader({ title, icon: Icon }: { title: string; icon: any }) {
   return (
-    <div className="flex items-center gap-3 mb-6">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#DBEAFE] text-[#2563EB]">
-        <Icon className="h-5 w-5" />
+    <div className="flex items-center gap-2.5 mb-4">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#DBEAFE] text-[#2563EB]">
+        <Icon className="h-4.5 w-4.5" />
       </div>
-      <h2 className="text-[22px] font-semibold text-slate-900">{title}</h2>
+      <h2 className="text-lg font-bold text-slate-900">{title}</h2>
     </div>
   );
 }
@@ -204,7 +204,7 @@ function DoctorProfileContent() {
         <div className="text-center">
           <h2 className="text-xl font-black text-slate-900">Error al cargar el perfil</h2>
           <p className="mt-2 text-sm text-slate-500">{error.message}</p>
-          <Link href="/dashboard" className="mt-4 inline-block rounded-full bg-[#2563EB] px-6 py-2 text-sm font-semibold text-white hover:bg-[#1E40AF]">
+          <Link href="/dashboard/directorio" className="mt-4 inline-block rounded-full bg-[#2563EB] px-6 py-2 text-sm font-semibold text-white hover:bg-[#1E40AF]">
             Volver al directorio
           </Link>
         </div>
@@ -254,118 +254,132 @@ function DoctorProfileContent() {
         <div className="grid lg:grid-cols-[1fr_360px] gap-8 items-start">
           
           {/* LEFT COLUMN (70% - Header y Contenido) */}
-          <div className="flex flex-col space-y-4 md:space-y-5 pb-20">
+          <div className="flex flex-col space-y-3.5 md:space-y-4 pb-20">
             
-            {/* Encabezado Sticky */}
-            <div className="sticky top-0 z-40 bg-blue-800 pt-6 pb-4 md:pt-10 md:pb-6 px-8 md:px-14 -mx-4 md:-mx-6">
-              <div className="flex flex-col md:flex-row gap-6 md:gap-8 items-center md:items-start">
+            {/* Encabezado Sticky Optimizado (Sin bordes ni sombras) */}
+            <div className="sticky top-0 z-40 bg-blue-800 pt-3.5 pb-3 md:pt-5 md:pb-4 px-6 md:px-10 -mx-4 md:-mx-6">
+              <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-center md:items-center">
                 
                 {/* Botón regresar (Desktop) */}
-                <Link href="/dashboard" className="hidden md:flex shrink-0 h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors mt-2" title="Volver al directorio">
-                  <ChevronLeft className="h-6 w-6" />
+                <Link href="/dashboard/directorio" className="hidden md:flex shrink-0 h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors" title="Volver al directorio">
+                  <ChevronLeft className="h-5 w-5" />
                 </Link>
 
-                <div className="shrink-0 w-full md:w-auto relative">
+                <div className="shrink-0 relative">
                   {/* Botón regresar (Mobile) */}
-                  <div className="md:hidden absolute -top-8 left-0">
-                    <Link href="/dashboard" className="inline-flex items-center gap-1 text-sm font-medium text-white/80 hover:text-white">
-                      <ChevronLeft className="h-5 w-5" /> Volver
+                  <div className="md:hidden absolute -top-6 left-0">
+                    <Link href="/dashboard/directorio" className="inline-flex items-center gap-1 text-xs font-medium text-white/80 hover:text-white">
+                      <ChevronLeft className="h-4 w-4" /> Volver
                     </Link>
                   </div>
 
-                  {/* Foto de perfil */}
-                  <div className="relative h-28 w-28 md:h-36 md:w-36 rounded-[20px] overflow-hidden bg-blue-700 border-4 border-blue-700/50 shadow-lg mx-auto md:mx-0">
+                  {/* Foto de perfil compacta (sin bordes ni sombras) */}
+                  <div className="relative h-20 w-20 md:h-24 md:w-24 rounded-2xl overflow-hidden bg-blue-700 mx-auto md:mx-0">
                     {doctor.exp_foto_perfil ? (
                       <Image
                         src={doctor.exp_foto_perfil}
                         alt={fullName}
                         fill
-                        sizes="(max-width: 768px) 112px, 144px"
+                        sizes="96px"
                         className="object-cover"
                         priority
                       />
                     ) : (
-                      <div className="flex h-full w-full items-center justify-center text-4xl font-bold text-white/50">
+                      <div className="flex h-full w-full items-center justify-center text-3xl font-bold text-white/50">
                         {fullName.charAt(0)}
                       </div>
                     )}
                   </div>
                 </div>
 
-                <div className="flex-1 min-w-0 flex flex-col justify-center text-center md:text-left mt-4 md:mt-0">
-                  <h1 className="text-[28px] md:text-[32px] font-bold tracking-tight text-white leading-tight">
-                    {fullName}
-                  </h1>
-                  <div className="mt-1 text-base md:text-lg text-blue-100 font-medium">
+                <div className="flex-1 min-w-0 flex flex-col justify-center text-center md:text-left">
+                  {/* Nombre + Punto Verde de Estado + Botones de Contacto Circulares (sin bordes ni sombras) */}
+                  <div className="flex flex-wrap items-center justify-center md:justify-start gap-2.5">
+                    <h1 className="text-xl md:text-2xl font-black tracking-tight text-white leading-tight flex items-center gap-2">
+                      {fullName}
+                      <span 
+                        className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 ${doctor.exp_estado === 'A' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} 
+                        title={doctor.exp_estado === 'A' ? "Médico Activo" : "Médico Inactivo"}
+                      />
+                    </h1>
+
+                    {/* Acciones de Contacto Circulares (sin bordes ni sombras) */}
+                    <div className="flex items-center gap-1.5 ml-auto md:ml-2">
+                      {doctor.exp_telefono1 && (
+                        <a href={`tel:${doctor.exp_telefono1}`} className="flex items-center justify-center h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors" title={`Llamar: ${doctor.exp_telefono1}`}>
+                          <Phone className="w-3.5 h-3.5" />
+                        </a>
+                      )}
+                      {doctor.exp_email && (
+                        <a href={`mailto:${doctor.exp_email}`} className="flex items-center justify-center h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors" title={`Correo: ${doctor.exp_email}`}>
+                          <Mail className="w-3.5 h-3.5" />
+                        </a>
+                      )}
+                      <button className="flex items-center justify-center h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors" title="Compartir perfil">
+                        <Share2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-0.5 text-xs md:text-sm text-blue-100 font-medium truncate">
                     {combinedSpecialties.join(' · ') || 'Especialidad médica'}
                   </div>
 
-                  {/* Fila compacta de datos rápidos tipo "pastillas" */}
-                  <div className="mt-4 flex flex-wrap justify-center md:justify-start gap-2 items-center text-xs font-semibold">
+                  {/* Badges compactos en 1 sola fila (sin bordes ni sombras) */}
+                  <div className="mt-2 flex flex-wrap justify-center md:justify-start gap-1.5 items-center text-[11px] font-semibold">
                     {doctor.exp_colegiado_gt && (
-                       <span className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700/50 rounded-full text-white border border-blue-600/50">
-                         <FileText className="w-3.5 h-3.5 text-blue-300" />
-                         Col. {doctor.exp_colegiado_gt}
-                       </span>
+                      <span className="flex items-center gap-1 px-2.5 py-1 bg-blue-700/40 rounded-full text-white">
+                        <FileText className="w-3 h-3 text-blue-300" />
+                        Col. {doctor.exp_colegiado_gt}
+                      </span>
                     )}
                     {doctor.nacionalidad && (
-                       <span className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700/50 rounded-full text-white border border-blue-600/50">
-                         <MapPin className="w-3.5 h-3.5 text-blue-300" />
-                         {doctor.nacionalidad}
-                       </span>
+                      <span className="flex items-center gap-1 px-2.5 py-1 bg-blue-700/40 rounded-full text-white">
+                        <MapPin className="w-3 h-3 text-blue-300" />
+                        {doctor.nacionalidad}
+                      </span>
                     )}
                     {doctor.exp_anios_experiencia ? (
-                       <span className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700/50 rounded-full text-white border border-blue-600/50">
-                         <Award className="w-3.5 h-3.5 text-blue-300" />
-                         {doctor.exp_anios_experiencia} años de exp.
-                       </span>
+                      <span className="flex items-center gap-1 px-2.5 py-1 bg-blue-700/40 rounded-full text-white">
+                        <Award className="w-3 h-3 text-blue-300" />
+                        {doctor.exp_anios_experiencia} años exp.
+                      </span>
                     ) : null}
-                    {doctor.exp_estado === 'A' ? (
-                       <span className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700/50 rounded-full text-white border border-blue-600/50">
-                         <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
-                         Activo
-                       </span>
-                    ) : (
-                       <span className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700/50 rounded-full text-white border border-blue-600/50">
-                         <XCircle className="w-3.5 h-3.5 text-rose-400" />
-                         Inactivo
-                       </span>
-                    )}
                     {doctor.promedio_valoracion > 0 && (
-                      <span className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700/50 rounded-full text-white border border-blue-600/50">
-                        <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                      <span className="flex items-center gap-1 px-2.5 py-1 bg-blue-700/40 rounded-full text-white">
+                        <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
                         {doctor.promedio_valoracion.toFixed(1)} <span className="text-blue-200/70 font-normal">({doctor.total_resenas})</span>
                       </span>
                     )}
                     {doctor.idiomas.length > 0 && (
-                      <span className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700/50 rounded-full text-white border border-blue-600/50">
-                        <Globe2 className="w-3.5 h-3.5 text-blue-300" />
+                      <span className="flex items-center gap-1 px-2.5 py-1 bg-blue-700/40 rounded-full text-white">
+                        <Globe2 className="w-3 h-3 text-blue-300" />
                         {doctor.idiomas.map(i => i.idioma).join(', ')}
                       </span>
                     )}
-                  </div>
-                  
-                  <div className="mt-4 flex flex-wrap justify-center md:justify-start gap-3 items-center text-sm font-medium">
+
                     {titular && (
                       <button 
                         onClick={toggleFavorite}
-                        className={`flex items-center gap-2 text-sm font-medium px-4 py-1.5 rounded-full transition-colors border shadow-sm ${isFavorito ? 'text-blue-900 bg-blue-100 border-blue-200' : 'text-white hover:bg-blue-700 border-blue-600 bg-blue-700/50'}`}
+                        className={`flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full transition-colors ${isFavorito ? 'text-blue-900 bg-blue-100' : 'text-white hover:bg-blue-700 bg-blue-700/50'}`}
                       >
-                        <Heart className={`w-4 h-4 ${isFavorito ? 'fill-blue-400 text-blue-400' : 'text-blue-200'}`} />
+                        <Heart className={`w-3.5 h-3.5 ${isFavorito ? 'fill-blue-500 text-blue-500' : 'text-blue-200'}`} />
                         {isFavorito ? 'Guardado' : 'Guardar'}
                       </button>
                     )}
-                    <div className="flex flex-wrap gap-2 justify-center">
+
+                    {/* Redes Sociales Icon-Only Buttons (sin bordes ni sombras) */}
+                    <div className="flex items-center gap-1 ml-1">
                       {doctor.redes_sociales.map((item) => (
                         <a
                           key={`${item.red_social}-${item.url}`}
                           href={item.url}
                           target="_blank"
                           rel="noreferrer"
-                          className="flex items-center gap-2 text-xs font-medium text-white/80 px-3 py-1.5 rounded-full bg-blue-700/30 hover:bg-blue-700/70 border border-blue-600/30 transition-colors"
+                          title={item.red_social}
+                          className="flex items-center justify-center h-7 w-7 rounded-full bg-white/10 hover:bg-white/20 text-white/90 transition-colors"
                         >
                           {getSocialIcon(item.red_social, "w-3.5 h-3.5")}
-                          {item.red_social}
                         </a>
                       ))}
                     </div>
@@ -377,30 +391,28 @@ function DoctorProfileContent() {
             {/* 1. Acerca del Médico */}
             <BlockCard>
               <BlockHeader title="Acerca del Doctor" icon={Users} />
-              <div className="space-y-6 text-lg text-slate-700 leading-loose">
+              <div className="space-y-4 text-sm text-slate-700 leading-relaxed">
                 {doctor.exp_presentacion ? (
                   <p>{doctor.exp_presentacion}</p>
                 ) : (
                   <p className="text-[#9CA3AF]">Sin presentación registrada.</p>
                 )}
                 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-6 pt-6 border-t border-slate-200">
-                   <div>
-                      <p className="text-sm text-slate-500 mb-1">Colegiado</p>
-                      <p className="font-medium text-slate-900">{doctor.exp_colegiado_gt || 'No disponible'}</p>
-                   </div>
-                   <div>
-                      <p className="text-sm text-slate-500 mb-1">Nacionalidad</p>
-                      <p className="font-medium text-slate-900">{doctor.nacionalidad || 'No disponible'}</p>
-                   </div>
-                   <div>
-                      <p className="text-sm text-slate-500 mb-1">Atiende desde</p>
-                      <p className="font-medium text-slate-900">{doctor.exp_edad_minima_atencion ? `${doctor.exp_edad_minima_atencion} años` : 'Cualquier edad'}</p>
-                   </div>
-                   <div>
-                      <p className="text-sm text-slate-500 mb-1">Estado</p>
-                      <p className="font-medium text-[#2563EB]">{isDoctorActive(doctor) ? 'Activo' : 'Inactivo'}</p>
-                   </div>
+                {/* Lista horizontal compacta sin redundancia de Colegiado/Nacionalidad */}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-3 border-t border-slate-100 text-xs text-slate-600 font-medium">
+                  <span className="flex items-center gap-1">
+                    <span className="text-slate-400">Atiende desde:</span>
+                    <strong className="text-slate-900">{doctor.exp_edad_minima_atencion ? `${doctor.exp_edad_minima_atencion} años` : 'Cualquier edad'}</strong>
+                  </span>
+                  {doctor.exp_anios_experiencia ? (
+                    <>
+                      <span className="text-slate-300">•</span>
+                      <span className="flex items-center gap-1">
+                        <span className="text-slate-400">Experiencia:</span>
+                        <strong className="text-slate-900">{doctor.exp_anios_experiencia} años</strong>
+                      </span>
+                    </>
+                  ) : null}
                 </div>
               </div>
             </BlockCard>
@@ -636,96 +648,71 @@ function DoctorProfileContent() {
 
           </div>
           
-          {/* RIGHT COLUMN (30% - Botones y Citas) */}
-          <div className="flex flex-col sticky top-0 lg:h-screen lg:pt-10 self-start z-50 w-full">
+          {/* RIGHT COLUMN (30% - Sidebar de Citas y Tarifas) */}
+          <div className="flex flex-col sticky top-20 lg:pt-4 self-start z-30 w-full">
             
-            {/* Contenedor central para Botones y Sidebar */}
-            <div className="flex-1 flex flex-col justify-center pb-20 w-full gap-6">
+            {/* Contenedor superior para Sidebar */}
+            <div className="w-full">
               
-              {/* Acciones de Contacto Superiores */}
-              <div className="flex flex-row flex-wrap gap-2 items-center justify-center w-full">
-                 {doctor.exp_telefono1 && (
-                   <a href={`tel:${doctor.exp_telefono1}`} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors border border-white/30 shadow-sm" title="Llamar al médico">
-                     <Phone className="w-4 h-4" />
-                     <span className="hidden lg:inline">Llamar</span>
-                   </a>
-                 )}
-                 {doctor.exp_email && (
-                   <a href={`mailto:${doctor.exp_email}`} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors border border-white/30 shadow-sm" title="Enviar correo">
-                     <Mail className="w-4 h-4" />
-                     <span className="hidden lg:inline">Correo</span>
-                   </a>
-                 )}
-                 <button className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors border border-white/30 shadow-sm" title="Compartir perfil">
-                   <Share2 className="w-4 h-4" />
-                   <span className="hidden lg:inline">Compartir</span>
-                 </button>
-              </div>
-
               <aside id="sidebar-agendar" className="hidden lg:block w-full">
-                <div className="bg-white border-2 border-blue-600 rounded-[24px] p-6 shadow-2xl shadow-blue-900/10 relative overflow-hidden">
+                <div className="bg-white border-2 border-blue-600 rounded-[20px] p-4.5 shadow-xl shadow-blue-900/10 relative overflow-hidden">
                
-               {validStartingPrice !== null && (
-                 <div className="flex flex-col items-center border-b border-slate-200 pb-5 mb-5">
-                    <span className="text-slate-500 font-medium text-sm">Precio de consulta</span>
-                    <span className="text-[32px] font-black text-slate-900 mt-1">Desde Q{formatMoney(validStartingPrice)}</span>
-                 </div>
-               )}
+                {/* Precio Compacto en una sola línea */}
+                {validStartingPrice !== null && (
+                  <div className="flex items-baseline justify-between border-b border-slate-100 pb-3 mb-3.5">
+                     <span className="text-slate-500 font-semibold text-xs uppercase tracking-wider">Precio de consulta</span>
+                     <span className="text-xl font-black text-slate-900">Desde Q{formatMoney(validStartingPrice)}</span>
+                  </div>
+                )}
 
-               <Link href={`/dashboard/agendar/${doctor.exp_codigo}`} className="w-full flex justify-center bg-[#2563EB] hover:bg-[#1E40AF] text-white px-6 py-4 rounded-[16px] font-semibold text-[16px] transition-all mb-6 shadow-md hover:shadow-lg">
-                 Agendar cita ahora
-               </Link>
+                <Link href={`/dashboard/agendar/${doctor.exp_codigo}`} className="w-full flex justify-center bg-[#2563EB] hover:bg-[#1E40AF] text-white px-5 py-3 rounded-xl font-bold text-sm transition-all mb-4 shadow-md hover:shadow-lg">
+                  Agendar cita ahora
+                </Link>
 
-               <div className="border-b border-slate-200 pb-4 mb-4">
-                  <h4 className="text-sm font-semibold text-slate-900 mb-3">Modalidades de atención</h4>
-                  <div className="space-y-2.5">
-                     {doctor.modalidades.map((mod, idx) => {
-                       const isVirtual = mod.modalidad.toLowerCase().includes('virtual') || mod.modalidad.toLowerCase().includes('telemedicina');
-                       const isHome = mod.modalidad.toLowerCase().includes('domicilio');
-                       const isPresencial = mod.modalidad.toLowerCase().includes('presencial') || (!isVirtual && !isHome);
-                       
-                       let Icon = MapPin;
-                       if (isVirtual) Icon = Video;
-                       if (isHome) Icon = Home;
-                       
-                       return (
-                         <div key={idx} className="flex items-center gap-3 text-slate-700 text-sm font-medium">
-                            <Icon className="w-4 h-4 text-[#2563EB]" />
-                            {mod.modalidad}
-                         </div>
-                       )
-                     })}
-                     {doctor.modalidades.length === 0 && (
-                        <p className="text-sm text-[#9CA3AF]">No especificadas</p>
+                {/* Modalidades de atención ajustadas */}
+                <div className="border-b border-slate-100 pb-3 mb-3">
+                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Modalidades de atención</h4>
+                   <div className="space-y-1.5">
+                      {doctor.modalidades.map((mod, idx) => {
+                        const isVirtual = mod.modalidad.toLowerCase().includes('virtual') || mod.modalidad.toLowerCase().includes('telemedicina');
+                        const isHome = mod.modalidad.toLowerCase().includes('domicilio');
+                        
+                        let Icon = MapPin;
+                        if (isVirtual) Icon = Video;
+                        if (isHome) Icon = Home;
+                        
+                        return (
+                          <div key={idx} className="flex items-center gap-2 text-slate-700 text-xs font-medium">
+                             <Icon className="w-3.5 h-3.5 text-[#2563EB] shrink-0" />
+                             {mod.modalidad}
+                          </div>
+                        );
+                      })}
+                      {doctor.modalidades.length === 0 && (
+                         <p className="text-xs text-[#9CA3AF]">No especificadas</p>
+                      )}
+                   </div>
+                </div>
+
+                {/* Métodos de pago ajustados */}
+                <div className="pb-1">
+                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Métodos de pago</h4>
+                   <div className="space-y-1.5">
+                     {doctor.metodos_pago.length > 0 ? doctor.metodos_pago.map((pago, idx) => (
+                       <div key={idx} className="flex items-center gap-2">
+                         <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                         <span className="text-slate-700 text-xs font-medium">{pago.tipo_pago}</span>
+                       </div>
+                     )) : (
+                       <p className="text-xs text-slate-500">No especificados</p>
                      )}
-                  </div>
-               </div>
-
-
-               <div className="border-b border-slate-200 pb-4 mb-6">
-                  <h4 className="text-sm font-semibold text-slate-900 mb-3">Métodos de pago</h4>
-                  <div className="space-y-2">
-                    {doctor.metodos_pago.length > 0 ? doctor.metodos_pago.map((pago, idx) => (
-                      <div key={idx} className="flex items-start gap-2">
-                        <Check className="w-4 h-4 text-[#2563EB] mt-0.5 shrink-0" />
-                        <span className="text-slate-700 text-sm">{pago.tipo_pago}</span>
-                      </div>
-                    )) : (
-                      <p className="text-sm text-slate-500">No especificados</p>
-                    )}
-                  </div>
-               </div>
-
-               <div className="space-y-3">
-                 {/* Acciones de contacto movidas al header superior */}
-               </div>
-
-            </div>
-          </aside>
-          </div>
-          
+                   </div>
+                </div>
+              </div>
+            </aside>
           </div>
         </div>
+      </div>
 
         {/* Floating sticky CTA bar for mobile booking */}
         <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0B1120]/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 p-3 px-4 flex items-center justify-between shadow-2xl lg:hidden">

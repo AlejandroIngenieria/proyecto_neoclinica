@@ -1,10 +1,11 @@
 'use client';
 
-import { MessageSquare, Star } from 'lucide-react';
+import { MessageSquare, Star, Loader2 } from 'lucide-react';
 import { SectionCard } from './section-card';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale/es';
 import type { DoctorResponse } from '@/types';
+import { useResenasMedico } from '@/hooks/use-resenas';
 
 type DoctorReviewsProps = {
   doctor: DoctorResponse;
@@ -12,13 +13,25 @@ type DoctorReviewsProps = {
 };
 
 export function DoctorReviews({ doctor, minimalist = false }: DoctorReviewsProps) {
-  const { resenas } = doctor;
+  const { data: liveResenas, isLoading } = useResenasMedico(doctor.exp_codigo);
+  
+  // Utiliza las reseñas en vivo desde el endpoint GET /api/Expedientes/medico/{codDoc}/resenas
+  // o cae en el fallback de doctor.resenas
+  const resenas = (liveResenas && liveResenas.length > 0) ? liveResenas : (doctor.resenas || []);
 
   if (minimalist) {
+    if (isLoading && resenas.length === 0) {
+      return (
+        <div className="flex items-center justify-center p-8 bg-slate-50 rounded-[20px] border border-slate-200">
+          <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
+        </div>
+      );
+    }
+
     if (!resenas || resenas.length === 0) {
       return (
         <div className="flex flex-col p-8 bg-slate-50 rounded-[20px] border border-slate-200">
-          <p className="text-slate-500 text-sm">Este médico no tiene reseñas registradas por el momento.</p>
+          <p className="text-slate-500 text-sm font-medium">Este médico no tiene reseñas registradas por el momento.</p>
         </div>
       );
     }
@@ -31,7 +44,7 @@ export function DoctorReviews({ doctor, minimalist = false }: DoctorReviewsProps
               <div className="flex flex-col">
                 <span className="font-semibold text-slate-900">{resena.nombre_paciente || 'Paciente'}</span>
                 <span className="text-xs text-slate-500">
-                  {format(new Date(resena.fecha_grabacion), 'dd MMM, yyyy', { locale: es })}
+                  {resena.fecha_grabacion ? format(new Date(resena.fecha_grabacion), 'dd MMM, yyyy', { locale: es }) : 'Fecha reciente'}
                 </span>
               </div>
               <div className="flex gap-0.5">
@@ -60,7 +73,11 @@ export function DoctorReviews({ doctor, minimalist = false }: DoctorReviewsProps
 
   return (
     <SectionCard title="Reseñas de Pacientes" icon={MessageSquare}>
-      {!resenas || resenas.length === 0 ? (
+      {isLoading && resenas.length === 0 ? (
+        <div className="flex items-center justify-center p-8 bg-slate-50 rounded-2xl border border-slate-100">
+          <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
+        </div>
+      ) : !resenas || resenas.length === 0 ? (
         <div className="flex flex-col items-center justify-center p-8 text-center bg-slate-50 rounded-2xl border border-slate-100">
           <MessageSquare className="h-10 w-10 text-slate-300 mb-3" />
           <h3 className="text-slate-900 font-semibold mb-1">Aún no hay reseñas</h3>
@@ -74,7 +91,7 @@ export function DoctorReviews({ doctor, minimalist = false }: DoctorReviewsProps
                 <div className="flex flex-col">
                   <span className="font-bold text-slate-900">{resena.nombre_paciente || 'Paciente'}</span>
                   <span className="text-xs text-slate-500">
-                    {format(new Date(resena.fecha_grabacion), 'dd MMM, yyyy', { locale: es })}
+                    {resena.fecha_grabacion ? format(new Date(resena.fecha_grabacion), 'dd MMM, yyyy', { locale: es }) : 'Fecha reciente'}
                   </span>
                 </div>
                 <div className="flex gap-0.5">

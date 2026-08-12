@@ -11,6 +11,8 @@ import {
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { useCitaStore } from '@/store/use-cita-store';
 import { ChevronLeft, MapPin, Video, Home, Stethoscope, ArrowRight, CalendarDays, Building2, BriefcaseMedical, CalendarClock, Activity, ClipboardList, Plus, Loader2, UploadCloud, FileText, X } from 'lucide-react';
+import { usePacienteTitular } from '@/hooks/use-pacientes';
+import { PacienteFormModal } from '@/components/paciente-form-modal';
 import type { GrupoCitaDto } from '@/types/citas';
 import { NeoLoader } from '@/components/neo-loader';
 
@@ -58,7 +60,9 @@ export function Step2PacienteMotivo() {
 
   const [isNewGrupoMode, setIsNewGrupoMode] = useState(false);
   const [newGrupoNombre, setNewGrupoNombre] = useState('');
+  const [isAddPacienteOpen, setIsAddPacienteOpen] = useState(false);
 
+  const { titular } = usePacienteTitular();
   const { data: pacientes = [], isLoading: loadingPacientes } = usePacientesSeleccion();
   const { data: doctor, isLoading: loadingDoctor } = useDoctorByCode(codMedico!);
 
@@ -165,13 +169,25 @@ export function Step2PacienteMotivo() {
                 </button>
               )
             })}
-            <button className="flex flex-col items-center gap-3 group pb-0.5">
+            <button
+              type="button"
+              onClick={() => setIsAddPacienteOpen(true)}
+              className="flex flex-col items-center gap-3 group pb-0.5"
+            >
               <div className="h-[80px] w-[80px] rounded-full border-[2px] border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center text-slate-400 dark:text-slate-500 group-hover:border-slate-400 dark:group-hover:border-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors mb-2">
                 <Plus className="h-6 w-6" strokeWidth={2} />
               </div>
               <span className="font-bold text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors text-[13px]">Añadir Familiar</span>
             </button>
           </div>
+
+          <PacienteFormModal
+            open={isAddPacienteOpen}
+            mode="add"
+            titular={titular}
+            titularCodigo={titular?.pac_codigo || ''}
+            onClose={() => setIsAddPacienteOpen(false)}
+          />
         </div>
 
 
