@@ -1,4 +1,4 @@
-import type { Paciente } from '@/types';
+import type { Paciente, IndependizarPacienteRequest } from '@/types';
 import { expedientesApi, getAuthHeaders } from '@/lib/api-client';
 
 // ─── Pacientes Service ──────────────────────────────────────────────────────
@@ -41,6 +41,7 @@ function mapPacienteFromApi(data: any): Paciente {
     pac_celular: data.pacCelular || data.pac_celular,
     pac_telefono_casa: data.pacTelefonoCasa || data.pac_telefono_casa,
     pac_telefono_trabajo: data.pacTelefonoTrabajo || data.pac_telefono_trabajo,
+    pac_estado: data.pacEstado || data.pac_estado || 'activo',
     pac_contacto_emergencia_nombre: data.contactoEmergenciaNombre || data.pacContactoEmergenciaNombre || data.pac_contacto_emergencia_nombre,
     pac_contacto_emergencia_relacion: data.contactoEmergenciaRelacion || data.pacContactoEmergenciaRelacion || data.pac_contacto_emergencia_relacion,
     pac_contacto_emergencia_telefono: data.contactoEmergenciaTelefono || data.pacContactoEmergenciaTelefono || data.pac_contacto_emergencia_telefono,
@@ -218,11 +219,11 @@ export async function deletePaciente(
 export async function independizarPaciente(
   token: string,
   pacCodigo: string,
-  nuevoCorreo: string,
+  payload: IndependizarPacienteRequest,
 ): Promise<{ mensaje: string }> {
   const { data } = await expedientesApi.post<{ mensaje: string }>(
     `/api/pacientes/${pacCodigo}/independizar`,
-    { nuevoCorreo },
+    payload,
     getAuthHeaders(token),
   );
 

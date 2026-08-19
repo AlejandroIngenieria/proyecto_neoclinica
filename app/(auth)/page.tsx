@@ -86,6 +86,17 @@ export default function LoginPage() {
         return;
       }
 
+      try {
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('neoclinica_random_seed', String(Math.floor(Math.random() * 1000000) + 1));
+        }
+      } catch {}
+
+      if (values.correo.trim().toLowerCase() === 'admin@admin.com') {
+        router.replace('/admin');
+        return;
+      }
+
       const returnUrl = searchParams.get('returnUrl') || searchParams.get('callbackUrl');
       router.replace(returnUrl || '/dashboard');
     } catch {
@@ -95,7 +106,7 @@ export default function LoginPage() {
 
   const onRecoverPassword = async (values: RecoveryFormValues) => {
     try {
-      const response = await fetch('/api/autenticacion/recuperar-password', {
+      const response = await fetch('/api/autenticacion/solicitar-recuperacion', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

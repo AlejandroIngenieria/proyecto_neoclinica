@@ -35,7 +35,7 @@ function getDoctorPricePoints(doctor: DoctorResponse) {
   return [
     ...doctor.servicios.map((s) => s.syp_costo_total),
     ...doctor.clinicas.map((c) => c.mcl_precio_base),
-  ].filter((price): price is number => typeof price === 'number' && Number.isFinite(price) && price >= 0);
+  ].filter((price): price is number => typeof price === 'number' && Number.isFinite(price) && price > 0);
 }
 
 function matchesPriceLimit(prices: number[], priceLimit: number) {

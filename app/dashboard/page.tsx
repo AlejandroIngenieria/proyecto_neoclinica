@@ -27,7 +27,8 @@ import { es } from 'date-fns/locale';
 
 import { NeoLoader } from '@/components/neo-loader';
 import { usePacienteTitular } from '@/hooks/use-pacientes';
-import { useCitasPaciente } from '@/hooks/use-flujo-citas';
+import { useCitasPaciente, useAllCitasPacientes, usePacientesSeleccion, useAutoCompletarCitasPasadas, isCitaPasada } from '@/hooks/use-flujo-citas';
+import { useDoctors } from '@/hooks/use-doctors';
 import { useLealtadEstado, useLealtadNiveles } from '@/hooks/use-lealtad';
 import { useTotalPuntos } from '@/hooks/use-recompensas';
 import { readRecentDoctors, type RecentDoctorItem } from '@/lib/recent-doctors';
@@ -123,15 +124,17 @@ function QuickAction({
 function UpcomingCitaCard({
   cita,
   isFirst,
-  doctorImageMap,
+  doctorDataMap,
 }: {
   cita: CitaListDto;
   isFirst: boolean;
-  doctorImageMap: Record<string, string>;
+  doctorDataMap: Record<string, { image?: string; specialty?: string }>;
 }) {
   const fechaFormateada = safeFormatDate(cita.ctaFecha, "EEEE d 'de' MMMM");
   const horaFormateada = cita.ctaHora ? cita.ctaHora.slice(0, 5) : '--:--';
-  const doctorPhoto = doctorImageMap[cita.ctaCoddoc];
+  const doctorInfo = doctorDataMap[cita.ctaCoddoc];
+  const doctorPhoto = doctorInfo?.image;
+  const doctorSpecialty = cita.medicoEspecialidad || doctorInfo?.specialty || 'Especialidad médica';
   const initials = getDoctorInitials(cita.medicoNombre);
 
   return (
@@ -170,8 +173,13 @@ function UpcomingCitaCard({
                 {cita.medicoNombre || 'Médico'}
               </h4>
               <p className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-300 font-semibold truncate">
-                {cita.medicoEspecialidad || 'Especialidad médica'}
+                {doctorSpecialty}
               </p>
+              {cita.pacienteNombre && (
+                <p className="text-[10px] text-blue-600 dark:text-blue-400 font-bold truncate">
+                  Paciente: {cita.pacienteNombre}
+                </p>
+              )}
               {cita.clinicaNombre && (
                 <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5 truncate">
                   <MapPin className="h-3 w-3 shrink-0 text-slate-400" /> {cita.clinicaNombre}
@@ -237,8 +245,24 @@ function HomeContent() {
   const { titular, isLoading: isLoadingTitular } = usePacienteTitular();
   const pacCodigo = titular?.pac_codigo || null;
 
-  // Citas
-  const { data: citas = [], isLoading: isLoadingCitas } = useCitasPaciente(pacCodigo);
+  // Pacientes asociados a la cuenta (Titular + Dependientes)
+  const { data: pacientesList = [] } = usePacientesSeleccion();
+  const codigosPacientes = useMemo(() => {
+    const list = pacientesList.map((p) => p.pacCodigo);
+    if (pacCodigo && !list.includes(pacCodigo)) {
+      list.push(pacCodigo);
+    }
+    return list;
+  }, [pacientesList, pacCodigo]);
+
+  // Citas reales para todos los miembros de la cuenta
+  const { data: citas = [], isLoading: isLoadingCitas } = useAllCitasPacientes(codigosPacientes);
+
+  // Auto-completar citas pasadas de forma transparente
+  useAutoCompletarCitasPasadas(citas);
+
+  // Lista de doctores reales del backend
+  const { data: doctorsList = [] } = useDoctors();
 
   // Lealtad
   const { data: lealtadEstado } = useLealtadEstado();
@@ -251,16 +275,28 @@ function HomeContent() {
     setRecentDoctors(readRecentDoctors());
   }, []);
 
-  // Map of doctor photos from recent doctors for fast lookup
-  const doctorImageMap = useMemo(() => {
-    const map: Record<string, string> = {};
+  // Map completo con imágenes y especialidades de médicos reales
+  const doctorDataMap = useMemo(() => {
+    const map: Record<string, { image?: string; specialty?: string }> = {};
+
+    doctorsList.forEach((doc) => {
+      map[doc.exp_codigo] = {
+        image: doc.exp_foto_perfil || undefined,
+        specialty: doc.exp_profesion || doc.especialidades?.[0]?.especialidad || undefined,
+      };
+    });
+
     recentDoctors.forEach((doc) => {
       if (doc.image) {
-        map[doc.exp_codigo] = doc.image;
+        map[doc.exp_codigo] = {
+          ...map[doc.exp_codigo],
+          image: doc.image,
+        };
       }
     });
+
     return map;
-  }, [recentDoctors]);
+  }, [doctorsList, recentDoctors]);
 
   // Computed
   const totalPuntos = lealtadEstado?.puntosActuales ?? puntosData?.totalPuntos ?? 0;
@@ -286,20 +322,20 @@ function HomeContent() {
   progreso = Math.min(100, Math.max(0, progreso));
   const anchoProgreso = progreso > 0 ? Math.max(2, progreso) : 0;
 
-  // Upcoming citas (only future ones, sorted by date)
+  // Upcoming citas (solo citas verdaderamente futuras y no canceladas)
   const upcomingCitas = useMemo(() => {
-    const now = new Date();
     return citas
       .filter((c) => {
-        const estado = c.ctaEstado?.toLowerCase();
-        if (estado === 'cancelada' || estado === 'rechazada' || estado === 'completada' || estado === 'no_asistio') return false;
-        try {
-          return isAfter(parseISO(c.ctaFecha), new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
-        } catch {
-          return false;
-        }
+        const estado = (c.ctaEstado || '').toLowerCase();
+        if (['cancelada', 'rechazada', 'completada', 'no_asistio'].includes(estado)) return false;
+        if (isCitaPasada(c.ctaFecha, c.ctaHora)) return false;
+        return true;
       })
-      .sort((a, b) => new Date(a.ctaFecha).getTime() - new Date(b.ctaFecha).getTime())
+      .sort((a, b) => {
+        const dateA = new Date(`${a.ctaFecha.split('T')[0]}T${a.ctaHora || '00:00:00'}`).getTime();
+        const dateB = new Date(`${b.ctaFecha.split('T')[0]}T${b.ctaHora || '00:00:00'}`).getTime();
+        return dateA - dateB;
+      })
       .slice(0, 3);
   }, [citas]);
 
@@ -381,7 +417,7 @@ function HomeContent() {
                   key={cita.ctaCodigo}
                   cita={cita}
                   isFirst={idx === 0}
-                  doctorImageMap={doctorImageMap}
+                  doctorDataMap={doctorDataMap}
                 />
               ))}
             </div>

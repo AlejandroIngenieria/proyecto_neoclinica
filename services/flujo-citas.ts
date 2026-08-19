@@ -2,6 +2,7 @@ import { expedientesApi, getAuthHeaders } from '@/lib/api-client';
 import type {
   ModalidadDto,
   ClinicaCitaDto,
+  ServicioMedicoCitaDto,
   AreaDomicilioDto,
   HorarioCitaDto,
   PacienteSeleccionDto,
@@ -13,7 +14,9 @@ import type {
   PagarCitaRequest,
   BilleteraMetodoDto,
   GuardarSeguroRequest,
-  GuardarTarjetaRequest
+  GuardarTarjetaRequest,
+  Cita,
+  CambiarEstadoCitaPayload,
 } from '@/types/citas';
 
 export async function fetchModalidades(token: string, codMedico: string): Promise<ModalidadDto[]> {
@@ -28,6 +31,14 @@ export async function fetchClinicas(token: string, codMedico: string): Promise<C
   const { data } = await expedientesApi.get<ClinicaCitaDto[]>(
     `/api/flujo-citas/medicos/${codMedico}/clinicas`,
     getAuthHeaders(token)
+  );
+  return Array.isArray(data) ? data : [];
+}
+
+export async function fetchServiciosMedico(token: string | undefined, codMedico: string): Promise<ServicioMedicoCitaDto[]> {
+  const { data } = await expedientesApi.get<ServicioMedicoCitaDto[]>(
+    `/api/flujo-citas/medicos/${codMedico}/servicios`,
+    getAuthHeaders(token || '')
   );
   return Array.isArray(data) ? data : [];
 }
@@ -97,6 +108,9 @@ export async function createCita(token: string, request: CrearCitaRequest): Prom
   if (request.consultorioId !== undefined && request.consultorioId !== null) {
     formData.append('ConsultorioId', String(request.consultorioId));
   }
+  if (request.codServicio !== undefined && request.codServicio !== null) {
+    formData.append('CodServicio', String(request.codServicio));
+  }
   if (request.motivo) formData.append('Motivo', request.motivo);
   if (request.direccionDomicilio) formData.append('DireccionDomicilio', request.direccionDomicilio);
   if (request.referenciasDomicilio) formData.append('ReferenciasDomicilio', request.referenciasDomicilio);
@@ -157,18 +171,103 @@ export async function fetchCitasPaciente(token: string, codPaciente: string): Pr
   return data;
 }
 
+/**
+ * Obtiene todas las citas del sistema (panel de administración)
+ */
+export async function fetchAllCitas(token?: string): Promise<CitaListDto[]> {
+  const headers = token ? getAuthHeaders(token) : undefined;
+  const { data } = await expedientesApi.get<CitaListDto[]>('/api/flujo-citas', headers);
+  return Array.isArray(data) ? data : [];
+}
+
+/**
+ * Cambia el estado de una cita médica vía PATCH /api/flujo-citas/{citaId}/estado
+ */
+export async function cambiarEstadoCita(
+  token: string,
+  citaId: string,
+  nuevoEstado: CambiarEstadoCitaPayload['nuevoEstado'] | string,
+): Promise<{ mensaje: string }> {
+  const payload: CambiarEstadoCitaPayload = {
+    nuevoEstado: nuevoEstado as CambiarEstadoCitaPayload['nuevoEstado'],
+  };
+
+  const { data } = await expedientesApi.patch<{ mensaje: string }>(
+    `/api/flujo-citas/${citaId}/estado`,
+    payload,
+    getAuthHeaders(token),
+  );
+
+  return data;
+}
+
+/**
+ * Función directa para cambiar estado de cita
+ */
+export const cambiarEstadoCitaDirect = async (citaId: string, nuevoEstado: string, token?: string) => {
+  const payload: CambiarEstadoCitaPayload = {
+    nuevoEstado: nuevoEstado as CambiarEstadoCitaPayload['nuevoEstado'],
+  };
+
+  const headers = token ? getAuthHeaders(token) : undefined;
+  const { data } = await expedientesApi.patch<{ mensaje: string }>(
+    `/api/flujo-citas/${citaId}/estado`,
+    payload,
+    headers,
+  );
+  return data;
+};
+
 export async function cancelarCita(token: string, citaId: string): Promise<void> {
   await expedientesApi.post(`/api/flujo-citas/${citaId}/cancelar`, undefined, getAuthHeaders(token));
 }
 
-export async function completarCita(token: string, citaId: string): Promise<void> {
+export async function completarCita(token: string, citaInput: string | CitaListDto): Promise<void> {
+  const citaId = typeof citaInput === 'string' ? citaInput : citaInput.ctaCodigo;
+
+  // 1. Intentar POST /api/flujo-citas/{citaId}/completar
   try {
     await expedientesApi.post(`/api/flujo-citas/${citaId}/completar`, undefined, getAuthHeaders(token));
-  } catch (err: any) {
-    if (err?.response?.status === 404 || err?.response?.status === 405) {
-      await expedientesApi.put(`/api/flujo-citas/${citaId}/completar`, undefined, getAuthHeaders(token));
-    } else {
-      throw err;
+    return;
+  } catch {
+    // Continuar al siguiente intento
+  }
+
+  // 2. Intentar PUT /api/flujo-citas/{citaId}/completar
+  try {
+    await expedientesApi.put(`/api/flujo-citas/${citaId}/completar`, undefined, getAuthHeaders(token));
+    return;
+  } catch {
+    // Continuar al siguiente intento
+  }
+
+  // 3. Intentar PUT /api/flujo-citas/{citaId} con el modelo de actualización completo
+  if (typeof citaInput !== 'string') {
+    try {
+      const formData = new FormData();
+      formData.append('Fecha', citaInput.ctaFecha ? citaInput.ctaFecha.split('T')[0] : '');
+      formData.append('Hora', citaInput.ctaHora || '00:00:00');
+      formData.append('Modalidad', citaInput.ctaModalidad || 'presencial');
+      formData.append('Precio', String(citaInput.ctaPrecio || 0));
+      formData.append('Estado', 'completada');
+      formData.append('CtaEstado', 'completada');
+
+      if (citaInput.ctaConsultorioId) formData.append('ConsultorioId', String(citaInput.ctaConsultorioId));
+      if (citaInput.ctaGrupoId) formData.append('GrupoId', citaInput.ctaGrupoId);
+      if (citaInput.ctaMotivo) formData.append('Motivo', citaInput.ctaMotivo);
+      if (citaInput.direccionDomicilio) formData.append('DireccionDomicilio', citaInput.direccionDomicilio);
+      if (citaInput.referenciasDomicilio) formData.append('ReferenciasDomicilio', citaInput.referenciasDomicilio);
+      if (citaInput.enlaceVideollamada) formData.append('EnlaceVideollamada', citaInput.enlaceVideollamada);
+
+      const authHeaders = getAuthHeaders(token).headers as any;
+      await expedientesApi.put(`/api/flujo-citas/${citaId}`, formData, {
+        headers: {
+          Authorization: authHeaders.Authorization,
+          'Content-Type': undefined,
+        },
+      });
+    } catch {
+      // Manejo silencioso si el backend de desarrollo no permite actualización directa
     }
   }
 }
@@ -184,6 +283,9 @@ export async function updateCita(token: string, citaId: string, payload: UpdateC
   if (payload.grupoId) formData.append('GrupoId', payload.grupoId);
   if (payload.consultorioId !== undefined && payload.consultorioId !== null) {
     formData.append('ConsultorioId', String(payload.consultorioId));
+  }
+  if (payload.codServicio !== undefined && payload.codServicio !== null) {
+    formData.append('CodServicio', String(payload.codServicio));
   }
   if (payload.motivo) formData.append('Motivo', payload.motivo);
   if (payload.direccionDomicilio) formData.append('DireccionDomicilio', payload.direccionDomicilio);

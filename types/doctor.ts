@@ -25,6 +25,7 @@ export type ExpedienteDoctor = {
   exp_colegiado_gt: string | null;
   exp_presentacion: string | null;
   exp_edad_minima_atencion: number | null;
+  exp_fecha_inicio_experiencia?: string | null; // NUEVO: Fecha en formato ISO (YYYY-MM-DD)
   exp_anios_experiencia: number | null;
   exp_foto_perfil: string | null;
   exp_nombre_factura: string | null;
@@ -76,6 +77,7 @@ export type DoctorClinica = {
 // ─── Servicios y precios ─────────────────────────────────────────────────────
 
 export type DoctorServicio = {
+  syp_codigo?: number | null;
   servicio: string | null;
   syp_costo_sin_iva: number | null;
   syp_costo_iva: number | null;
@@ -154,6 +156,8 @@ export type DoctorResponse = ExpedienteDoctor & {
   resenas: ResenaDto[];
 };
 
+export type DoctorDetail = DoctorResponse;
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /** Devuelve `true` si el doctor tiene estado activo. */
@@ -168,6 +172,55 @@ export function buildDoctorFullName(
   return [doctor.exp_primer_nom, doctor.exp_segundo_nom, doctor.exp_primer_ape, doctor.exp_segundo_ape, doctor.exp_apellido_cas]
     .filter(Boolean)
     .join(' ');
+}
+
+/**
+ * Obtiene el precio más bajo real del médico:
+ * 1. Prioriza el servicio con menor costo total positivo (syp_costo_total > 0).
+ * 2. Si no tiene servicios específicos, busca el precio base de clínica positivo (mcl_precio_base > 0).
+ * 3. Si no tiene precios establecidos, devuelve 0.
+ */
+export function getDoctorLowestPrice(doctor: DoctorResponse): number | null {
+  const preciosServicios = (doctor.servicios || [])
+    .map((s) => s.syp_costo_total)
+    .filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0);
+
+  if (preciosServicios.length > 0) {
+    return Math.min(...preciosServicios);
+  }
+
+  const preciosClinicas = (doctor.clinicas || [])
+    .map((c) => c.mcl_precio_base)
+    .filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0);
+
+  if (preciosClinicas.length > 0) {
+    return Math.min(...preciosClinicas);
+  }
+
+  return 0;
+}
+
+/**
+ * Genera la etiqueta formateada para mostrar en tarjetas, mapas y perfiles.
+ */
+export function getDoctorPriceDisplay(doctor: DoctorResponse): {
+  price: number;
+  hasPrice: boolean;
+  label: string;
+} {
+  const price = getDoctorLowestPrice(doctor);
+  if (price !== null && price > 0) {
+    return {
+      price,
+      hasPrice: true,
+      label: `Desde Q${new Intl.NumberFormat('es-GT').format(price)}`,
+    };
+  }
+  return {
+    price: 0,
+    hasPrice: false,
+    label: 'Precio no establecido',
+  };
 }
 
 // ─── Favoritos ────────────────────────────────────────────────────────────────

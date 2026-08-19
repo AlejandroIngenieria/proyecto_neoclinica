@@ -50,11 +50,21 @@ export interface GrupoCitaDto {
   estado?: string | null;
 }
 
+export interface ServicioMedicoCitaDto {
+  sypCodigo: number;
+  servicio: string;
+  costoSinIva: number;
+  costoIva: number;
+  costoTotal: number;
+  observaciones?: string | null;
+}
+
 export interface CrearCitaRequest {
   codPaciente: string;
   codMedico: string;
   grupoId?: string | null;
   consultorioId?: number | null; // mclCodigo / cliCodigo
+  codServicio?: number | null; // ID del servicio médico (sypCodigo)
   fecha: string; // YYYY-MM-DD
   hora: string; // HH:mm:ss
   modalidad: ModalidadCita;
@@ -92,6 +102,42 @@ export interface CitaDocumentoDto {
   url: string;
 }
 
+export interface Cita {
+  ctaCodigo: string;
+  ctaCodpac: string;
+  pacienteNombre: string;
+  ctaCoddoc: string;
+  medicoNombre: string;
+  medicoEspecialidad: string;
+  ctaGrupoId?: string;
+  ctaConsultorioId?: number;
+  clinicaNombre?: string;
+  cliUrlGoogleMaps?: string;
+  cliUrlWaze?: string;
+  ctaCodsyp?: number;
+  servicioNombre?: string;
+  ctaFecha: string; // YYYY-MM-DD
+  ctaHora: string;  // HH:mm:ss
+  ctaEstado: 'programada' | 'confirmada' | 'cancelada' | 'rechazada' | 'pospuesta' | 'completada' | 'no_asistio';
+  ctaTipo: string;
+  ctaModalidad: string;
+  ctaPrecio: number;
+  ctaMotivo?: string;
+  direccionDomicilio?: string;
+  referenciasDomicilio?: string;
+  enlaceVideollamada?: string;
+  ctaEtapaActual: number;
+  ctaTotalEtapas: number;
+  ctaCalificacion?: number;
+  fechaGrabacion: string;
+  archivos: any[];
+  ctaNotificacionResenaEnviada: boolean; // NUEVO
+}
+
+export interface CambiarEstadoCitaPayload {
+  nuevoEstado: 'programada' | 'confirmada' | 'cancelada' | 'rechazada' | 'pospuesta' | 'completada' | 'no_asistio';
+}
+
 export interface CitaListDto {
   ctaCodigo: string;
   ctaCodpac: string;
@@ -104,6 +150,8 @@ export interface CitaListDto {
   clinicaNombre?: string | null;
   cliUrlGoogleMaps?: string | null;
   cliUrlWaze?: string | null;
+  ctaCodsyp?: number | null;
+  servicioNombre?: string | null;
   ctaFecha: string; // "YYYY-MM-DDTHH:mm:ss"
   ctaHora: string; // "HH:mm:ss"
   ctaEstado: CitaEstado;
@@ -122,10 +170,12 @@ export interface CitaListDto {
   etapas?: CitaEtapaDto[];
   documentos?: CitaDocumentoDto[];
   archivos?: CitaArchivoDto[];
+  ctaNotificacionResenaEnviada?: boolean;
 }
 
 export interface UpdateCitaRequest {
   consultorioId?: number | null;
+  codServicio?: number | null;
   fecha: string; // YYYY-MM-DD
   hora: string; // HH:mm:ss
   modalidad: ModalidadCita;

@@ -7,11 +7,13 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Star, Sparkles, Award, CheckCircle2, AlertCircle, ArrowLeft, Loader2, Send, MessageSquare } from 'lucide-react';
+import { toast } from 'sonner';
 import { Navbar } from '@/components/navbar';
 import { NeoLoader } from '@/components/neo-loader';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { usePacienteTitular } from '@/hooks/use-pacientes';
 import { crearResena } from '@/services/resenas';
+import { crearNotificacion } from '@/services/notificaciones';
 import { buildDoctorFullName } from '@/types/doctor';
 
 const RATING_LABELS: Record<number, string> = {
@@ -87,7 +89,7 @@ function ResenaFormContent() {
       return;
     }
 
-    const codPac = titular?.pac_codigo || '';
+    const codPac = titular?.pac_codigo || (titular as any)?.pacCodigo || (session?.user as any)?.pac_codigo || (session?.user as any)?.pacCodigo || '';
     if (!codPac) {
       setErrorMessage('No se pudo verificar la información de tu perfil de paciente.');
       return;
@@ -104,10 +106,35 @@ function ResenaFormContent() {
         texto: texto.trim() || null,
       });
 
+      toast.success('¡Reseña publicada con éxito!', {
+        description: `Gracias por evaluar a ${doctorName}. ¡Ganaste puntos de lealtad!`,
+      });
+
+      if (token) {
+        crearNotificacion(token, {
+          usuarioId: codPac,
+          usuarioTipo: 'paciente',
+          tipo: 'mensaje',
+          titulo: '¡Reseña Publicada!',
+          mensaje: `Gracias por valorar la atención de ${doctorName}. ¡Tus puntos de lealtad se han actualizado!`,
+          accionUrl: `/dashboard/${codDoc}`,
+        }).catch(() => {});
+      }
+
       setModalState('success');
     } catch (err: any) {
+      console.error('Error al enviar reseña:', err?.response?.data || err);
       const statusCode = err?.response?.status;
-      const backendMessage = err?.response?.data?.mensaje || err?.response?.data?.message;
+      const responseData = err?.response?.data;
+
+      let backendMessage = responseData?.mensaje || responseData?.message || responseData?.title;
+
+      if (responseData?.errors && typeof responseData.errors === 'object') {
+        const errorList = Object.values(responseData.errors).flat().join(' ');
+        if (errorList) {
+          backendMessage = errorList;
+        }
+      }
 
       if (statusCode === 409) {
         setModalState('conflict');

@@ -17,6 +17,7 @@ function getNavStyles(label: string) {
     return { Icon: Activity, from: 'from-[#4F46E5]', to: 'to-[#3730A3]' };
 }
 import { AnimatePresence, motion } from 'framer-motion';
+import { NotificacionesPopover } from '@/components/notificaciones-popover';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -110,7 +111,7 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
   }, []);
 
   return (
-    <div className="relative z-[120] w-full bg-transparent shadow-none">
+    <div className="relative z-[9999] w-full bg-transparent shadow-none">
       <div className="mx-auto w-full px-4 sm:px-6 lg:w-[90%] lg:px-0 max-w-[1800px]">
         <header className="bg-transparent border-none shadow-none">
         <div className="flex items-center justify-between gap-2 sm:gap-4 py-3 sm:py-4">
@@ -174,16 +175,7 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
 
         {/* ── Actions (Notificaciones y Usuario) ── */}
         <div className="flex items-center gap-1 sm:gap-2 shrink-0 z-[120]">
-          <button
-            type="button"
-            className="relative flex h-9 w-9 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-full bg-transparent text-on-surface hover:bg-surface-container transition-all"
-            aria-label="Notificaciones"
-          >
-            <Bell className="h-4 w-4 sm:h-5 sm:w-5" />
-            <span className="absolute right-0.5 top-0.5 flex h-3.5 w-3.5 sm:h-4 sm:w-4 items-center justify-center rounded-full bg-error text-[9px] sm:text-[10px] font-bold text-on-error ring-2 ring-[#FFFFFF]">
-              3
-            </span>
-          </button>
+          <NotificacionesPopover />
 
           {/* ── User menu ── */}
           <div ref={userMenuRef} className="relative shrink-0 z-[120]">

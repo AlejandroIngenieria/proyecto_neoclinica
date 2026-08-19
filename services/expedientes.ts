@@ -6,10 +6,11 @@ import { expedientesApi, getAuthHeaders } from '@/lib/api-client';
  *
  * Endpoint proxy: GET /api/expedientes
  */
-export async function fetchDoctors(token: string): Promise<DoctorResponse[]> {
+export async function fetchDoctors(token?: string): Promise<DoctorResponse[]> {
+  const headers = token ? getAuthHeaders(token) : undefined;
   const { data } = await expedientesApi.get<DoctorResponse | DoctorResponse[]>(
     '/api/expedientes',
-    getAuthHeaders(token),
+    headers,
   );
 
   return Array.isArray(data) ? data : [data];
@@ -20,10 +21,12 @@ export async function fetchDoctors(token: string): Promise<DoctorResponse[]> {
  *
  * Endpoint proxy: GET /api/expedientes/:expCodigo
  */
-export async function fetchDoctorByCode(token: string, expCodigo: string): Promise<DoctorResponse> {
+export async function fetchDoctorByCode(token?: string, expCodigo?: string): Promise<DoctorResponse> {
+  if (!expCodigo) throw new Error('Código de expediente requerido.');
+  const headers = token ? getAuthHeaders(token) : undefined;
   const { data } = await expedientesApi.get<DoctorResponse | DoctorResponse[]>(
     `/api/expedientes/${expCodigo}`,
-    getAuthHeaders(token),
+    headers,
   );
 
   if (Array.isArray(data)) {

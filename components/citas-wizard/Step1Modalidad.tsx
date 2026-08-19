@@ -2,14 +2,14 @@
 
 import { useRouter } from 'next/navigation';
 import { useMemo, useEffect } from 'react';
-import { useModalidades, useClinicas, useAreasDomicilio, useHorarios, useHorasOcupadas } from '@/hooks/use-flujo-citas';
+import { useModalidades, useClinicas, useAreasDomicilio, useHorarios, useHorasOcupadas, useServiciosMedico } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { useCitaStore } from '@/store/use-cita-store';
-import { ChevronLeft, Stethoscope, MapPin, Video, Home, ArrowRight, CalendarDays, Clock, Building2, CalendarClock } from 'lucide-react';
+import { ChevronLeft, Stethoscope, MapPin, Video, Home, ArrowRight, CalendarDays, Clock, Building2, CalendarClock, Check, Sparkles } from 'lucide-react';
 import { DayPicker } from 'react-day-picker';
 import { es } from 'date-fns/locale';
 import { format } from 'date-fns';
-import type { HorarioCitaDto } from '@/types/citas';
+import type { HorarioCitaDto, ServicioMedicoCitaDto } from '@/types/citas';
 import 'react-day-picker/style.css';
 import { NeoLoader } from '@/components/neo-loader';
 
@@ -17,6 +17,7 @@ export function Step1Modalidad() {
   const {
     codMedico, modalidad, setModalidad,
     setClinica, setArea, clinicaSeleccionada, areaDomicilio,
+    servicioSeleccionado, setServicio, setMotivo,
     fecha, setFecha, hora, setHora, nextStep, step
   } = useCitaStore();
   const router = useRouter();
@@ -24,6 +25,7 @@ export function Step1Modalidad() {
   const { data: modalidades = [], isLoading: loadingModalidades } = useModalidades(codMedico);
   const { data: clinicas = [], isLoading: loadingClinicas } = useClinicas(codMedico, modalidad);
   const { data: areas = [], isLoading: loadingAreas } = useAreasDomicilio(codMedico, modalidad);
+  const { data: servicios = [], isLoading: loadingServicios } = useServiciosMedico(codMedico);
 
   const { data: doctor, isLoading: loadingDoctor } = useDoctorByCode(codMedico!);
 
@@ -144,7 +146,80 @@ export function Step1Modalidad() {
   return (
     <div className="flex flex-col w-full font-sans pb-4">
 
-      {/* The header has been extracted to WizardHeader.tsx */}
+      {/* 1. SELECCIÓN DE SERVICIO MÉDICO */}
+      {servicios.length > 0 && (
+        <div className="mb-6 bg-white dark:bg-[#1E293B] rounded-2xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-2">
+            <div>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Stethoscope className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                Servicios y Tarifas del Especialista
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Selecciona el servicio médico que requieres para consultar su costo y agendar tu cita.
+              </p>
+            </div>
+            {servicioSeleccionado && (
+              <button
+                type="button"
+                onClick={() => {
+                  setServicio(null);
+                  setMotivo('');
+                }}
+                className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline self-start sm:self-auto"
+              >
+                Limpiar selección
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 max-h-[260px] overflow-y-auto pr-1 custom-scrollbar">
+            {servicios.map((s: ServicioMedicoCitaDto) => {
+              const isSelected = servicioSeleccionado?.sypCodigo === s.sypCodigo;
+              return (
+                <button
+                  key={s.sypCodigo}
+                  type="button"
+                  onClick={() => {
+                    setServicio(s);
+                    setMotivo(s.servicio);
+                  }}
+                  className={`text-left p-4 rounded-xl border-2 transition-all flex flex-col justify-between ${
+                    isSelected
+                      ? 'border-blue-600 dark:border-blue-500 bg-blue-50/70 dark:bg-blue-900/30 shadow-md shadow-blue-600/10'
+                      : 'border-slate-200 dark:border-slate-700/80 hover:border-blue-300 dark:hover:border-blue-600/50 bg-slate-50/50 dark:bg-[#0F172A] hover:shadow-sm'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <h4 className={`font-bold text-[14px] leading-tight ${isSelected ? 'text-blue-900 dark:text-blue-300' : 'text-slate-800 dark:text-slate-200'}`}>
+                        {s.servicio}
+                      </h4>
+                      <div className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${isSelected ? 'bg-blue-600 text-white' : 'border border-slate-300 dark:border-slate-600'}`}>
+                        {isSelected ? <Check className="w-3.5 h-3.5" /> : null}
+                      </div>
+                    </div>
+                    {s.observaciones && (
+                      <p className="text-[12px] text-slate-500 dark:text-slate-400 line-clamp-2 mt-1.5">
+                        {s.observaciones}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="mt-3 pt-2.5 border-t border-slate-200/60 dark:border-slate-700/60 flex items-baseline justify-between">
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500">
+                      Sin IVA: Q{s.costoSinIva.toFixed(2)}
+                    </span>
+                    <span className="text-base font-black text-blue-600 dark:text-blue-400">
+                      Q{s.costoTotal.toFixed(2)}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 2. MODALITY TABS (No Heading) */}
       <div className="border-b border-slate-200 dark:border-slate-800 flex gap-2 overflow-x-auto scrollbar-none pb-1">
@@ -208,9 +283,6 @@ export function Step1Modalidad() {
                         <p className="text-[13px] text-slate-600 dark:text-slate-400 mt-1 line-clamp-2">
                           {clinica.cliDireccionCompleta}
                         </p>
-                        {clinica.mclPrecioBase > 0 && (
-                          <p className="text-[13px] font-semibold text-slate-800 dark:text-slate-300 mt-1">Precio: Q{clinica.mclPrecioBase}</p>
-                        )}
                       </button>
                     )
                   })

@@ -7,3 +7,5 @@ export {
   updatePaciente,
   createDependiente,
 } from './pacientes';
+export * from './notificaciones';
+

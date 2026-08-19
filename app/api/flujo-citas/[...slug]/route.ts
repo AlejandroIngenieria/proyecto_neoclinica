@@ -13,12 +13,22 @@ async function proxyRequest(request: NextRequest, context: RouteContext, method:
   const authorization = request.headers.get('authorization');
   const { slug } = await context.params;
 
-  if (!authorization) {
-    return NextResponse.json({ message: 'Authorization header requerido' }, { status: 401 });
-  }
-
   const subPath = slug.join('/');
   const targetUrl = new URL(`/api/FlujoCitas/${subPath}`, backendBaseUrl);
+
+  const isPublicGet = method === 'GET' && (
+    subPath.includes('modalidades') ||
+    subPath.includes('clinicas') ||
+    subPath.includes('servicios') ||
+    subPath.includes('areas-domicilio') ||
+    subPath.includes('horarios') ||
+    subPath.includes('horas-ocupadas') ||
+    subPath.includes('metodos-pago')
+  );
+
+  if (!authorization && !isPublicGet) {
+    return NextResponse.json({ message: 'Authorization header requerido' }, { status: 401 });
+  }
 
   console.log(`[PROXY] Proxying ${method} request to: ${targetUrl.toString()}`);
 
@@ -28,9 +38,12 @@ async function proxyRequest(request: NextRequest, context: RouteContext, method:
   });
 
   const headers: Record<string, string> = {
-    Authorization: authorization,
     Accept: 'application/json',
   };
+
+  if (authorization) {
+    headers['Authorization'] = authorization;
+  }
 
   const contentType = request.headers.get('content-type') ?? '';
   const isFormData = contentType.includes('multipart/form-data');
@@ -45,7 +58,7 @@ async function proxyRequest(request: NextRequest, context: RouteContext, method:
     cache: 'no-store',
   };
 
-  if (method === 'POST' || method === 'PUT') {
+  if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
     if (isFormData) {
       fetchOptions.body = await request.arrayBuffer();
     } else {
@@ -92,6 +105,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
 export async function PUT(request: NextRequest, context: RouteContext) {
   return proxyRequest(request, context, 'PUT');
+}
+
+export async function PATCH(request: NextRequest, context: RouteContext) {
+  return proxyRequest(request, context, 'PATCH');
 }
 
 export async function DELETE(request: NextRequest, context: RouteContext) {

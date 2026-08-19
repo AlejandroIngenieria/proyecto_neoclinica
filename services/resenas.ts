@@ -9,6 +9,11 @@ export interface CrearResenaRequest {
   texto?: string | null;
 }
 
+export interface ActualizarResenaRequest {
+  valoracion?: number;
+  texto?: string | null;
+}
+
 export interface CrearResenaResponse {
   mensaje?: string;
   puntosGanados?: number;
@@ -17,9 +22,18 @@ export interface CrearResenaResponse {
 
 /** POST /api/expedientes - Crear una nueva reseña */
 export async function crearResena(token: string, payload: CrearResenaRequest): Promise<CrearResenaResponse> {
+  // Envía las propiedades limpias sin duplicados para evitar colisiones en System.Text.Json
+  const body = {
+    codDoc: payload.codDoc,
+    codPac: payload.codPac,
+    codCta: payload.codCta,
+    valoracion: Math.min(5, Math.max(1, Math.round(Number(payload.valoracion)))),
+    texto: payload.texto ? payload.texto.trim().slice(0, 500) : null,
+  };
+
   const { data } = await expedientesApi.post<CrearResenaResponse>(
     '/api/expedientes',
-    payload,
+    body,
     getAuthHeaders(token)
   );
   return data;
@@ -36,10 +50,22 @@ export async function fetchResenasMedico(codDoc: string, token?: string): Promis
 }
 
 /** PUT /api/expedientes/{resCodigo} - Actualizar reseña */
-export async function actualizarResena(token: string, resCodigo: string, payload: Partial<CrearResenaRequest>): Promise<void> {
+export async function actualizarResena(
+  token: string,
+  resCodigo: string,
+  payload: ActualizarResenaRequest
+): Promise<void> {
+  const body: Record<string, any> = {};
+  if (typeof payload.valoracion === 'number') {
+    body.valoracion = Math.min(5, Math.max(1, Math.round(payload.valoracion)));
+  }
+  if (payload.texto !== undefined) {
+    body.texto = payload.texto ? payload.texto.trim().slice(0, 500) : null;
+  }
+
   await expedientesApi.put(
     `/api/expedientes/${resCodigo}`,
-    payload,
+    body,
     getAuthHeaders(token)
   );
 }

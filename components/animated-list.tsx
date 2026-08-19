@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode } from 'react';
+import { isValidElement, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
 
 type AnimatedListProps = {
@@ -40,15 +40,17 @@ export function AnimatedList({ children, className, staggerDelay = 0.06 }: Anima
       }}
     >
       {children.map((child, index) => {
-        // Extraer la key del child si existe para que Framer Motion trackee bien el layout
-        const key = (child as React.ReactElement)?.key || index;
+        const isElement = isValidElement<{ variant?: string; isSelected?: boolean }>(child);
+        const key = isElement ? child.key || index : index;
+        const isExpanded = isElement && (child.props.variant === 'expanded' || Boolean(child.props.isSelected));
+
         return (
           <motion.div
             key={key}
             layout
             variants={itemVariants}
             transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-            className="h-full"
+            className={isExpanded ? 'col-span-1 md:col-span-2 w-full h-full' : 'w-full h-full'}
           >
             {child}
           </motion.div>

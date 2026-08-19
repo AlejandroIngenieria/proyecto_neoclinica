@@ -4,6 +4,7 @@ import { useSession } from 'next-auth/react';
 import {
   fetchModalidades,
   fetchClinicas,
+  fetchServiciosMedico,
   fetchAreasDomicilio,
   fetchHorarios,
   fetchHorasOcupadas,
@@ -20,18 +21,25 @@ import {
   pagarCita,
   fetchBilletera,
   guardarSeguro,
-  guardarTarjeta
+  guardarTarjeta,
+  cambiarEstadoCita,
+  fetchAllCitas,
 } from '@/services/flujo-citas';
 import type {
   CrearCitaRequest, CitaListDto, UpdateCitaRequest,
   GrupoCitaDto, MetodoPagoDto, PagarCitaRequest,
-  BilleteraMetodoDto, GuardarSeguroRequest, GuardarTarjetaRequest
+  BilleteraMetodoDto, GuardarSeguroRequest, GuardarTarjetaRequest,
+  CambiarEstadoCitaPayload, CitaEstado, ServicioMedicoCitaDto,
 } from '@/types/citas';
+
+import { toast } from 'sonner';
+import { crearNotificacion } from '@/services/notificaciones';
 
 function useAuthInfo() {
   const { data: session } = useSession();
   const token = (session as any)?.accessToken as string | undefined;
-  return { token, isAuthenticated: !!token };
+  const userId = (session as any)?.user?.id || (session as any)?.user?.email;
+  return { token, userId, isAuthenticated: !!token };
 }
 
 export function useModalidades(codMedico: string | null) {
@@ -50,6 +58,17 @@ export function useClinicas(codMedico: string | null, modalidad: string | null) 
     queryKey: ['clinicas', codMedico],
     queryFn: () => fetchClinicas(token!, codMedico!),
     enabled: isAuthenticated && !!codMedico && modalidad === 'presencial',
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+// Hook para obtener los servicios médicos específicos y tarifas del médico
+export function useServiciosMedico(codMedico: string | null) {
+  const { token } = useAuthInfo();
+  return useQuery({
+    queryKey: ['servicios-medico', codMedico],
+    queryFn: () => fetchServiciosMedico(token, codMedico!),
+    enabled: !!codMedico,
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -206,79 +225,152 @@ export function useUploadDocumentoCita() {
 }
 
 export function useCancelarCita() {
-  const { token } = useAuthInfo();
+  const { token, userId } = useAuthInfo();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (citaId: string) => cancelarCita(token!, citaId),
-    onSuccess: () => {
+    mutationFn: (citaInput: string | CitaListDto) => {
+      const citaId = typeof citaInput === 'string' ? citaInput : citaInput.ctaCodigo;
+      return cancelarCita(token!, citaId);
+    },
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['citasPaciente'] });
       queryClient.invalidateQueries({ queryKey: ['citasTodosPacientes'] });
+
+      const medico = typeof variables === 'object' && variables.medicoNombre ? ` con Dr(a). ${variables.medicoNombre}` : '';
+
+      toast.error('Cita cancelada', {
+        description: `Tu cita médica${medico} ha sido cancelada.`,
+      });
+
+      if (token && userId) {
+        crearNotificacion(token, {
+          usuarioId: userId,
+          usuarioTipo: 'paciente',
+          tipo: 'cita',
+          titulo: 'Cita Cancelada',
+          mensaje: `Tu cita médica${medico} fue cancelada correctamente.`,
+          accionUrl: '/dashboard/citas',
+        }).catch(() => {});
+      }
     },
   });
 }
 
 export function useCompletarCita() {
-  const { token } = useAuthInfo();
+  const { token, userId } = useAuthInfo();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (citaId: string) => completarCita(token!, citaId),
-    onSuccess: () => {
+    mutationFn: (citaInput: string | CitaListDto) => completarCita(token!, citaInput),
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['citasPaciente'] });
       queryClient.invalidateQueries({ queryKey: ['citasTodosPacientes'] });
+
+      const medico = typeof variables === 'object' && variables.medicoNombre ? ` con Dr(a). ${variables.medicoNombre}` : '';
+
+      toast.success('Cita completada', {
+        description: `Tu consulta médica${medico} ha finalizado. Puedes escribir una reseña.`,
+      });
+
+      if (token && userId) {
+        crearNotificacion(token, {
+          usuarioId: userId,
+          usuarioTipo: 'paciente',
+          tipo: 'cita',
+          titulo: 'Cita Completada',
+          mensaje: `Tu cita médica${medico} fue marcada como completada. ¡Gracias por atenderte!`,
+          accionUrl: '/dashboard/citas',
+        }).catch(() => {});
+      }
     },
   });
 }
 
+/**
+ * Analiza si una cita ya superó la fecha y hora actual.
+ */
+export function isCitaPasada(ctaFecha?: string, ctaHora?: string): boolean {
+  if (!ctaFecha) return false;
+  try {
+    const now = new Date();
+    const fechaOnly = ctaFecha.includes('T') ? ctaFecha.split('T')[0] : ctaFecha;
+    const horaOnly = ctaHora ? (ctaHora.length === 5 ? ctaHora + ':00' : ctaHora) : '00:00:00';
+    
+    if (!fechaOnly) return false;
+
+    const [year, month, day] = fechaOnly.split('-').map(Number);
+    const [hours, minutes, seconds = 0] = horaOnly.split(':').map(Number);
+
+    if (isNaN(year) || isNaN(month) || isNaN(day)) return false;
+
+    const citaDateTime = new Date(year, month - 1, day, hours, minutes, seconds);
+    return citaDateTime.getTime() < now.getTime();
+  } catch {
+    return false;
+  }
+}
+
+const globalProcessedCitas = new Set<string>();
+
 export function useAutoCompletarCitasPasadas(citas: CitaListDto[] | undefined) {
   const { token, isAuthenticated } = useAuthInfo();
-  const queryClient = useQueryClient();
-  const processedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!isAuthenticated || !token || !citas || citas.length === 0) return;
 
-    const now = new Date();
+    // Filtrar citas pasadas que no hayan sido intentadas en esta sesión
     const citasPasadas = citas.filter((c) => {
-      if (!c.ctaCodigo || processedRef.current.has(c.ctaCodigo)) return false;
+      if (!c.ctaCodigo || globalProcessedCitas.has(c.ctaCodigo)) return false;
       const estadoActual = (c.ctaEstado || '').toLowerCase();
       if (!['programada', 'confirmada', 'pospuesta'].includes(estadoActual)) return false;
 
-      try {
-        const fechaOnly = c.ctaFecha ? c.ctaFecha.split('T')[0] : '';
-        const horaOnly = c.ctaHora || '00:00:00';
-        if (!fechaOnly) return false;
-        const citaDateTime = new Date(`${fechaOnly}T${horaOnly}`);
-        return citaDateTime < now;
-      } catch {
-        return false;
-      }
+      return isCitaPasada(c.ctaFecha, c.ctaHora);
     });
 
     if (citasPasadas.length === 0) return;
 
-    citasPasadas.forEach((c) => processedRef.current.add(c.ctaCodigo));
+    // Marcar en la caché global inmediatamente para evitar cualquier reintento en segundo plano
+    citasPasadas.forEach((c) => globalProcessedCitas.add(c.ctaCodigo));
 
-    Promise.all(
-      citasPasadas.map((c) =>
-        completarCita(token, c.ctaCodigo).catch((err) => {
-          console.warn(`[AutoCompletar] Error al completar cita ${c.ctaCodigo}:`, err);
-        })
-      )
-    ).then(() => {
-      queryClient.invalidateQueries({ queryKey: ['citasPaciente'] });
-      queryClient.invalidateQueries({ queryKey: ['citasTodosPacientes'] });
-    });
-  }, [citas, token, isAuthenticated, queryClient]);
+    // Ejecución suave en segundo plano (1 a la vez de forma asíncrona y pausada)
+    const processBatch = async () => {
+      for (const cita of citasPasadas) {
+        try {
+          await completarCita(token, cita);
+        } catch {
+          // Silencioso para mantener la experiencia de usuario 100% fluida
+        }
+      }
+    };
+
+    processBatch();
+  }, [citas, token, isAuthenticated]);
 }
 
 export function useUpdateCita() {
-  const { token } = useAuthInfo();
+  const { token, userId } = useAuthInfo();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: { citaId: string; payload: UpdateCitaRequest }) => updateCita(token!, data.citaId, data.payload),
-    onSuccess: () => {
+    mutationFn: (data: { citaId: string; payload: UpdateCitaRequest; medicoNombre?: string }) => updateCita(token!, data.citaId, data.payload),
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['citasPaciente'] });
       queryClient.invalidateQueries({ queryKey: ['citasTodosPacientes'] });
+
+      const medico = variables.medicoNombre ? ` con Dr(a). ${variables.medicoNombre}` : '';
+
+      toast.info('Cita modificada', {
+        description: `Tu cita médica${medico} ha sido actualizada en tu agenda.`,
+      });
+
+      if (token && userId) {
+        crearNotificacion(token, {
+          usuarioId: userId,
+          usuarioTipo: 'paciente',
+          tipo: 'cita',
+          titulo: 'Cita Modificada',
+          mensaje: `Tu cita médica${medico} fue modificada exitosamente.`,
+          accionUrl: '/dashboard/citas',
+        }).catch(() => {});
+      }
     },
   });
 }
@@ -334,5 +426,45 @@ export function useGuardarTarjeta() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['billetera', variables.codPac] });
     }
+  });
+}
+
+/**
+ * Hook para consultar todas las citas registradas en el panel administrativo
+ */
+export function useAdminCitas() {
+  const { token, isAuthenticated } = useAuthInfo();
+  return useQuery<CitaListDto[]>({
+    queryKey: ['adminCitas'],
+    queryFn: () => fetchAllCitas(token || undefined),
+    enabled: isAuthenticated,
+    refetchInterval: 20000,
+  });
+}
+
+/**
+ * Hook para cambiar el estado de cualquier cita (programada, confirmada, completada, cancelada, rechazada, pospuesta, no_asistio)
+ */
+export function useCambiarEstadoCita() {
+  const { token } = useAuthInfo();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      citaId,
+      nuevoEstado,
+    }: {
+      citaId: string;
+      nuevoEstado: CambiarEstadoCitaPayload['nuevoEstado'] | string;
+    }) => cambiarEstadoCita(token!, citaId, nuevoEstado),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['adminCitas'] });
+      queryClient.invalidateQueries({ queryKey: ['citasPaciente'] });
+      queryClient.invalidateQueries({ queryKey: ['citasTodosPacientes'] });
+      toast.success('Estado de cita actualizado exitosamente');
+    },
+    onError: (error: any) => {
+      const msg = error?.response?.data?.mensaje || error?.response?.data || error?.message || 'Error al cambiar estado de cita';
+      toast.error(typeof msg === 'string' ? msg : 'Error al cambiar estado');
+    },
   });
 }

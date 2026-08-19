@@ -3,9 +3,11 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { toast } from 'sonner';
 import { useCreateCita, useUploadDocumentoCita, usePagarCita, useMetodosPago, useBilletera } from '@/hooks/use-flujo-citas';
 import { useCitaStore } from '@/store/use-cita-store';
 import { completarTareaLealtad } from '@/services/lealtad';
+import { crearNotificacion } from '@/services/notificaciones';
 import { ChevronLeft, Check, FileText, Loader2, Info, Calendar, MapPin, CreditCard, Building2, Stethoscope, Activity, Wallet, AlertCircle } from 'lucide-react';
 import type { CrearCitaRequest } from '@/types/citas';
 
@@ -14,6 +16,7 @@ export function Step4Confirmacion() {
   const { data: session } = useSession();
   const {
     codMedico, medicoName, modalidad, clinicaSeleccionada, areaDomicilio,
+    servicioSeleccionado,
     fecha, hora, pacienteSeleccionado, grupoId, motivo,
     archivos, prevStep, tipoPagoId, billeteraItemId,
     direccionDomicilio, referenciasDomicilio, recompensaSeleccionada
@@ -30,10 +33,16 @@ export function Step4Confirmacion() {
   const [error, setError] = useState<string | null>(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
 
-  // Pricing calculations
-  const precioBase = modalidad === 'presencial' ? (clinicaSeleccionada?.mclPrecioBase || 0) : 400; // Mock price for virtual
-  const iva = precioBase * 0.16;
-  const total = precioBase + iva;
+  // Pricing calculations reales basados en el servicio o la clínica
+  const precioBase = servicioSeleccionado
+    ? servicioSeleccionado.costoSinIva
+    : (modalidad === 'presencial' ? (clinicaSeleccionada?.mclPrecioBase || 0) : 0);
+  const iva = servicioSeleccionado
+    ? servicioSeleccionado.costoIva
+    : (precioBase > 0 ? precioBase * 0.12 : 0);
+  const total = servicioSeleccionado
+    ? servicioSeleccionado.costoTotal
+    : (precioBase + iva);
 
   const getInitials = (name: string) => {
     if (!name) return '';
@@ -51,17 +60,13 @@ export function Step4Confirmacion() {
 
     try {
       // 1. Preparar DTO
-      let precio = 0;
       let consultorioId = undefined;
-
       let dirDomicilio = null;
       let refDomicilio = null;
 
       if (modalidad === 'presencial' && clinicaSeleccionada) {
-        precio = clinicaSeleccionada.mclPrecioBase;
         consultorioId = clinicaSeleccionada.cliCodigo;
       } else if (modalidad === 'domicilio' && areaDomicilio) {
-        precio = 0;
         consultorioId = null;
         dirDomicilio = direccionDomicilio;
         refDomicilio = referenciasDomicilio;
@@ -76,11 +81,12 @@ export function Step4Confirmacion() {
         codMedico,
         grupoId: grupoId || undefined,
         consultorioId,
+        codServicio: servicioSeleccionado?.sypCodigo || undefined,
         fecha: fecha.toISOString().split('T')[0],
         hora: hora.length === 5 ? hora + ':00' : hora,
         modalidad,
-        precio,
-        motivo: motivo || undefined,
+        precio: total,
+        motivo: motivo || servicioSeleccionado?.servicio || undefined,
         direccionDomicilio: dirDomicilio,
         referenciasDomicilio: refDomicilio,
         enlaceVideollamada: null,
@@ -92,11 +98,23 @@ export function Step4Confirmacion() {
       // 2. Crear Cita
       const citaId = await createCita(request);
 
-      // Trigger automatic loyalty task for creating appointment
+      toast.success('¡Cita agendada con éxito!', {
+        description: `Tu consulta con ${medicoName} para el ${fecha.toLocaleDateString('es-GT')} a las ${hora} hs ha sido registrada.`,
+      });
+
+      // Trigger automatic loyalty task and notification for creating appointment
       const sessionToken = (session as any)?.accessToken;
       if (sessionToken) {
         completarTareaLealtad(sessionToken, 'CREAR_CITA').catch(() => {});
         completarTareaLealtad(sessionToken, 'CITA_PROGRAMADA').catch(() => {});
+        crearNotificacion(sessionToken, {
+          usuarioId: pacienteSeleccionado.pacCodigo,
+          usuarioTipo: 'paciente',
+          tipo: 'cita',
+          titulo: 'Cita Agendada con Éxito',
+          mensaje: `Tu consulta con ${medicoName} para el ${fecha.toLocaleDateString('es-GT')} a las ${hora} hs fue confirmada.`,
+          accionUrl: `/dashboard/citas/${citaId}/exito`,
+        }).catch(() => {});
       }
 
       // 3. Registrar Pago
@@ -233,6 +251,24 @@ export function Step4Confirmacion() {
               </p>
             </div>
           </div>
+
+          {/* Servicio Médico */}
+          {servicioSeleccionado && (
+            <div className="flex gap-4">
+              <div className="w-12 h-12 rounded-full bg-teal-50 dark:bg-teal-900/30 flex items-center justify-center shrink-0">
+                <Activity className="h-6 w-6 text-teal-600 dark:text-teal-400" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Servicio Médico</p>
+                <p className="font-bold text-slate-900 dark:text-slate-100 leading-tight">
+                  {servicioSeleccionado.servicio}
+                </p>
+                <p className="text-xs text-teal-600 dark:text-teal-400 font-semibold mt-1">
+                  Q{servicioSeleccionado.costoTotal.toFixed(2)}
+                </p>
+              </div>
+            </div>
+          )}
 
         </div>
 

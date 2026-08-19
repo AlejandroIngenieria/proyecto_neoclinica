@@ -4,17 +4,14 @@ const backendBaseUrl = process.env.AUTH_BACKEND_URL ?? process.env.NEXT_PUBLIC_A
 
 export async function GET(request: Request) {
   const authorization = request.headers.get('authorization');
-
-  if (!authorization) {
-    return NextResponse.json({ message: 'Authorization header requerido' }, { status: 401 });
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (authorization) {
+    headers['Authorization'] = authorization;
   }
 
   const response = await fetch(`${backendBaseUrl}/api/Expedientes`, {
     method: 'GET',
-    headers: {
-      Authorization: authorization,
-      Accept: 'application/json',
-    },
+    headers,
     cache: 'no-store',
   });
 
@@ -46,10 +43,22 @@ export async function POST(request: Request) {
     });
 
     const contentType = response.headers.get('content-type') ?? '';
-    const responseData = contentType.includes('application/json') ? await response.json() : await response.text();
+    let responseData: any;
+
+    if (contentType.includes('application/json')) {
+      responseData = await response.json();
+    } else {
+      const text = await response.text();
+      responseData = text ? { message: text } : {};
+    }
+
+    if (!response.ok) {
+      console.error(`[POST /api/expedientes] Backend respondió con status ${response.status}:`, responseData);
+    }
 
     return NextResponse.json(responseData, { status: response.status });
   } catch (error: any) {
+    console.error('[POST /api/expedientes] Error interno:', error);
     return NextResponse.json(
       { message: 'Error interno de conexión con el backend', error: error.message },
       { status: 500 }

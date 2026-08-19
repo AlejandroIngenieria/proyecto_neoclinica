@@ -1,8 +1,9 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { SideDrawer } from '@/components/side-drawer';
 import type { CitaListDto } from '@/types/citas';
-import { Phone, Clock, MapPin, Monitor, FileText, Download, MessageCircle, CalendarDays, AlertCircle } from 'lucide-react';
+import { Phone, Clock, MapPin, Monitor, FileText, Download, MessageCircle, CalendarDays, AlertCircle, Star } from 'lucide-react';
 import Image from 'next/image';
 
 // Assuming safeFormatDate is extracted or we can define it here for simplicity
@@ -34,6 +35,7 @@ export type CitaDetailDrawerProps = {
 };
 
 export function CitaDetailDrawer({ isOpen, onClose, cita, onEdit, onCancel, doctorFoto }: CitaDetailDrawerProps) {
+  const router = useRouter();
   if (!cita) return null;
 
   return (
@@ -57,26 +59,44 @@ export function CitaDetailDrawer({ isOpen, onClose, cita, onEdit, onCancel, doct
         {/* 1. ACCIONES PRIMARIAS */}
         <div className="space-y-3">
           <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-widest mb-4">Acciones Rápidas</p>
-          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+
+          {['completada', 'finalizada', 'realizada'].includes((cita.ctaEstado || '').toLowerCase()) && (
             <button 
-              onClick={() => onEdit?.(cita)}
-              className="flex-1 py-3 px-4 bg-[#2563EB] text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-colors shadow-sm text-center"
+              onClick={() => {
+                onClose();
+                router.push(`/paciente/resenas/nueva?cita=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}`);
+              }}
+              className="w-full py-3 px-4 bg-amber-500 text-white rounded-xl font-bold text-sm hover:bg-amber-600 transition-colors shadow-md text-center flex items-center justify-center gap-2 cursor-pointer mb-2"
             >
-              Modificar cita
+              <Star className="w-4 h-4 fill-white text-white" />
+              <span>Escribir reseña del médico</span>
             </button>
-            <button 
-              onClick={() => onEdit?.(cita)}
-              className="flex-1 py-3 px-4 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-slate-700 text-[#111827] dark:text-slate-300 rounded-xl font-bold text-sm hover:bg-gray-100 dark:hover:bg-[#0F172A] transition-colors text-center"
-            >
-              Reprogramar
-            </button>
-          </div>
-          <button 
-            onClick={() => onCancel?.(cita)}
-            className="w-full py-3 px-4 bg-white dark:bg-[#1E293B] border border-[#FCA5A5] dark:border-red-900 text-[#EF4444] dark:text-red-400 rounded-xl font-bold text-sm hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-center mt-2"
-          >
-            Cancelar cita
-          </button>
+          )}
+
+          {['programada', 'confirmada', 'pospuesta'].includes(cita.ctaEstado) && (
+            <>
+              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+                <button 
+                  onClick={() => onEdit?.(cita)}
+                  className="flex-1 py-3 px-4 bg-[#2563EB] text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-colors shadow-sm text-center"
+                >
+                  Modificar cita
+                </button>
+                <button 
+                  onClick={() => onEdit?.(cita)}
+                  className="flex-1 py-3 px-4 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-slate-700 text-[#111827] dark:text-slate-300 rounded-xl font-bold text-sm hover:bg-gray-100 dark:hover:bg-[#0F172A] transition-colors text-center"
+                >
+                  Reprogramar
+                </button>
+              </div>
+              <button 
+                onClick={() => onCancel?.(cita)}
+                className="w-full py-3 px-4 bg-white dark:bg-[#1E293B] border border-[#FCA5A5] dark:border-red-900 text-[#EF4444] dark:text-red-400 rounded-xl font-bold text-sm hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-center mt-2"
+              >
+                Cancelar cita
+              </button>
+            </>
+          )}
         </div>
 
         {/* 2. INFORMACIÓN MÉDICA */}

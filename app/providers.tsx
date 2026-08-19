@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { SessionProvider } from 'next-auth/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Toaster } from 'sonner';
 
 export default function Providers({ children }: Readonly<{ children: React.ReactNode }>) {
   const [queryClient] = useState(
@@ -21,7 +22,10 @@ export default function Providers({ children }: Readonly<{ children: React.React
 
   return (
     <QueryClientProvider client={queryClient}>
-      <SessionProvider>{children}</SessionProvider>
+      <SessionProvider>
+        {children}
+        <Toaster richColors closeButton position="top-right" duration={4500} />
+      </SessionProvider>
     </QueryClientProvider>
   );
 }

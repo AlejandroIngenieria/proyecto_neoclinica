@@ -10,7 +10,7 @@ import { es } from 'date-fns/locale';
 import { Navbar } from '@/components/navbar';
 import { NeoLoader } from '@/components/neo-loader';
 import { useSession } from 'next-auth/react';
-import { useCitasPaciente, useAllCitasPacientes, usePacientesSeleccion, useCancelarCita, useGruposMap, useUpdateCita, useAutoCompletarCitasPasadas } from '@/hooks/use-flujo-citas';
+import { useCitasPaciente, useAllCitasPacientes, usePacientesSeleccion, useCancelarCita, useGruposMap, useUpdateCita, useAutoCompletarCitasPasadas, isCitaPasada } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode, useDoctors } from '@/hooks/use-doctors';
 import { fetchGruposCita, createGrupo } from '@/services/flujo-citas';
 import type { CitaListDto, CitaEstado, GrupoCitaDto } from '@/types/citas';
@@ -145,7 +145,7 @@ function CitasContent() {
       showLoaderOnConfirm: true,
       preConfirm: async () => {
         try {
-          await cancelarCita(cita.ctaCodigo);
+          await cancelarCita(cita);
           return true;
         } catch (err: any) {
           Swal.showValidationMessage('Hubo un problema al cancelar la cita.');
@@ -253,7 +253,7 @@ function CitasContent() {
       // Filtrar Standalone
       if (viewFilter === 'todas' || viewFilter === 'unicas') {
         p.standalone.forEach(c => {
-          const isUpcoming = proximosEstados.includes(c.ctaEstado);
+          const isUpcoming = proximosEstados.includes(c.ctaEstado) && !isCitaPasada(c.ctaFecha, c.ctaHora);
           if (tabActual === 'proximas' && !isUpcoming) return;
           if (tabActual === 'historial' && isUpcoming) return;
 
@@ -272,7 +272,7 @@ function CitasContent() {
       // Filtrar Series
       if (viewFilter === 'todas' || viewFilter === 'series') {
         Object.entries(p.series).forEach(([grupoId, citasGrupo]) => {
-          const hasUpcoming = citasGrupo.some(c => proximosEstados.includes(c.ctaEstado));
+          const hasUpcoming = citasGrupo.some(c => proximosEstados.includes(c.ctaEstado) && !isCitaPasada(c.ctaFecha, c.ctaHora));
           
           if (tabActual === 'proximas' && !hasUpcoming) return;
           if (tabActual === 'historial' && hasUpcoming) return;

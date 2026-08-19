@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, use } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Check } from 'lucide-react';
 import { useDoctors } from '@/hooks/use-doctors';
+import { useServiciosMedico } from '@/hooks/use-flujo-citas';
 import { useCitaStore } from '@/store/use-cita-store';
 import { Step1Modalidad } from '@/components/citas-wizard/Step1Modalidad';
 import { Step2PacienteMotivo } from '@/components/citas-wizard/Step2PacienteMotivo';
@@ -15,10 +16,15 @@ import { buildDoctorFullName } from '@/types/doctor';
 
 export default function AgendarCitaPage({ params }: { params: Promise<{ codMedico: string }> }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const paramMotivo = searchParams.get('motivo');
+  const paramSypCodigo = searchParams.get('sypCodigo');
+
   const { codMedico } = use(params);
   const { data: doctors = [], isLoading: isLoadingDoctors } = useDoctors();
+  const { data: servicios = [] } = useServiciosMedico(codMedico);
   
-  const { step, setStep, setMedico, reset } = useCitaStore();
+  const { step, setStep, setMedico, setServicio, setMotivo, reset } = useCitaStore();
 
   // Inicializar estado del wizard
   useEffect(() => {
@@ -32,6 +38,27 @@ export default function AgendarCitaPage({ params }: { params: Promise<{ codMedic
       setMedico(currentDoctor.exp_codigo, buildDoctorFullName(currentDoctor));
     }
   }, [currentDoctor, setMedico]);
+
+  // Pre-seleccionar servicio si viene en la URL
+  useEffect(() => {
+    if (servicios.length > 0) {
+      if (paramSypCodigo) {
+        const found = servicios.find(s => s.sypCodigo === Number(paramSypCodigo));
+        if (found) {
+          setServicio(found);
+          setMotivo(found.servicio);
+        }
+      } else if (paramMotivo) {
+        const found = servicios.find(s => s.servicio?.toLowerCase() === paramMotivo.toLowerCase());
+        if (found) {
+          setServicio(found);
+          setMotivo(found.servicio);
+        } else {
+          setMotivo(paramMotivo);
+        }
+      }
+    }
+  }, [servicios, paramSypCodigo, paramMotivo, setServicio, setMotivo]);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#0B1120] text-slate-900 dark:text-slate-200 pb-20 lg:pb-0 pt-8">

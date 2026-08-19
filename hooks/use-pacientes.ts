@@ -12,6 +12,8 @@ import {
   independizarPaciente,
 } from '@/services/pacientes';
 import type { Paciente } from '@/types';
+import { toast } from 'sonner';
+import { crearNotificacion } from '@/services/notificaciones';
 
 type SessionWithAccess = {
   accessToken?: string;
@@ -86,13 +88,26 @@ export function usePacienteTitular() {
  * Mutation para crear un nuevo paciente titular.
  */
 export function useCreatePaciente() {
-  const { token } = useAuthInfo();
+  const { token, userId } = useAuthInfo();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (body: Partial<Paciente>) => createPaciente(token!, body),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['pacientes'] });
+      toast.success('Perfil de paciente registrado');
+
+      const nombre = variables.pac_primer_nombre ? ` (${variables.pac_primer_nombre} ${variables.pac_primer_apellido || ''})` : '';
+      if (token && userId) {
+        crearNotificacion(token, {
+          usuarioId: userId,
+          usuarioTipo: 'paciente',
+          tipo: 'sistema',
+          titulo: 'Paciente Registrado',
+          mensaje: `Se ha registrado exitosamente la cuenta de paciente${nombre}.`,
+          accionUrl: '/dashboard/perfil',
+        }).catch(() => {});
+      }
     },
   });
 }
@@ -101,7 +116,7 @@ export function useCreatePaciente() {
  * Mutation para actualizar un paciente existente.
  */
 export function useUpdatePaciente() {
-  const { token } = useAuthInfo();
+  const { token, userId } = useAuthInfo();
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -110,6 +125,18 @@ export function useUpdatePaciente() {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['pacientes'] });
       queryClient.invalidateQueries({ queryKey: ['paciente', variables.pacCodigo] });
+      toast.success('Perfil actualizado correctamente');
+
+      if (token && userId) {
+        crearNotificacion(token, {
+          usuarioId: userId,
+          usuarioTipo: 'paciente',
+          tipo: 'sistema',
+          titulo: 'Perfil Actualizado',
+          mensaje: 'Tu información de perfil y expediente personal han sido actualizados.',
+          accionUrl: '/dashboard/perfil',
+        }).catch(() => {});
+      }
     },
   });
 }
@@ -129,6 +156,18 @@ export function useCreateDependiente() {
     }) => createDependiente(token!, body, userId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pacientes'] });
+      toast.success('Familiar registrado con éxito');
+
+      if (token && userId) {
+        crearNotificacion(token, {
+          usuarioId: userId,
+          usuarioTipo: 'paciente',
+          tipo: 'sistema',
+          titulo: 'Familiar Registrado',
+          mensaje: 'Has agregado exitosamente a un nuevo familiar dependiente a tu cuenta de NeoClínica.',
+          accionUrl: '/dashboard/perfil',
+        }).catch(() => {});
+      }
     },
   });
 }
@@ -145,6 +184,7 @@ export function useDeletePaciente() {
       deletePaciente(token!, titular, pacCodigo),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pacientes'] });
+      toast.info('Perfil eliminado');
     },
   });
 }
@@ -153,14 +193,41 @@ export function useDeletePaciente() {
  * Mutation para independizar un paciente dependiente.
  */
 export function useIndependizarPaciente() {
-  const { token } = useAuthInfo();
+  const { token, userId } = useAuthInfo();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ pacCodigo, nuevoCorreo }: { pacCodigo: string; nuevoCorreo: string }) =>
-      independizarPaciente(token!, pacCodigo, nuevoCorreo),
-    onSuccess: () => {
+    mutationFn: ({
+      pacCodigo,
+      nuevoCorreo,
+      conservarHistorial = true,
+    }: {
+      pacCodigo: string;
+      nuevoCorreo: string;
+      conservarHistorial?: boolean;
+    }) =>
+      independizarPaciente(token!, pacCodigo, {
+        nuevoCorreo,
+        conservarHistorial,
+      }),
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['pacientes'] });
+      toast.success('Cuenta independizada correctamente');
+
+      if (token && userId) {
+        crearNotificacion(token, {
+          usuarioId: userId,
+          usuarioTipo: 'paciente',
+          tipo: 'sistema',
+          titulo: 'Familiar Independizado',
+          mensaje: `El paciente ha sido independizado con la cuenta ${variables.nuevoCorreo}.${
+            variables.conservarHistorial
+              ? ' Su historial médico fue trasladado.'
+              : ''
+          }`,
+          accionUrl: '/dashboard/perfil/pacientes',
+        }).catch(() => {});
+      }
     },
   });
 }

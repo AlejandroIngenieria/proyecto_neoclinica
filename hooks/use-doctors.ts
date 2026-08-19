@@ -17,13 +17,13 @@ type SessionWithAccess = {
  * - No fetcha hasta que haya token de sesión
  */
 export function useDoctors() {
-  const { data: session, status } = useSession();
+  const { data: session } = useSession();
   const token = (session as SessionWithAccess | null)?.accessToken;
 
   return useQuery<DoctorResponse[]>({
     queryKey: ['doctors'],
-    queryFn: () => fetchDoctors(token!),
-    enabled: status === 'authenticated' && !!token,
+    queryFn: () => fetchDoctors(token),
+    enabled: true,
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -33,15 +33,16 @@ export function useDoctors() {
  *
  * - Se inicializa desde el cache de la lista si ya existe
  * - Cache individual por código
+ * - Funciona para visitantes públicos (compartir enlace) y usuarios logueados
  */
 export function useDoctorByCode(expCodigo: string) {
-  const { data: session, status } = useSession();
+  const { data: session } = useSession();
   const token = (session as SessionWithAccess | null)?.accessToken;
 
   return useQuery<DoctorResponse>({
     queryKey: ['doctor', expCodigo],
-    queryFn: () => fetchDoctorByCode(token!, expCodigo),
-    enabled: status === 'authenticated' && !!token && !!expCodigo,
+    queryFn: () => fetchDoctorByCode(token, expCodigo),
+    enabled: Boolean(expCodigo),
     staleTime: 5 * 60 * 1000,
   });
 }

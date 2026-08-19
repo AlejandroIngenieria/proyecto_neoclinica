@@ -38,6 +38,7 @@ export type Paciente = {
   pac_celular: string | null;
   pac_telefono_casa: string | null;
   pac_telefono_trabajo: string | null;
+  pac_estado?: string;
   // Contacto de Emergencia
   pac_contacto_emergencia_nombre?: string | null;
   pac_contacto_emergencia_relacion?: string | null;
@@ -47,9 +48,10 @@ export type Paciente = {
 /** Payload para crear un paciente (pac_codigo se genera en el backend). */
 export type PacienteCreatePayload = Partial<Pick<Paciente, 'pac_codigo'>> & Omit<Paciente, 'pac_codigo'>;
 
-export type IndependizarPacienteRequest = {
+export interface IndependizarPacienteRequest {
   nuevoCorreo: string;
-};
+  conservarHistorial: boolean;
+}
 
 // ─── Parentesco ──────────────────────────────────────────────────────────────
 
@@ -154,3 +156,6 @@ export function getPacienteInitials(p: Paciente): string {
   const parts = [p.pac_primer_nombre, p.pac_primer_apellido].filter(Boolean);
   return parts.map((part) => part[0]?.toUpperCase() ?? '').join('') || 'P';
 }
+
+export { calculateProfileCompleteness } from '@/lib/profile-completion';
+export type { ProfileCompleteness } from '@/lib/profile-completion';

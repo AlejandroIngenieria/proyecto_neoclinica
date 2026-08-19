@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { 
   ModalidadCita, 
   ClinicaCitaDto, 
+  ServicioMedicoCitaDto,
   AreaDomicilioDto, 
   PacienteSeleccionDto 
 } from '@/types/citas';
@@ -17,6 +18,7 @@ interface CitaState {
   
   modalidad: ModalidadCita | null;
   clinicaSeleccionada: ClinicaCitaDto | null;
+  servicioSeleccionado: ServicioMedicoCitaDto | null;
   areaDomicilio: AreaDomicilioDto | null;
   
   fecha: Date | null;
@@ -42,6 +44,7 @@ interface CitaState {
   setMedico: (cod: string, name: string) => void;
   setModalidad: (modalidad: ModalidadCita) => void;
   setClinica: (clinica: ClinicaCitaDto | null) => void;
+  setServicio: (servicio: ServicioMedicoCitaDto | null) => void;
   setArea: (area: AreaDomicilioDto | null) => void;
   
   setFecha: (fecha: Date | null) => void;
@@ -73,6 +76,7 @@ const initialState = {
   
   modalidad: null,
   clinicaSeleccionada: null,
+  servicioSeleccionado: null,
   areaDomicilio: null,
   
   fecha: null,
@@ -116,6 +120,7 @@ export const useCitaStore = create<CitaState>((set, get) => ({
     fecha: null,
     hora: null
   }),
+  setServicio: (servicio) => set({ servicioSeleccionado: servicio }),
   setArea: (area) => set({ areaDomicilio: area }),
   
   setFecha: (fecha) => set({ fecha, hora: null }),

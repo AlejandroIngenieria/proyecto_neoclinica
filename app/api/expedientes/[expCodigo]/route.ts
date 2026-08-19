@@ -10,16 +10,14 @@ export async function GET(request: Request, context: RouteContext) {
   const authorization = request.headers.get('authorization');
   const { expCodigo } = await context.params;
 
-  if (!authorization) {
-    return NextResponse.json({ message: 'Authorization header requerido' }, { status: 401 });
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (authorization) {
+    headers['Authorization'] = authorization;
   }
 
   const response = await fetch(`${backendBaseUrl}/api/Expedientes/${expCodigo}`, {
     method: 'GET',
-    headers: {
-      Authorization: authorization,
-      Accept: 'application/json',
-    },
+    headers,
     cache: 'no-store',
   });
 

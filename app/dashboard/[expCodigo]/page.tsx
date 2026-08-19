@@ -26,11 +26,13 @@ import {
   X,
   FileText,
   CheckCircle,
-  XCircle
+  XCircle,
+  Copy,
+  Send,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { DoctorClinica, DoctorResponse } from '@/types';
-import { buildDoctorFullName, isDoctorActive } from '@/types/doctor';
+import { buildDoctorFullName, isDoctorActive, getDoctorPriceDisplay } from '@/types/doctor';
 import { NeoLoader } from '@/components/neo-loader';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { addRecentDoctor } from '@/lib/recent-doctors';
@@ -166,6 +168,8 @@ function DoctorProfileContent() {
   const [selectedClinicIndex, setSelectedClinicIndex] = useState(0);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [showFullTrajectory, setShowFullTrajectory] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   const { titular } = usePacienteTitular();
   const codPac = titular?.pac_codigo;
@@ -183,6 +187,37 @@ function DoctorProfileContent() {
       removeFavMutation.mutate({ codPac, codDoc: expCodigo });
     } else {
       addFavMutation.mutate({ codPac, codDoc: expCodigo });
+    }
+  };
+
+  const handleShare = async () => {
+    const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
+    const shareTitle = `${fullName || 'Médico Especialista'} - NeoClínica`;
+    const shareText = `Conoce el perfil del ${fullName || 'médico especialista'} en NeoClínica.`;
+
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: shareTitle,
+          text: shareText,
+          url: shareUrl,
+        });
+        return;
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          setIsShareModalOpen(true);
+        }
+        return;
+      }
+    }
+    setIsShareModalOpen(true);
+  };
+
+  const copyToClipboard = () => {
+    if (typeof window !== 'undefined') {
+      navigator.clipboard.writeText(window.location.href);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
     }
   };
 
@@ -217,11 +252,8 @@ function DoctorProfileContent() {
   const selectedClinicQuery = buildClinicQuery(primaryClinic, fullName || doctor.exp_profesion || 'Médico');
   const { googleMapsHref, wazeHref, mapEmbedSrc } = buildMapsLinks(primaryClinic, selectedClinicQuery);
 
-  const startingPrices = [
-    ...doctor.servicios.map((s) => s.syp_costo_total),
-    ...doctor.clinicas.map((c) => c.mcl_precio_base),
-  ].filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p >= 0);
-  const validStartingPrice = startingPrices.length ? Math.min(...startingPrices) : null;
+  const priceInfo = getDoctorPriceDisplay(doctor);
+  const validStartingPrice = priceInfo.hasPrice ? priceInfo.price : null;
 
   const trajectoryItems = doctor 
     ? [
@@ -315,7 +347,12 @@ function DoctorProfileContent() {
                           <Mail className="w-3.5 h-3.5" />
                         </a>
                       )}
-                      <button className="flex items-center justify-center h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors" title="Compartir perfil">
+                      <button
+                        type="button"
+                        onClick={handleShare}
+                        className="flex items-center justify-center h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer active:scale-95"
+                        title="Compartir perfil"
+                      >
                         <Share2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -467,7 +504,7 @@ function DoctorProfileContent() {
                         <span className="font-medium text-slate-900 whitespace-nowrap">
                           {srv.syp_costo_total ? `Q${formatMoney(srv.syp_costo_total)}` : '-'}
                         </span>
-                        <Link href={`/dashboard/agendar/${doctor.exp_codigo}?motivo=${encodeURIComponent(srv.servicio || '')}`} className="px-4 py-2 bg-blue-50 text-blue-600 text-sm font-semibold rounded-xl hover:bg-blue-200 transition-colors shrink-0">
+                        <Link href={`/dashboard/agendar/${doctor.exp_codigo}?motivo=${encodeURIComponent(srv.servicio || '')}${srv.syp_codigo ? `&sypCodigo=${srv.syp_codigo}` : ''}`} className="px-4 py-2 bg-blue-50 text-blue-600 text-sm font-semibold rounded-xl hover:bg-blue-200 transition-colors shrink-0">
                           Agendar
                         </Link>
                       </div>
@@ -516,9 +553,20 @@ function DoctorProfileContent() {
                           {clinic.cli_descripcion || `Clínica ${index + 1}`}
                           {index === 0 && <span className="ml-3 inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20">Sede Principal</span>}
                         </h3>
-                        <p className="text-slate-500 text-sm leading-relaxed mb-4">
+                        <p className="text-slate-500 text-sm leading-relaxed mb-2">
                           {[clinic.cli_direccion_completa, clinic.cli_zona].filter(Boolean).join(', ')}
                         </p>
+
+                        {clinic.mcl_precio_base != null && clinic.mcl_precio_base > 0 ? (
+                          <p className="text-xs font-bold text-slate-700 mb-3 flex items-center gap-1.5">
+                            <span className="text-slate-400 font-normal">Precio consulta:</span>
+                            <span>Q{formatMoney(clinic.mcl_precio_base)}</span>
+                          </p>
+                        ) : (
+                          <p className="text-xs font-medium text-slate-400 mb-3">
+                            Clínica sin precio establecido (Q0.00)
+                          </p>
+                        )}
                         
                         <div className="flex flex-wrap gap-3">
                           {googleMapsHref && (
@@ -630,9 +678,9 @@ function DoctorProfileContent() {
               </BlockCard>
             )}
 
-            {/* 7. Reseñas */}
+            {/* 7. Reseñas (Vista Móvil) */}
             {doctor.total_resenas > 0 && (
-              <div className="mt-8 mb-4">
+              <div className="block lg:hidden mt-8 mb-4">
                 <div className="mb-6 flex items-center gap-4">
                   <h2 className="text-[28px] font-bold text-slate-900">Reseñas</h2>
                   {doctor.promedio_valoracion > 0 && (
@@ -648,22 +696,24 @@ function DoctorProfileContent() {
 
           </div>
           
-          {/* RIGHT COLUMN (30% - Sidebar de Citas y Tarifas) */}
+          {/* RIGHT COLUMN (30% - Sidebar de Citas, Tarifas y Reseñas) */}
           <div className="flex flex-col sticky top-20 lg:pt-4 self-start z-30 w-full">
             
             {/* Contenedor superior para Sidebar */}
-            <div className="w-full">
+            <div className="w-full space-y-6">
               
               <aside id="sidebar-agendar" className="hidden lg:block w-full">
                 <div className="bg-white border-2 border-blue-600 rounded-[20px] p-4.5 shadow-xl shadow-blue-900/10 relative overflow-hidden">
                
                 {/* Precio Compacto en una sola línea */}
-                {validStartingPrice !== null && (
-                  <div className="flex items-baseline justify-between border-b border-slate-100 pb-3 mb-3.5">
-                     <span className="text-slate-500 font-semibold text-xs uppercase tracking-wider">Precio de consulta</span>
+                <div className="flex items-baseline justify-between border-b border-slate-100 pb-3 mb-3.5">
+                   <span className="text-slate-500 font-semibold text-xs uppercase tracking-wider">Precio de consulta</span>
+                   {validStartingPrice !== null && validStartingPrice > 0 ? (
                      <span className="text-xl font-black text-slate-900">Desde Q{formatMoney(validStartingPrice)}</span>
-                  </div>
-                )}
+                   ) : (
+                     <span className="text-xs font-semibold text-slate-400">Clínica sin precio establecido</span>
+                   )}
+                </div>
 
                 <Link href={`/dashboard/agendar/${doctor.exp_codigo}`} className="w-full flex justify-center bg-[#2563EB] hover:bg-[#1E40AF] text-white px-5 py-3 rounded-xl font-bold text-sm transition-all mb-4 shadow-md hover:shadow-lg">
                   Agendar cita ahora
@@ -710,6 +760,25 @@ function DoctorProfileContent() {
                 </div>
               </div>
             </aside>
+
+            {/* 7. Reseñas (Vista Desktop - Colocadas abajo del bloque de agendar cita) */}
+            {doctor.total_resenas > 0 && (
+              <div className="hidden lg:block bg-white border border-slate-200 rounded-[20px] p-5 shadow-lg shadow-slate-200/50">
+                <div className="mb-4 flex items-center justify-between pb-3 border-b border-slate-100">
+                  <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
+                    <MessageSquare className="w-4.5 h-4.5 text-[#2563EB]" />
+                    <span>Reseñas de Pacientes</span>
+                  </h3>
+                  {doctor.promedio_valoracion > 0 && (
+                    <span className="flex items-center gap-1 text-xs font-bold text-slate-800 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
+                      <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                      {doctor.promedio_valoracion.toFixed(1)} <span className="text-slate-500 font-normal">({doctor.total_resenas})</span>
+                    </span>
+                  )}
+                </div>
+                <DoctorReviews doctor={doctor} minimalist={true} />
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -719,7 +788,7 @@ function DoctorProfileContent() {
           <div>
             <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">Consulta</span>
             <span className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
-              {validStartingPrice !== null ? `Desde Q${formatMoney(validStartingPrice)}` : 'Ver opciones'}
+              {validStartingPrice !== null && validStartingPrice > 0 ? `Desde Q${formatMoney(validStartingPrice)}` : 'Clínica sin precio establecido'}
             </span>
           </div>
           <Link
@@ -819,6 +888,209 @@ function DoctorProfileContent() {
                     }
                     return null;
                   })}
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Share Profile Modal */}
+      <AnimatePresence>
+        {isShareModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm"
+            onClick={() => setIsShareModalOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              transition={{ duration: 0.2 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-2xl border border-slate-100 space-y-6"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                    <Share2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-slate-900 leading-tight">Compartir Perfil</h3>
+                    <p className="text-xs text-slate-500">Recomienda a este especialista</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsShareModalOpen(false)}
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Doctor Card Brief */}
+              <div className="flex items-center gap-3.5 p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80">
+                <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-blue-600 shrink-0">
+                  {doctor.exp_foto_perfil ? (
+                    <Image
+                      src={doctor.exp_foto_perfil}
+                      alt={fullName}
+                      fill
+                      sizes="48px"
+                      className="object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-lg font-bold text-white">
+                      {fullName.charAt(0)}
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-black text-slate-900 truncate">{fullName}</p>
+                  <p className="text-xs text-blue-600 font-semibold truncate">
+                    {combinedSpecialties[0] || 'Especialista Médico'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Social Channels Grid */}
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+                  Compartir en redes sociales
+                </p>
+                <div className="grid grid-cols-3 gap-2.5">
+                  {/* WhatsApp */}
+                  <a
+                    href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
+                      `¡Hola! Te recomiendo al Dr. ${fullName} (${combinedSpecialties[0] || 'Especialista'}) en NeoClínica:\n${
+                        typeof window !== 'undefined' ? window.location.href : ''
+                      }`
+                    )}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition-all active:scale-95 group"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform">
+                      {getSocialIcon('whatsapp', 'w-4 h-4')}
+                    </div>
+                    <span className="text-[11px] font-bold">WhatsApp</span>
+                  </a>
+
+                  {/* Facebook */}
+                  <a
+                    href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
+                      typeof window !== 'undefined' ? window.location.href : ''
+                    )}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl bg-blue-50 hover:bg-blue-100 text-blue-700 transition-all active:scale-95 group"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center group-hover:scale-110 transition-transform">
+                      {getSocialIcon('facebook', 'w-4 h-4')}
+                    </div>
+                    <span className="text-[11px] font-bold">Facebook</span>
+                  </a>
+
+                  {/* X / Twitter */}
+                  <a
+                    href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(
+                      `Conoce el perfil del Dr. ${fullName} en NeoClínica:`
+                    )}&url=${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : '')}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 transition-all active:scale-95 group"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center group-hover:scale-110 transition-transform">
+                      {getSocialIcon('x', 'w-3.5 h-3.5')}
+                    </div>
+                    <span className="text-[11px] font-bold">X / Twitter</span>
+                  </a>
+
+                  {/* LinkedIn */}
+                  <a
+                    href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(
+                      typeof window !== 'undefined' ? window.location.href : ''
+                    )}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl bg-sky-50 hover:bg-sky-100 text-sky-700 transition-all active:scale-95 group"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-sky-600 text-white flex items-center justify-center group-hover:scale-110 transition-transform">
+                      {getSocialIcon('linkedin', 'w-4 h-4')}
+                    </div>
+                    <span className="text-[11px] font-bold">LinkedIn</span>
+                  </a>
+
+                  {/* Telegram */}
+                  <a
+                    href={`https://t.me/share/url?url=${encodeURIComponent(
+                      typeof window !== 'undefined' ? window.location.href : ''
+                    )}&text=${encodeURIComponent(`Dr. ${fullName} - NeoClínica`)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl bg-cyan-50 hover:bg-cyan-100 text-cyan-700 transition-all active:scale-95 group"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-cyan-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <Send className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-[11px] font-bold">Telegram</span>
+                  </a>
+
+                  {/* Email */}
+                  <a
+                    href={`mailto:?subject=${encodeURIComponent(
+                      `Perfil médico del Dr. ${fullName} en NeoClínica`
+                    )}&body=${encodeURIComponent(
+                      `Hola, te comparto el perfil profesional del Dr. ${fullName} (${combinedSpecialties[0] || 'Especialista'}) en NeoClínica:\n\n${
+                        typeof window !== 'undefined' ? window.location.href : ''
+                      }`
+                    )}`}
+                    className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition-all active:scale-95 group"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <Mail className="w-4 h-4" />
+                    </div>
+                    <span className="text-[11px] font-bold">Correo</span>
+                  </a>
+                </div>
+              </div>
+
+              {/* Copy Link Box */}
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">O copia el enlace directo</p>
+                <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-slate-50 border border-slate-200">
+                  <input
+                    type="text"
+                    readOnly
+                    value={typeof window !== 'undefined' ? window.location.href : ''}
+                    className="flex-1 px-3 py-1.5 text-xs text-slate-600 bg-transparent font-mono outline-none truncate"
+                  />
+                  <button
+                    type="button"
+                    onClick={copyToClipboard}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-xs shrink-0 cursor-pointer ${
+                      copiedLink
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white active:scale-95'
+                    }`}
+                  >
+                    {copiedLink ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>¡Copiado!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copiar</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
             </motion.div>

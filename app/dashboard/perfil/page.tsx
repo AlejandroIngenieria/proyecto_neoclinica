@@ -28,6 +28,7 @@ import type { Paciente, Pais, Departamento, Municipio } from '@/types';
 import { buildPacienteFullName, calcularEdad, getPacienteInitials, isPacientePendiente } from '@/types';
 import { ImageDropzone } from '@/components/image-dropzone';
 import { DocumentDropzone } from '@/components/document-dropzone';
+import { ProfileCompletenessWidget } from '@/components/profile-completeness-widget';
 import Link from 'next/link';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -813,34 +814,13 @@ function PerfilContent() {
           </div>
         </div>
 
-          {/* Onboarding Banner (shown when profile is pending) */}
-          {isPending && (
-            <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 p-5 shadow-sm"
-            >
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-600">
-                    <AlertCircle className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-amber-900">Tu perfil está incompleto</h3>
-                    <p className="mt-0.5 text-sm text-amber-700">
-                      Completa tu información personal para poder agendar citas y acceder a todos los servicios de NeoClínica.
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setIsEditing(true)}
-                  className="inline-flex shrink-0 items-center gap-2 self-start rounded-xl bg-amber-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-700 sm:self-auto"
-                >
-                  <Edit3 className="h-4 w-4" />
-                  Completar Perfil
-                </button>
-              </div>
-            </motion.div>
+          {/* Profile Completeness Banner */}
+          {titular && (
+            <ProfileCompletenessWidget
+              paciente={titular}
+              variant="banner"
+              onEditClick={() => setIsEditing(true)}
+            />
           )}
 
           {/* Bento Grid Content */}

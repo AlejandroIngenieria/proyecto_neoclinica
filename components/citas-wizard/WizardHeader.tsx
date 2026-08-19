@@ -3,12 +3,13 @@
 import { useRouter } from 'next/navigation';
 import { useCitaStore } from '@/store/use-cita-store';
 import { useDoctorByCode } from '@/hooks/use-doctors';
-import { ChevronLeft, MapPin, Building2, CalendarDays, CalendarClock } from 'lucide-react';
+import { ChevronLeft, MapPin, Building2, CalendarDays, CalendarClock, Stethoscope } from 'lucide-react';
 
 export function WizardHeader() {
   const router = useRouter();
   const { 
     codMedico, modalidad, clinicaSeleccionada, areaDomicilio,
+    servicioSeleccionado,
     fecha, hora, step
   } = useCitaStore();
 
@@ -57,6 +58,16 @@ export function WizardHeader() {
       <div className="flex flex-1 flex-col sm:flex-row items-start sm:items-center justify-between gap-6 pl-0 xl:pl-6">
         <div className="flex flex-col gap-1.5 mt-2 xl:mt-0">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[15px] font-medium text-slate-600 dark:text-slate-300">
+              {servicioSeleccionado && (
+                <>
+                  <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 font-bold">
+                    <Stethoscope className="w-4 h-4 shrink-0" />
+                    {servicioSeleccionado.servicio} (Q{servicioSeleccionado.costoTotal.toFixed(2)})
+                  </span>
+                  <span className="text-slate-300 dark:text-slate-700 text-xs">•</span>
+                </>
+              )}
+
               <span className="capitalize flex items-center gap-1.5">
                 <MapPin className="w-4 h-4 text-blue-600 dark:text-blue-400" /> 
                 {modalidad || 'Pendiente'}

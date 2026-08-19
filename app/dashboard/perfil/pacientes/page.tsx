@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useCallback } from 'react';
+import { Suspense, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSession } from 'next-auth/react';
 import { useForm } from 'react-hook-form';
@@ -25,6 +25,11 @@ import {
   ExternalLink,
   Eye,
   MoreVertical,
+  ChevronDown,
+  ChevronUp,
+  UserCheck,
+  Clock,
+  History,
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 
@@ -144,13 +149,18 @@ function PatientCard({
   const fullName = buildPacienteFullName(paciente);
   const initials = getPacienteInitials(paciente);
   const edad = calcularEdad(paciente.pac_fecha_nacimiento);
+  const isIndependiente = paciente.pac_estado === 'independizado' || paciente.pac_estado === 'independiente';
   const parentesco = isTitular
     ? getParentescoInfo(1)
     : getParentescoInfo(paciente.pac_codpar);
   const isMinor = edad !== null && edad < 18;
 
   return (
-    <div className="group relative flex flex-row overflow-hidden rounded-3xl bg-white dark:bg-[#1E293B] shadow-xl shadow-slate-900/5 border border-slate-200/80 dark:border-slate-800 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl animate-in fade-in zoom-in-95 duration-500 w-[420px] max-w-full h-[250px] mx-auto">
+    <div className={`group relative flex flex-row overflow-hidden rounded-3xl bg-white dark:bg-[#1E293B] shadow-xl shadow-slate-900/5 border transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl animate-in fade-in zoom-in-95 duration-500 w-[420px] max-w-full h-[250px] mx-auto ${
+      isIndependiente
+        ? 'border-indigo-200/80 dark:border-indigo-900/50 bg-slate-50/40 dark:bg-slate-900/40'
+        : 'border-slate-200/80 dark:border-slate-800'
+    }`}>
       {/* === CONTENEDOR DE FOTOGRAFÍA (Ancho Estricto 140px, Alto 100%, Selfies top center) === */}
       <div className="relative w-[140px] h-full shrink-0 bg-slate-900 overflow-hidden flex items-center justify-center">
         {paciente.pac_foto_perfil_url ? (
@@ -170,14 +180,25 @@ function PatientCard({
         <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/60 pointer-events-none" />
 
         {/* Barra decorativa superior */}
-        <div className="absolute left-0 right-0 top-0 h-1 bg-gradient-to-r from-sky-400 via-indigo-500 to-violet-500" />
+        <div className={`absolute left-0 right-0 top-0 h-1 ${
+          isIndependiente
+            ? 'bg-gradient-to-r from-indigo-400 to-slate-400'
+            : 'bg-gradient-to-r from-sky-400 via-indigo-500 to-violet-500'
+        }`} />
 
-        {/* Badge parentesco */}
-        <span
-          className={`absolute left-2.5 top-3 z-10 inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wider ${parentesco.badgeBg} ${parentesco.badgeText} ${parentesco.badgeBorder} shadow-xs backdrop-blur-md`}
-        >
-          {parentesco.label}
-        </span>
+        {/* Badge parentesco / Independiente */}
+        {isIndependiente ? (
+          <span className="absolute left-2.5 top-3 z-10 inline-flex items-center gap-1 rounded-full border border-indigo-400/40 bg-indigo-950/80 text-indigo-200 px-2 py-0.5 text-[8.5px] font-extrabold uppercase tracking-wider shadow-xs backdrop-blur-md">
+            <UserCheck className="w-2.5 h-2.5 text-indigo-400" />
+            <span>Independiente</span>
+          </span>
+        ) : (
+          <span
+            className={`absolute left-2.5 top-3 z-10 inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wider ${parentesco.badgeBg} ${parentesco.badgeText} ${parentesco.badgeBorder} shadow-xs backdrop-blur-md`}
+          >
+            {parentesco.label}
+          </span>
+        )}
       </div>
 
       {/* === CONTENEDOR DE INFORMACIÓN (Lado Derecho, flex:1, calc(100%-140px), min-w:0, Padding: 16px 20px) === */}
@@ -186,14 +207,20 @@ function PatientCard({
         <div>
           <div className="flex items-start justify-between gap-2 mb-2 pb-2 border-b border-slate-100 dark:border-slate-800">
             <div className="min-w-0 flex-1">
-              <h3
-                className="text-base font-black tracking-tight text-slate-900 dark:text-white line-clamp-2 leading-snug break-words"
-                title={fullName}
-              >
-                {fullName}
-              </h3>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h3
+                  className="text-base font-black tracking-tight text-slate-900 dark:text-white line-clamp-2 leading-snug break-words"
+                  title={fullName}
+                >
+                  {fullName}
+                </h3>
+              </div>
               <p className="text-[11px] text-slate-400 font-medium truncate mt-0.5">
-                {isTitular ? 'Titular de la cuenta' : `Paciente dependiente`}
+                {isTitular
+                  ? 'Titular de la cuenta'
+                  : isIndependiente
+                  ? 'Cuenta Independiente (Histórico)'
+                  : 'Paciente dependiente'}
               </p>
             </div>
 
@@ -214,7 +241,7 @@ function PatientCard({
                   <>
                     <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} />
                     <div className="absolute right-0 top-7 z-30 w-48 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-1.5 shadow-xl animate-in fade-in zoom-in-95 duration-150">
-                      {!isMinor && (
+                      {!isMinor && !isIndependiente && (
                         <button
                           type="button"
                           onClick={() => {
@@ -583,6 +610,7 @@ function IndependizarModal({
   onClose: () => void;
 }) {
   const independizarMutation = useIndependizarPaciente();
+  const [conservarHistorial, setConservarHistorial] = useState<boolean>(true);
 
   const {
     register,
@@ -599,12 +627,47 @@ function IndependizarModal({
 
   const onSubmit = async (data: { nuevoCorreo: string }) => {
     try {
+      // Confirmación con SweetAlert2 y advertencia clara de implicaciones
+      const confirmResult = await Swal.fire({
+        title: '¿Confirmar Independización?',
+        html: `
+          <div style="text-align: left; font-size: 13px; line-height: 1.5; color: #475569;">
+            <p style="margin-bottom: 10px;">Estás a punto de convertir a <strong>${pacienteName}</strong> en un usuario titular independiente.</p>
+            <div style="background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 12px; padding: 12px; color: #92400e; font-size: 12px;">
+              <p style="font-weight: bold; margin-bottom: 6px;">⚠️ Implicaciones de esta acción:</p>
+              <ul style="list-style-type: disc; padding-left: 16px; margin: 0; display: flex; flex-direction: column; gap: 4px;">
+                <li>Se creará una cuenta titular asociada a <strong>${data.nuevoCorreo}</strong>.</li>
+                <li>Se enviará un correo con credenciales temporales de acceso.</li>
+                <li>${conservarHistorial ? '<strong>Se trasladará</strong> todo su historial médico, citas y recetas a su nueva cuenta.' : '<strong>NO se trasladará</strong> el historial de citas previas.'}</li>
+                <li>El paciente quedará registrado en tu perfil como cuenta independiente (histórico).</li>
+                <li>Ya no podrás agendar citas en su nombre desde tu perfil titular.</li>
+              </ul>
+            </div>
+          </div>
+        `,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Sí, independizar paciente',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: '#2563eb',
+        cancelButtonColor: '#64748b',
+        customClass: {
+          popup: 'rounded-3xl',
+          confirmButton: 'rounded-xl px-5 py-2.5 font-bold',
+          cancelButton: 'rounded-xl px-5 py-2.5 font-semibold',
+        },
+      });
+
+      if (!confirmResult.isConfirmed) return;
+
       await independizarMutation.mutateAsync({
         pacCodigo: paciente.pac_codigo,
         nuevoCorreo: data.nuevoCorreo,
+        conservarHistorial,
       });
 
       reset();
+      setConservarHistorial(true);
       onClose();
 
       Swal.fire({
@@ -635,23 +698,23 @@ function IndependizarModal({
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-2xl border border-slate-100"
+        className="w-full max-w-lg overflow-hidden rounded-3xl bg-white dark:bg-slate-900 shadow-2xl border border-slate-100 dark:border-slate-800"
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/50 px-6 py-5">
+        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 px-6 py-5">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400">
               <Unlink className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-lg font-black text-slate-900">Independizar Cuenta</h2>
-              <p className="text-xs text-slate-500">{pacienteName}</p>
+              <h2 className="text-lg font-black text-slate-900 dark:text-white">Independizar Cuenta</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">{pacienteName}</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+            className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
           >
             <X className="h-5 w-5" />
           </button>
@@ -659,15 +722,15 @@ function IndependizarModal({
 
         {/* Content */}
         <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-5">
-          <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-            <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
+          <div className="flex items-start gap-3 rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 p-4 text-sm text-amber-900 dark:text-amber-300">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
             <p className="leading-relaxed text-xs sm:text-sm">
-              Al independizar a este paciente, se desvinculará de tu cuenta y se convertirá en un usuario titular. Se le enviará un correo con credenciales temporales de acceso.
+              Al independizar a este paciente, se creará un usuario titular propio y quedará en tu cuenta como registro histórico.
             </p>
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-600">
+            <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
               Correo Electrónico del Nuevo Usuario *
             </label>
             <div className="relative flex items-center">
@@ -682,7 +745,7 @@ function IndependizarModal({
                   },
                 })}
                 placeholder="ejemplo@correo.com"
-                className="w-full rounded-xl border border-slate-200 pl-10 pr-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 pl-10 pr-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/40"
               />
             </div>
             {errors.nuevoCorreo && (
@@ -690,12 +753,32 @@ function IndependizarModal({
             )}
           </div>
 
+          {/* Opción de Conservar / Trasladar Historial */}
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-4 transition-colors">
+            <label className="flex items-start gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={conservarHistorial}
+                onChange={(e) => setConservarHistorial(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 dark:bg-slate-900 cursor-pointer"
+              />
+              <div className="text-xs sm:text-sm">
+                <span className="font-bold text-slate-800 dark:text-slate-200 block">
+                  Trasladar historial médico (citas, recetas, archivos) a la nueva cuenta
+                </span>
+                <span className="text-slate-500 dark:text-slate-400 text-xs block mt-0.5">
+                  Permite que la nueva cuenta independiente conserve todas las consultas previas y archivos de atención.
+                </span>
+              </div>
+            </label>
+          </div>
+
           {/* Actions */}
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
             >
               Cancelar
             </button>
@@ -721,6 +804,18 @@ function IndependizarModal({
 function PacientesContent() {
   const { data: session } = useSession();
   const { titular, dependientes, isLoading } = usePacienteTitular();
+
+  const [showIndependientes, setShowIndependientes] = useState<boolean>(false);
+
+  const dependientesActivos = useMemo(
+    () => dependientes.filter((d) => d.pac_estado !== 'independizado' && d.pac_estado !== 'independiente'),
+    [dependientes]
+  );
+
+  const dependientesIndependientes = useMemo(
+    () => dependientes.filter((d) => d.pac_estado === 'independizado' || d.pac_estado === 'independiente'),
+    [dependientes]
+  );
 
   const [modalState, setModalState] = useState<{
     open: boolean;
@@ -836,41 +931,107 @@ function PacientesContent() {
           onClose={closeModal}
         />
       ) : (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          {/* Titular card */}
-          {titular && (
-            <PatientCard
-              paciente={titular}
-              isTitular
-              titularName={titularName}
-              index={0}
-              onEdit={openEdit}
-              onDelete={handleDelete}
-              onIndependizar={() => {}}
-              onViewDetails={openDetails}
-            />
-          )}
+        <div className="space-y-8">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+            {/* Titular card */}
+            {titular && (
+              <PatientCard
+                paciente={titular}
+                isTitular
+                titularName={titularName}
+                index={0}
+                onEdit={openEdit}
+                onDelete={handleDelete}
+                onIndependizar={() => {}}
+                onViewDetails={openDetails}
+              />
+            )}
 
-          {/* Dependientes */}
-          {dependientes.length > 0
-            ? dependientes.map((dep, i) => (
-                <PatientCard
-                  key={dep.pac_codigo}
-                  paciente={dep}
-                  isTitular={false}
-                  titularName={titularName}
-                  index={i + 1}
-                  onEdit={openEdit}
-                  onDelete={handleDelete}
-                  onIndependizar={openIndependizar}
-                  onViewDetails={openDetails}
-                />
-              ))
-            : !titular && <EmptyState />}
+            {/* Dependientes Activos */}
+            {dependientesActivos.length > 0
+              ? dependientesActivos.map((dep, i) => (
+                  <PatientCard
+                    key={dep.pac_codigo}
+                    paciente={dep}
+                    isTitular={false}
+                    titularName={titularName}
+                    index={i + 1}
+                    onEdit={openEdit}
+                    onDelete={handleDelete}
+                    onIndependizar={openIndependizar}
+                    onViewDetails={openDetails}
+                  />
+                ))
+              : !titular && <EmptyState />}
 
-          {/* Show empty state when there's a titular but no dependientes */}
-          {titular && dependientes.length === 0 && (
-            <EmptyState />
+            {/* Show empty state when there's a titular but no active dependientes nor independent */}
+            {titular && dependientesActivos.length === 0 && dependientesIndependientes.length === 0 && (
+              <EmptyState />
+            )}
+          </div>
+
+          {/* Sección de Cuentas Independientes (Registro Histórico) */}
+          {dependientesIndependientes.length > 0 && (
+            <div className="mt-10 pt-8 border-t border-slate-200/80 dark:border-slate-800">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-white dark:bg-[#1E293B] border border-slate-200/80 dark:border-slate-800 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
+                    <UserCheck className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                        Historial de Cuentas Independientes
+                      </h2>
+                      <span className="inline-flex items-center rounded-full bg-indigo-50 dark:bg-indigo-950/80 px-2.5 py-0.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60">
+                        {dependientesIndependientes.length}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Registro de pacientes que fueron independizados y ahora gestionan su cuenta por separado.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowIndependientes((prev) => !prev)}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shadow-2xs self-start sm:self-auto cursor-pointer"
+                >
+                  <span>{showIndependientes ? 'Ocultar cuentas independientes' : `Ver cuentas independientes (${dependientesIndependientes.length})`}</span>
+                  {showIndependientes ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </button>
+              </div>
+
+              {/* Desplegable animado de independientes */}
+              <AnimatePresence>
+                {showIndependientes && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className="overflow-hidden pt-6"
+                  >
+                    <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+                      {dependientesIndependientes.map((dep, i) => (
+                        <PatientCard
+                          key={dep.pac_codigo}
+                          paciente={dep}
+                          isTitular={false}
+                          titularName={titularName}
+                          index={i}
+                          onEdit={openEdit}
+                          onDelete={handleDelete}
+                          onIndependizar={() => {}}
+                          onViewDetails={openDetails}
+                        />
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           )}
         </div>
       )}

@@ -10,10 +10,14 @@ import {
 } from '@/services/recompensas';
 import type { CanjearRecompensaPayload, AsignarReferidoPayload } from '@/types/recompensas';
 
+import { toast } from 'sonner';
+import { crearNotificacion } from '@/services/notificaciones';
+
 function useAuthToken() {
   const { data: session, status } = useSession();
   const token = (session as any)?.accessToken as string | undefined;
-  return { token, status };
+  const userId = (session as any)?.userId || (session as any)?.user?.id || (session as any)?.user?.email;
+  return { token, userId, status };
 }
 
 /**
@@ -59,17 +63,33 @@ export function useTotalPuntos(pacCodigo?: string) {
  * Hook Mutation para Canjear Recompensa
  */
 export function useCanjearRecompensa(pacCodigo?: string) {
-  const { token } = useAuthToken();
+  const { token, userId } = useAuthToken();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (payload: CanjearRecompensaPayload) =>
+    mutationFn: (payload: CanjearRecompensaPayload & { nombreRecompensa?: string; costoPuntos?: number }) =>
       canjearRecompensa(pacCodigo!, payload, token),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['recompensas', 'puntos', pacCodigo] });
       queryClient.invalidateQueries({ queryKey: ['recompensas', 'disponibles', pacCodigo] });
       queryClient.invalidateQueries({ queryKey: ['recompensas', 'historial', pacCodigo] });
       queryClient.invalidateQueries({ queryKey: ['lealtad', 'estado'] });
+
+      const nombre = variables.nombreRecompensa ? ` "${variables.nombreRecompensa}"` : '';
+      const puntos = variables.costoPuntos ? ` por ${variables.costoPuntos} puntos` : '';
+
+      toast.success('¡Recompensa canjeada con éxito!');
+
+      if (token) {
+        crearNotificacion(token, {
+          usuarioId: userId || pacCodigo || '',
+          usuarioTipo: 'paciente',
+          tipo: 'recordatorio',
+          titulo: 'Recompensa Canjeada',
+          mensaje: `Has canjeado exitosamente la recompensa${nombre}${puntos}. ¡Disfruta tu beneficio!`,
+          accionUrl: '/dashboard/premios',
+        }).catch(() => {});
+      }
     },
   });
 }
@@ -78,16 +98,29 @@ export function useCanjearRecompensa(pacCodigo?: string) {
  * Hook Mutation para Vincular Código de Referido
  */
 export function useVincularReferido(pacCodigo?: string) {
-  const { token } = useAuthToken();
+  const { token, userId } = useAuthToken();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (payload: AsignarReferidoPayload) =>
       vincularCodigoReferido(pacCodigo!, payload, token),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['recompensas', 'puntos', pacCodigo] });
       queryClient.invalidateQueries({ queryKey: ['recompensas', 'historial', pacCodigo] });
       queryClient.invalidateQueries({ queryKey: ['lealtad', 'estado'] });
+
+      toast.success('Código de referido vinculado');
+
+      if (token) {
+        crearNotificacion(token, {
+          usuarioId: userId || pacCodigo || '',
+          usuarioTipo: 'paciente',
+          tipo: 'sistema',
+          titulo: 'Código Referido Vinculado',
+          mensaje: `Has vinculado exitosamente el código de referido (${variables.codigoReferencia}). ¡Has ganado puntos de lealtad adicionales!`,
+          accionUrl: '/dashboard/premios',
+        }).catch(() => {});
+      }
     },
   });
 }

@@ -2,8 +2,9 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
-import Swal from 'sweetalert2';
+import { toast } from 'sonner';
 import { fetchFavoritos, addFavorito, removeFavorito } from '@/services/favoritos';
+import { crearNotificacion } from '@/services/notificaciones';
 import type { MedicoFavorito } from '@/types/doctor';
 
 type SessionWithAccess = {
@@ -38,7 +39,7 @@ export function useFavoritos(codPac?: string) {
  * Agrega un médico a la lista de favoritos.
  */
 export function useAddFavorito() {
-  const { token } = useAuthInfo();
+  const { token, userId } = useAuthInfo();
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -46,24 +47,21 @@ export function useAddFavorito() {
       addFavorito(token!, codPac, codDoc),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['favoritos', variables.codPac] });
-      Swal.fire({
-        toast: true,
-        position: 'top-end',
-        icon: 'success',
-        title: 'Agregado a favoritos',
-        showConfirmButton: false,
-        timer: 3000,
-      });
+      toast.success('Médico agregado a tus favoritos');
+
+      if (token) {
+        crearNotificacion(token, {
+          usuarioId: userId || variables.codPac,
+          usuarioTipo: 'paciente',
+          tipo: 'sistema',
+          titulo: 'Favorito Guardado',
+          mensaje: 'Has agregado un nuevo especialista a tu lista de médicos favoritos.',
+          accionUrl: '/dashboard/directorio',
+        }).catch(() => {});
+      }
     },
     onError: (error: any) => {
-      Swal.fire({
-        toast: true,
-        position: 'top-end',
-        icon: 'warning',
-        title: error.message || 'Error al agregar a favoritos',
-        showConfirmButton: false,
-        timer: 3000,
-      });
+      toast.error(error.message || 'Error al agregar a favoritos');
     },
   });
 }
@@ -80,24 +78,10 @@ export function useRemoveFavorito() {
       removeFavorito(token!, codPac, codDoc),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['favoritos', variables.codPac] });
-      Swal.fire({
-        toast: true,
-        position: 'top-end',
-        icon: 'success',
-        title: 'Eliminado de favoritos',
-        showConfirmButton: false,
-        timer: 3000,
-      });
+      toast.info('Médico eliminado de tus favoritos');
     },
     onError: (error: any) => {
-      Swal.fire({
-        toast: true,
-        position: 'top-end',
-        icon: 'error',
-        title: error.message || 'Error al eliminar de favoritos',
-        showConfirmButton: false,
-        timer: 3000,
-      });
+      toast.error(error.message || 'Error al eliminar de favoritos');
     },
   });
 }

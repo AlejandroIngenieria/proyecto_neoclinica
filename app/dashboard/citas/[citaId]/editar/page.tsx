@@ -272,7 +272,7 @@ export default function EditWizardPage() {
         archivosConservados: idsConservados,
       };
 
-      await updateCitaMutation.mutateAsync({ citaId, payload });
+      await updateCitaMutation.mutateAsync({ citaId, payload, medicoNombre: citaOriginal?.medicoNombre });
       
       MySwal.fire({
         title: '¡Cita modificada!',
@@ -306,7 +306,7 @@ export default function EditWizardPage() {
       showLoaderOnConfirm: true,
       preConfirm: async () => {
         try {
-          await cancelarCitaMutation.mutateAsync(citaId);
+          await cancelarCitaMutation.mutateAsync(citaOriginal || citaId);
           return true;
         } catch (err: any) {
           Swal.showValidationMessage('Hubo un problema al cancelar la cita.');

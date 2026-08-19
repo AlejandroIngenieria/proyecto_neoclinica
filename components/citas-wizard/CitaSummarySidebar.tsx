@@ -1,7 +1,7 @@
 'use client';
 
 import { useCitaStore } from '@/store/use-cita-store';
-import { CalendarDays, Clock, MapPin, User, Stethoscope, FileText, CheckCircle2 } from 'lucide-react';
+import { CalendarDays, Clock, MapPin, User, Stethoscope, FileText, CheckCircle2, Activity } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -11,6 +11,7 @@ export function CitaSummarySidebar() {
     medicoName,
     modalidad,
     clinicaSeleccionada,
+    servicioSeleccionado,
     areaDomicilio,
     fecha,
     hora,
@@ -19,18 +20,27 @@ export function CitaSummarySidebar() {
   } = useCitaStore();
 
   let precioBase = 0;
+  let iva = 0;
   let recargo = 0;
   let ubicacionStr = 'Por definir';
 
-  if (modalidad === 'presencial' && clinicaSeleccionada) {
+  if (servicioSeleccionado) {
+    precioBase = servicioSeleccionado.costoSinIva;
+    iva = servicioSeleccionado.costoIva;
+  } else if (modalidad === 'presencial' && clinicaSeleccionada) {
     precioBase = clinicaSeleccionada.mclPrecioBase;
+    iva = precioBase > 0 ? precioBase * 0.12 : 0;
+  }
+
+  if (modalidad === 'presencial' && clinicaSeleccionada) {
     ubicacionStr = clinicaSeleccionada.cliDescripcion;
   } else if (modalidad === 'domicilio' && areaDomicilio) {
-    precioBase = 0; // El costo de domicilio se definirá después
     ubicacionStr = `Domicilio: ${areaDomicilio.municipio}`;
   } else if (modalidad === 'virtual') {
     ubicacionStr = 'Videollamada';
   }
+
+  const subtotal = servicioSeleccionado ? servicioSeleccionado.costoTotal : (precioBase + iva + recargo);
 
   // Cálculo de Descuento por Recompensa / Cupón
   let descuento = 0;
@@ -38,15 +48,14 @@ export function CitaSummarySidebar() {
     const tipo = (recompensaSeleccionada.tipoRecompensa || (recompensaSeleccionada as any).rcpTipo || '').toLowerCase();
     const valDesc = (recompensaSeleccionada as any).rcpValorDescuento ?? (recompensaSeleccionada as any).valorDescuento;
     if (tipo.includes('gratis') || tipo.includes('cita')) {
-      descuento = precioBase;
+      descuento = subtotal;
     } else if (typeof valDesc === 'number' && valDesc > 0) {
-      descuento = valDesc <= 1 ? precioBase * valDesc : valDesc;
+      descuento = valDesc <= 1 ? subtotal * valDesc : valDesc;
     } else {
-      descuento = 50; // Descuento estándar por defecto si no especifica monto
+      descuento = Math.min(50, subtotal);
     }
   }
 
-  const subtotal = precioBase + recargo;
   const precioTotal = Math.max(0, subtotal - descuento);
 
   return (
@@ -122,10 +131,40 @@ export function CitaSummarySidebar() {
           </div>
         </div>
 
+        {/* Servicio Seleccionado */}
+        {servicioSeleccionado && (
+          <div className="flex gap-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400">
+              <Activity className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Servicio</p>
+              <p className="truncate text-sm font-bold text-slate-900 dark:text-white">
+                {servicioSeleccionado.servicio}
+              </p>
+              <p className="text-xs font-semibold text-teal-600 dark:text-teal-400 mt-0.5">
+                Q{servicioSeleccionado.costoTotal.toFixed(2)}
+              </p>
+            </div>
+          </div>
+        )}
+
       </div>
 
       {/* Footer / Precio */}
       <div className="bg-slate-50 dark:bg-[#0F172A] p-6 border-t border-slate-100 dark:border-slate-800 space-y-2">
+        {servicioSeleccionado && (
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+            <span>Costo base (sin IVA):</span>
+            <span>Q{servicioSeleccionado.costoSinIva.toFixed(2)}</span>
+          </div>
+        )}
+        {servicioSeleccionado && servicioSeleccionado.costoIva > 0 && (
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+            <span>IVA:</span>
+            <span>Q{servicioSeleccionado.costoIva.toFixed(2)}</span>
+          </div>
+        )}
         {recompensaSeleccionada ? (
           <>
             <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">

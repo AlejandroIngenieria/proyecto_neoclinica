@@ -6,11 +6,11 @@ import { useDropzone } from 'react-dropzone';
 import {
   usePacientesSeleccion,
   useGruposCita,
-  useCreateGrupo
+  useCreateGrupo,
 } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { useCitaStore } from '@/store/use-cita-store';
-import { ChevronLeft, MapPin, Video, Home, Stethoscope, ArrowRight, CalendarDays, Building2, BriefcaseMedical, CalendarClock, Activity, ClipboardList, Plus, Loader2, UploadCloud, FileText, X } from 'lucide-react';
+import { ChevronLeft, MapPin, Video, Home, Stethoscope, ArrowRight, CalendarDays, Building2, BriefcaseMedical, CalendarClock, Activity, ClipboardList, Plus, Loader2, UploadCloud, FileText, X, CheckCircle2, Sparkles } from 'lucide-react';
 import { usePacienteTitular } from '@/hooks/use-pacientes';
 import { PacienteFormModal } from '@/components/paciente-form-modal';
 import type { GrupoCitaDto } from '@/types/citas';
@@ -48,6 +48,7 @@ export function Step2PacienteMotivo() {
   const {
     codMedico, modalidad,
     clinicaSeleccionada, areaDomicilio,
+    servicioSeleccionado, setServicio,
     fecha, hora, step,
     pacienteSeleccionado, setPaciente,
     motivo, setMotivo,
@@ -65,7 +66,6 @@ export function Step2PacienteMotivo() {
   const { titular } = usePacienteTitular();
   const { data: pacientes = [], isLoading: loadingPacientes } = usePacientesSeleccion();
   const { data: doctor, isLoading: loadingDoctor } = useDoctorByCode(codMedico!);
-
   const { data: grupos = [], isLoading: loadingGrupos, refetch: refetchGrupos } = useGruposCita(
     pacienteSeleccionado?.pacCodigo || null,
     codMedico
@@ -191,45 +191,107 @@ export function Step2PacienteMotivo() {
         </div>
 
 
-        {/* SECTION 2: MOTIVO */}
+        {/* SECTION 2: SERVICIO / MOTIVO DE CONSULTA */}
         <div className={`transition-all duration-300 ${pacienteSeleccionado ? 'opacity-100 translate-y-0' : 'opacity-40 pointer-events-none translate-y-4'}`}>
-          <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-1 tracking-tight">Motivo de la consulta</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Selecciona la opción que mejor describa tu visita.</p>
+          {servicioSeleccionado ? (
+            <div className="space-y-4">
+              <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-1 tracking-tight flex items-center gap-2">
+                <Stethoscope className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                Servicio Seleccionado
+              </h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                Has seleccionado el siguiente servicio en el paso anterior:
+              </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {MOTIVOS.map(m => {
-              const isSelected = motivo === m.id;
-              const Icon = m.icon;
-              return (
-                <button
-                  key={m.id}
-                  onClick={() => {
-                    setMotivo(m.id);
-                    if (m.id !== 'Consulta de Seguimiento' && m.id !== 'Enfermedad o Molestia') {
-                      setGrupo(null);
-                    }
-                  }}
-                  className={`relative flex flex-col items-start text-left p-5 rounded-3xl border-[2px] transition-all duration-200 ${isSelected
-                    ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-lg shadow-blue-600/10'
-                    : 'border-slate-100 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-600/50 bg-white dark:bg-[#1E293B] shadow-sm hover:shadow-md'
-                    }`}
-                >
-                  <div className={`shrink-0 p-3 rounded-full mb-4 transition-colors ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-50 dark:bg-[#0B1120] text-blue-600 dark:text-blue-400'}`}>
-                    <Icon className="w-6 h-6" />
+              {/* Tarjeta del servicio seleccionado */}
+              <div className="rounded-2xl border-2 border-blue-600/60 dark:border-blue-500/60 bg-blue-50/60 dark:bg-blue-950/40 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="w-12 h-12 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-blue-600/20">
+                    <CheckCircle2 className="w-6 h-6" />
                   </div>
-
-                  <div className="flex flex-col">
-                    <h3 className={`text-[15px] font-bold mb-2 leading-tight ${isSelected ? 'text-blue-900 dark:text-blue-400' : 'text-slate-900 dark:text-slate-100'}`}>
-                      {m.title}
-                    </h3>
-                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-md w-fit ${isSelected ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}>
-                      {m.badge}
+                  <div className="min-w-0">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                      Servicio médico
                     </span>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white truncate">
+                      {servicioSeleccionado.servicio}
+                    </h3>
+                    {servicioSeleccionado.observaciones && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
+                        {servicioSeleccionado.observaciones}
+                      </p>
+                    )}
                   </div>
-                </button>
-              )
-            })}
-          </div>
+                </div>
+
+                <div className="text-left sm:text-right shrink-0 border-t sm:border-t-0 pt-3 sm:pt-0 border-blue-200/60 dark:border-blue-800/40">
+                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 block">
+                    Costo total con IVA
+                  </span>
+                  <span className="text-xl font-black text-blue-600 dark:text-blue-400">
+                    Q{servicioSeleccionado.costoTotal.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Observaciones o detalles adicionales */}
+              <div className="mt-4">
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
+                  Observaciones o síntomas adicionales (Opcional)
+                </label>
+                <textarea
+                  rows={3}
+                  value={motivo && motivo !== servicioSeleccionado.servicio ? motivo : ''}
+                  onChange={(e) => setMotivo(e.target.value || servicioSeleccionado.servicio)}
+                  placeholder="Describe brevemente tus síntomas, dudas o detalles adicionales que el médico deba conocer..."
+                  className="w-full bg-white dark:bg-[#1E293B] px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 resize-none transition-all"
+                />
+              </div>
+            </div>
+          ) : (
+            <div>
+              <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-1 tracking-tight">Motivo de la consulta</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Selecciona la opción que mejor describa tu visita.</p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {MOTIVOS.map((m) => {
+                  const isSelected = motivo === m.id;
+                  const Icon = m.icon;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        setServicio(null);
+                        setMotivo(m.id);
+                        if (m.id !== 'Consulta de Seguimiento' && m.id !== 'Enfermedad o Molestia') {
+                          setGrupo(null);
+                        }
+                      }}
+                      className={`relative flex flex-col items-start text-left p-5 rounded-3xl border-[2px] transition-all duration-200 ${
+                        isSelected
+                          ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-lg shadow-blue-600/10'
+                          : 'border-slate-100 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-600/50 bg-white dark:bg-[#1E293B] shadow-sm hover:shadow-md'
+                      }`}
+                    >
+                      <div className={`shrink-0 p-3 rounded-full mb-4 transition-colors ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-50 dark:bg-[#0B1120] text-blue-600 dark:text-blue-400'}`}>
+                        <Icon className="w-6 h-6" />
+                      </div>
+
+                      <div className="flex flex-col">
+                        <h3 className={`text-[15px] font-bold mb-2 leading-tight ${isSelected ? 'text-blue-900 dark:text-blue-400' : 'text-slate-900 dark:text-slate-100'}`}>
+                          {m.title}
+                        </h3>
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-md w-fit ${isSelected ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}>
+                          {m.badge}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         <hr className="border-slate-100 dark:border-slate-800 my-5" />
