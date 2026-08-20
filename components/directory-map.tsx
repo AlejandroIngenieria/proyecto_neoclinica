@@ -2,9 +2,24 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react';
 import Image from 'next/image';
-import { APIProvider, Map, AdvancedMarker, useMap } from '@vis.gl/react-google-maps';
-import { Star, MapPin, ExternalLink, Building2, Stethoscope, X, User, Navigation } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { APIProvider, Map as GoogleMap, AdvancedMarker, useMap } from '@vis.gl/react-google-maps';
+import {
+  Star,
+  MapPin,
+  ExternalLink,
+  Building2,
+  Stethoscope,
+  X,
+  User,
+  Navigation,
+  ChevronLeft,
+  ChevronRight,
+  Users,
+  Calendar,
+} from 'lucide-react';
 import type { DoctorCardData } from './doctor-card';
+import type { DoctorClinica } from '@/types';
 import { getDoctorPriceDisplay } from '@/types/doctor';
 
 const MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY || '';
@@ -22,16 +37,26 @@ const ZONA_OFFSETS: Record<string, { lat: number; lng: number }> = {
   '4': { lat: 14.621, lng: -90.518 },
 };
 
-type ClinicLocationMarker = {
-  id: string;
+export type DoctorAtBuilding = {
   expCodigo: string;
   doctorData: DoctorCardData;
+  clinicIndex: number;
+  clinic: DoctorClinica;
+  priceLabel: string;
+  isPrimary: boolean;
+};
+
+export type BuildingLocation = {
+  id: string;
+  name: string;
+  address: string;
+  zona: string;
   lat: number;
   lng: number;
-  priceLabel: string;
-  clinicName: string;
-  zonaLabel: string;
-  isPrimary: boolean;
+  doctors: DoctorAtBuilding[];
+  phone?: string | null;
+  directMapsUrl: string;
+  directWazeUrl?: string | null;
 };
 
 type DirectoryMapProps = {
@@ -99,43 +124,30 @@ function MapCircle({
 function MapController({
   userLocation,
   isNearMeActive,
-  selectedDoctorId,
-  selectedClinicCoords,
-  activeCoords,
+  targetCoords,
   defaultCenterCoords,
 }: {
   userLocation?: { lat: number; lng: number } | null;
   isNearMeActive?: boolean;
-  selectedDoctorId?: string | null;
-  selectedClinicCoords?: { lat: number; lng: number } | null;
-  activeCoords?: { lat: number; lng: number }[];
+  targetCoords?: { lat: number; lng: number } | null;
   defaultCenterCoords?: { lat: number; lng: number } | null;
 }) {
   const map = useMap();
-  const lastCenteredDoctorRef = useRef<string | null>(null);
   const lastCenteredNearMeRef = useRef<boolean>(false);
   const hasCenteredDefaultRef = useRef(false);
 
-  // 1. Enfoque cercano a la clínica seleccionada cuando se elige un médico o cambia de sede
+  // Centrado suave cuando se selecciona un médico o edificio específico
+  useEffect(() => {
+    if (!map || !targetCoords) return;
+
+    map.panTo(targetCoords);
+    map.setZoom(16);
+  }, [map, targetCoords?.lat, targetCoords?.lng]);
+
+  // Manejo de "Cerca de ti" y centrado inicial dentro de Ciudad de Guatemala
   useEffect(() => {
     if (!map) return;
 
-    if (selectedClinicCoords) {
-      map.panTo(selectedClinicCoords);
-      map.setZoom(15);
-      lastCenteredDoctorRef.current = selectedDoctorId || null;
-    } else if (selectedDoctorId && activeCoords && activeCoords.length > 0) {
-      map.panTo(activeCoords[0]);
-      map.setZoom(15);
-      lastCenteredDoctorRef.current = selectedDoctorId;
-    }
-  }, [map, selectedClinicCoords?.lat, selectedClinicCoords?.lng, selectedDoctorId, activeCoords]);
-
-  // 2. Manejo de "Cerca de ti" y centrado inicial dentro de Ciudad de Guatemala
-  useEffect(() => {
-    if (!map) return;
-
-    // Si se activa "Cerca de ti"
     if (isNearMeActive && userLocation) {
       if (!lastCenteredNearMeRef.current) {
         map.panTo(userLocation);
@@ -149,14 +161,13 @@ function MapController({
       lastCenteredNearMeRef.current = false;
     }
 
-    // Centrado inicial por defecto en Guatemala Ciudad con zoom cercano
-    if (!hasCenteredDefaultRef.current && !selectedDoctorId) {
+    if (!hasCenteredDefaultRef.current && !targetCoords) {
       const target = defaultCenterCoords || GUATEMALA_CENTER;
       map.panTo(target);
       map.setZoom(14);
       hasCenteredDefaultRef.current = true;
     }
-  }, [map, userLocation, isNearMeActive, selectedDoctorId, defaultCenterCoords]);
+  }, [map, userLocation, isNearMeActive, targetCoords, defaultCenterCoords]);
 
   return null;
 }
@@ -174,123 +185,228 @@ export function DirectoryMap({
   onDoctorSelect,
   onNavigateToProfile,
 }: DirectoryMapProps) {
-  // Estado para el marcador clickeado cuyo contenido se muestra ABAJO del puntero
-  const [clickedMarkerId, setClickedMarkerId] = useState<string | null>(null);
+  const router = useRouter();
 
-  // Construir todos los marcadores de clínicas
-  const allClinicMarkers = useMemo<ClinicLocationMarker[]>(() => {
-    const list: ClinicLocationMarker[] = [];
+  // Estado del edificio/clínica seleccionado cuyo pop-up se muestra
+  const [activeBuildingId, setActiveBuildingId] = useState<string | null>(null);
+
+  // Índice del doctor actualmente visible en el carrusel del edificio activo
+  const [carouselDoctorIndex, setCarouselDoctorIndex] = useState<number>(0);
+
+  // Agrupación de todas las clínicas y doctores por EDIFICIO / UBICACIÓN FÍSICA
+  const buildings = useMemo<BuildingLocation[]>(() => {
+    const buildingMap = new Map<string, BuildingLocation>();
 
     doctors.forEach((docData, docIdx) => {
       const doc = docData.doctor;
-
       const priceInfo = getDoctorPriceDisplay(doc);
       const priceLabel = priceInfo.hasPrice ? `Q${priceInfo.price}` : 'Por definir';
 
       if (doc.clinicas && doc.clinicas.length > 0) {
         doc.clinicas.forEach((cli, cliIdx) => {
-          let lat: number | null = null;
-          let lng: number | null = null;
-          const clinicName = cli.cli_descripcion || cli.cli_direccion_completa || `Clínica ${cliIdx + 1}`;
-          const zonaLabel = cli.cli_zona ? `Zona ${cli.cli_zona}` : 'Guatemala';
+          let lat: number;
+          let lng: number;
 
-          if (typeof cli.cli_latitud === 'number' && typeof cli.cli_longitud === 'number' && !isNaN(cli.cli_latitud) && !isNaN(cli.cli_longitud)) {
+          const clinicName = cli.cli_descripcion?.trim() || cli.cli_direccion_completa?.trim() || `Clínica ${cliIdx + 1}`;
+          const zonaLabel = cli.cli_zona ? `Zona ${cli.cli_zona}` : 'Guatemala';
+          const address = cli.cli_direccion_completa?.trim() || `${clinicName}, ${zonaLabel}`;
+
+          if (
+            typeof cli.cli_latitud === 'number' &&
+            typeof cli.cli_longitud === 'number' &&
+            !isNaN(cli.cli_latitud) &&
+            !isNaN(cli.cli_longitud)
+          ) {
             lat = cli.cli_latitud;
             lng = cli.cli_longitud;
           } else {
             const zona = cli.cli_zona?.toString() || '';
             const baseCoords = ZONA_OFFSETS[zona] || GUATEMALA_CENTER;
-            const hash = (docIdx * 5 + cliIdx) * 0.003;
-            lat = baseCoords.lat + Math.sin(hash) * 0.012;
-            lng = baseCoords.lng + Math.cos(hash) * 0.012;
+            // Para clínicas sin coordenadas exactas pero con el mismo nombre y zona, asignar la misma coordenada de edificio
+            const nameHash = clinicName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+            const hash = (nameHash % 100) * 0.0008;
+            lat = baseCoords.lat + Math.sin(hash) * 0.008;
+            lng = baseCoords.lng + Math.cos(hash) * 0.008;
           }
 
-          list.push({
-            id: `${doc.exp_codigo}-cli-${cliIdx}`,
+          // Clave de agrupación: Coordenadas redondeadas a 4 decimales (~11 metros de tolerancia) o nombre de edificio + zona
+          const coordKey = `${lat.toFixed(4)}_${lng.toFixed(4)}`;
+          const buildingKey = `${clinicName.toLowerCase()}_${zonaLabel.toLowerCase()}_${coordKey}`;
+
+          const doctorItem: DoctorAtBuilding = {
             expCodigo: doc.exp_codigo,
             doctorData: docData,
-            lat,
-            lng,
+            clinicIndex: cliIdx,
+            clinic: cli,
             priceLabel,
-            clinicName,
-            zonaLabel,
             isPrimary: cliIdx === 0,
-          });
+          };
+
+          if (buildingMap.has(buildingKey)) {
+            const existing = buildingMap.get(buildingKey)!;
+            // Evitar duplicar el mismo doctor en el mismo edificio si ya fue agregado
+            const alreadyInBuilding = existing.doctors.some(
+              (d) => d.expCodigo === doc.exp_codigo && d.clinicIndex === cliIdx
+            );
+            if (!alreadyInBuilding) {
+              existing.doctors.push(doctorItem);
+            }
+          } else {
+            const directMapsUrl =
+              cli.cli_url_google_maps ||
+              `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+
+            buildingMap.set(buildingKey, {
+              id: `bld-${buildingMap.size + 1}-${coordKey}`,
+              name: clinicName,
+              address,
+              zona: zonaLabel,
+              lat,
+              lng,
+              doctors: [doctorItem],
+              phone: cli.cli_telefono1,
+              directMapsUrl,
+              directWazeUrl: cli.cli_url_waze,
+            });
+          }
         });
       } else {
-        const hash = docIdx * 0.0035;
-        const lat = GUATEMALA_CENTER.lat + Math.sin(hash) * 0.012;
-        const lng = GUATEMALA_CENTER.lng + Math.cos(hash) * 0.012;
+        // Doctor sin clínicas detalladas: se asocia a un centro médico principal
+        const baseCoords = GUATEMALA_CENTER;
+        const coordKey = `${baseCoords.lat.toFixed(4)}_${baseCoords.lng.toFixed(4)}`;
+        const buildingKey = `clinica_principal_${coordKey}`;
 
-        list.push({
-          id: `${doc.exp_codigo}-cli-0`,
+        const fallbackClinic: DoctorClinica = {
+          cli_tipo: 'clinica',
+          cli_descripcion: 'Centro Médico NeoClínica',
+          cli_direccion_completa: 'Ciudad de Guatemala',
+          cli_zona: '10',
+          cli_latitud: baseCoords.lat,
+          cli_longitud: baseCoords.lng,
+          cli_telefono1: null,
+          mcl_precio_base: null,
+          horarios_atencion: [],
+        };
+
+        const doctorItem: DoctorAtBuilding = {
           expCodigo: doc.exp_codigo,
           doctorData: docData,
-          lat,
-          lng,
+          clinicIndex: 0,
+          clinic: fallbackClinic,
           priceLabel,
-          clinicName: 'Clínica Principal',
-          zonaLabel: 'Guatemala',
           isPrimary: true,
-        });
+        };
+
+        if (buildingMap.has(buildingKey)) {
+          const existing = buildingMap.get(buildingKey)!;
+          if (!existing.doctors.some((d) => d.expCodigo === doc.exp_codigo)) {
+            existing.doctors.push(doctorItem);
+          }
+        } else {
+          buildingMap.set(buildingKey, {
+            id: `bld-default-${coordKey}`,
+            name: 'Centro Médico NeoClínica',
+            address: 'Zona 10, Ciudad de Guatemala',
+            zona: 'Zona 10',
+            lat: baseCoords.lat,
+            lng: baseCoords.lng,
+            doctors: [doctorItem],
+            directMapsUrl: `https://www.google.com/maps/dir/?api=1&destination=${baseCoords.lat},${baseCoords.lng}`,
+          });
+        }
       }
     });
 
-    return list;
+    return Array.from(buildingMap.values());
   }, [doctors]);
 
-  // Clínica MÁS CERCANA a la ubicación del usuario
-  const closestMarker = useMemo(() => {
-    if (allClinicMarkers.length === 0) return null;
+  // Edificio más cercano a la ubicación del usuario
+  const closestBuilding = useMemo(() => {
+    if (buildings.length === 0) return null;
     const refPoint = userLocation || GUATEMALA_CENTER;
 
     let minDistance = Infinity;
-    let closest = allClinicMarkers[0];
+    let closest = buildings[0];
 
-    for (const m of allClinicMarkers) {
-      const dist = Math.hypot(m.lat - refPoint.lat, m.lng - refPoint.lng);
+    for (const b of buildings) {
+      const dist = Math.hypot(b.lat - refPoint.lat, b.lng - refPoint.lng);
       if (dist < minDistance) {
         minDistance = dist;
-        closest = m;
+        closest = b;
       }
     }
     return closest;
-  }, [allClinicMarkers, userLocation]);
+  }, [buildings, userLocation]);
 
-  // Coordenadas de la clínica seleccionada del doctor activo
-  const selectedClinicCoords = useMemo(() => {
+  // Edificio activo o seleccionado
+  const activeBuilding = useMemo(() => {
+    return buildings.find((b) => b.id === activeBuildingId) || null;
+  }, [buildings, activeBuildingId]);
+
+  // Edificio asociado al doctor seleccionado en la lista lateral
+  const selectedDoctorBuilding = useMemo(() => {
     if (!selectedDoctorId) return null;
-    const marker = allClinicMarkers.find((m) => m.id === `${selectedDoctorId}-cli-${selectedClinicIndex}`);
-    if (marker) return { lat: marker.lat, lng: marker.lng };
-    return null;
-  }, [selectedDoctorId, selectedClinicIndex, allClinicMarkers]);
+    return (
+      buildings.find((b) =>
+        b.doctors.some(
+          (d) => d.expCodigo === selectedDoctorId && d.clinicIndex === selectedClinicIndex
+        )
+      ) ||
+      buildings.find((b) => b.doctors.some((d) => d.expCodigo === selectedDoctorId)) ||
+      null
+    );
+  }, [selectedDoctorId, selectedClinicIndex, buildings]);
 
-  // Al seleccionar un doctor específico, sincronizar el marcador clickeado
-  useEffect(() => {
-    if (selectedDoctorId) {
-      const specificClinic = allClinicMarkers.find((m) => m.id === `${selectedDoctorId}-cli-${selectedClinicIndex}`) ||
-        allClinicMarkers.find((m) => m.expCodigo === selectedDoctorId && m.isPrimary) ||
-        allClinicMarkers.find((m) => m.expCodigo === selectedDoctorId);
-      if (specificClinic) {
-        setClickedMarkerId(specificClinic.id);
-      }
-    } else {
-      setClickedMarkerId(null);
+  // Coordenadas objetivo para centrado en el mapa
+  const targetCoords = useMemo(() => {
+    if (selectedDoctorBuilding) {
+      return { lat: selectedDoctorBuilding.lat, lng: selectedDoctorBuilding.lng };
     }
-  }, [selectedDoctorId, selectedClinicIndex, allClinicMarkers]);
+    if (activeBuilding) {
+      return { lat: activeBuilding.lat, lng: activeBuilding.lng };
+    }
+    return null;
+  }, [selectedDoctorBuilding, activeBuilding]);
 
-  // ID del doctor actualmente enfocado
-  const activeDoctorId = hoveredDoctorId || selectedDoctorId;
+  // Sincronización: Al seleccionar un doctor en la lista lateral, abrir el edificio y posicionar el carrusel en ese doctor
+  useEffect(() => {
+    if (selectedDoctorId && selectedDoctorBuilding) {
+      setActiveBuildingId(selectedDoctorBuilding.id);
 
-  // Filtrar marcadores para el doctor enfocado
-  const activeDoctorClinics = useMemo(() => {
-    if (!activeDoctorId) return [];
-    return allClinicMarkers.filter((m) => m.expCodigo === activeDoctorId);
-  }, [allClinicMarkers, activeDoctorId]);
+      const docIndexInBuilding = selectedDoctorBuilding.doctors.findIndex(
+        (d) => d.expCodigo === selectedDoctorId
+      );
+      setCarouselDoctorIndex(docIndexInBuilding >= 0 ? docIndexInBuilding : 0);
+    }
+  }, [selectedDoctorId, selectedDoctorBuilding]);
 
-  const activeCoords = useMemo(() => {
-    return activeDoctorClinics.map((c) => ({ lat: c.lat, lng: c.lng }));
-  }, [activeDoctorClinics]);
+  // Manejador para navegar al doctor anterior en el carrusel del edificio
+  const handlePrevDoctor = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!activeBuilding || activeBuilding.doctors.length <= 1) return;
+    setCarouselDoctorIndex((prev) =>
+      prev === 0 ? activeBuilding.doctors.length - 1 : prev - 1
+    );
+  };
+
+  // Manejador para navegar al siguiente doctor en el carrusel del edificio
+  const handleNextDoctor = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!activeBuilding || activeBuilding.doctors.length <= 1) return;
+    setCarouselDoctorIndex((prev) =>
+      prev === activeBuilding.doctors.length - 1 ? 0 : prev + 1
+    );
+  };
+
+  // Doctor actualmente enfocado en el carrusel del pop-up del edificio
+  const currentCarouselDoctor = useMemo(() => {
+    if (!activeBuilding || activeBuilding.doctors.length === 0) return null;
+    const safeIndex = Math.min(
+      Math.max(0, carouselDoctorIndex),
+      activeBuilding.doctors.length - 1
+    );
+    return activeBuilding.doctors[safeIndex];
+  }, [activeBuilding, carouselDoctorIndex]);
 
   const radarRadiusMeters = (radarRadiusKm || 10) * 1000;
 
@@ -298,20 +414,27 @@ export function DirectoryMap({
     return (
       <div className="w-full h-full min-h-[400px] rounded-3xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center p-6 text-center">
         <MapPin className="w-10 h-10 text-sky-500 mb-2" />
-        <p className="font-bold text-slate-800 dark:text-slate-200 text-sm">Mapa interactivo de clínicas</p>
+        <p className="font-bold text-slate-800 dark:text-slate-200 text-sm">
+          Mapa interactivo de clínicas
+        </p>
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xs">
-          Visualiza la ubicación de los médicos en tiempo real.
+          Visualiza la ubicación de los médicos agrupados por clínica y hospital en tiempo real.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="w-full h-full min-h-[500px] rounded-3xl overflow-hidden shadow-lg border border-slate-200/80 dark:border-slate-800 relative z-10">
+    <div className="w-full h-full min-h-[500px] rounded-3xl overflow-hidden shadow-xl border border-slate-200/80 dark:border-slate-800 relative z-10 bg-slate-100 dark:bg-slate-950 font-sans">
       <APIProvider apiKey={MAPS_API_KEY} libraries={['places', 'marker']}>
-        <Map
+        <GoogleMap
           mapId="DEMO_MAP_ID"
-          defaultCenter={selectedClinicCoords || activeCoords[0] || (closestMarker ? { lat: closestMarker.lat, lng: closestMarker.lng } : GUATEMALA_CENTER)}
+          defaultCenter={
+            targetCoords ||
+            (closestBuilding
+              ? { lat: closestBuilding.lat, lng: closestBuilding.lng }
+              : GUATEMALA_CENTER)
+          }
           defaultZoom={14}
           gestureHandling="greedy"
           disableDefaultUI={false}
@@ -320,13 +443,15 @@ export function DirectoryMap({
           <MapController
             userLocation={userLocation}
             isNearMeActive={isNearMeActive}
-            selectedDoctorId={selectedDoctorId}
-            selectedClinicCoords={selectedClinicCoords}
-            activeCoords={activeCoords.length > 0 ? activeCoords : undefined}
-            defaultCenterCoords={closestMarker ? { lat: closestMarker.lat, lng: closestMarker.lng } : null}
+            targetCoords={targetCoords}
+            defaultCenterCoords={
+              closestBuilding
+                ? { lat: closestBuilding.lat, lng: closestBuilding.lng }
+                : null
+            }
           />
 
-          {/* 🎯 Círculo de Radar Ajustable en Km para "Cerca de ti" */}
+          {/* 🎯 Círculo de Radar Ajustable para "Cerca de ti" */}
           {isNearMeActive && userLocation && !searchedLocation && (
             <MapCircle
               center={{ lat: userLocation.lat, lng: userLocation.lng }}
@@ -341,17 +466,21 @@ export function DirectoryMap({
             />
           )}
 
-          {/* 📍 Marcador de Ubicación del Usuario ("Tu Ubicación Actual") */}
+          {/* 📍 Marcador de Ubicación del Usuario */}
           {userLocation && (
             <AdvancedMarker position={userLocation} zIndex={1000}>
-              <div className="relative flex items-center justify-center group cursor-pointer">
+              <div className="relative flex flex-col items-center select-none group cursor-pointer -translate-y-full pb-1">
                 {isNearMeActive && (
                   <div className="absolute -inset-3 rounded-full bg-sky-400/30 animate-ping pointer-events-none" />
                 )}
                 <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-900 text-white font-extrabold text-xs shadow-2xl border-2 border-sky-400">
                   <Navigation className="w-3.5 h-3.5 fill-sky-400 text-sky-400" />
-                  <span>Tu ubicación {isNearMeActive ? `· Radar ${radarRadiusKm} km` : ''}</span>
+                  <span>
+                    Tu ubicación {isNearMeActive ? `· Radar ${radarRadiusKm} km` : ''}
+                  </span>
                 </div>
+                <div className="w-2.5 h-2.5 bg-slate-900 border-r-2 border-b-2 border-sky-400 rotate-45 -mt-1.5 shadow-xs" />
+                <div className="w-2 h-0.5 bg-slate-950/40 rounded-full blur-[0.5px] mt-0.5" />
               </div>
             </AdvancedMarker>
           )}
@@ -370,167 +499,325 @@ export function DirectoryMap({
                   strokeWeight: 2,
                 }}
               />
-              <AdvancedMarker position={{ lat: searchedLocation.lat, lng: searchedLocation.lng }} zIndex={1005}>
-                <div className="relative flex items-center justify-center group cursor-pointer">
+              <AdvancedMarker
+                position={{ lat: searchedLocation.lat, lng: searchedLocation.lng }}
+                zIndex={1005}
+              >
+                <div className="relative flex flex-col items-center select-none group cursor-pointer -translate-y-full pb-1">
                   <div className="absolute -inset-3 rounded-full bg-sky-500/25 animate-ping pointer-events-none" />
                   <div className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-sky-600 text-white font-black text-xs shadow-2xl border-2 border-white">
                     <MapPin className="w-4 h-4 fill-white text-white shrink-0" />
-                    <span className="max-w-[170px] truncate">{searchedLocation.address} · Radar {radarRadiusKm} km</span>
+                    <span className="max-w-[170px] truncate">
+                      {searchedLocation.address} · Radar {radarRadiusKm} km
+                    </span>
                   </div>
+                  <div className="w-2.5 h-2.5 bg-sky-600 border-r-2 border-b-2 border-white rotate-45 -mt-1.5 shadow-xs" />
+                  <div className="w-2 h-0.5 bg-slate-950/40 rounded-full blur-[0.5px] mt-0.5" />
                 </div>
               </AdvancedMarker>
             </>
           )}
 
-          {/* 🏥 Marcadores de Punteros Limpios */}
-          {allClinicMarkers.map((marker) => {
-            const isDoctorActive = activeDoctorId === marker.expCodigo;
-            const isCardOpen = clickedMarkerId === marker.id;
+          {/* 🏥 PINES CONSOLIDADOS POR EDIFICIO / HOSPITAL (2 Estados con Pico de Ubicación) */}
+          {buildings.map((building) => {
+            const hasMultipleDoctors = building.doctors.length > 1;
+            const isBuildingSelected = activeBuildingId === building.id;
 
-            if (!marker.isPrimary && !isDoctorActive) {
-              return null;
-            }
+            // Solo se resalta el edificio de la sede activa elegida (de una en una), manteniendo las demás minimizadas
+            const isDoctorSelectedInBuilding =
+              !!selectedDoctorId &&
+              building.doctors.some(
+                (d) => d.expCodigo === selectedDoctorId && d.clinicIndex === selectedClinicIndex
+              );
 
-            const doc = marker.doctorData.doctor;
-            const mapsDirectUrl = `https://www.google.com/maps/dir/?api=1&destination=${marker.lat},${marker.lng}`;
+            const isDoctorHoveredInBuilding =
+              !!hoveredDoctorId &&
+              !selectedDoctorId &&
+              building.doctors.some(
+                (d) => d.expCodigo === hoveredDoctorId && d.clinicIndex === selectedClinicIndex
+              );
+
+            const isHighlighted =
+              isBuildingSelected ||
+              isDoctorSelectedInBuilding ||
+              isDoctorHoveredInBuilding;
 
             return (
               <AdvancedMarker
-                key={marker.id}
-                position={{ lat: marker.lat, lng: marker.lng }}
+                key={building.id}
+                position={{ lat: building.lat, lng: building.lng }}
                 onClick={() => {
-                  onDoctorSelect(marker.expCodigo);
-                  setClickedMarkerId((prev) => (prev === marker.id ? null : marker.id));
+                  setActiveBuildingId((prev) => (prev === building.id ? null : building.id));
+                  setCarouselDoctorIndex(0);
+                  if (building.doctors.length > 0) {
+                    onDoctorSelect(building.doctors[0].expCodigo);
+                  }
                 }}
-                zIndex={isCardOpen ? 9999 : isDoctorActive ? 4000 : 3000}
+                zIndex={isHighlighted ? 9000 : 3000}
               >
-                <div className="relative flex flex-col items-center select-none">
-                  {/* Puntero del Médico */}
-                  <div
-                    onMouseEnter={() => onDoctorHover(marker.expCodigo)}
-                    onMouseLeave={() => onDoctorHover(null)}
-                    className={`transition-all duration-200 transform cursor-pointer flex items-center justify-center ${
-                      isCardOpen || isDoctorActive
-                        ? 'scale-110 -translate-y-1'
-                        : 'scale-100 hover:scale-105'
-                    }`}
-                  >
-                    {isCardOpen || isDoctorActive ? (
-                      <div className="px-4 py-2 rounded-full font-black text-xs shadow-xl border-2 transition-all duration-200 whitespace-nowrap flex items-center gap-2 bg-slate-900 text-white border-white ring-4 ring-sky-400/40">
-                        <Stethoscope className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                        <span className="max-w-[190px] truncate">{marker.doctorData.fullName}</span>
-                        <span className="bg-sky-500/30 text-sky-200 px-2 py-0.5 rounded-md text-[10px] truncate max-w-[110px]">
-                          {marker.clinicName}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="px-3.5 py-1.5 rounded-full font-bold text-xs shadow-md border transition-all duration-200 whitespace-nowrap flex items-center gap-1.5 bg-white text-slate-800 border-slate-200/90 hover:bg-slate-900 hover:text-white hover:border-slate-900">
-                        <Stethoscope className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                        <span className="max-w-[170px] truncate">{marker.doctorData.fullName}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 🪟 Tarjeta Informativa Desplegada al hacer CLICK */}
-                  {isCardOpen && (
-                    <div
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onNavigateToProfile(marker.expCodigo);
-                      }}
-                      className="absolute top-full mt-3 left-1/2 -translate-x-1/2 w-68 bg-white rounded-2xl p-3.5 shadow-2xl border border-slate-200/90 z-[9999] text-slate-900 cursor-pointer animate-in fade-in slide-in-from-top-2 duration-200"
-                    >
-                      {/* Flechita apuntando hacia arriba al puntero */}
-                      <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white rotate-45 border-t border-l border-slate-200 shadow-xs" />
-
-                      {/* Botón para cerrar la tarjeta */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setClickedMarkerId(null);
-                        }}
-                        className="absolute top-2 right-2 z-20 p-1 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 transition-colors"
-                        aria-label="Cerrar tarjeta"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-
-                      {/* Contenido de la Tarjeta Informativa */}
-                      <div className="relative z-10 space-y-2.5">
-                        <div className="relative w-full h-28 rounded-xl overflow-hidden bg-slate-100">
-                          {doc.exp_foto_perfil ? (
-                            <Image
-                              src={doc.exp_foto_perfil}
-                              alt={marker.doctorData.fullName}
-                              fill
-                              className="object-cover object-top hover:scale-105 transition-transform duration-300"
-                            />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center font-black text-2xl text-slate-400">
-                              {marker.doctorData.fullName.charAt(0)}
-                            </div>
-                          )}
-                          <span className="absolute bottom-2 left-2 bg-slate-900/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-md shadow-xs">
-                            {marker.priceLabel === 'Por definir' ? 'Clínica sin precio establecido' : `Desde ${marker.priceLabel}`}
+                <div className="relative flex flex-col items-center select-none group cursor-pointer -translate-y-full pb-1">
+                  {isHighlighted ? (
+                    /* ─── ESTADO 1: SELECCIONADO / HOVER (Información Completa + Pico) ─── */
+                    <div className="flex flex-col items-center transition-all duration-200 animate-in zoom-in-95 duration-200">
+                      <div className="px-3.5 py-1.5 rounded-2xl font-black text-xs shadow-2xl border-2 transition-all whitespace-nowrap flex items-center gap-2.5 bg-slate-950 text-white border-sky-400 ring-4 ring-sky-400/40">
+                        <div className="w-7 h-7 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0 border border-sky-400/30">
+                          <Building2 className="w-4 h-4" />
+                        </div>
+                        <div className="flex flex-col text-left">
+                          <span className="max-w-[180px] truncate text-xs font-extrabold leading-tight text-white">
+                            {building.name}
+                          </span>
+                          <span className="text-[10px] text-sky-300 font-bold">
+                            {hasMultipleDoctors
+                              ? `${building.doctors.length} especialistas`
+                              : building.doctors[0]?.doctorData.fullName || 'Especialista'}
                           </span>
                         </div>
-
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between gap-1 pr-5">
-                            <h4 className="font-bold text-sm text-slate-900 truncate leading-snug hover:text-sky-600 transition-colors">
-                              {marker.doctorData.fullName}
-                            </h4>
-                            {doc.promedio_valoracion > 0 && (
-                              <div className="flex items-center gap-0.5 text-xs font-bold text-slate-900 shrink-0">
-                                <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                                <span>{doc.promedio_valoracion.toFixed(1)}</span>
-                              </div>
-                            )}
-                          </div>
-                          <p className="text-xs text-slate-500 font-medium truncate">
-                            {marker.doctorData.specialtyPreview[0] || 'Especialidad'}
-                          </p>
-                          <div className="flex items-center gap-1 text-[11px] font-semibold text-sky-700 bg-sky-50 px-2 py-1 rounded-lg truncate">
-                            <Building2 className="w-3 h-3 shrink-0 text-sky-600" />
-                            <span className="truncate">{marker.clinicName} ({marker.zonaLabel})</span>
-                          </div>
-
-                          {/* Botones de Acción: Ver Perfil + Google Maps */}
-                          <div className="pt-2.5 border-t border-slate-100 grid grid-cols-2 gap-2">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onNavigateToProfile(marker.expCodigo);
-                              }}
-                              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-sm transition-all active:scale-98 cursor-pointer"
-                            >
-                              <User className="w-3.5 h-3.5" />
-                              <span>Ver Perfil</span>
-                            </button>
-
-                            <a
-                              href={mapsDirectUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs shadow-sm transition-all active:scale-98"
-                            >
-                              <Navigation className="w-3.5 h-3.5 fill-white text-white" />
-                              <span>Maps</span>
-                              <ExternalLink className="w-2.5 h-2.5 opacity-70" />
-                            </a>
-                          </div>
-                        </div>
+                        {hasMultipleDoctors && (
+                          <span className="flex h-5 min-w-[20px] px-1 items-center justify-center rounded-full bg-sky-500 text-white text-[10px] font-black shadow-inner ml-0.5">
+                            {building.doctors.length}
+                          </span>
+                        )}
                       </div>
+
+                      {/* Pico / Punta inferior que apunta al suelo */}
+                      <div className="w-3.5 h-3.5 bg-slate-950 border-r-2 border-b-2 border-sky-400 rotate-45 -mt-2 shadow-xs" />
+                      {/* Sombra de punto de contacto */}
+                      <div className="w-3.5 h-1 bg-slate-950/40 rounded-full blur-[1px] mt-0.5" />
+                    </div>
+                  ) : (
+                    /* ─── ESTADO 2: NO SELECCIONADO / REPOSO (Solo Icono + Pico + Mini Badge) ─── */
+                    <div
+                      onMouseEnter={() => {
+                        if (building.doctors.length > 0) {
+                          onDoctorHover(building.doctors[0].expCodigo);
+                        }
+                      }}
+                      onMouseLeave={() => onDoctorHover(null)}
+                      className="flex flex-col items-center transition-transform duration-200 hover:scale-125"
+                    >
+                      <div className="relative flex items-center justify-center w-8 h-8 rounded-full bg-sky-600 dark:bg-sky-500 text-white shadow-lg border-2 border-white dark:border-slate-800">
+                        {hasMultipleDoctors ? (
+                          <Building2 className="w-4 h-4 text-white" />
+                        ) : (
+                          <Stethoscope className="w-4 h-4 text-white" />
+                        )}
+
+                        {/* Mini Badge con número si hay más de 1 médico */}
+                        {hasMultipleDoctors && (
+                          <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-slate-950 text-sky-300 text-[9px] font-black border border-white dark:border-slate-700 shadow-md">
+                            {building.doctors.length}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Pico / Punta inferior que apunta exactamente al lugar */}
+                      <div className="w-2.5 h-2.5 bg-sky-600 dark:bg-sky-500 border-r border-b border-white dark:border-slate-800 rotate-45 -mt-1.5 shadow-xs" />
+                      {/* Sombra de punto de contacto */}
+                      <div className="w-2 h-0.5 bg-slate-900/30 rounded-full blur-[0.5px] mt-0.5" />
                     </div>
                   )}
                 </div>
               </AdvancedMarker>
             );
           })}
-        </Map>
+        </GoogleMap>
+
+        {/* 🪟 POP-UP / TARJETA FLOTANTE CON CARRUSEL DE MÉDICOS DEL EDIFICIO */}
+        {activeBuilding && currentCarouselDoctor && (
+          <div className="absolute bottom-4 left-4 right-4 sm:left-6 sm:right-auto sm:w-[360px] z-[9999] bg-white dark:bg-slate-900 rounded-3xl p-4 shadow-2xl border border-slate-200/90 dark:border-slate-800 text-slate-900 dark:text-slate-100 animate-in fade-in slide-in-from-bottom-4 duration-300">
+            {/* Cabecera del Edificio / Hospital */}
+            <div className="flex items-start justify-between gap-2 pb-2.5 border-b border-slate-100 dark:border-slate-800/80">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 text-sky-600 dark:text-sky-400 text-xs font-black uppercase tracking-wider">
+                  <Building2 className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">{activeBuilding.name}</span>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate mt-0.5">
+                  {activeBuilding.address}
+                </p>
+              </div>
+
+              {/* Botón Cerrar Pop-up */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveBuildingId(null);
+                }}
+                className="p-1 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-900 dark:hover:text-white transition cursor-pointer shrink-0"
+                aria-label="Cerrar ventana"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Contenido del Médico Actual en el Carrusel */}
+            <div className="pt-3 space-y-3">
+              {/* Navegación del Carrusel (Si hay más de 1 médico en la sede) */}
+              {activeBuilding.doctors.length > 1 && (
+                <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/60 px-3 py-1.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60 text-xs">
+                  <div className="flex items-center gap-1.5 text-[11px] font-extrabold text-slate-700 dark:text-slate-300">
+                    <Users className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                    <span>
+                      Médico {carouselDoctorIndex + 1} de {activeBuilding.doctors.length}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={handlePrevDoctor}
+                      className="p-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-sky-50 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition cursor-pointer shadow-2xs"
+                      aria-label="Médico anterior"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleNextDoctor}
+                      className="p-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-sky-50 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition cursor-pointer shadow-2xs"
+                      aria-label="Médico siguiente"
+                    >
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Tarjeta del Médico Seleccionado */}
+              <div
+                onClick={() => onDoctorSelect(currentCarouselDoctor.expCodigo)}
+                className="flex gap-3 items-center p-2 rounded-2xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800 hover:bg-slate-100/80 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                {/* Foto de Perfil */}
+                <div className="relative w-16 h-16 rounded-2xl overflow-hidden bg-slate-200 dark:bg-slate-700 shrink-0 border border-slate-300 dark:border-slate-600 shadow-sm">
+                  {currentCarouselDoctor.doctorData.doctor.exp_foto_perfil ? (
+                    <Image
+                      src={currentCarouselDoctor.doctorData.doctor.exp_foto_perfil}
+                      alt={currentCarouselDoctor.doctorData.fullName}
+                      fill
+                      className="object-cover object-top"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center font-black text-xl text-slate-500">
+                      {currentCarouselDoctor.doctorData.fullName.charAt(0)}
+                    </div>
+                  )}
+                </div>
+
+                {/* Datos del Doctor */}
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className="flex items-center justify-between gap-1">
+                    <h4 className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white truncate hover:text-sky-600 dark:hover:text-sky-400 transition-colors">
+                      {currentCarouselDoctor.doctorData.fullName}
+                    </h4>
+                    {currentCarouselDoctor.doctorData.doctor.promedio_valoracion > 0 && (
+                      <div className="flex items-center gap-0.5 text-[11px] font-black text-amber-500 shrink-0">
+                        <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                        <span>
+                          {currentCarouselDoctor.doctorData.doctor.promedio_valoracion.toFixed(1)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold truncate">
+                    {currentCarouselDoctor.doctorData.specialtyPreview[0] || 'Especialidad Médica'}
+                  </p>
+
+                  <div className="flex items-center gap-2 pt-0.5">
+                    <span className="inline-flex items-center text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                      {currentCarouselDoctor.priceLabel === 'Por definir'
+                        ? 'Precio en consulta'
+                        : `Consulta ${currentCarouselDoctor.priceLabel}`}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Carrusel de Miniaturas Rápidas (Si hay más de 2 médicos) */}
+              {activeBuilding.doctors.length > 2 && (
+                <div className="flex items-center gap-1.5 overflow-x-auto py-1 px-0.5 scrollbar-none">
+                  {activeBuilding.doctors.map((docItem, idx) => {
+                    const isSelectedDoc = idx === carouselDoctorIndex;
+                    return (
+                      <button
+                        key={`${docItem.expCodigo}-${idx}`}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCarouselDoctorIndex(idx);
+                          onDoctorSelect(docItem.expCodigo);
+                        }}
+                        className={`relative w-8 h-8 rounded-full overflow-hidden shrink-0 border-2 transition-all cursor-pointer ${
+                          isSelectedDoc
+                            ? 'border-sky-500 ring-2 ring-sky-400/50 scale-110'
+                            : 'border-slate-300 dark:border-slate-700 opacity-60 hover:opacity-100'
+                        }`}
+                        title={docItem.doctorData.fullName}
+                      >
+                        {docItem.doctorData.doctor.exp_foto_perfil ? (
+                          <Image
+                            src={docItem.doctorData.doctor.exp_foto_perfil}
+                            alt={docItem.doctorData.fullName}
+                            fill
+                            className="object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-slate-200 dark:bg-slate-800 text-[10px] font-black text-slate-600 dark:text-slate-300">
+                            {docItem.doctorData.fullName.charAt(0)}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Botones de Acción: Agendar Cita (Principal) + Ver Perfil + Google Maps */}
+              <div className="space-y-2 pt-1">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    router.push(`/dashboard/agendar/${currentCarouselDoctor.expCodigo}`);
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-sky-600 hover:from-blue-700 hover:to-sky-700 text-white font-extrabold text-xs shadow-md shadow-sky-500/20 hover:shadow-lg transition-all active:scale-98 cursor-pointer"
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Agendar Cita</span>
+                </button>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onNavigateToProfile(currentCarouselDoctor.expCodigo);
+                    }}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs border border-slate-200/80 dark:border-slate-700 transition-all active:scale-98 cursor-pointer"
+                  >
+                    <User className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
+                    <span>Ver Perfil</span>
+                  </button>
+
+                  <a
+                    href={activeBuilding.directMapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs border border-slate-200/80 dark:border-slate-700 transition-all active:scale-98"
+                  >
+                    <Navigation className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                    <span>Cómo Llegar</span>
+                    <ExternalLink className="w-3 h-3 opacity-60" />
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </APIProvider>
     </div>
   );

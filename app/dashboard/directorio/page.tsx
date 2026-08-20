@@ -1871,7 +1871,7 @@ function DashboardContent() {
                     <section id="doctores" className="space-y-5 relative z-0 min-h-[400px]">
                         <div className="flex flex-col lg:flex-row gap-6 items-start relative z-0">
                             {/* Left Column: Doctor Cards List */}
-                            <div className={`w-full transition-all duration-300 ${(isMapVisible || selectedDoctorId) ? 'lg:w-[52%] xl:w-[48%] shrink-0' : 'w-full'}`}>
+                            <div className={`w-full transition-all duration-300 ${(isMapVisible || selectedDoctorId) ? 'lg:w-[52%] xl:w-[48%] shrink-0' : 'w-full'} ${showMapMobile ? 'hidden lg:block' : 'block'}`}>
                                 {searchedLocation && (
                                     <div className="flex items-center justify-between bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 px-4 py-2.5 rounded-2xl mb-4 shadow-xs">
                                         <div className="flex items-center gap-2 text-xs font-bold text-sky-900 dark:text-sky-200 min-w-0">
@@ -1972,13 +1972,14 @@ function DashboardContent() {
                             </div>
 
                             {/* Right Column: Sticky Interactive Google Map */}
-                            {(isMapVisible || selectedDoctorId) && (
-                                <div className="w-full lg:flex-1 h-[calc(100vh-170px)] sticky top-24 shrink-0 transition-all duration-300 animate-in fade-in zoom-in-95 duration-200 relative">
+                            {(isMapVisible || selectedDoctorId || showMapMobile) && (
+                                <div className={`w-full lg:flex-1 h-[calc(100vh-170px)] sticky top-24 shrink-0 transition-all duration-300 animate-in fade-in zoom-in-95 duration-200 relative ${showMapMobile ? 'block' : 'hidden lg:block'}`}>
                                     <button
                                         type="button"
                                         onClick={() => {
                                             setIsMapVisible(false);
                                             setSelectedDoctorId(null);
+                                            setShowMapMobile(false);
                                         }}
                                         className="absolute top-4 right-4 z-20 px-3.5 py-1.5 rounded-full bg-slate-900/90 text-white font-bold text-xs shadow-xl hover:bg-slate-800 transition-all border border-slate-700 flex items-center gap-1.5 cursor-pointer backdrop-blur-md"
                                     >
@@ -1987,7 +1988,7 @@ function DashboardContent() {
                                     </button>
 
                                     <DirectoryMap
-                                        doctors={paginatedDoctors}
+                                        doctors={visibleDoctors.length > 0 ? visibleDoctors : paginatedDoctors}
                                         hoveredDoctorId={hoveredDoctorId}
                                         selectedDoctorId={selectedDoctorId}
                                         selectedClinicIndex={selectedClinicIndex}
