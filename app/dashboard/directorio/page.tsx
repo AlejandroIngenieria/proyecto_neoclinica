@@ -621,6 +621,11 @@ function DashboardContent() {
     };
 
     const handleDoctorSelectFromMap = (expCodigo: string, clinicIndex = 0) => {
+        if (!expCodigo) {
+            setSelectedDoctorId(null);
+            setSelectedClinicIndex(0);
+            return;
+        }
         setSelectedDoctorId(expCodigo);
         setSelectedClinicIndex(clinicIndex);
         if (!isMapVisible) setIsMapVisible(true);

@@ -190,6 +190,9 @@ export function DirectoryMap({
   // Estado del edificio/clínica seleccionado cuyo pop-up se muestra
   const [activeBuildingId, setActiveBuildingId] = useState<string | null>(null);
 
+  // Estado del edificio sobre el cual el usuario tiene el mouse (hover directo en el pin)
+  const [hoveredBuildingId, setHoveredBuildingId] = useState<string | null>(null);
+
   // Índice del doctor actualmente visible en el carrusel del edificio activo
   const [carouselDoctorIndex, setCarouselDoctorIndex] = useState<number>(0);
 
@@ -374,11 +377,13 @@ export function DirectoryMap({
       setActiveBuildingId(selectedDoctorBuilding.id);
 
       const docIndexInBuilding = selectedDoctorBuilding.doctors.findIndex(
-        (d) => d.expCodigo === selectedDoctorId
+        (d) => d.expCodigo === selectedDoctorId && d.clinicIndex === selectedClinicIndex
       );
       setCarouselDoctorIndex(docIndexInBuilding >= 0 ? docIndexInBuilding : 0);
+    } else if (!selectedDoctorId) {
+      setActiveBuildingId(null);
     }
-  }, [selectedDoctorId, selectedDoctorBuilding]);
+  }, [selectedDoctorId, selectedDoctorBuilding, selectedClinicIndex]);
 
   // Manejador para navegar al doctor anterior en el carrusel del edificio
   const handlePrevDoctor = (e: React.MouseEvent) => {
@@ -527,41 +532,46 @@ export function DirectoryMap({
           {/* 🏥 PINES CONSOLIDADOS POR EDIFICIO / HOSPITAL (2 Estados con Pico de Ubicación) */}
           {buildings.map((building) => {
             const hasMultipleDoctors = building.doctors.length > 1;
-            const isBuildingSelected = activeBuildingId === building.id;
+            
+            // Prioridad 1: Hover directo del mouse sobre ESTE pin del mapa
+            const isThisBuildingHovered = hoveredBuildingId === building.id;
 
-            // Solo se resalta el edificio de la sede activa elegida (de una en una), manteniendo las demás minimizadas
-            const isDoctorSelectedInBuilding =
-              !!selectedDoctorId &&
-              building.doctors.some(
-                (d) => d.expCodigo === selectedDoctorId && d.clinicIndex === selectedClinicIndex
-              );
+            // Prioridad 2: Edificio actualmente seleccionado (si no se está haciendo hover en otro pin)
+            const isThisBuildingActive =
+              !hoveredBuildingId && activeBuildingId === building.id && !!selectedDoctorId;
 
-            const isDoctorHoveredInBuilding =
-              !!hoveredDoctorId &&
+            // Prioridad 3: Hover desde la tarjeta del médico en la lista lateral (si no hay hover en el mapa ni médico seleccionado)
+            const isDoctorFromListHovered =
+              !hoveredBuildingId &&
               !selectedDoctorId &&
+              !!hoveredDoctorId &&
               building.doctors.some(
                 (d) => d.expCodigo === hoveredDoctorId && d.clinicIndex === selectedClinicIndex
               );
 
-            const isHighlighted =
-              isBuildingSelected ||
-              isDoctorSelectedInBuilding ||
-              isDoctorHoveredInBuilding;
+            const isHighlighted = isThisBuildingHovered || isThisBuildingActive || isDoctorFromListHovered;
 
             return (
               <AdvancedMarker
                 key={building.id}
                 position={{ lat: building.lat, lng: building.lng }}
                 onClick={() => {
-                  setActiveBuildingId((prev) => (prev === building.id ? null : building.id));
-                  setCarouselDoctorIndex(0);
-                  if (building.doctors.length > 0) {
-                    onDoctorSelect(building.doctors[0].expCodigo, building.doctors[0].clinicIndex);
+                  if (activeBuildingId === building.id && selectedDoctorId) {
+                    setActiveBuildingId(null);
+                    onDoctorSelect('', 0);
+                  } else {
+                    setActiveBuildingId(building.id);
+                    setCarouselDoctorIndex(0);
+                    if (building.doctors.length > 0) {
+                      onDoctorSelect(building.doctors[0].expCodigo, building.doctors[0].clinicIndex);
+                    }
                   }
                 }}
-                zIndex={isHighlighted ? 9000 : 3000}
+                onMouseEnter={() => setHoveredBuildingId(building.id)}
+                onMouseLeave={() => setHoveredBuildingId((prev) => (prev === building.id ? null : prev))}
+                zIndex={isHighlighted ? 9999 : 3000}
               >
-                <div className="relative flex flex-col items-center select-none group cursor-pointer -translate-y-full pb-1">
+                <div className="relative flex flex-col items-center select-none group cursor-pointer -translate-y-full pb-1 pointer-events-auto">
                   {isHighlighted ? (
                     /* ─── ESTADO 1: SELECCIONADO / HOVER (Información Completa + Pico) ─── */
                     <div className="flex flex-col items-center transition-all duration-200 animate-in zoom-in-95 duration-200">
@@ -593,15 +603,7 @@ export function DirectoryMap({
                     </div>
                   ) : (
                     /* ─── ESTADO 2: NO SELECCIONADO / REPOSO (Solo Icono + Pico + Mini Badge) ─── */
-                    <div
-                      onMouseEnter={() => {
-                        if (building.doctors.length > 0) {
-                          onDoctorHover(building.doctors[0].expCodigo);
-                        }
-                      }}
-                      onMouseLeave={() => onDoctorHover(null)}
-                      className="flex flex-col items-center transition-transform duration-200 hover:scale-125"
-                    >
+                    <div className="flex flex-col items-center transition-transform duration-200 hover:scale-125">
                       <div className="relative flex items-center justify-center w-8 h-8 rounded-full bg-sky-600 dark:bg-sky-500 text-white shadow-lg border-2 border-white dark:border-slate-800">
                         {hasMultipleDoctors ? (
                           <Building2 className="w-4 h-4 text-white" />
@@ -650,6 +652,7 @@ export function DirectoryMap({
                 onClick={(e) => {
                   e.stopPropagation();
                   setActiveBuildingId(null);
+                  onDoctorSelect('', 0);
                 }}
                 className="p-1 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-900 dark:hover:text-white transition cursor-pointer shrink-0"
                 aria-label="Cerrar ventana"
