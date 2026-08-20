@@ -22,7 +22,7 @@ import {
   X,
 } from 'lucide-react';
 import type { DoctorResponse, DoctorClinica } from '@/types';
-import { getDoctorPriceDisplay } from '@/types/doctor';
+import { getDoctorPriceDisplay, buildDoctorFullName, buildDoctorShortName } from '@/types/doctor';
 import { useFavoritos, useAddFavorito, useRemoveFavorito } from '@/hooks/use-favoritos';
 import { usePacienteTitular } from '@/hooks/use-pacientes';
 import { useUserLocation } from '@/hooks/use-user-location';
@@ -144,6 +144,9 @@ export function DoctorCard({
   };
 
   const { doctor, fullName, matchedSpecialty, searchHighlight } = data;
+  const fullDetailedName = buildDoctorFullName(doctor) || fullName;
+  const shortName = buildDoctorShortName(doctor) || fullName;
+
   const specialtyPreview = [...data.specialtyPreview];
 
   if (matchedSpecialty) {
@@ -333,9 +336,9 @@ export function DoctorCard({
             <div className="flex-1 min-w-0 flex flex-col gap-3 pr-6 sm:pr-8">
               {/* Header: Nombre + Colegiado + Rating & Precio */}
               <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
-                <div className="min-w-0">
-                  <h3 className="text-lg md:text-xl font-black text-slate-900 leading-tight truncate">
-                    <HighlightText text={fullName} highlight={searchHighlight} />
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-lg md:text-xl font-black text-slate-900 leading-snug break-words whitespace-normal">
+                    <HighlightText text={fullDetailedName} highlight={searchHighlight} />
                   </h3>
                   <p className="text-xs font-semibold text-sky-700 mt-0.5 truncate">
                     {doctor.exp_profesion || specialtyPreview[0] || 'Médico y Cirujano'}
@@ -678,9 +681,9 @@ export function DoctorCard({
           <div className="flex items-start justify-between gap-2 min-w-0">
             <h3
               className="font-bold text-slate-900 text-base leading-snug truncate flex-1 min-w-0 group-hover:text-sky-600 transition-colors"
-              title={fullName}
+              title={fullDetailedName}
             >
-              <HighlightText text={fullName} highlight={searchHighlight} />
+              <HighlightText text={shortName} highlight={searchHighlight} />
             </h3>
             {doctor.total_resenas > 0 && doctor.promedio_valoracion > 0 ? (
               <div className="flex items-center gap-1 shrink-0 pt-0.5">

@@ -165,13 +165,30 @@ export function isDoctorActive(doctor: Pick<ExpedienteDoctor, 'exp_estado'>): bo
   return doctor.exp_estado === 'A';
 }
 
-/** Construye el nombre completo a partir de los campos del expediente. */
+/** Construye el nombre completo a partir de los campos del expediente (incluyendo apellido de casada). */
 export function buildDoctorFullName(
   doctor: Pick<ExpedienteDoctor, 'exp_primer_nom' | 'exp_segundo_nom' | 'exp_primer_ape' | 'exp_segundo_ape' | 'exp_apellido_cas'>,
 ): string {
-  return [doctor.exp_primer_nom, doctor.exp_segundo_nom, doctor.exp_primer_ape, doctor.exp_segundo_ape, doctor.exp_apellido_cas]
-    .filter(Boolean)
-    .join(' ');
+  const parts = [
+    doctor.exp_primer_nom,
+    doctor.exp_segundo_nom,
+    doctor.exp_primer_ape,
+    doctor.exp_segundo_ape,
+  ];
+
+  if (doctor.exp_apellido_cas) {
+    const casTrim = doctor.exp_apellido_cas.trim();
+    parts.push(casTrim.toLowerCase().startsWith('de ') ? casTrim : `de ${casTrim}`);
+  }
+
+  return parts.filter(Boolean).join(' ');
+}
+
+/** Construye el nombre corto (Primer Nombre + Primer Apellido) para vistas de cuadrícula compacta. */
+export function buildDoctorShortName(
+  doctor: Pick<ExpedienteDoctor, 'exp_primer_nom' | 'exp_primer_ape'>,
+): string {
+  return [doctor.exp_primer_nom, doctor.exp_primer_ape].filter(Boolean).join(' ');
 }
 
 /**

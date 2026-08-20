@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import type { DoctorCardData } from './doctor-card';
 import type { DoctorClinica } from '@/types';
-import { getDoctorPriceDisplay } from '@/types/doctor';
+import { getDoctorPriceDisplay, buildDoctorShortName } from '@/types/doctor';
 
 const MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY || '';
 
@@ -586,7 +586,7 @@ export function DirectoryMap({
                           <span className="text-[10px] text-sky-300 font-bold">
                             {hasMultipleDoctors
                               ? `${building.doctors.length} especialistas`
-                              : building.doctors[0]?.doctorData.fullName || 'Especialista'}
+                              : (building.doctors[0] ? buildDoctorShortName(building.doctors[0].doctorData.doctor) : null) || 'Especialista'}
                           </span>
                         </div>
                         {hasMultipleDoctors && (
@@ -704,13 +704,13 @@ export function DirectoryMap({
                   {currentCarouselDoctor.doctorData.doctor.exp_foto_perfil ? (
                     <Image
                       src={currentCarouselDoctor.doctorData.doctor.exp_foto_perfil}
-                      alt={currentCarouselDoctor.doctorData.fullName}
+                      alt={buildDoctorShortName(currentCarouselDoctor.doctorData.doctor) || currentCarouselDoctor.doctorData.fullName}
                       fill
                       className="object-cover object-top"
                     />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center font-black text-xl text-slate-500">
-                      {currentCarouselDoctor.doctorData.fullName.charAt(0)}
+                      {(buildDoctorShortName(currentCarouselDoctor.doctorData.doctor) || currentCarouselDoctor.doctorData.fullName).charAt(0)}
                     </div>
                   )}
                 </div>
@@ -719,7 +719,7 @@ export function DirectoryMap({
                 <div className="min-w-0 flex-1 space-y-0.5">
                   <div className="flex items-center justify-between gap-1">
                     <h4 className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white truncate hover:text-sky-600 dark:hover:text-sky-400 transition-colors">
-                      {currentCarouselDoctor.doctorData.fullName}
+                      {buildDoctorShortName(currentCarouselDoctor.doctorData.doctor) || currentCarouselDoctor.doctorData.fullName}
                     </h4>
                     {currentCarouselDoctor.doctorData.doctor.promedio_valoracion > 0 && (
                       <div className="flex items-center gap-0.5 text-[11px] font-black text-amber-500 shrink-0">
@@ -764,18 +764,18 @@ export function DirectoryMap({
                             ? 'border-sky-500 ring-2 ring-sky-400/50 scale-110'
                             : 'border-slate-300 dark:border-slate-700 opacity-60 hover:opacity-100'
                         }`}
-                        title={docItem.doctorData.fullName}
+                        title={buildDoctorShortName(docItem.doctorData.doctor) || docItem.doctorData.fullName}
                       >
                         {docItem.doctorData.doctor.exp_foto_perfil ? (
                           <Image
                             src={docItem.doctorData.doctor.exp_foto_perfil}
-                            alt={docItem.doctorData.fullName}
+                            alt={buildDoctorShortName(docItem.doctorData.doctor) || docItem.doctorData.fullName}
                             fill
                             className="object-cover"
                           />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center bg-slate-200 dark:bg-slate-800 text-[10px] font-black text-slate-600 dark:text-slate-300">
-                            {docItem.doctorData.fullName.charAt(0)}
+                            {(buildDoctorShortName(docItem.doctorData.doctor) || docItem.doctorData.fullName).charAt(0)}
                           </div>
                         )}
                       </button>
