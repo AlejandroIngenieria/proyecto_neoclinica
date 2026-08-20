@@ -69,7 +69,7 @@ type DirectoryMapProps = {
   searchedLocation?: { lat: number; lng: number; address: string } | null;
   isNearMeActive?: boolean;
   onDoctorHover: (expCodigo: string | null) => void;
-  onDoctorSelect: (expCodigo: string) => void;
+  onDoctorSelect: (expCodigo: string, clinicIndex?: number) => void;
   onNavigateToProfile: (expCodigo: string) => void;
 };
 
@@ -384,18 +384,24 @@ export function DirectoryMap({
   const handlePrevDoctor = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!activeBuilding || activeBuilding.doctors.length <= 1) return;
-    setCarouselDoctorIndex((prev) =>
-      prev === 0 ? activeBuilding.doctors.length - 1 : prev - 1
-    );
+    const nextIdx = carouselDoctorIndex === 0 ? activeBuilding.doctors.length - 1 : carouselDoctorIndex - 1;
+    setCarouselDoctorIndex(nextIdx);
+    const doc = activeBuilding.doctors[nextIdx];
+    if (doc) {
+      onDoctorSelect(doc.expCodigo, doc.clinicIndex);
+    }
   };
 
   // Manejador para navegar al siguiente doctor en el carrusel del edificio
   const handleNextDoctor = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!activeBuilding || activeBuilding.doctors.length <= 1) return;
-    setCarouselDoctorIndex((prev) =>
-      prev === activeBuilding.doctors.length - 1 ? 0 : prev + 1
-    );
+    const nextIdx = carouselDoctorIndex === activeBuilding.doctors.length - 1 ? 0 : carouselDoctorIndex + 1;
+    setCarouselDoctorIndex(nextIdx);
+    const doc = activeBuilding.doctors[nextIdx];
+    if (doc) {
+      onDoctorSelect(doc.expCodigo, doc.clinicIndex);
+    }
   };
 
   // Doctor actualmente enfocado en el carrusel del pop-up del edificio
@@ -550,7 +556,7 @@ export function DirectoryMap({
                   setActiveBuildingId((prev) => (prev === building.id ? null : building.id));
                   setCarouselDoctorIndex(0);
                   if (building.doctors.length > 0) {
-                    onDoctorSelect(building.doctors[0].expCodigo);
+                    onDoctorSelect(building.doctors[0].expCodigo, building.doctors[0].clinicIndex);
                   }
                 }}
                 zIndex={isHighlighted ? 9000 : 3000}
@@ -631,10 +637,10 @@ export function DirectoryMap({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 text-sky-600 dark:text-sky-400 text-xs font-black uppercase tracking-wider">
                   <Building2 className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">{activeBuilding.name}</span>
+                  <span className="truncate">{currentCarouselDoctor.clinic.cli_descripcion || activeBuilding.name}</span>
                 </div>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate mt-0.5">
-                  {activeBuilding.address}
+                  {currentCarouselDoctor.clinic.cli_direccion_completa || activeBuilding.address}
                 </p>
               </div>
 
@@ -687,7 +693,7 @@ export function DirectoryMap({
 
               {/* Tarjeta del Médico Seleccionado */}
               <div
-                onClick={() => onDoctorSelect(currentCarouselDoctor.expCodigo)}
+                onClick={() => onDoctorSelect(currentCarouselDoctor.expCodigo, currentCarouselDoctor.clinicIndex)}
                 className="flex gap-3 items-center p-2 rounded-2xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800 hover:bg-slate-100/80 dark:hover:bg-slate-800 transition cursor-pointer"
               >
                 {/* Foto de Perfil */}
@@ -748,7 +754,7 @@ export function DirectoryMap({
                         onClick={(e) => {
                           e.stopPropagation();
                           setCarouselDoctorIndex(idx);
-                          onDoctorSelect(docItem.expCodigo);
+                          onDoctorSelect(docItem.expCodigo, docItem.clinicIndex);
                         }}
                         className={`relative w-8 h-8 rounded-full overflow-hidden shrink-0 border-2 transition-all cursor-pointer ${
                           isSelectedDoc
@@ -803,7 +809,7 @@ export function DirectoryMap({
                   </button>
 
                   <a
-                    href={activeBuilding.directMapsUrl}
+                    href={currentCarouselDoctor.clinic.cli_url_google_maps || activeBuilding.directMapsUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}

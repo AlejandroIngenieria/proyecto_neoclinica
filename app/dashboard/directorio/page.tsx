@@ -620,14 +620,19 @@ function DashboardContent() {
         }
     };
 
-    const handleDoctorSelectFromMap = (expCodigo: string) => {
+    const handleDoctorSelectFromMap = (expCodigo: string, clinicIndex = 0) => {
         setSelectedDoctorId(expCodigo);
-        setSelectedClinicIndex(0);
+        setSelectedClinicIndex(clinicIndex);
         if (!isMapVisible) setIsMapVisible(true);
         if (currentPage !== 1) setCurrentPage(1);
         setTimeout(() => {
-            const el = document.getElementById('doctores');
-            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            const el = document.getElementById(`doctor-card-${expCodigo}`);
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } else {
+                const listEl = document.getElementById('doctores');
+                if (listEl) listEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
         }, 50);
     };
 
