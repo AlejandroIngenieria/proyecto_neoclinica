@@ -136,6 +136,9 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, isPast = false
     (cita.ctaEstado || '').toLowerCase() === 'finalizada' ||
     (isPast && !['programada', 'confirmada', 'pospuesta', 'cancelada', 'rechazada', 'no_asistio'].includes((cita.ctaEstado || '').toLowerCase()));
 
+  const yaTieneResena = typeof cita.ctaCalificacion === 'number' && cita.ctaCalificacion > 0;
+  const canReview = isCompletedState && !yaTieneResena;
+
   const mapQuery = [cita.medicoNombre, cita.clinicaNombre].filter(Boolean).join(', ');
   const gmapsUrl = cita.cliUrlGoogleMaps || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`;
   const wazeUrl = cita.cliUrlWaze || `https://waze.com/ul?q=${encodeURIComponent(cita.clinicaNombre || mapQuery)}`;
@@ -376,7 +379,7 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, isPast = false
 
           {/* Col 4: Jerarquía clara de botones de acción alineados a la derecha */}
           <div className="flex items-center justify-start sm:justify-end gap-2 sm:ml-auto w-full sm:w-auto shrink-0 pt-3 sm:pt-0 border-t sm:border-0 border-slate-100 dark:border-slate-800">
-            {isCompletedState && (
+            {canReview && (
               <button
                 type="button"
                 onClick={(e) => {
@@ -388,6 +391,13 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, isPast = false
                 <Star className="w-3.5 h-3.5 fill-white text-white" />
                 <span>Escribir reseña</span>
               </button>
+            )}
+
+            {yaTieneResena && (
+              <div className="h-9 px-3 inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/80 rounded-xl text-xs font-bold whitespace-nowrap">
+                <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                <span>Calificada ({cita.ctaCalificacion}/5)</span>
+              </div>
             )}
 
             {canModify && (
@@ -466,7 +476,7 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, isPast = false
             <span className={`inline-flex px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-md ${getEstadoColor(cita.ctaEstado)}`}>
               {cita.ctaEstado}
             </span>
-            {isCompletedState && (
+            {canReview && (
               <button
                 type="button"
                 onClick={(e) => {
@@ -477,6 +487,11 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, isPast = false
               >
                 <Star className="w-3 h-3 fill-white text-white" /> Escribir reseña
               </button>
+            )}
+            {yaTieneResena && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                <Star className="w-3 h-3 fill-amber-400 text-amber-400" /> Calificada ({cita.ctaCalificacion}/5)
+              </span>
             )}
             {canModify && (
               <div className="grid grid-flow-col auto-cols-max items-center gap-1.5">
@@ -649,7 +664,7 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, isPast = false
           </div>
 
           <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center gap-2">
-            {isCompletedState && (
+            {canReview && (
               <button
                 type="button"
                 onClick={(e) => {
@@ -661,6 +676,12 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, isPast = false
                 <Star className="w-3.5 h-3.5 fill-white text-white" />
                 <span>Escribir reseña</span>
               </button>
+            )}
+            {yaTieneResena && (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/80">
+                <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                <span>Calificada ({cita.ctaCalificacion}/5)</span>
+              </div>
             )}
             {tieneArchivos && (
               <button

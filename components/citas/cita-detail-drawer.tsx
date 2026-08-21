@@ -60,7 +60,7 @@ export function CitaDetailDrawer({ isOpen, onClose, cita, onEdit, onCancel, doct
         <div className="space-y-3">
           <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-widest mb-4">Acciones Rápidas</p>
 
-          {['completada', 'finalizada', 'realizada'].includes((cita.ctaEstado || '').toLowerCase()) && (
+          {['completada', 'finalizada', 'realizada'].includes((cita.ctaEstado || '').toLowerCase()) && (!cita.ctaCalificacion || cita.ctaCalificacion <= 0) && (
             <button 
               onClick={() => {
                 onClose();
@@ -71,6 +71,13 @@ export function CitaDetailDrawer({ isOpen, onClose, cita, onEdit, onCancel, doct
               <Star className="w-4 h-4 fill-white text-white" />
               <span>Escribir reseña del médico</span>
             </button>
+          )}
+
+          {typeof cita.ctaCalificacion === 'number' && cita.ctaCalificacion > 0 && (
+            <div className="w-full py-2.5 px-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-800 dark:text-amber-300 text-xs font-bold flex items-center justify-center gap-1.5 mb-2">
+              <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+              <span>Cita calificada ({cita.ctaCalificacion}/5 estrellas)</span>
+            </div>
           )}
 
           {['programada', 'confirmada', 'pospuesta'].includes(cita.ctaEstado) && (
