@@ -13,11 +13,27 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
-        hostname: 'lh3.googleusercontent.com',
+        hostname: '**.googleusercontent.com',
       },
       {
         protocol: 'https',
         hostname: 'images.unsplash.com',
+      },
+      {
+        protocol: 'https',
+        hostname: '**.pinimg.com',
+      },
+      {
+        protocol: 'https',
+        hostname: '**.pexels.com',
+      },
+      {
+        protocol: 'https',
+        hostname: '**.fbsbx.com',
+      },
+      {
+        protocol: 'https',
+        hostname: '**.facebook.com',
       },
     ],
   },
