@@ -297,28 +297,34 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <FacebookLogin
-              appId={process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || ''}
-              onSuccess={handleFacebookSuccess}
-              onFail={(error: FailResponse) => {
-                console.error('Facebook login failed:', error);
-                setAuthError('No se pudo completar el inicio de sesión con Facebook.');
-              }}
-              render={({ onClick }) => (
-                <button
-                  type="button"
-                  onClick={onClick}
-                  className="flex h-11 w-full items-center justify-center gap-3 rounded-2xl bg-[#1877F2] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#166fe5] sm:h-12 cursor-pointer"
-                >
-                  <span className="flex h-6 w-6 items-center justify-center">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-                    </svg>
-                  </span>
-                  Continuar con Facebook
-                </button>
-              )}
-            />
+            <div className="flex w-full justify-center items-center py-0.5">
+              <FacebookLogin
+                appId={process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || ''}
+                onSuccess={handleFacebookSuccess}
+                onFail={(error: FailResponse) => {
+                  console.error('Facebook login failed:', error);
+                  setAuthError('No se pudo completar el inicio de sesión con Facebook.');
+                }}
+                render={({ onClick }) => (
+                  <button
+                    type="button"
+                    onClick={onClick}
+                    className="flex h-[40px] w-full max-w-[360px] items-center justify-center gap-3 rounded-full border border-[#dadce0] bg-white px-4 text-[14px] font-medium text-[#3c4043] shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition hover:bg-[#f8fafd] hover:border-[#d2e3fc] hover:shadow-[0_1px_3px_rgba(60,64,67,0.15)] cursor-pointer"
+                  >
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <circle cx="12" cy="12" r="12" fill="#1877F2" />
+                        <path
+                          d="M15.5 12h-2.5v7h-3v-7h-1.5v-2.5h1.5v-1.8c0-2 1.2-3.2 3.2-3.2 1 0 1.8.1 2 .1v2.4h-1.3c-.9 0-1.1.4-1.1 1.1v1.4h2.5l-.3 2.5z"
+                          fill="#ffffff"
+                        />
+                      </svg>
+                    </span>
+                    <span>Continuar con Facebook</span>
+                  </button>
+                )}
+              />
+            </div>
           </div>
         </>
       );
