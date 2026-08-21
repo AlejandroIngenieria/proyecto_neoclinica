@@ -280,7 +280,7 @@ export function Footer() {
               </li>
               <li>
                 <Link
-                  href="/dashboard/perfil?tab=lealtad"
+                  href="/dashboard/perfil/puntos"
                   className="hover:text-rose-400 transition-colors flex items-center gap-1.5 group"
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-slate-600 group-hover:bg-rose-400 transition-colors" />
@@ -289,20 +289,11 @@ export function Footer() {
               </li>
               <li>
                 <Link
-                  href="/dashboard/perfil?tab=seguridad"
+                  href="/dashboard/perfil/configuracion"
                   className="hover:text-rose-400 transition-colors flex items-center gap-1.5 group"
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-slate-600 group-hover:bg-rose-400 transition-colors" />
                   Seguridad y Privacidad
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/admin"
-                  className="hover:text-rose-400 transition-colors flex items-center gap-1.5 group text-slate-500 hover:text-slate-300 font-medium"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-slate-700 group-hover:bg-slate-400" />
-                  Portal Administrativo
                 </Link>
               </li>
             </ul>
