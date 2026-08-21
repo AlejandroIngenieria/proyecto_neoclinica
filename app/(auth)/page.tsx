@@ -67,41 +67,67 @@ export default function LoginPage() {
     mode: 'onTouched',
   });
 
+  const [loginStatusText, setLoginStatusText] = useState<string>('');
+
   const onSubmit = async (values: LoginFormValues) => {
     setAuthError('');
+    setLoginStatusText('');
 
-    try {
-      const result = await signIn('credentials', {
-        redirect: false,
-        correo: values.correo,
-        password: values.password,
-      });
+    const maxAttempts = 3;
+    let lastError = '';
 
-      if (result?.error) {
-        setAuthError(
-          result.error === 'CredentialsSignin'
-            ? 'Credenciales inválidas o sesión no disponible.'
-            : 'No fue posible iniciar sesión en este momento.'
-        );
-        return;
-      }
-
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        if (typeof window !== 'undefined') {
-          sessionStorage.setItem('neoclinica_random_seed', String(Math.floor(Math.random() * 1000000) + 1));
+        if (attempt > 1) {
+          setLoginStatusText(`Conectando con el servidor (intento ${attempt} de ${maxAttempts})...`);
         }
-      } catch {}
 
-      if (values.correo.trim().toLowerCase() === 'admin@admin.com') {
-        router.replace('/admin');
-        return;
+        const result = await signIn('credentials', {
+          redirect: false,
+          correo: values.correo,
+          password: values.password,
+        });
+
+        if (result?.ok) {
+          setLoginStatusText('');
+          try {
+            if (typeof window !== 'undefined') {
+              sessionStorage.setItem('neoclinica_random_seed', String(Math.floor(Math.random() * 1000000) + 1));
+            }
+          } catch {}
+
+          if (values.correo.trim().toLowerCase() === 'admin@admin.com') {
+            router.replace('/admin');
+            return;
+          }
+
+          const returnUrl = searchParams.get('returnUrl') || searchParams.get('callbackUrl');
+          router.replace(returnUrl || '/dashboard');
+          return;
+        }
+
+        if (result?.error) {
+          lastError = result.error;
+          if (attempt < maxAttempts) {
+            await new Promise((r) => setTimeout(r, 1000 * attempt));
+            continue;
+          }
+        }
+      } catch {
+        lastError = 'NetworkError';
+        if (attempt < maxAttempts) {
+          await new Promise((r) => setTimeout(r, 1000 * attempt));
+          continue;
+        }
       }
-
-      const returnUrl = searchParams.get('returnUrl') || searchParams.get('callbackUrl');
-      router.replace(returnUrl || '/dashboard');
-    } catch {
-      setAuthError('No se pudo contactar al servidor de autenticación. Revisa tu conexión o intenta de nuevo.');
     }
+
+    setLoginStatusText('');
+    setAuthError(
+      lastError === 'CredentialsSignin'
+        ? 'Credenciales inválidas o correo no registrado.'
+        : 'No se pudo contactar al servidor de autenticación. Revisa tu conexión o intenta de nuevo.'
+    );
   };
 
   const onRecoverPassword = async (values: RecoveryFormValues) => {
@@ -360,8 +386,9 @@ export default function LoginPage() {
             <span>{authError}</span>
           </p>
         ) : isSubmitting ? (
-          <p className="rounded-2xl border border-sky-400/20 bg-sky-400/10 px-4 py-3 text-sm text-sky-100">
-            La solicitud puede tardar unos segundos.
+          <p className="flex items-center gap-2 rounded-2xl border border-sky-400/20 bg-sky-400/10 px-4 py-3 text-sm text-sky-100">
+            <Loader2 className="h-4 w-4 animate-spin text-sky-400 shrink-0" />
+            <span>{loginStatusText || 'Verificando credenciales con el servidor...'}</span>
           </p>
         ) : null}
 

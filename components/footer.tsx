@@ -216,15 +216,6 @@ export function Footer() {
               </li>
               <li>
                 <Link
-                  href="/dashboard/especialidades"
-                  className="hover:text-blue-400 transition-colors flex items-center gap-1.5 group"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-slate-600 group-hover:bg-blue-400 transition-colors" />
-                  Especialidades Médicas
-                </Link>
-              </li>
-              <li>
-                <Link
                   href="/dashboard/citas"
                   className="hover:text-blue-400 transition-colors flex items-center gap-1.5 group"
                 >

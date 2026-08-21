@@ -21,6 +21,7 @@ import {
   Video,
   Home as HomeIcon,
   Monitor,
+  Pill,
 } from 'lucide-react';
 import { format, parseISO, isAfter } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -462,10 +463,10 @@ function HomeContent() {
               description="Canjea recompensas y sube de nivel."
             />
             <QuickAction
-              href="/dashboard/especialidades"
-              icon={Stethoscope}
-              label="Especialidades"
-              description="Busca por área médica específica."
+              href="/dashboard/medicamentos"
+              icon={Pill}
+              label="Medicamentos"
+              description="Consulta el catálogo de farmacia."
             />
           </div>
         </motion.section>

@@ -93,6 +93,39 @@ function resolveAuthUser(user: AuthUserType) {
 
 const apiBaseUrl = process.env.AUTH_BACKEND_URL ?? process.env.NEXT_PUBLIC_API_URL ?? '';
 
+async function postLoginWithRetries(
+  correo: string,
+  password: string,
+  maxRetries = 3
+): Promise<BackendAuthResponse | null> {
+  const url = `${apiBaseUrl}/api/Autenticacion/login`;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`=> NextAuth login attempt ${attempt}/${maxRetries} to ${url} for ${correo}`);
+      const { data } = await api.post<BackendAuthResponse>(url, { correo, password });
+      return data;
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const isClientError = status >= 400 && status < 500 && status !== 408; // 400/401/403/404 son errores de credenciales
+      console.log(`=> Login attempt ${attempt} failed:`, status ?? error?.code ?? error?.message);
+
+      if (isClientError) {
+        // Credenciales inválidas; no reintentar para no demorar al usuario
+        return null;
+      }
+
+      if (attempt < maxRetries) {
+        const delayMs = attempt * 1000; // 1s, 2s
+        console.log(`=> Cold-start / Server wake-up detected. Retrying in ${delayMs}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+
+  return null;
+}
+
 export const authOptions: NextAuthOptions = {
   pages: {
     signIn: '/login',
@@ -117,14 +150,8 @@ export const authOptions: NextAuthOptions = {
         // Acceso Administrativo Especial para Gestión de Citas y Estados
         if (credentials.correo.trim().toLowerCase() === 'admin@admin.com' && credentials.password === 'Admin123@') {
           try {
-            const { data } = await api.post<BackendAuthResponse>(
-              `${apiBaseUrl}/api/Autenticacion/login`,
-              {
-                correo: credentials.correo,
-                password: credentials.password,
-              },
-            );
-            if (data.token) {
+            const data = await postLoginWithRetries(credentials.correo, credentials.password, 2);
+            if (data?.token) {
               const resolvedUser = data.usuario ? resolveAuthUser(data.usuario) : null;
               return {
                 id: resolvedUser?.id || '00000000-0000-0000-0000-000000000001',
@@ -156,61 +183,54 @@ export const authOptions: NextAuthOptions = {
         }
 
         try {
-          const { data } = await api.post<BackendAuthResponse>(
-            `${apiBaseUrl}/api/Autenticacion/login`,
-            {
-              correo: credentials.correo,
-              password: credentials.password,
-            },
-          );
-          console.log("=> Backend login response data:", data);
+          const data = await postLoginWithRetries(credentials.correo, credentials.password, 3);
 
-          if (!data.token) {
-            console.log("=> Missing token in response");
+          if (!data || !data.token) {
+            console.log("=> Missing token or login failed after retries");
             return null;
           }
 
-        let resolvedUser = null;
+          let resolvedUser = null;
 
-        if (data.usuario) {
-          resolvedUser = resolveAuthUser(data.usuario);
-        } else {
-          try {
-            const base64Url = data.token.split('.')[1];
-            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-            const jsonPayload = Buffer.from(base64, 'base64').toString('utf-8');
-            const decoded = JSON.parse(jsonPayload);
-            
-            resolvedUser = {
-              id: decoded.nameid || decoded.sub || '',
-              name: decoded.email || decoded.unique_name || '',
-              email: decoded.email || decoded.unique_name || '',
-              image: null,
-              accessToken: '',
-              role: data.rol || decoded.role || decoded.rol || '',
-              active: true,
-              tipoTabla: data.tipo || decoded.TipoTabla || null,
-              debeCambiarPassword: Boolean(decoded.DebeCambiarPassword || decoded.debe_cambiar_password || data.debeCambiarPassword),
-            };
-          } catch (e) {
-            console.error('Error parsing JWT', e);
+          if (data.usuario) {
+            resolvedUser = resolveAuthUser(data.usuario);
+          } else {
+            try {
+              const base64Url = data.token.split('.')[1];
+              const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+              const jsonPayload = Buffer.from(base64, 'base64').toString('utf-8');
+              const decoded = JSON.parse(jsonPayload);
+              
+              resolvedUser = {
+                id: decoded.nameid || decoded.sub || '',
+                name: decoded.email || decoded.unique_name || '',
+                email: decoded.email || decoded.unique_name || '',
+                image: null,
+                accessToken: '',
+                role: data.rol || decoded.role || decoded.rol || '',
+                active: true,
+                tipoTabla: data.tipo || decoded.TipoTabla || null,
+                debeCambiarPassword: Boolean(decoded.DebeCambiarPassword || decoded.debe_cambiar_password || data.debeCambiarPassword),
+              };
+            } catch (e) {
+              console.error('Error parsing JWT', e);
+            }
           }
-        }
 
-        if (!resolvedUser || !resolvedUser.id) {
-          console.log("=> resolvedUser is invalid or missing id:", resolvedUser);
+          if (!resolvedUser || !resolvedUser.id) {
+            console.log("=> resolvedUser is invalid or missing id:", resolvedUser);
+            return null;
+          }
+
+          console.log("=> Login successful for user:", resolvedUser.email);
+          return {
+            ...resolvedUser,
+            accessToken: data.token,
+          };
+        } catch (error: any) {
+          console.log("=> Error during backend login request:", error?.message || error);
           return null;
         }
-
-        console.log("=> Login successful for user:", resolvedUser.email);
-        return {
-          ...resolvedUser,
-          accessToken: data.token,
-        };
-      } catch (error: any) {
-        console.log("=> Error during backend login request:", error?.message || error);
-        return null;
-      }
       },
     }),
   ],
