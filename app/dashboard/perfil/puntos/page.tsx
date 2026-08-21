@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -31,6 +31,7 @@ import {
   useHistorialPuntos,
 } from '@/hooks/use-recompensas';
 import { useLealtadEstado, useLealtadTareas, useLealtadNiveles } from '@/hooks/use-lealtad';
+import type { LealtadTarea } from '@/services/lealtad';
 import type { Recompensa } from '@/types/recompensas';
 
 function PuntosContent() {
@@ -57,6 +58,22 @@ function PuntosContent() {
   const [codigoReferidoInput, setCodigoReferidoInput] = useState('');
   const [copiedCode, setCopiedCode] = useState(false);
   const [selectedTab, setSelectedTab] = useState<'tienda' | 'inventario' | 'misiones' | 'ligas' | 'historial'>('tienda');
+
+  // Misiones y Tareas deduplicadas por código de acción / título único
+  const uniqueTareas = useMemo<LealtadTarea[]>(() => {
+    const seen = new Set<string>();
+    const result: LealtadTarea[] = [];
+
+    for (const tarea of (tareas || [])) {
+      const key = (tarea.codigoAccion || tarea.titulo || String(tarea.tareaId || '')).trim().toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push(tarea);
+      }
+    }
+
+    return result;
+  }, [tareas]);
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
@@ -519,11 +536,11 @@ function PuntosContent() {
               </p>
             </div>
 
-            {tareas.length > 0 ? (
+            {uniqueTareas.length > 0 ? (
               <div className="space-y-4">
-                {tareas.map((tarea) => (
+                {uniqueTareas.map((tarea: LealtadTarea) => (
                   <div
-                    key={tarea.tareaId}
+                    key={tarea.tareaId || tarea.codigoAccion}
                     className="flex items-center justify-between p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] shadow-sm gap-4"
                   >
                     <div className="flex items-center gap-4">
