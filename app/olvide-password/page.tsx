@@ -162,11 +162,15 @@ export default function OlvidePasswordPage() {
             {/* Encabezado Logo */}
             <div className="mb-4 flex flex-col items-center text-center sm:mb-5 lg:mb-6">
               <div className="mb-4 flex items-center justify-center sm:mb-5">
-                <div className="relative flex h-16 w-16 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-400/10 shadow-[0_0_40px_rgba(34,211,238,0.16)]">
-                  <div className="absolute h-10 w-10 rounded-full border-[3px] border-cyan-300/90 border-r-transparent border-b-transparent rotate-[-18deg]" />
-                  <div className="absolute left-4.5 top-5 h-5 w-5 rounded-full border-[3px] border-cyan-300/90" />
-                  <div className="absolute right-4 top-4.5 h-4 w-4 rounded-full border-[3px] border-cyan-300/90" />
-                  <div className="absolute bottom-3.5 left-6.5 h-4 w-0.75 rounded-full bg-cyan-300" />
+                <div className="relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-3xl shadow-[0_8px_32px_rgba(34,211,238,0.25)] ring-1 ring-white/10">
+                  <Image
+                    src="/IconMedical.png"
+                    alt="NeoClinica Logo"
+                    width={80}
+                    height={80}
+                    priority
+                    className="h-full w-full object-contain"
+                  />
                 </div>
               </div>
               <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-[2.8rem]">

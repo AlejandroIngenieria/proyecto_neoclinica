@@ -1,6 +1,6 @@
 'use client';
 
-import { Stethoscope } from 'lucide-react';
+import Image from 'next/image';
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -25,8 +25,15 @@ export function NeoLoader({ fullScreenPortal = false }: { fullScreenPortal?: boo
 
       <div className="relative flex flex-col items-center gap-8">
         {/* Ícono */}
-        <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-sky-600 text-white shadow-2xl shadow-sky-500/30">
-          <Stethoscope className="h-10 w-10" />
+        <div className="relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-3xl shadow-2xl shadow-cyan-500/30 ring-1 ring-white/15">
+          <Image
+            src="/IconMedical.png"
+            alt="NeoClinica Logo"
+            width={80}
+            height={80}
+            priority
+            className="h-full w-full object-contain"
+          />
         </div>
 
         {/* Título */}
