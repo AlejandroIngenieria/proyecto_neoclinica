@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { AlertTriangle, Eye, EyeOff, Loader2, Mail } from 'lucide-react';
+import { GoogleLogin, type CredentialResponse } from '@react-oauth/google';
 import { loginSchema, recoverySchema, type LoginFormValues, type RecoveryFormValues } from '../../lib/validations/auth';
 import SessionReloginModal, { type SessionReauthReason } from '../../components/session-relogin-modal';
 
@@ -26,6 +27,7 @@ export default function LoginPage() {
   const [recoveryNotice, setRecoveryNotice] = useState('');
   const [authView, setAuthView] = useState<AuthView>('choice');
   const [showPassword, setShowPassword] = useState(false);
+  const [loginStatusText, setLoginStatusText] = useState<string>('');
 
   useEffect(() => {
     if (reasonParam) {
@@ -67,7 +69,41 @@ export default function LoginPage() {
     mode: 'onTouched',
   });
 
-  const [loginStatusText, setLoginStatusText] = useState<string>('');
+  const handleGoogleSuccess = async (credentialResponse: CredentialResponse) => {
+    if (!credentialResponse.credential) {
+      setAuthError('No se recibió la credencial de Google.');
+      return;
+    }
+
+    setAuthError('');
+    setLoginStatusText('Autenticando con Google...');
+
+    try {
+      const result = await signIn('credentials', {
+        redirect: false,
+        googleIdToken: credentialResponse.credential,
+      });
+
+      if (result?.ok) {
+        setLoginStatusText('');
+        try {
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem('neoclinica_random_seed', String(Math.floor(Math.random() * 1000000) + 1));
+          }
+        } catch {}
+
+        const returnUrl = searchParams.get('returnUrl') || searchParams.get('callbackUrl');
+        router.replace(returnUrl || '/dashboard');
+        return;
+      }
+
+      setLoginStatusText('');
+      setAuthError(result?.error ? 'Error de autenticación con Google.' : 'Credenciales inválidas de Google.');
+    } catch {
+      setLoginStatusText('');
+      setAuthError('No se pudo contactar al servidor de autenticación.');
+    }
+  };
 
   const onSubmit = async (values: LoginFormValues) => {
     setAuthError('');
@@ -209,15 +245,19 @@ export default function LoginPage() {
           </div>
 
           <div className="space-y-3">
-            <button
-              type="button"
-              className="flex h-11 w-full items-center justify-center gap-3 rounded-2xl bg-white px-4 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-100 sm:h-12"
-            >
-              <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-white ring-1 ring-black/5">
-                <Image src="/googleIcon.jpg" alt="Google" width={24} height={24} className="h-full w-full rounded-full object-cover" suppressHydrationWarning />
-              </span>
-              Continuar con Google
-            </button>
+            <div className="flex justify-center w-full [&>div]:w-full [&>div>iframe]:!mx-auto">
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={() => {
+                  setAuthError('No se pudo completar el inicio de sesión con Google.');
+                }}
+                text="continue_with"
+                shape="pill"
+                size="large"
+                width="100%"
+                logo_alignment="left"
+              />
+            </div>
 
             <button
               type="button"
@@ -259,24 +299,6 @@ export default function LoginPage() {
               />
             </div>
             {recoveryErrors.correo ? <p className="mt-2 text-sm text-rose-300">{recoveryErrors.correo.message}</p> : null}
-            
-            {/* <div className="mt-4 flex h-14 items-center gap-3 rounded-2xl border border-sky-400/30 bg-[#0b234c] px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition focus-within:border-sky-300/70 focus-within:ring-2 focus-within:ring-sky-400/25">
-              <input
-                id="recovery-nuevaPassword"
-                type={showPassword ? 'text' : 'password'}
-                placeholder="Nueva contraseña*"
-                className="autofill-fix h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 sm:text-[0.95rem]"
-                {...registerRecovery('nuevaPassword')}
-              />
-              <button
-                type="button"
-                aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                onClick={() => setShowPassword((currentValue) => !currentValue)}
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-300 transition hover:bg-white/5 hover:text-white"
-              >
-                {showPassword ? <EyeOff className="h-4.5 w-4.5" /> : <Eye className="h-4.5 w-4.5" />}
-              </button>
-            </div> */}
             {recoveryErrors.nuevaPassword ? <p className="mt-2 text-sm text-rose-300">{recoveryErrors.nuevaPassword.message}</p> : null}
           </div>
 
@@ -380,18 +402,6 @@ export default function LoginPage() {
           )}
         </button>
 
-        {authError ? (
-          <p className="flex items-start gap-2 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{authError}</span>
-          </p>
-        ) : isSubmitting ? (
-          <p className="flex items-center gap-2 rounded-2xl border border-sky-400/20 bg-sky-400/10 px-4 py-3 text-sm text-sky-100">
-            <Loader2 className="h-4 w-4 animate-spin text-sky-400 shrink-0" />
-            <span>{loginStatusText || 'Verificando credenciales con el servidor...'}</span>
-          </p>
-        ) : null}
-
         <button
           type="button"
           onClick={() => {
@@ -455,6 +465,18 @@ export default function LoginPage() {
                 noValidate
               >
                 {renderAuthBody()}
+
+                {authError ? (
+                  <p className="flex items-start gap-2 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>{authError}</span>
+                  </p>
+                ) : loginStatusText ? (
+                  <p className="flex items-center gap-2 rounded-2xl border border-sky-400/20 bg-sky-400/10 px-4 py-3 text-sm text-sky-100">
+                    <Loader2 className="h-4 w-4 animate-spin text-sky-400 shrink-0" />
+                    <span>{loginStatusText}</span>
+                  </p>
+                ) : null}
 
                 {authView !== 'recovery' ? (
                   <p className="pt-2 text-center text-sm text-slate-400 md:hidden">

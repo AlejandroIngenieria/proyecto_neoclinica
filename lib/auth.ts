@@ -107,16 +107,15 @@ async function postLoginWithRetries(
       return data;
     } catch (error: any) {
       const status = error?.response?.status;
-      const isClientError = status >= 400 && status < 500 && status !== 408; // 400/401/403/404 son errores de credenciales
+      const isClientError = status >= 400 && status < 500 && status !== 408;
       console.log(`=> Login attempt ${attempt} failed:`, status ?? error?.code ?? error?.message);
 
       if (isClientError) {
-        // Credenciales inválidas; no reintentar para no demorar al usuario
         return null;
       }
 
       if (attempt < maxRetries) {
-        const delayMs = attempt * 1000; // 1s, 2s
+        const delayMs = attempt * 1000;
         console.log(`=> Cold-start / Server wake-up detected. Retrying in ${delayMs}ms...`);
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
@@ -124,6 +123,18 @@ async function postLoginWithRetries(
   }
 
   return null;
+}
+
+async function postGoogleLogin(idToken: string): Promise<BackendAuthResponse | null> {
+  const url = `${apiBaseUrl}/api/Autenticacion/google`;
+  try {
+    console.log(`=> NextAuth Google login request to ${url}`);
+    const { data } = await api.post<BackendAuthResponse>(url, { idToken });
+    return data;
+  } catch (error: any) {
+    console.error("=> Google login error:", error?.response?.status, error?.response?.data || error?.message);
+    return null;
+  }
 }
 
 export const authOptions: NextAuthOptions = {
@@ -137,10 +148,43 @@ export const authOptions: NextAuthOptions = {
     CredentialsProvider({
       name: 'credentials',
       credentials: {
-        correo: { label: 'Correo', type: 'email' },
+        correo: { label: 'Correo', type: 'text' },
         password: { label: 'Contraseña', type: 'password' },
+        googleIdToken: { label: 'Google ID Token', type: 'text' },
       },
       async authorize(credentials) {
+        // --- 1. Autenticación con Google ---
+        if (credentials?.googleIdToken) {
+          try {
+            const data = await postGoogleLogin(credentials.googleIdToken);
+            if (!data?.token) {
+              console.log("=> Google login failed: token missing in response");
+              return null;
+            }
+
+            const base64Url = data.token.split('.')[1];
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const jsonPayload = Buffer.from(base64, 'base64').toString('utf-8');
+            const decoded = JSON.parse(jsonPayload);
+
+            return {
+              id: decoded.nameid || decoded.sub || '',
+              name: decoded.email || decoded.unique_name || 'Usuario Google',
+              email: decoded.email || decoded.unique_name || '',
+              image: null,
+              accessToken: data.token,
+              role: data.rol || decoded.role || decoded.rol || 'paciente',
+              active: true,
+              tipoTabla: data.tipo || decoded.TipoTabla || 'paciente',
+              debeCambiarPassword: false,
+            };
+          } catch (error) {
+            console.error("=> Error parsing Google login JWT response:", error);
+            return null;
+          }
+        }
+
+        // --- 2. Autenticación con Correo / Contraseña ---
         console.log("=> NextAuth authorize start", { correo: credentials?.correo });
         if (!credentials?.correo || !credentials.password) {
           console.log("=> Missing credentials");
