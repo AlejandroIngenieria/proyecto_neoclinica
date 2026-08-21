@@ -137,6 +137,18 @@ async function postGoogleLogin(idToken: string): Promise<BackendAuthResponse | n
   }
 }
 
+async function postFacebookLogin(accessToken: string): Promise<BackendAuthResponse | null> {
+  const url = `${apiBaseUrl}/api/Autenticacion/facebook`;
+  try {
+    console.log(`=> NextAuth Facebook login request to ${url}`);
+    const { data } = await api.post<BackendAuthResponse>(url, { accessToken });
+    return data;
+  } catch (error: any) {
+    console.error("=> Facebook login error:", error?.response?.status, error?.response?.data || error?.message);
+    return null;
+  }
+}
+
 export const authOptions: NextAuthOptions = {
   pages: {
     signIn: '/login',
@@ -151,6 +163,7 @@ export const authOptions: NextAuthOptions = {
         correo: { label: 'Correo', type: 'text' },
         password: { label: 'Contraseña', type: 'password' },
         googleIdToken: { label: 'Google ID Token', type: 'text' },
+        facebookAccessToken: { label: 'Facebook Access Token', type: 'text' },
       },
       async authorize(credentials) {
         // --- 1. Autenticación con Google ---
@@ -184,7 +197,38 @@ export const authOptions: NextAuthOptions = {
           }
         }
 
-        // --- 2. Autenticación con Correo / Contraseña ---
+        // --- 2. Autenticación con Facebook ---
+        if (credentials?.facebookAccessToken) {
+          try {
+            const data = await postFacebookLogin(credentials.facebookAccessToken);
+            if (!data?.token) {
+              console.log("=> Facebook login failed: token missing in response");
+              return null;
+            }
+
+            const base64Url = data.token.split('.')[1];
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const jsonPayload = Buffer.from(base64, 'base64').toString('utf-8');
+            const decoded = JSON.parse(jsonPayload);
+
+            return {
+              id: decoded.nameid || decoded.sub || '',
+              name: decoded.email || decoded.unique_name || 'Usuario Facebook',
+              email: decoded.email || decoded.unique_name || '',
+              image: null,
+              accessToken: data.token,
+              role: data.rol || decoded.role || decoded.rol || 'paciente',
+              active: true,
+              tipoTabla: data.tipo || decoded.TipoTabla || 'paciente',
+              debeCambiarPassword: false,
+            };
+          } catch (error) {
+            console.error("=> Error parsing Facebook login JWT response:", error);
+            return null;
+          }
+        }
+
+        // --- 3. Autenticación con Correo / Contraseña ---
         console.log("=> NextAuth authorize start", { correo: credentials?.correo });
         if (!credentials?.correo || !credentials.password) {
           console.log("=> Missing credentials");

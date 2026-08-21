@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { AlertTriangle, Eye, EyeOff, Loader2, Mail } from 'lucide-react';
 import { GoogleLogin, type CredentialResponse } from '@react-oauth/google';
+import FacebookLogin, { type FailResponse, type SuccessResponse } from '@greatsumini/react-facebook-login';
 import { loginSchema, recoverySchema, type LoginFormValues, type RecoveryFormValues } from '../../lib/validations/auth';
 import SessionReloginModal, { type SessionReauthReason } from '../../components/session-relogin-modal';
 
@@ -99,6 +100,42 @@ export default function LoginPage() {
 
       setLoginStatusText('');
       setAuthError(result?.error ? 'Error de autenticación con Google.' : 'Credenciales inválidas de Google.');
+    } catch {
+      setLoginStatusText('');
+      setAuthError('No se pudo contactar al servidor de autenticación.');
+    }
+  };
+
+  const handleFacebookSuccess = async (response: SuccessResponse) => {
+    if (!response.accessToken) {
+      setAuthError('No se recibió el token de acceso de Facebook.');
+      return;
+    }
+
+    setAuthError('');
+    setLoginStatusText('Autenticando con Facebook...');
+
+    try {
+      const result = await signIn('credentials', {
+        redirect: false,
+        facebookAccessToken: response.accessToken,
+      });
+
+      if (result?.ok) {
+        setLoginStatusText('');
+        try {
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem('neoclinica_random_seed', String(Math.floor(Math.random() * 1000000) + 1));
+          }
+        } catch {}
+
+        const returnUrl = searchParams.get('returnUrl') || searchParams.get('callbackUrl');
+        router.replace(returnUrl || '/dashboard');
+        return;
+      }
+
+      setLoginStatusText('');
+      setAuthError(result?.error ? 'Error de autenticación con Facebook.' : 'Credenciales inválidas de Facebook.');
     } catch {
       setLoginStatusText('');
       setAuthError('No se pudo contactar al servidor de autenticación.');
@@ -260,15 +297,28 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <button
-              type="button"
-              className="flex h-11 w-full items-center justify-center gap-3 rounded-2xl bg-white px-4 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-100 sm:h-12"
-            >
-              <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-white ring-1 ring-black/5">
-                <Image src="/appleIcon.png" alt="Apple" width={24} height={24} className="h-full w-full rounded-full object-cover" suppressHydrationWarning />
-              </span>
-              Continuar con Apple
-            </button>
+            <FacebookLogin
+              appId={process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || ''}
+              onSuccess={handleFacebookSuccess}
+              onFail={(error: FailResponse) => {
+                console.error('Facebook login failed:', error);
+                setAuthError('No se pudo completar el inicio de sesión con Facebook.');
+              }}
+              render={({ onClick }) => (
+                <button
+                  type="button"
+                  onClick={onClick}
+                  className="flex h-11 w-full items-center justify-center gap-3 rounded-2xl bg-[#1877F2] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#166fe5] sm:h-12 cursor-pointer"
+                >
+                  <span className="flex h-6 w-6 items-center justify-center">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+                    </svg>
+                  </span>
+                  Continuar con Facebook
+                </button>
+              )}
+            />
           </div>
         </>
       );
