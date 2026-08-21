@@ -283,7 +283,7 @@ export default function LoginPage() {
 
           <div className="space-y-3">
             <div className="flex w-full justify-center items-center py-0.5">
-              <div className="flex justify-center w-full max-w-full overflow-hidden [&>div]:!mx-auto [&>div]:!flex [&>div]:!justify-center [&_iframe]:!mx-auto">
+              <div className="flex justify-center w-[320px] max-w-full overflow-hidden [&>div]:!mx-auto [&>div]:!flex [&>div]:!justify-center [&_iframe]:!mx-auto">
                 <GoogleLogin
                   onSuccess={handleGoogleSuccess}
                   onError={() => {
@@ -293,6 +293,7 @@ export default function LoginPage() {
                   shape="pill"
                   size="large"
                   theme="outline"
+                  width="320"
                 />
               </div>
             </div>
@@ -309,7 +310,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={onClick}
-                    className="flex h-[40px] w-full max-w-[360px] items-center justify-center gap-3 rounded-full border border-[#dadce0] bg-white px-4 text-[14px] font-medium text-[#3c4043] shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition hover:bg-[#f8fafd] hover:border-[#d2e3fc] hover:shadow-[0_1px_3px_rgba(60,64,67,0.15)] cursor-pointer"
+                    className="flex h-[40px] w-[320px] max-w-full items-center justify-center gap-3 rounded-full border border-[#dadce0] bg-white px-4 text-[14px] font-medium text-[#3c4043] shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition hover:bg-[#f8fafd] hover:border-[#d2e3fc] hover:shadow-[0_1px_3px_rgba(60,64,67,0.15)] cursor-pointer"
                   >
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center">
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
