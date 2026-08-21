@@ -245,18 +245,19 @@ export default function LoginPage() {
           </div>
 
           <div className="space-y-3">
-            <div className="flex justify-center w-full [&>div]:w-full [&>div>iframe]:!mx-auto">
-              <GoogleLogin
-                onSuccess={handleGoogleSuccess}
-                onError={() => {
-                  setAuthError('No se pudo completar el inicio de sesión con Google.');
-                }}
-                text="continue_with"
-                shape="pill"
-                size="large"
-                width="100%"
-                logo_alignment="left"
-              />
+            <div className="flex w-full justify-center items-center py-0.5">
+              <div className="flex justify-center w-full max-w-full overflow-hidden [&>div]:!mx-auto [&>div]:!flex [&>div]:!justify-center [&_iframe]:!mx-auto">
+                <GoogleLogin
+                  onSuccess={handleGoogleSuccess}
+                  onError={() => {
+                    setAuthError('No se pudo completar el inicio de sesión con Google.');
+                  }}
+                  text="continue_with"
+                  shape="pill"
+                  size="large"
+                  theme="outline"
+                />
+              </div>
             </div>
 
             <button
