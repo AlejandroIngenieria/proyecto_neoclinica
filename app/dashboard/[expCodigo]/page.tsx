@@ -170,6 +170,13 @@ function DoctorProfileContent() {
   const [showFullTrajectory, setShowFullTrajectory] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string>('');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setShareUrl(window.location.href);
+    }
+  }, []);
 
   const { titular } = usePacienteTitular();
   const codPac = titular?.pac_codigo;
@@ -191,7 +198,7 @@ function DoctorProfileContent() {
   };
 
   const handleShare = async () => {
-    const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
+    const currentUrl = shareUrl || (typeof window !== 'undefined' ? window.location.href : '');
     const shareTitle = `${fullName || 'Médico Especialista'} - NeoClínica`;
     const shareText = `Conoce el perfil del ${fullName || 'médico especialista'} en NeoClínica.`;
 
@@ -200,7 +207,7 @@ function DoctorProfileContent() {
         await navigator.share({
           title: shareTitle,
           text: shareText,
-          url: shareUrl,
+          url: currentUrl,
         });
         return;
       } catch (err: any) {
@@ -968,7 +975,7 @@ function DoctorProfileContent() {
                   <a
                     href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
                       `¡Hola! Te recomiendo al Dr. ${fullName} (${combinedSpecialties[0] || 'Especialista'}) en NeoClínica:\n${
-                        typeof window !== 'undefined' ? window.location.href : ''
+                        shareUrl
                       }`
                     )}`}
                     target="_blank"
@@ -984,7 +991,7 @@ function DoctorProfileContent() {
                   {/* Facebook */}
                   <a
                     href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
-                      typeof window !== 'undefined' ? window.location.href : ''
+                      shareUrl
                     )}`}
                     target="_blank"
                     rel="noreferrer"
@@ -1000,7 +1007,7 @@ function DoctorProfileContent() {
                   <a
                     href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(
                       `Conoce el perfil del Dr. ${fullName} en NeoClínica:`
-                    )}&url=${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : '')}`}
+                    )}&url=${encodeURIComponent(shareUrl)}`}
                     target="_blank"
                     rel="noreferrer"
                     className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 transition-all active:scale-95 group"
@@ -1014,7 +1021,7 @@ function DoctorProfileContent() {
                   {/* LinkedIn */}
                   <a
                     href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(
-                      typeof window !== 'undefined' ? window.location.href : ''
+                      shareUrl
                     )}`}
                     target="_blank"
                     rel="noreferrer"
@@ -1029,7 +1036,7 @@ function DoctorProfileContent() {
                   {/* Telegram */}
                   <a
                     href={`https://t.me/share/url?url=${encodeURIComponent(
-                      typeof window !== 'undefined' ? window.location.href : ''
+                      shareUrl
                     )}&text=${encodeURIComponent(`Dr. ${fullName} - NeoClínica`)}`}
                     target="_blank"
                     rel="noreferrer"
@@ -1047,7 +1054,7 @@ function DoctorProfileContent() {
                       `Perfil médico del Dr. ${fullName} en NeoClínica`
                     )}&body=${encodeURIComponent(
                       `Hola, te comparto el perfil profesional del Dr. ${fullName} (${combinedSpecialties[0] || 'Especialista'}) en NeoClínica:\n\n${
-                        typeof window !== 'undefined' ? window.location.href : ''
+                        shareUrl
                       }`
                     )}`}
                     className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition-all active:scale-95 group"
@@ -1067,7 +1074,7 @@ function DoctorProfileContent() {
                   <input
                     type="text"
                     readOnly
-                    value={typeof window !== 'undefined' ? window.location.href : ''}
+                    value={shareUrl}
                     className="flex-1 px-3 py-1.5 text-xs text-slate-600 bg-transparent font-mono outline-none truncate"
                   />
                   <button

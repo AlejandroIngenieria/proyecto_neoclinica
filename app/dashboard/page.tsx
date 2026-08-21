@@ -270,6 +270,12 @@ function HomeContent() {
   const { data: puntosData } = useTotalPuntos(pacCodigo ?? undefined);
   const { data: niveles = [] } = useLealtadNiveles();
 
+  // Greeting con hidratación segura
+  const [greeting, setGreeting] = useState<string>('Bienvenido');
+  useEffect(() => {
+    setGreeting(getGreeting());
+  }, []);
+
   // Recent doctors
   const [recentDoctors, setRecentDoctors] = useState<RecentDoctorItem[]>([]);
   useEffect(() => {
@@ -367,7 +373,7 @@ function HomeContent() {
               )}
             </div>
             <div>
-              <p className="text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300">{getGreeting()}</p>
+              <p className="text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300" suppressHydrationWarning>{greeting}</p>
               <h1 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-black tracking-tight text-slate-900 dark:text-white">
                 {firstName} 👋
               </h1>

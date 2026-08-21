@@ -339,23 +339,21 @@ function DashboardContent() {
     const [modality, setModality] = useParamString('modality', 'all');
     const [specialtyParam, setSpecialtyParam] = useParamString('specialty', 'all');
 
-    // Semilla aleatoria única por inicio de sesión / sesión de navegación
-    const [sessionSeed] = useState<number>(() => {
-        if (typeof window !== 'undefined') {
-            try {
-                const stored = sessionStorage.getItem('neoclinica_random_seed');
-                if (stored) {
-                    return parseInt(stored, 10);
-                }
+    // Semilla aleatoria con hidratación segura
+    const [sessionSeed, setSessionSeed] = useState<number>(42);
+
+    useEffect(() => {
+        try {
+            const stored = sessionStorage.getItem('neoclinica_random_seed');
+            if (stored) {
+                setSessionSeed(parseInt(stored, 10));
+            } else {
                 const newSeed = Math.floor(Math.random() * 1000000) + 1;
                 sessionStorage.setItem('neoclinica_random_seed', newSeed.toString());
-                return newSeed;
-            } catch {
-                return Math.floor(Math.random() * 1000000) + 1;
+                setSessionSeed(newSeed);
             }
-        }
-        return 42;
-    });
+        } catch {}
+    }, []);
     
     const activeModalities = useMemo(() => modality ? modality.split(',') : ['all'], [modality]);
     const activeSpecialties = useMemo(() => specialtyParam ? specialtyParam.split(',') : ['all'], [specialtyParam]);
