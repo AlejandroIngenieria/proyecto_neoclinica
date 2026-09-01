@@ -15,6 +15,7 @@ import {
   uploadDocumentoCita,
   fetchCitasPaciente,
   cancelarCita,
+  desvincularGrupoCita,
   completarCita,
   updateCita,
   fetchMetodosPago,
@@ -119,18 +120,46 @@ export function useGruposCita(codPaciente: string | null, codMedico: string | nu
   return useQuery<GrupoCitaDto[]>({
     queryKey: ['gruposCita', codPaciente, codMedico],
     queryFn: async () => {
-      const data = await fetchGruposCita(token!, codPaciente!, codMedico!);
+      if (!codPaciente || !codMedico) return [];
+      const data = await fetchGruposCita(token!, codPaciente, codMedico);
       const map = new Map<string, GrupoCitaDto>();
       data.forEach(g => {
-        const key = (g.grupoId ? String(g.grupoId) : (g.titulo || g.descripcion || '')).toLowerCase();
+        const id = g.grupoId || (g as any).id || (g as any).grc_codigo || (g as any).grcCodigo || '';
+        const title = g.titulo || (g as any).grc_titulo_tema || (g as any).grcTituloTema || g.descripcion || (g as any).grc_tema || (g as any).grcTema || 'Tema de Seguimiento';
+        const key = (id || title).toLowerCase();
+
+        const itemCita = (g.fecha && g.hora) ? {
+          citaId: g.citaId || '',
+          fecha: String(g.fecha).split('T')[0],
+          hora: String(g.hora).slice(0, 5),
+          modalidad: g.modalidad || null,
+          estado: g.estado || null,
+          codServicio: g.codServicio ?? (g as any).cod_servicio ?? (g as any).cta_codsyp ?? null,
+          codMetodoPago: g.codMetodoPago ?? (g as any).cod_metodo_pago ?? (g as any).cta_codtpp ?? null,
+        } : null;
+
         if (!map.has(key)) {
-          map.set(key, g);
+          map.set(key, {
+            ...g,
+            grupoId: id,
+            titulo: title,
+            descripcion: g.descripcion || (g as any).grc_tema || (g as any).grcTema || title,
+            codServicio: g.codServicio ?? (g as any).cod_servicio ?? (g as any).cta_codsyp ?? null,
+            codMetodoPago: g.codMetodoPago ?? (g as any).cod_metodo_pago ?? (g as any).cta_codtpp ?? null,
+            consultorioId: g.consultorioId ?? (g as any).consultorio_id ?? (g as any).cta_consultorio_id ?? null,
+            citas: itemCita ? [itemCita] : [],
+          });
+        } else {
+          const existing = map.get(key)!;
+          if (itemCita && !existing.citas?.some(c => c.fecha === itemCita.fecha && c.hora === itemCita.hora)) {
+            existing.citas = [...(existing.citas || []), itemCita];
+          }
         }
       });
       return Array.from(map.values());
     },
     enabled: isAuthenticated && !!codPaciente && !!codMedico,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0,
   });
 }
 
@@ -253,6 +282,31 @@ export function useCancelarCita() {
         }).catch(() => {});
       }
     },
+  });
+}
+
+export function useDesvincularGrupo() {
+  const { token } = useAuthInfo();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (citaInput: string | CitaListDto) => {
+      const citaId = typeof citaInput === 'string' ? citaInput : citaInput.ctaCodigo;
+      return desvincularGrupoCita(token!, citaId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['citasPaciente'] });
+      queryClient.invalidateQueries({ queryKey: ['citasTodosPacientes'] });
+      queryClient.invalidateQueries({ queryKey: ['gruposCita'] });
+      toast.success('Cita desvinculada', {
+        description: 'La cita ha sido desanclada del tema de seguimiento y ahora es una consulta individual.',
+      });
+    },
+    onError: (error: any) => {
+      console.error('Error al desvincular cita del tema:', error);
+      toast.error('Error al desvincular', {
+        description: error?.response?.data?.mensaje || error?.message || 'No se pudo desanclar la cita del tema.',
+      });
+    }
   });
 }
 

@@ -4,11 +4,11 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { toast } from 'sonner';
-import { useCreateCita, useUploadDocumentoCita, usePagarCita, useMetodosPago, useBilletera } from '@/hooks/use-flujo-citas';
+import { useCreateCita, useUploadDocumentoCita, usePagarCita, useMetodosPago, useBilletera, useCreateGrupo } from '@/hooks/use-flujo-citas';
 import { useCitaStore } from '@/store/use-cita-store';
 import { completarTareaLealtad } from '@/services/lealtad';
 import { crearNotificacion } from '@/services/notificaciones';
-import { ChevronLeft, Check, FileText, Loader2, Info, Calendar, MapPin, CreditCard, Building2, Stethoscope, Activity, Wallet, AlertCircle } from 'lucide-react';
+import { ChevronLeft, Check, FileText, Loader2, Info, Calendar, MapPin, CreditCard, Building2, Stethoscope, Activity, Wallet, AlertCircle, FolderPlus } from 'lucide-react';
 import type { CrearCitaRequest } from '@/types/citas';
 
 export function Step4Confirmacion() {
@@ -17,12 +17,13 @@ export function Step4Confirmacion() {
   const {
     codMedico, medicoName, modalidad, clinicaSeleccionada, areaDomicilio,
     servicioSeleccionado,
-    fecha, hora, pacienteSeleccionado, grupoId, motivo,
+    fecha, hora, pacienteSeleccionado, grupoId, grupoNombre, creandoNuevoGrupo, nuevoGrupoTema, motivo,
     archivos, prevStep, tipoPagoId, billeteraItemId,
     direccionDomicilio, referenciasDomicilio, recompensaSeleccionada
   } = useCitaStore();
 
   const { mutateAsync: createCita } = useCreateCita();
+  const { mutateAsync: createGrupo } = useCreateGrupo();
   const { mutateAsync: uploadDocumento } = useUploadDocumentoCita();
   const { mutateAsync: pagarCita } = usePagarCita();
 
@@ -59,6 +60,26 @@ export function Step4Confirmacion() {
     setError(null);
 
     try {
+      // 0. Si se solicitó crear un nuevo tema de seguimiento, crearlo primero
+      let finalGrupoId = grupoId || undefined;
+
+      if (creandoNuevoGrupo && nuevoGrupoTema.trim() && pacienteSeleccionado && codMedico) {
+        try {
+          const resGrupo = await createGrupo({
+            codPaciente: pacienteSeleccionado.pacCodigo,
+            codMedico,
+            tema: nuevoGrupoTema.trim(),
+            tituloTema: nuevoGrupoTema.trim(),
+          });
+          const createdId = (resGrupo as any)?.id || (resGrupo as any)?.grupoId;
+          if (createdId) {
+            finalGrupoId = createdId;
+          }
+        } catch (err) {
+          console.error('No se pudo pre-crear el grupo de seguimiento:', err);
+        }
+      }
+
       // 1. Preparar DTO
       let consultorioId = undefined;
       let dirDomicilio = null;
@@ -79,7 +100,7 @@ export function Step4Confirmacion() {
       const request: CrearCitaRequest = {
         codPaciente: pacienteSeleccionado.pacCodigo,
         codMedico,
-        grupoId: grupoId || undefined,
+        grupoId: finalGrupoId,
         consultorioId,
         codServicio: servicioSeleccionado?.sypCodigo || undefined,
         fecha: fecha.toISOString().split('T')[0],
@@ -265,6 +286,24 @@ export function Step4Confirmacion() {
                 </p>
                 <p className="text-xs text-teal-600 dark:text-teal-400 font-semibold mt-1">
                   Q{servicioSeleccionado.costoTotal.toFixed(2)}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Tema de Seguimiento */}
+          {(grupoId || creandoNuevoGrupo) && (
+            <div className="flex gap-4">
+              <div className="w-12 h-12 rounded-full bg-purple-50 dark:bg-purple-900/30 flex items-center justify-center shrink-0">
+                <FolderPlus className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Tema de Seguimiento</p>
+                <p className="font-bold text-slate-900 dark:text-slate-100 leading-tight">
+                  {creandoNuevoGrupo ? (nuevoGrupoTema || 'Nuevo tema') : (grupoNombre || 'Tema activo')}
+                </p>
+                <p className="text-xs text-purple-600 dark:text-purple-400 font-semibold mt-1">
+                  {creandoNuevoGrupo ? 'Se creará e iniciará una nueva serie' : 'Continuidad con tema asignado'}
                 </p>
               </div>
             </div>

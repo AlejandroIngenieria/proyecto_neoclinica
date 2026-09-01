@@ -10,7 +10,7 @@ import {
 } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { useCitaStore } from '@/store/use-cita-store';
-import { ChevronLeft, MapPin, Video, Home, Stethoscope, ArrowRight, CalendarDays, Building2, BriefcaseMedical, CalendarClock, Activity, ClipboardList, Plus, Loader2, UploadCloud, FileText, X, CheckCircle2, Sparkles } from 'lucide-react';
+import { ChevronLeft, MapPin, Video, Home, Stethoscope, ArrowRight, CalendarDays, Building2, BriefcaseMedical, CalendarClock, Activity, ClipboardList, Plus, Loader2, UploadCloud, FileText, X, CheckCircle2, Sparkles, FolderPlus } from 'lucide-react';
 import { usePacienteTitular } from '@/hooks/use-pacientes';
 import { PacienteFormModal } from '@/components/paciente-form-modal';
 import type { GrupoCitaDto } from '@/types/citas';
@@ -52,7 +52,8 @@ export function Step2PacienteMotivo() {
     fecha, hora, step,
     pacienteSeleccionado, setPaciente,
     motivo, setMotivo,
-    grupoId, setGrupo,
+    grupoId, grupoNombre, setTemaSeguimiento, setGrupo,
+    creandoNuevoGrupo, nuevoGrupoTema, setCreandoNuevoGrupo, setNuevoGrupoTema,
     archivos, setArchivos,
     direccionDomicilio, setDireccionDomicilio,
     referenciasDomicilio, setReferenciasDomicilio,
@@ -95,7 +96,7 @@ export function Step2PacienteMotivo() {
         tituloTema: newGrupoNombre.trim()
       });
       await refetchGrupos();
-      setGrupo(nuevoGrupo.grupoId);
+      setTemaSeguimiento(nuevoGrupo.grupoId, newGrupoNombre.trim());
       setIsNewGrupoMode(false);
       setNewGrupoNombre('');
     } catch (e) {
@@ -132,7 +133,7 @@ export function Step2PacienteMotivo() {
 
   const isComplete = pacienteSeleccionado !== null && motivo !== '' && 
     (modalidad !== 'domicilio' || (direccionDomicilio.trim() !== '' && referenciasDomicilio.trim() !== ''));
-  const isSeguimientoVisible = pacienteSeleccionado !== null && (motivo === 'Consulta de Seguimiento' || motivo === 'Enfermedad o Molestia');
+  const isSeguimientoVisible = pacienteSeleccionado !== null;
 
   return (
     <div className="flex flex-col w-full font-sans pb-4">
@@ -190,6 +191,36 @@ export function Step2PacienteMotivo() {
           />
         </div>
 
+
+        {/* TEMA DE SEGUIMIENTO VINCULADO (Si viene de Paso 1 o seleccionado) */}
+        {(grupoId || creandoNuevoGrupo) && (
+          <div className="rounded-2xl border-2 border-purple-500/60 bg-purple-50/70 dark:bg-purple-950/40 p-4 sm:p-5 flex items-center justify-between gap-4 shadow-sm">
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-purple-600/20">
+                <FolderPlus className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">
+                  {creandoNuevoGrupo ? 'Nuevo Tema de Seguimiento' : 'Tema de Seguimiento Vinculado'}
+                </span>
+                <h4 className="text-base font-bold text-slate-900 dark:text-white truncate">
+                  {creandoNuevoGrupo ? (nuevoGrupoTema || 'Tema por definir') : (grupoNombre || 'Tema activo')}
+                </h4>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setTemaSeguimiento(null, null);
+                setCreandoNuevoGrupo(false);
+                setNuevoGrupoTema('');
+              }}
+              className="text-xs font-bold text-purple-700 dark:text-purple-300 hover:text-purple-900 hover:underline shrink-0 cursor-pointer"
+            >
+              Desvincular
+            </button>
+          </div>
+        )}
 
         {/* SECTION 2: SERVICIO / MOTIVO DE CONSULTA */}
         <div className={`transition-all duration-300 ${pacienteSeleccionado ? 'opacity-100 translate-y-0' : 'opacity-40 pointer-events-none translate-y-4'}`}>
@@ -264,11 +295,8 @@ export function Step2PacienteMotivo() {
                       onClick={() => {
                         setServicio(null);
                         setMotivo(m.id);
-                        if (m.id !== 'Consulta de Seguimiento' && m.id !== 'Enfermedad o Molestia') {
-                          setGrupo(null);
-                        }
                       }}
-                      className={`relative flex flex-col items-start text-left p-5 rounded-3xl border-[2px] transition-all duration-200 ${
+                      className={`relative flex flex-col items-start text-left p-5 rounded-3xl border-[2px] transition-all duration-200 cursor-pointer ${
                         isSelected
                           ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-lg shadow-blue-600/10'
                           : 'border-slate-100 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-600/50 bg-white dark:bg-[#1E293B] shadow-sm hover:shadow-md'
@@ -296,16 +324,17 @@ export function Step2PacienteMotivo() {
 
         <hr className="border-slate-100 dark:border-slate-800 my-5" />
 
-        {/* SECTION 3: SEGUIMIENTO */}
-        {isSeguimientoVisible && (
+        {/* SECTION 3: SEGUIMIENTO (Si aún no se ha vinculado en Paso 1) */}
+        {!grupoId && !creandoNuevoGrupo && (
           <div className="animate-in fade-in slide-in-from-top-4">
-            <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-1 tracking-tight">Seguimiento (Opcional)</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Selecciona una consulta anterior si deseas darle continuidad.</p>
+            <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-1 tracking-tight">Seguimiento o Grupo de Citas (Opcional)</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Selecciona una consulta anterior si deseas darle continuidad o crea un nuevo seguimiento.</p>
 
             <div className="flex flex-wrap gap-4 mb-6">
               <button
+                type="button"
                 onClick={() => { setIsNewGrupoMode(false); setGrupo(null); }}
-                className={`flex items-center gap-3 rounded-full px-6 py-3 text-[15px] font-bold transition-all shadow-sm border ${grupoId === null && !isNewGrupoMode
+                className={`flex items-center gap-3 rounded-full px-6 py-3 text-[15px] font-bold transition-all shadow-sm border cursor-pointer ${grupoId === null && !isNewGrupoMode
                   ? 'bg-slate-800 dark:bg-slate-700 text-white border-slate-800 dark:border-slate-700 ring-2 ring-slate-800 dark:ring-slate-700 ring-offset-2 shadow-md'
                   : 'bg-white dark:bg-[#1E293B] border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
@@ -313,20 +342,21 @@ export function Step2PacienteMotivo() {
                 <div className={`w-4 h-4 rounded-full border-[1.5px] flex items-center justify-center ${grupoId === null && !isNewGrupoMode ? 'border-white' : 'border-slate-300 dark:border-slate-600'}`}>
                   {grupoId === null && !isNewGrupoMode && <div className="w-2 h-2 bg-white rounded-full" />}
                 </div>
-                Nueva consulta
+                Nueva consulta individual
               </button>
 
               <button
+                type="button"
                 onClick={() => { setIsNewGrupoMode(true); }}
-                className={`flex items-center gap-3 rounded-full px-6 py-3 text-[15px] font-bold transition-all shadow-sm border ${grupoId !== null || isNewGrupoMode
-                  ? 'bg-blue-600 text-white border-blue-600 ring-2 ring-blue-600 ring-offset-2 shadow-md shadow-blue-600/20'
-                  : 'bg-white dark:bg-[#1E293B] border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-slate-800 hover:border-blue-200 dark:hover:border-slate-600'
+                className={`flex items-center gap-3 rounded-full px-6 py-3 text-[15px] font-bold transition-all shadow-sm border cursor-pointer ${grupoId !== null || isNewGrupoMode
+                  ? 'bg-purple-600 text-white border-purple-600 ring-2 ring-purple-600 ring-offset-2 shadow-md shadow-purple-600/20'
+                  : 'bg-white dark:bg-[#1E293B] border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-purple-50 dark:hover:bg-slate-800 hover:border-purple-200 dark:hover:border-slate-600'
                   }`}
               >
                 <div className={`w-4 h-4 rounded-full border-[1.5px] flex items-center justify-center ${(grupoId !== null || isNewGrupoMode) ? 'border-white' : 'border-slate-300 dark:border-slate-600'}`}>
                   {(grupoId !== null || isNewGrupoMode) && <div className="w-2 h-2 bg-white rounded-full" />}
                 </div>
-                Continuar una consulta anterior
+                Asociar a un tema de seguimiento
               </button>
             </div>
 
@@ -336,48 +366,55 @@ export function Step2PacienteMotivo() {
                   <div className="h-12 w-full max-w-lg animate-pulse rounded-xl bg-slate-200 dark:bg-slate-700" />
                 ) : (
                   <div className="flex flex-col w-full space-y-5">
-                    <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">Selecciona una consulta anterior</h4>
+                    <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">Temas de seguimiento existentes</h4>
                     {gruposUnicos.length === 0 && (
-                      <p className="text-sm text-slate-500 dark:text-slate-400 italic">No tienes consultas previas registradas.</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 italic">No tienes consultas previas registradas con este especialista.</p>
                     )}
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {gruposUnicos.map((g, idx) => (
-                        <button
-                          key={`${g.grupoId || 'grupo'}-${idx}`}
-                          onClick={() => { setGrupo(g.grupoId); setIsNewGrupoMode(false); }}
-                          className={`text-left p-4 rounded-xl transition-all shadow-sm border ${grupoId === g.grupoId && !isNewGrupoMode
-                            ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-600 dark:border-blue-500 ring-1 ring-blue-600 dark:ring-blue-500'
-                            : 'bg-white dark:bg-[#1E293B] border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-blue-300 dark:hover:border-blue-600/50 hover:bg-blue-50/50 dark:hover:bg-slate-800'
-                            }`}
-                        >
-                          <h5 className={`font-bold mb-1 ${grupoId === g.grupoId && !isNewGrupoMode ? 'text-blue-900 dark:text-blue-300' : 'text-slate-900 dark:text-slate-100'}`}>
-                            {g.titulo || g.descripcion}
-                          </h5>
-                          <p className="text-xs text-slate-400 dark:text-slate-500">Consulta registrada</p>
-                        </button>
-                      ))}
-                    </div>
+                    {gruposUnicos.length > 0 && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {gruposUnicos.map((g, idx) => (
+                          <button
+                            key={`${g.grupoId || 'grupo'}-${idx}`}
+                            type="button"
+                            onClick={() => {
+                              setTemaSeguimiento(g.grupoId, g.titulo || g.descripcion);
+                              setIsNewGrupoMode(false);
+                            }}
+                            className={`text-left p-4 rounded-xl transition-all shadow-sm border cursor-pointer ${grupoId === g.grupoId && !isNewGrupoMode
+                              ? 'bg-purple-50 dark:bg-purple-900/30 border-purple-600 dark:border-purple-500 ring-1 ring-purple-600 dark:ring-purple-500'
+                              : 'bg-white dark:bg-[#1E293B] border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-purple-300 dark:hover:border-purple-600/50 hover:bg-purple-50/50 dark:hover:bg-slate-800'
+                              }`}
+                          >
+                            <h5 className={`font-bold mb-1 ${grupoId === g.grupoId && !isNewGrupoMode ? 'text-purple-900 dark:text-purple-300' : 'text-slate-900 dark:text-slate-100'}`}>
+                              {g.titulo || g.descripcion}
+                            </h5>
+                            <p className="text-xs text-slate-400 dark:text-slate-500">Seguimiento activo</p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
                     <div className="flex items-center gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
-                      <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">O inicia nuevo seguimiento</span>
+                      <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">O inicia un nuevo tema</span>
                     </div>
 
-                    <div className="flex w-full max-w-lg items-center gap-3 bg-white dark:bg-[#1E293B] p-2 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400 transition-all">
+                    <div className="flex w-full max-w-lg items-center gap-3 bg-white dark:bg-[#1E293B] p-2 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm focus-within:border-purple-400 focus-within:ring-1 focus-within:ring-purple-400 transition-all">
                       <input
                         type="text"
-                        placeholder="Ej. Control de diabetes..."
+                        placeholder="Ej. Control de diabetes, Tratamiento Acné..."
                         value={newGrupoNombre}
                         onChange={e => setNewGrupoNombre(e.target.value)}
                         onFocus={() => { setIsNewGrupoMode(true); setGrupo(null); }}
                         className="flex-1 bg-transparent px-3 py-2 text-sm outline-none text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                       />
                       <button
+                        type="button"
                         onClick={handleCreateGrupo}
                         disabled={isCreatingGrupo || !newGrupoNombre.trim()}
-                        className="flex items-center gap-2 rounded-lg bg-slate-800 dark:bg-slate-700 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-slate-700 dark:hover:bg-slate-600 disabled:opacity-50"
+                        className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-purple-700 disabled:opacity-50 cursor-pointer"
                       >
-                        {isCreatingGrupo ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Crear'}
+                        {isCreatingGrupo ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Crear y Vincular'}
                       </button>
                     </div>
                   </div>

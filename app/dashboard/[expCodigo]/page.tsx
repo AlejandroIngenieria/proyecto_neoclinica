@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { DoctorClinica, DoctorResponse } from '@/types';
-import { buildDoctorFullName, isDoctorActive, getDoctorPriceDisplay } from '@/types/doctor';
+import { buildDoctorFullName, isDoctorActive, getDoctorPriceDisplay, cleanZonaText } from '@/types/doctor';
 import { NeoLoader } from '@/components/neo-loader';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { addRecentDoctor } from '@/lib/recent-doctors';
@@ -561,7 +561,14 @@ function DoctorProfileContent() {
                           {index === 0 && <span className="ml-3 inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20">Sede Principal</span>}
                         </h3>
                         <p className="text-slate-500 text-sm leading-relaxed mb-2">
-                          {[clinic.cli_direccion_completa, clinic.cli_zona].filter(Boolean).join(', ')}
+                          {(() => {
+                            const cleanZona = cleanZonaText(clinic.cli_zona);
+                            const raw = (clinic.cli_direccion_completa || '').trim();
+                            if (cleanZona && !raw.toLowerCase().includes(cleanZona.toLowerCase())) {
+                              return [raw, cleanZona].filter(Boolean).join(', ');
+                            }
+                            return raw || cleanZona || 'Dirección no especificada';
+                          })()}
                         </p>
 
                         {clinic.mcl_precio_base != null && clinic.mcl_precio_base > 0 ? (

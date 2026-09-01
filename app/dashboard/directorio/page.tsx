@@ -35,7 +35,7 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale/es';
 
 import type { DoctorResponse, DoctorClinica } from '@/types';
-import { buildDoctorFullName, isDoctorActive } from '@/types/doctor';
+import { buildDoctorFullName, isDoctorActive, cleanZonaText, cleanZonasDomicilio } from '@/types/doctor';
 import { Navbar } from '@/components/navbar';
 import { DoctorCard, type DoctorCardData } from '@/components/doctor-card';
 import { useUserLocation } from '@/hooks/use-user-location';
@@ -159,8 +159,8 @@ function resolveDoctor(doctor: DoctorResponse): ResolvedDoctor {
     const languagePreview = doctor.idiomas.map((item) => item.idioma).filter(Boolean);
     const insurancePreview = (doctor.aseguradoras || []).map((item) => item.aseguradora).filter(Boolean);
     const locationPreview = Array.from(new Set([
-        ...doctor.clinicas.map(c => [c.cli_descripcion, c.cli_zona ? `Zona ${c.cli_zona}` : ''].filter(Boolean).join(', ')).filter(Boolean),
-        ...(doctor.atencion_domicilio || []).map(d => `Domicilio: ${[d.mun_descripcion, d.lad_zonas ? `Zonas ${d.lad_zonas}` : ''].filter(Boolean).join(', ')}`).filter(Boolean)
+        ...doctor.clinicas.map(c => [c.cli_descripcion, cleanZonaText(c.cli_zona)].filter(Boolean).join(', ')).filter(Boolean),
+        ...(doctor.atencion_domicilio || []).map(d => `Domicilio: ${[d.mun_descripcion, cleanZonasDomicilio(d.lad_zonas)].filter(Boolean).join(', ')}`).filter(Boolean)
     ]));
 
     // Restringimos el índice a lo que el usuario realmente buscaría: Nombres, Especialidades y Colegiado
@@ -615,7 +615,17 @@ function DashboardContent() {
                 const el = document.getElementById('doctores');
                 if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }, 50);
+        } else {
+            setIsMapVisible(false);
+            setShowMapMobile(false);
         }
+    };
+
+    const handleCloseSelectedDoctor = () => {
+        setSelectedDoctorId(null);
+        setIsMapVisible(false);
+        setShowMapMobile(false);
+        setSelectedClinicIndex(0);
     };
 
     const handleDoctorSelectFromMap = (expCodigo: string, clinicIndex = 0) => {
@@ -1004,7 +1014,7 @@ function DashboardContent() {
         setRecentDoctors(addRecentDoctor(item));
     };
 
-    const itemsPerPage = 15;
+    const itemsPerPage = 16;
     const totalPages = Math.max(1, Math.ceil(visibleDoctors.length / itemsPerPage));
     const currentPageForView = Math.min(currentPage, totalPages);
     const paginatedDoctors = useMemo(
@@ -1574,30 +1584,47 @@ function DashboardContent() {
                 {/* FILA 2: Filtros Rápidos (Pill Buttons) | Ordenar y Vista (Der) */}
                 <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 relative z-[300]" ref={popoverRef}>
                     {/* Barra de Filtros Rápidos "Pill Buttons" (Izquierda) */}
-                    <div className="flex items-center gap-3 overflow-visible flex-wrap lg:flex-nowrap py-1 flex-1">
+                    <div className="flex items-center gap-2.5 overflow-visible flex-wrap lg:flex-nowrap py-1 flex-1">
                         
-                        {/* 1. [ 📅 Fechas ] */}
+                        {/* 1. [ Fechas ] */}
                         <div className="relative">
                             <button
                                 type="button"
                                 onClick={() => setActivePopover(activePopover === 'fechas' ? null : 'fechas')}
-                                className={`px-6 py-3 rounded-full border text-sm font-bold min-w-[140px] justify-center transition-all flex items-center gap-2.5 whitespace-nowrap cursor-pointer shadow-2xs ${
-                                    activePopover === 'fechas' || availability
-                                        ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
-                                        : 'border-outline-variant/30 bg-surface text-on-surface hover:bg-surface-container hover:border-outline-variant/60'
+                                className={`px-4 py-2.5 rounded-full text-xs font-bold transition-all duration-150 flex items-center gap-2 whitespace-nowrap cursor-pointer shadow-2xs active:scale-98 ${
+                                    availability
+                                        ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-800 dark:text-sky-200 border border-sky-200/80 dark:border-sky-800/80'
+                                        : activePopover === 'fechas'
+                                        ? 'bg-slate-200/90 dark:bg-slate-700 text-slate-900 dark:text-white'
+                                        : 'bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700/80'
                                 }`}
                             >
-                                <Calendar className="w-4 h-4 text-[#0284c7] shrink-0" />
+                                <Calendar className={`w-4 h-4 shrink-0 ${availability ? 'text-sky-600 dark:text-sky-400' : 'text-slate-600 dark:text-slate-400'}`} />
                                 <span>{availability ? format(new Date(availability + 'T00:00:00'), 'd MMM', { locale: es }) : 'Fechas'}</span>
-                                {availability && <span className="w-2 h-2 rounded-full bg-[#0284c7] shrink-0" />}
+                                {availability ? (
+                                    <span
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={(e) => {
+                                             e.stopPropagation();
+                                             setAvailability('');
+                                        }}
+                                        className="p-0.5 -mr-1 rounded-full hover:bg-sky-200/70 dark:hover:bg-sky-800/70 text-sky-600 dark:text-sky-300 transition-colors"
+                                        title="Limpiar fecha"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </span>
+                                ) : (
+                                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 dark:text-slate-500 transition-transform duration-150 ${activePopover === 'fechas' ? 'rotate-180' : ''}`} />
+                                )}
                             </button>
 
                             {activePopover === 'fechas' && (
-                                <div className="absolute left-0 top-[calc(100%+8px)] z-[500] rounded-2xl border border-outline-variant/20 bg-surface p-4 shadow-[0_20px_50px_rgba(0,0,0,0.22)] space-y-3 animate-in fade-in zoom-in-95 duration-150">
-                                    <div className="flex justify-between items-center text-xs font-bold text-on-surface pb-1 border-b border-outline-variant/15">
+                                <div className="absolute left-0 top-[calc(100%+8px)] z-[500] rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-[0_20px_50px_rgba(0,0,0,0.18)] space-y-3 animate-in fade-in zoom-in-95 duration-150">
+                                    <div className="flex justify-between items-center text-xs font-bold text-slate-800 dark:text-slate-200 pb-1 border-b border-slate-100 dark:border-slate-800">
                                         <span>Seleccionar fecha</span>
                                         {availability && (
-                                            <button type="button" onClick={() => setAvailability('')} className="text-rose-600 hover:underline">Limpiar</button>
+                                            <button type="button" onClick={() => setAvailability('')} className="text-sky-600 dark:text-sky-400 hover:underline">Limpiar</button>
                                         )}
                                     </div>
                                     <div style={{ '--rdp-cell-size': '34px', '--rdp-caption-font-size': '14px' } as React.CSSProperties}>
@@ -1612,9 +1639,9 @@ function DashboardContent() {
                                             disabled={{ before: new Date() }}
                                             className="!m-0"
                                             classNames={{
-                                                selected: "bg-[#0284c7] !text-white font-bold hover:bg-[#0284c7]/90",
-                                                today: "font-bold text-[#0284c7]",
-                                                day: "hover:bg-surface-container rounded-lg transition-colors",
+                                                selected: "bg-sky-600 !text-white font-bold hover:bg-sky-700",
+                                                today: "font-bold text-sky-600",
+                                                day: "hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors",
                                             }}
                                         />
                                     </div>
@@ -1622,24 +1649,42 @@ function DashboardContent() {
                             )}
                         </div>
 
-                        {/* 2. [ 📹 Modalidad ] */}
+                        {/* 2. [ Modalidad ] */}
                         <div className="relative">
                             <button
                                 type="button"
                                 onClick={() => setActivePopover(activePopover === 'modalidad' ? null : 'modalidad')}
-                                className={`px-6 py-3 rounded-full border text-sm font-bold min-w-[140px] justify-center transition-all flex items-center gap-2.5 whitespace-nowrap cursor-pointer shadow-2xs ${
-                                    activePopover === 'modalidad' || modality !== 'all'
-                                        ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
-                                        : 'border-outline-variant/30 bg-surface text-on-surface hover:bg-surface-container hover:border-outline-variant/60'
+                                className={`px-4 py-2.5 rounded-full text-xs font-bold transition-all duration-150 flex items-center gap-2 whitespace-nowrap cursor-pointer shadow-2xs active:scale-98 ${
+                                    modality !== 'all'
+                                        ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-800 dark:text-sky-200 border border-sky-200/80 dark:border-sky-800/80'
+                                        : activePopover === 'modalidad'
+                                        ? 'bg-slate-200/90 dark:bg-slate-700 text-slate-900 dark:text-white'
+                                        : 'bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700/80'
                                 }`}
                             >
-                                <Video className="w-4 h-4 text-[#4f46e5] shrink-0" />
+                                <Video className={`w-4 h-4 shrink-0 ${modality !== 'all' ? 'text-sky-600 dark:text-sky-400' : 'text-slate-600 dark:text-slate-400'}`} />
                                 <span>{modality !== 'all' ? `Modalidad (${activeModalities.length})` : 'Modalidad'}</span>
+                                {modality !== 'all' ? (
+                                    <span
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setModality('all');
+                                        }}
+                                        className="p-0.5 -mr-1 rounded-full hover:bg-sky-200/70 dark:hover:bg-sky-800/70 text-sky-600 dark:text-sky-300 transition-colors"
+                                        title="Limpiar modalidad"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </span>
+                                ) : (
+                                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 dark:text-slate-500 transition-transform duration-150 ${activePopover === 'modalidad' ? 'rotate-180' : ''}`} />
+                                )}
                             </button>
 
                             {activePopover === 'modalidad' && (
-                                <div className="absolute left-0 top-[calc(100%+8px)] z-[500] w-60 rounded-2xl border border-outline-variant/20 bg-surface p-3.5 shadow-[0_20px_50px_rgba(0,0,0,0.22)] space-y-2 animate-in fade-in zoom-in-95 duration-150">
-                                    <div className="text-xs font-bold text-on-surface pb-1 border-b border-outline-variant/15">
+                                <div className="absolute left-0 top-[calc(100%+8px)] z-[500] w-60 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3.5 shadow-[0_20px_50px_rgba(0,0,0,0.18)] space-y-2 animate-in fade-in zoom-in-95 duration-150">
+                                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200 pb-1 border-b border-slate-100 dark:border-slate-800">
                                         Modalidad de atención
                                     </div>
                                     <div className="space-y-1">
@@ -1655,8 +1700,8 @@ function DashboardContent() {
                                                 onClick={() => toggleModality(opt.id)}
                                                 className={`flex items-center gap-2.5 px-3 py-2 w-full text-left rounded-xl text-xs font-semibold transition-all ${
                                                     activeModalities.includes(opt.id)
-                                                        ? 'bg-[#4f46e5]/10 border border-[#4f46e5]/40 text-[#4f46e5]'
-                                                        : 'text-on-surface-variant hover:bg-surface-container'
+                                                        ? 'bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 font-bold'
+                                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                                                 }`}
                                             >
                                                 {opt.icon}
@@ -1668,29 +1713,48 @@ function DashboardContent() {
                             )}
                         </div>
 
-                        {/* 3. [ 💲 Precio ] */}
+                        {/* 3. [ Precio ] */}
                         <div className="relative">
                             <button
                                 type="button"
                                 onClick={() => setActivePopover(activePopover === 'precio' ? null : 'precio')}
-                                className={`px-6 py-3 rounded-full border text-sm font-bold min-w-[140px] justify-center transition-all flex items-center gap-2.5 whitespace-nowrap cursor-pointer shadow-2xs ${
-                                    activePopover === 'precio' || priceLimit < PRICE_LIMIT_MAX
-                                        ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
-                                        : 'border-outline-variant/30 bg-surface text-on-surface hover:bg-surface-container hover:border-outline-variant/60'
+                                className={`px-4 py-2.5 rounded-full text-xs font-bold transition-all duration-150 flex items-center gap-2 whitespace-nowrap cursor-pointer shadow-2xs active:scale-98 ${
+                                    priceLimit < PRICE_LIMIT_MAX
+                                        ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-800 dark:text-sky-200 border border-sky-200/80 dark:border-sky-800/80'
+                                        : activePopover === 'precio'
+                                        ? 'bg-slate-200/90 dark:bg-slate-700 text-slate-900 dark:text-white'
+                                        : 'bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700/80'
                                 }`}
                             >
-                                <DollarSign className="w-4 h-4 text-[#059669] shrink-0" />
+                                <DollarSign className={`w-4 h-4 shrink-0 ${priceLimit < PRICE_LIMIT_MAX ? 'text-sky-600 dark:text-sky-400' : 'text-slate-600 dark:text-slate-400'}`} />
                                 <span>{priceLimit < PRICE_LIMIT_MAX ? `Hasta Q${priceLimit}` : 'Precio'}</span>
+                                {priceLimit < PRICE_LIMIT_MAX ? (
+                                    <span
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setPriceLimit(PRICE_LIMIT_MAX);
+                                            setLocalPriceLimit(PRICE_LIMIT_MAX);
+                                        }}
+                                        className="p-0.5 -mr-1 rounded-full hover:bg-sky-200/70 dark:hover:bg-sky-800/70 text-sky-600 dark:text-sky-300 transition-colors"
+                                        title="Limpiar precio"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </span>
+                                ) : (
+                                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 dark:text-slate-500 transition-transform duration-150 ${activePopover === 'precio' ? 'rotate-180' : ''}`} />
+                                )}
                             </button>
 
                             {activePopover === 'precio' && (
-                                <div className="absolute left-0 top-[calc(100%+8px)] z-[500] w-64 rounded-2xl border border-outline-variant/20 bg-surface p-4 shadow-[0_20px_50px_rgba(0,0,0,0.22)] space-y-3 animate-in fade-in zoom-in-95 duration-150">
-                                    <div className="flex justify-between items-center text-xs font-bold text-on-surface border-b border-outline-variant/15 pb-1">
+                                <div className="absolute left-0 top-[calc(100%+8px)] z-[500] w-64 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-[0_20px_50px_rgba(0,0,0,0.18)] space-y-3 animate-in fade-in zoom-in-95 duration-150">
+                                    <div className="flex justify-between items-center text-xs font-bold text-slate-800 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800 pb-1">
                                         <span>Precio máximo</span>
-                                        <span className="text-[#059669]">Q{localPriceLimit}</span>
+                                        <span className="text-sky-600 dark:text-sky-400 font-bold">Q{localPriceLimit}</span>
                                     </div>
                                     <div className="flex items-center gap-3 pt-1">
-                                        <span className="text-xs text-outline">Q0</span>
+                                        <span className="text-xs text-slate-400">Q0</span>
                                         <input
                                             type="range"
                                             min={0}
@@ -1700,37 +1764,55 @@ function DashboardContent() {
                                             onChange={(e) => setLocalPriceLimit(Number(e.target.value))}
                                             onMouseUp={() => setPriceLimit(localPriceLimit)}
                                             onTouchEnd={() => setPriceLimit(localPriceLimit)}
-                                            className="w-full accent-[#059669]"
+                                            className="w-full accent-sky-600"
                                         />
-                                        <span className="text-xs text-outline">Q{PRICE_LIMIT_MAX}</span>
+                                        <span className="text-xs text-slate-400">Q{PRICE_LIMIT_MAX}</span>
                                     </div>
                                 </div>
                             )}
                         </div>
 
-                        {/* 4. [ 🏥 Aseguradoras ] */}
+                        {/* 4. [ Aseguradoras ] */}
                         <div className="relative">
                             <button
                                 type="button"
                                 onClick={() => setActivePopover(activePopover === 'aseguradoras' ? null : 'aseguradoras')}
-                                className={`px-6 py-3 rounded-full border text-sm font-bold min-w-[140px] justify-center transition-all flex items-center gap-2.5 whitespace-nowrap cursor-pointer shadow-2xs ${
-                                    activePopover === 'aseguradoras' || selectedInsurances.length > 0
-                                        ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
-                                        : 'border-outline-variant/30 bg-surface text-on-surface hover:bg-surface-container hover:border-outline-variant/60'
+                                className={`px-4 py-2.5 rounded-full text-xs font-bold transition-all duration-150 flex items-center gap-2 whitespace-nowrap cursor-pointer shadow-2xs active:scale-98 ${
+                                    selectedInsurances.length > 0
+                                        ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-800 dark:text-sky-200 border border-sky-200/80 dark:border-sky-800/80'
+                                        : activePopover === 'aseguradoras'
+                                        ? 'bg-slate-200/90 dark:bg-slate-700 text-slate-900 dark:text-white'
+                                        : 'bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700/80'
                                 }`}
                             >
-                                <ShieldCheck className="w-4 h-4 text-[#8b5cf6] shrink-0" />
+                                <ShieldCheck className={`w-4 h-4 shrink-0 ${selectedInsurances.length > 0 ? 'text-sky-600 dark:text-sky-400' : 'text-slate-600 dark:text-slate-400'}`} />
                                 <span>{selectedInsurances.length > 0 ? `Aseguradoras (${selectedInsurances.length})` : 'Aseguradoras'}</span>
+                                {selectedInsurances.length > 0 ? (
+                                    <span
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedInsurances([]);
+                                        }}
+                                        className="p-0.5 -mr-1 rounded-full hover:bg-sky-200/70 dark:hover:bg-sky-800/70 text-sky-600 dark:text-sky-300 transition-colors"
+                                        title="Limpiar aseguradoras"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </span>
+                                ) : (
+                                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 dark:text-slate-500 transition-transform duration-150 ${activePopover === 'aseguradoras' ? 'rotate-180' : ''}`} />
+                                )}
                             </button>
 
                             {activePopover === 'aseguradoras' && (
-                                <div className="absolute left-0 top-[calc(100%+8px)] z-[500] w-64 rounded-2xl border border-outline-variant/20 bg-surface p-4 shadow-[0_20px_50px_rgba(0,0,0,0.22)] space-y-3 animate-in fade-in zoom-in-95 duration-150">
-                                    <div className="text-xs font-bold text-on-surface pb-1 border-b border-outline-variant/15">
+                                <div className="absolute left-0 top-[calc(100%+8px)] z-[500] w-64 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-[0_20px_50px_rgba(0,0,0,0.18)] space-y-3 animate-in fade-in zoom-in-95 duration-150">
+                                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200 pb-1 border-b border-slate-100 dark:border-slate-800">
                                         Seleccionar aseguradoras
                                     </div>
                                     <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
                                         {insurancePicks.length > 0 ? insurancePicks.map(ins => (
-                                            <label key={ins} className="flex items-center gap-2.5 p-1.5 rounded-lg hover:bg-surface-container cursor-pointer transition-colors text-xs font-medium text-on-surface">
+                                            <label key={ins} className="flex items-center gap-2.5 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors text-xs font-medium text-slate-700 dark:text-slate-200">
                                                 <input
                                                     type="checkbox"
                                                     checked={selectedInsurances.includes(ins)}
@@ -1738,34 +1820,52 @@ function DashboardContent() {
                                                         if (e.target.checked) setSelectedInsurances(prev => [...prev, ins]);
                                                         else setSelectedInsurances(prev => prev.filter(i => i !== ins));
                                                     }}
-                                                    className="rounded text-[#8b5cf6] focus:ring-[#8b5cf6] h-4 w-4"
+                                                    className="rounded text-sky-600 focus:ring-sky-500 h-4 w-4"
                                                 />
                                                 <span className="truncate">{ins}</span>
                                             </label>
-                                        )) : <span className="text-xs text-outline p-2">Sin aseguradoras</span>}
+                                        )) : <span className="text-xs text-slate-400 p-2">Sin aseguradoras</span>}
                                     </div>
                                 </div>
                             )}
                         </div>
 
-                        {/* 5. [ 🌐 Idiomas ] */}
+                        {/* 5. [ Idiomas ] */}
                         <div className="relative">
                             <button
                                 type="button"
                                 onClick={() => setActivePopover(activePopover === 'idiomas' ? null : 'idiomas')}
-                                className={`px-6 py-3 rounded-full border text-sm font-bold min-w-[140px] justify-center transition-all flex items-center gap-2.5 whitespace-nowrap cursor-pointer shadow-2xs ${
-                                    activePopover === 'idiomas' || selectedLanguages.length > 0
-                                        ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
-                                        : 'border-outline-variant/30 bg-surface text-on-surface hover:bg-surface-container hover:border-outline-variant/60'
+                                className={`px-4 py-2.5 rounded-full text-xs font-bold transition-all duration-150 flex items-center gap-2 whitespace-nowrap cursor-pointer shadow-2xs active:scale-98 ${
+                                    selectedLanguages.length > 0
+                                        ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-800 dark:text-sky-200 border border-sky-200/80 dark:border-sky-800/80'
+                                        : activePopover === 'idiomas'
+                                        ? 'bg-slate-200/90 dark:bg-slate-700 text-slate-900 dark:text-white'
+                                        : 'bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700/80'
                                 }`}
                             >
-                                <Globe className="w-4 h-4 text-[#0ea5e9] shrink-0" />
+                                <Globe className={`w-4 h-4 shrink-0 ${selectedLanguages.length > 0 ? 'text-sky-600 dark:text-sky-400' : 'text-slate-600 dark:text-slate-400'}`} />
                                 <span>{selectedLanguages.length > 0 ? `Idiomas (${selectedLanguages.length})` : 'Idiomas'}</span>
+                                {selectedLanguages.length > 0 ? (
+                                    <span
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedLanguages([]);
+                                        }}
+                                        className="p-0.5 -mr-1 rounded-full hover:bg-sky-200/70 dark:hover:bg-sky-800/70 text-sky-600 dark:text-sky-300 transition-colors"
+                                        title="Limpiar idiomas"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </span>
+                                ) : (
+                                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 dark:text-slate-500 transition-transform duration-150 ${activePopover === 'idiomas' ? 'rotate-180' : ''}`} />
+                                )}
                             </button>
 
                             {activePopover === 'idiomas' && (
-                                <div className="absolute left-0 top-[calc(100%+8px)] z-[500] w-64 rounded-2xl border border-outline-variant/20 bg-surface p-4 shadow-[0_20px_50px_rgba(0,0,0,0.22)] space-y-3 animate-in fade-in zoom-in-95 duration-150">
-                                    <div className="text-xs font-bold text-on-surface pb-1 border-b border-outline-variant/15">
+                                <div className="absolute left-0 top-[calc(100%+8px)] z-[500] w-64 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-[0_20px_50px_rgba(0,0,0,0.18)] space-y-3 animate-in fade-in zoom-in-95 duration-150">
+                                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200 pb-1 border-b border-slate-100 dark:border-slate-800">
                                         Idiomas hablados
                                     </div>
                                     <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto">
@@ -1781,14 +1881,14 @@ function DashboardContent() {
                                                     }}
                                                     className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
                                                         isSelected
-                                                            ? 'bg-[#0ea5e9]/10 border border-[#0ea5e9]/40 text-[#0ea5e9]'
-                                                            : 'border border-outline-variant/20 text-on-surface-variant hover:bg-surface-container'
+                                                            ? 'bg-sky-50 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-700 text-sky-700 dark:text-sky-300 font-bold'
+                                                            : 'border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                                                     }`}
                                                 >
                                                     {lang}
                                                 </button>
                                             );
-                                        }) : <span className="text-xs text-outline p-2">Sin idiomas</span>}
+                                        }) : <span className="text-xs text-slate-400 p-2">Sin idiomas</span>}
                                     </div>
                                 </div>
                             )}
@@ -1846,24 +1946,32 @@ function DashboardContent() {
                             )}
                         </div>
 
-                        {/* Botón Mostrar / Ocultar Mapa */}
+                        {/* Botón Mostrar / Ocultar Mapa - Profesional y Limpio */}
                         <button
                             type="button"
                             onClick={() => {
-                                if (isMapVisible) {
+                                if (isMapVisible || selectedDoctorId) {
                                     setIsMapVisible(false);
+                                    setSelectedDoctorId(null);
+                                    setShowMapMobile(false);
                                 } else {
                                     setIsMapVisible(true);
                                 }
                             }}
-                            className={`inline-flex h-12 items-center gap-2 rounded-2xl px-5 text-xs font-bold transition border cursor-pointer shadow-2xs ${
+                            className={`inline-flex h-12 items-center gap-2 rounded-2xl px-5 text-xs font-bold transition-all duration-150 active:scale-95 cursor-pointer shadow-sm hover:shadow-md ${
                                 (isMapVisible || selectedDoctorId)
-                                    ? 'bg-sky-600 text-white border-sky-500 shadow-md ring-2 ring-sky-300/40'
-                                    : 'border-outline-variant/30 bg-surface text-on-surface hover:bg-surface-container hover:border-outline-variant/60'
+                                    ? 'bg-slate-900 hover:bg-slate-800 text-white border border-slate-700'
+                                    : 'bg-sky-600 hover:bg-sky-700 text-white'
                             }`}
                         >
-                            <MapPin className={`w-4 h-4 ${(isMapVisible || selectedDoctorId) ? 'text-white' : 'text-sky-600'}`} />
-                            <span>{(isMapVisible || selectedDoctorId) ? 'Ocultar mapa' : 'Mostrar mapa'}</span>
+                            {(isMapVisible || selectedDoctorId) ? (
+                                <X className="w-4 h-4 text-rose-300" />
+                            ) : (
+                                <MapPin className="w-4 h-4 text-white" />
+                            )}
+                            <span className="tracking-wide">
+                                {(isMapVisible || selectedDoctorId) ? 'Ocultar Mapa' : 'Ver Mapa'}
+                            </span>
                         </button>
                     </div>
                 </div>
@@ -1908,7 +2016,7 @@ function DashboardContent() {
                                         className={
                                             (isMapVisible || selectedDoctorId)
                                                 ? "grid grid-cols-1 md:grid-cols-2 gap-4 w-full"
-                                                : "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5 w-full"
+                                                : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 w-full"
                                         }
                                     >
                                         {paginatedDoctors.map((doctor) => (
@@ -1917,6 +2025,7 @@ function DashboardContent() {
                                                 data={doctor}
                                                 onVisit={handleDoctorVisit}
                                                 onSelect={handleDoctorCardSelect}
+                                                onClose={handleCloseSelectedDoctor}
                                                 onSelectClinic={(idx) => setSelectedClinicIndex(idx)}
                                                 selectedClinicIndex={selectedClinicIndex}
                                                 variant={selectedDoctorId === doctor.doctor.exp_codigo ? 'expanded' : 'compact'}
@@ -2019,18 +2128,31 @@ function DashboardContent() {
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 lg:hidden">
                 <button
                     type="button"
-                    onClick={() => setShowMapMobile(!showMapMobile)}
-                    className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-slate-900 text-white font-bold text-xs shadow-2xl shadow-slate-950/40 hover:bg-slate-800 transition-all border border-slate-700 cursor-pointer"
+                    onClick={() => {
+                        if (showMapMobile) {
+                            setShowMapMobile(false);
+                            setIsMapVisible(false);
+                            setSelectedDoctorId(null);
+                        } else {
+                            setShowMapMobile(true);
+                            setIsMapVisible(true);
+                        }
+                    }}
+                    className={`inline-flex items-center gap-2 px-5 py-3 rounded-full font-bold text-xs shadow-xl transition-all duration-150 active:scale-95 cursor-pointer ${
+                        showMapMobile
+                            ? 'bg-slate-900 text-white border border-slate-700'
+                            : 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-600/30'
+                    }`}
                 >
                     {showMapMobile ? (
                         <>
                             <List className="w-4 h-4 text-sky-400" />
-                            <span>Ver lista</span>
+                            <span>Ver Lista</span>
                         </>
                     ) : (
                         <>
-                            <MapPin className="w-4 h-4 text-sky-400" />
-                            <span>Ver mapa</span>
+                            <MapPin className="w-4 h-4 text-white" />
+                            <span>Ver Mapa</span>
                         </>
                     )}
                 </button>

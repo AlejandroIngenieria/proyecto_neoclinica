@@ -21,8 +21,16 @@ import {
   Calendar,
   X,
 } from 'lucide-react';
-import type { DoctorResponse, DoctorClinica } from '@/types';
-import { getDoctorPriceDisplay, buildDoctorFullName, buildDoctorShortName } from '@/types/doctor';
+import {
+  type DoctorResponse,
+  type DoctorClinica,
+  getDoctorPriceDisplay,
+  buildDoctorFullName,
+  buildDoctorShortName,
+  cleanZonaText,
+  cleanZonaShort,
+  cleanZonasDomicilio,
+} from '@/types/doctor';
 import { useFavoritos, useAddFavorito, useRemoveFavorito } from '@/hooks/use-favoritos';
 import { usePacienteTitular } from '@/hooks/use-pacientes';
 import { useUserLocation } from '@/hooks/use-user-location';
@@ -44,6 +52,7 @@ type DoctorCardProps = {
   data: DoctorCardData;
   onVisit?: (data: DoctorCardData) => void;
   onSelect?: (data: DoctorCardData) => void;
+  onClose?: () => void;
   onSelectClinic?: (clinicIndex: number) => void;
   selectedClinicIndex?: number;
   variant?: 'compact' | 'expanded';
@@ -111,6 +120,7 @@ export function DoctorCard({
   data,
   onVisit,
   onSelect,
+  onClose,
   onSelectClinic,
   selectedClinicIndex = 0,
   variant = 'compact',
@@ -258,7 +268,11 @@ export function DoctorCard({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onSelect?.(data);
+              if (onClose) {
+                onClose();
+              } else {
+                onSelect?.(data);
+              }
             }}
             className="absolute top-3.5 right-3.5 z-20 p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 transition-colors shadow-xs cursor-pointer"
             title="Cerrar detalle"
@@ -340,7 +354,7 @@ export function DoctorCard({
                   <h3 className="text-lg md:text-xl font-black text-slate-900 leading-snug break-words whitespace-normal">
                     <HighlightText text={fullDetailedName} highlight={searchHighlight} />
                   </h3>
-                  <p className="text-xs font-semibold text-sky-700 mt-0.5 truncate">
+                  <p className="text-xs font-semibold text-sky-700 mt-0.5 break-words whitespace-normal leading-snug">
                     {doctor.exp_profesion || specialtyPreview[0] || 'Médico y Cirujano'}
                     {doctor.exp_colegiado_gt && (
                       <span className="text-slate-500 font-normal ml-1.5">
@@ -409,16 +423,15 @@ export function DoctorCard({
                 )}
               </div>
 
-              {/* Sedes de Atención con Botones de Navegación y Ver Horarios Inline */}
+              {/* Sedes de Atención con Botones de Navegación y Ver Horarios en 3 Filas */}
               {doctor.clinicas && doctor.clinicas.length > 0 ? (
-                <div className="bg-sky-50/70 p-3 rounded-2xl border border-sky-200/70 space-y-2">
-                  {/* Selector de Sedes si hay más de 1 */}
+                <div className="bg-sky-50/70 p-3 rounded-2xl border border-sky-200/70 space-y-2.5">
+                  {/* Selector de Sedes si hay más de 1 - Pestañas limpias solo con nombre comercial */}
                   {doctor.clinicas.length > 1 && (
                     <div className="flex flex-wrap gap-1.5">
                       {doctor.clinicas.map((cli, idx) => {
                         const isCliSelected = (selectedClinicIndex === idx);
                         const name = cli.cli_descripcion || `Sede ${idx + 1}`;
-                        const zona = cli.cli_zona ? `Z.${cli.cli_zona}` : '';
 
                         return (
                           <button
@@ -428,103 +441,128 @@ export function DoctorCard({
                               e.stopPropagation();
                               onSelectClinic?.(idx);
                             }}
-                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
                               isCliSelected
                                 ? 'bg-sky-600 text-white shadow-xs'
                                 : 'bg-white text-slate-700 border border-slate-200 hover:bg-sky-50 hover:text-sky-700'
                             }`}
                           >
-                            <MapPin className="w-3 h-3 shrink-0" />
-                            <span className="truncate max-w-[130px]">{name} {zona && `(${zona})`}</span>
+                            <MapPin className="w-3.5 h-3.5 shrink-0" />
+                            <span>{name}</span>
                           </button>
                         );
                       })}
                     </div>
                   )}
 
-                  {/* Fila Principal de la Clínica Activa: Nombre/Dirección + Botones Inline */}
+                  {/* Tarjeta de la Clínica Activa: 3 Filas Bien Definidas */}
                   {activeClinic && (
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 bg-white p-2.5 rounded-xl border border-sky-100">
-                      <div className="space-y-0.5 min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900 truncate">
-                          <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                          <span className="truncate">{activeClinic.cli_descripcion || 'Clínica Principal'}</span>
-                          {activeClinic.cli_zona && (
-                            <span className="text-[11px] font-semibold text-slate-500">· Zona {activeClinic.cli_zona}</span>
-                          )}
-                          {activeClinicDistanceFormatted && (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-200/60 shrink-0 ml-1">
-                              <Navigation className="w-2.5 h-2.5 text-emerald-600" />
-                              <span>{activeClinicDistanceFormatted}</span>
-                            </span>
-                          )}
+                    <div className="flex flex-col gap-2 bg-white p-3 rounded-xl border border-sky-100 w-full shadow-2xs">
+                      {/* Fila 1: Nombre de la clínica (Izq) + Chip de distancia (Der) */}
+                      <div className="flex items-center justify-between gap-2 w-full">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <MapPin className="w-4 h-4 text-sky-600 shrink-0" />
+                          <h4 className="text-xs sm:text-sm font-bold text-slate-900 break-words whitespace-normal">
+                            {activeClinic.cli_descripcion || 'Clínica Principal'}
+                          </h4>
                         </div>
-                        {activeClinic.cli_direccion_completa && (
-                          <p className="text-[11px] text-slate-600 truncate pl-5">
-                            {activeClinic.cli_direccion_completa}
-                          </p>
+
+                        {activeClinicDistanceFormatted && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/60 shrink-0">
+                            <Navigation className="w-2.5 h-2.5 text-emerald-600" />
+                            <span>{activeClinicDistanceFormatted}</span>
+                          </span>
                         )}
                       </div>
 
-                      {/* Botones de Acción Inline: Ver Horarios + Google Maps + Waze */}
-                      <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                      {/* Fila 2: Dirección completa y limpia abarcando todo el ancho */}
+                      {(() => {
+                        const cleanZona = cleanZonaText(activeClinic.cli_zona);
+                        const rawAddress = (activeClinic.cli_direccion_completa || '').trim();
+                        let fullAddress = rawAddress;
+                        if (cleanZona && !rawAddress.toLowerCase().includes(cleanZona.toLowerCase())) {
+                          fullAddress = rawAddress ? `${rawAddress}, ${cleanZona}` : cleanZona;
+                        }
+
+                        return fullAddress ? (
+                          <p className="text-xs text-slate-600 break-words whitespace-normal leading-relaxed pl-5.5 w-full">
+                            {fullAddress}
+                          </p>
+                        ) : null;
+                      })()}
+
+                      {/* Fila 3: Tres botones de acción en fila inferior exclusiva */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full pt-1">
                         {/* Botón Ver Horarios */}
-                        {activeClinic.horarios_atencion && activeClinic.horarios_atencion.length > 0 && (
+                        {activeClinic.horarios_atencion && activeClinic.horarios_atencion.length > 0 ? (
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               setIsHorariosModalOpen(true);
                             }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700 text-xs font-bold transition-colors border border-sky-200/80 cursor-pointer shadow-2xs"
+                            className="w-full h-8.5 px-2 rounded-xl bg-sky-50 hover:bg-sky-100 active:scale-98 text-sky-700 text-xs font-bold transition-all border border-sky-200/80 cursor-pointer shadow-2xs flex items-center justify-center gap-1.5"
                             title="Ver horarios de atención"
                           >
-                            <Clock className="w-3.5 h-3.5 text-sky-600" />
+                            <Clock className="w-3.5 h-3.5 text-sky-600 shrink-0" />
                             <span>Horarios ({activeClinic.horarios_atencion.length})</span>
                           </button>
+                        ) : (
+                          <div className="w-full h-8.5 px-2 rounded-xl bg-slate-50 text-slate-400 text-xs font-medium border border-slate-100 flex items-center justify-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span>Previa cita</span>
+                          </div>
                         )}
 
                         {/* Botón Google Maps */}
-                        {googleMapsUrl && (
+                        {googleMapsUrl ? (
                           <a
                             href={googleMapsUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-2xs transition-colors"
+                            className="w-full h-8.5 px-2 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-98 text-white text-xs font-bold shadow-2xs transition-all flex items-center justify-center gap-1.5"
                             title="Abrir en Google Maps"
                           >
-                            <Navigation className="w-3 h-3 fill-white text-white" />
+                            <Navigation className="w-3 h-3 fill-white text-white shrink-0" />
                             <span>Google Maps</span>
-                            <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                            <ExternalLink className="w-2.5 h-2.5 opacity-60 shrink-0" />
                           </a>
+                        ) : (
+                          <div className="w-full h-8.5 px-2 rounded-xl bg-slate-50 text-slate-400 text-xs font-medium border border-slate-100 flex items-center justify-center">
+                            <span>Sin Maps</span>
+                          </div>
                         )}
 
                         {/* Botón Waze */}
-                        {wazeUrl && (
+                        {wazeUrl ? (
                           <a
                             href={wazeUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#33ccff] hover:bg-[#2bb8e6] text-slate-900 text-xs font-bold shadow-2xs transition-colors"
+                            className="w-full h-8.5 px-2 rounded-xl bg-[#33ccff] hover:bg-[#2bb8e6] active:scale-98 text-slate-900 text-xs font-bold shadow-2xs transition-all flex items-center justify-center gap-1.5"
                             title="Abrir en Waze"
                           >
-                            <Navigation className="w-3 h-3 text-slate-900" />
+                            <Navigation className="w-3 h-3 text-slate-900 shrink-0" />
                             <span>Waze</span>
-                            <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                            <ExternalLink className="w-2.5 h-2.5 opacity-60 shrink-0" />
                           </a>
+                        ) : (
+                          <div className="w-full h-8.5 px-2 rounded-xl bg-slate-50 text-slate-400 text-xs font-medium border border-slate-100 flex items-center justify-center">
+                            <span>Sin Waze</span>
+                          </div>
                         )}
                       </div>
                     </div>
                   )}
                 </div>
               ) : doctor.atencion_domicilio && doctor.atencion_domicilio.length > 0 ? (
-                <div className="bg-emerald-50/60 p-2.5 rounded-xl border border-emerald-200/80 flex items-center gap-2 text-xs">
-                  <Home className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span className="font-bold text-emerald-900">Atención a Domicilio:</span>
-                  <span className="text-emerald-800 truncate">
-                    {doctor.atencion_domicilio.map((d) => [d.mun_descripcion, d.lad_zonas ? `Zonas ${d.lad_zonas}` : ''].filter(Boolean).join(' - ')).join(' · ')}
+                <div className="bg-emerald-50/60 p-2.5 rounded-xl border border-emerald-200/80 flex items-start gap-2 text-xs">
+                  <Home className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <span className="font-bold text-emerald-900 shrink-0">Atención a Domicilio:</span>
+                  <span className="text-emerald-800 break-words whitespace-normal leading-relaxed">
+                    {doctor.atencion_domicilio.map((d) => [d.mun_descripcion, cleanZonasDomicilio(d.lad_zonas)].filter(Boolean).join(' - ')).join(' · ')}
                   </span>
                 </div>
               ) : null}
@@ -675,22 +713,23 @@ export function DoctorCard({
       </div>
 
       {/* Information Body */}
-      <div className="p-4 flex flex-col flex-1 justify-between gap-2.5 bg-white">
-        <div className="space-y-1">
+      <div className="p-4 flex flex-col flex-1 justify-between gap-3 bg-white">
+        <div className="space-y-2">
           {/* Fila 1: Nombre (Izq) | Calificación (Der) */}
           <div className="flex items-start justify-between gap-2 min-w-0">
             <h3
-              className="font-bold text-slate-900 text-base leading-snug truncate flex-1 min-w-0 group-hover:text-sky-600 transition-colors"
+              className="font-bold text-slate-900 text-base leading-snug break-words whitespace-normal flex-1 min-w-0 group-hover:text-sky-600 transition-colors"
               title={fullDetailedName}
             >
               <HighlightText text={shortName} highlight={searchHighlight} />
             </h3>
             {doctor.total_resenas > 0 && doctor.promedio_valoracion > 0 ? (
-              <div className="flex items-center gap-1 shrink-0 pt-0.5">
-                <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
-                <span className="text-sm font-bold text-slate-900">
+              <div className="flex items-center gap-1 shrink-0 pt-0.5 bg-amber-50/80 px-2 py-0.5 rounded-lg border border-amber-200/60">
+                <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                <span className="text-xs font-bold text-slate-900">
                   {doctor.promedio_valoracion.toFixed(1)}
                 </span>
+                <span className="text-[10px] text-slate-500">({doctor.total_resenas})</span>
               </div>
             ) : (
               <span className="inline-flex items-center text-[11px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full shrink-0">
@@ -699,68 +738,138 @@ export function DoctorCard({
             )}
           </div>
 
-          {/* Fila 2: Especialidad en gris */}
-          <p className="text-slate-500 text-sm font-medium truncate">
-            <HighlightText
-              text={data.matchedSpecialty || specialtyPreview[0] || 'Especialidad médica'}
-              highlight={searchHighlight}
-            />
-          </p>
+          {/* Fila 2: Especialidad + Modalidades de consulta agrupadas junto a ella */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <p className="text-sky-700 text-xs font-semibold break-words whitespace-normal leading-snug flex-1 min-w-0">
+              <HighlightText
+                text={data.matchedSpecialty || specialtyPreview[0] || 'Especialidad médica'}
+                highlight={searchHighlight}
+              />
+              {doctor.exp_colegiado_gt && (
+                <span className="text-slate-400 font-normal ml-1.5">
+                  · Col. {doctor.exp_colegiado_gt}
+                </span>
+              )}
+            </p>
 
-          {/* Fila 3: Distancia o ubicación principal en gris */}
-          <p className="text-slate-500 text-xs font-medium truncate">
-            <HighlightText text={locationOrDistance} highlight={searchHighlight} />
-          </p>
-        </div>
-
-        {/* Fila 4: Íconos Informativos Reducidos (Modalidad, Idiomas, Aseguradoras) */}
-        <div className="flex items-center gap-2 py-1.5 px-2 bg-slate-50 rounded-xl border border-slate-100 text-slate-600 text-xs">
-          {/* Modalidades Icons */}
-          <div className="flex items-center gap-1 shrink-0" title={`Modalidades: ${modalities.join(', ') || 'Presencial'}`}>
-            {hasPresencial && <MapPin className="w-3.5 h-3.5 text-sky-600" />}
-            {hasVirtual && <Video className="w-3.5 h-3.5 text-indigo-600" />}
-            {hasDomicilio && <Home className="w-3.5 h-3.5 text-emerald-600" />}
+            {/* Íconos de modalidades agrupados junto a la especialidad */}
+            <div className="flex items-center gap-1 shrink-0" title={`Modalidades: ${modalities.join(', ') || 'Presencial'}`}>
+              {hasPresencial && (
+                <span title="Presencial" className="inline-flex items-center justify-center p-1 rounded-md bg-sky-50 text-sky-600">
+                  <MapPin className="w-3.5 h-3.5" />
+                </span>
+              )}
+              {hasVirtual && (
+                <span title="Consulta Virtual" className="inline-flex items-center justify-center p-1 rounded-md bg-indigo-50 text-indigo-600">
+                  <Video className="w-3.5 h-3.5" />
+                </span>
+              )}
+              {hasDomicilio && (
+                <span title="Atención a Domicilio" className="inline-flex items-center justify-center p-1 rounded-md bg-emerald-50 text-emerald-600">
+                  <Home className="w-3.5 h-3.5" />
+                </span>
+              )}
+            </div>
           </div>
 
-          <span className="text-slate-300">|</span>
+          {/* Fila 3: Múltiples ubicaciones sin ocultar datos (Bloque apilado verticalmente) */}
+          <div className="flex flex-col gap-1 pt-0.5">
+            {doctor.clinicas && doctor.clinicas.length > 0 ? (
+              doctor.clinicas.map((cli, idx) => {
+                const cliName = cli.cli_descripcion || `Clínica ${idx + 1}`;
+                const zonaClean = cleanZonaShort(cli.cli_zona);
+                const label = `${cliName}${zonaClean ? `, ${zonaClean}` : ''}`;
 
-          {/* Idiomas */}
-          <div className="flex items-center gap-1 shrink-0 min-w-0 truncate" title={`Idiomas: ${languages.join(', ') || 'Español'}`}>
-            <Globe className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-            <span className="text-[11px] font-semibold truncate">{languages[0] || 'Español'}</span>
-          </div>
-
-          {insurances.length > 0 && (
-            <>
-              <span className="text-slate-300">|</span>
-              <div className="flex items-center gap-1 shrink-0" title={`Acepta ${insurances.length} aseguradoras`}>
-                <ShieldCheck className="w-3.5 h-3.5 text-purple-600" />
-                <span className="text-[11px] font-semibold">{insurances.length} seg.</span>
+                return (
+                  <div key={idx} className="flex items-start gap-1.5 text-xs text-slate-600 leading-snug">
+                    <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0 mt-0.5" />
+                    <span className="break-words whitespace-normal font-medium">
+                      <HighlightText text={label} highlight={searchHighlight} />
+                    </span>
+                  </div>
+                );
+              })
+            ) : doctor.atencion_domicilio && doctor.atencion_domicilio.length > 0 ? (
+              <div className="flex items-start gap-1.5 text-xs text-emerald-700 leading-snug">
+                <Home className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                <span className="break-words whitespace-normal font-medium">
+                  Atención a domicilio {cleanZonasDomicilio(doctor.atencion_domicilio[0]?.lad_zonas)}
+                </span>
               </div>
-            </>
+            ) : (
+              <div className="flex items-start gap-1.5 text-xs text-slate-500 leading-snug">
+                <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                <span className="break-words whitespace-normal">
+                  <HighlightText text={locationOrDistance} highlight={searchHighlight} />
+                </span>
+              </div>
+            )}
+
+            {/* Si además de clínicas tiene domicilio, se muestra como viñeta adicional */}
+            {doctor.clinicas && doctor.clinicas.length > 0 && doctor.atencion_domicilio && doctor.atencion_domicilio.length > 0 && (
+              <div className="flex items-start gap-1.5 text-xs text-emerald-700 leading-snug">
+                <Home className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                <span className="break-words whitespace-normal font-medium">
+                  Atención a domicilio {cleanZonasDomicilio(doctor.atencion_domicilio[0]?.lad_zonas)}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Fila 4: Idioma y Seguros en texto simple y limpio (sin contenedor gris) */}
+          {(languages.length > 0 || insurances.length > 0) && (
+            <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500 pt-0.5">
+              {languages.length > 0 && (
+                <span className="inline-flex items-center gap-1">
+                  <Globe className="w-3 h-3 text-slate-400 shrink-0" />
+                  <span>{languages.slice(0, 2).join(', ')}</span>
+                </span>
+              )}
+              {insurances.length > 0 && (
+                <span className="inline-flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3 text-slate-400 shrink-0" />
+                  <span>{insurances.length} {insurances.length === 1 ? 'seguro' : 'seguros'}</span>
+                </span>
+              )}
+            </div>
           )}
         </div>
 
-        {/* Fila 5: Precio + Botón de Ver Perfil */}
-        <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between">
-          {priceInfo.hasPrice ? (
-            <span className="font-bold text-slate-900 text-sm">
-              {priceInfo.label}
-            </span>
-          ) : (
-            <span className="text-[11px] font-semibold text-slate-400">
-              Clínica sin precio establecido
-            </span>
-          )}
+        {/* Fila 5: Precio + Botones de Acción (Agendar Cita + Ver Perfil) */}
+        <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            {priceInfo.hasPrice ? (
+              <span className="font-bold text-slate-900 text-sm block leading-tight break-words">
+                {priceInfo.label}
+              </span>
+            ) : (
+              <span className="text-[11px] font-semibold text-slate-400 block leading-tight break-words">
+                Clínica sin precio establecido
+              </span>
+            )}
+          </div>
 
-          <button
-            type="button"
-            onClick={handleVisitProfile}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold transition-all bg-slate-100 text-slate-700 hover:bg-sky-50 hover:text-sky-600 cursor-pointer"
-          >
-            <span>Ver Perfil</span>
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={handleBookAppointment}
+              className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-sky-600 hover:bg-sky-700 active:scale-95 text-white cursor-pointer shadow-sm shadow-sky-600/20"
+              title="Agendar Cita con este médico"
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Agendar Cita</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleVisitProfile}
+              className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all bg-sky-50 text-sky-700 hover:bg-sky-100 dark:bg-sky-950/40 dark:text-sky-300 dark:hover:bg-sky-900/50 cursor-pointer shadow-2xs border border-sky-200/60 dark:border-sky-800/60"
+              title="Ver perfil completo del especialista"
+            >
+              <span>Ver Perfil</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       </div>
     </div>

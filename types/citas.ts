@@ -39,6 +39,16 @@ export interface PacienteSeleccionDto {
   pacFotoPerfilUrl?: string;
 }
 
+export interface GrupoCitaItemDto {
+  citaId: string;
+  fecha: string;
+  hora: string;
+  modalidad?: string | null;
+  estado?: string | null;
+  codServicio?: number | null;
+  codMetodoPago?: number | null;
+}
+
 export interface GrupoCitaDto {
   grupoId: string;
   titulo: string;
@@ -48,6 +58,10 @@ export interface GrupoCitaDto {
   hora?: string | null;
   modalidad?: string | null;
   estado?: string | null;
+  codServicio?: number | null;
+  codMetodoPago?: number | null;
+  consultorioId?: number | null;
+  citas?: GrupoCitaItemDto[];
 }
 
 export interface ServicioMedicoCitaDto {
@@ -165,6 +179,13 @@ export interface CitaListDto {
   ctaEtapaActual: number;
   ctaTotalEtapas: number;
   ctaCalificacion?: number | null;
+  ctaDiagnostico?: string | null;
+  ctaTratamiento?: string | null;
+  ctaExamenesSolicitados?: string | null;
+  ctaNotasMedicas?: string | null;
+  resenaComentario?: string | null;
+  resenaFecha?: string | null;
+  resenaCodigo?: string | null;
   fechaGrabacion: string;
   grupoTema?: string | null;
   etapas?: CitaEtapaDto[];
@@ -219,3 +240,18 @@ export interface GuardarTarjetaRequest {
   ultimos4: string;
   tipoTarjeta: string; // "visa", "mastercard", etc.
 }
+
+export interface ColaTurnoDto {
+  turnoNumero: number;
+  ctaCodigo: string;
+  ctaHora: string;
+  ctaEstado: string; // "programada", "en_proceso", "completada", "no_asistio", "cancelada"
+  ctaModalidad: string;
+  esMiTurno: boolean;
+  pacienteNombre?: string | null;
+  medicoNombre: string;
+  medicoEspecialidad: string;
+  clinicaNombre?: string | null;
+  servicioNombre?: string | null;
+}
+

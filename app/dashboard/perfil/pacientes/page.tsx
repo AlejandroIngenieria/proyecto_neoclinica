@@ -634,7 +634,7 @@ function IndependizarModal({
           <div style="text-align: left; font-size: 13px; line-height: 1.5; color: #475569;">
             <p style="margin-bottom: 10px;">Estás a punto de convertir a <strong>${pacienteName}</strong> en un usuario titular independiente.</p>
             <div style="background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 12px; padding: 12px; color: #92400e; font-size: 12px;">
-              <p style="font-weight: bold; margin-bottom: 6px;">⚠️ Implicaciones de esta acción:</p>
+              <p style="font-weight: bold; margin-bottom: 6px;">Implicaciones de esta acción:</p>
               <ul style="list-style-type: disc; padding-left: 16px; margin: 0; display: flex; flex-direction: column; gap: 4px;">
                 <li>Se creará una cuenta titular asociada a <strong>${data.nuevoCorreo}</strong>.</li>
                 <li>Se enviará un correo con credenciales temporales de acceso.</li>

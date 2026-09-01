@@ -91,7 +91,7 @@ function resolveAuthUser(user: AuthUserType) {
   };
 }
 
-const apiBaseUrl = process.env.AUTH_BACKEND_URL ?? process.env.NEXT_PUBLIC_API_URL ?? '';
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? '';
 
 async function postLoginWithRetries(
   correo: string,
@@ -233,41 +233,6 @@ export const authOptions: NextAuthOptions = {
         if (!credentials?.correo || !credentials.password) {
           console.log("=> Missing credentials");
           return null;
-        }
-
-        // Acceso Administrativo Especial para Gestión de Citas y Estados
-        if (credentials.correo.trim().toLowerCase() === 'admin@admin.com' && credentials.password === 'Admin123@') {
-          try {
-            const data = await postLoginWithRetries(credentials.correo, credentials.password, 2);
-            if (data?.token) {
-              const resolvedUser = data.usuario ? resolveAuthUser(data.usuario) : null;
-              return {
-                id: resolvedUser?.id || '00000000-0000-0000-0000-000000000001',
-                name: resolvedUser?.name || 'Administrador Clínico',
-                email: 'admin@admin.com',
-                image: null,
-                accessToken: data.token,
-                role: 'admin',
-                active: true,
-                tipoTabla: 'admin',
-                debeCambiarPassword: false,
-              };
-            }
-          } catch {
-            // Fallback si no está en la BD del backend
-          }
-
-          return {
-            id: '00000000-0000-0000-0000-000000000001',
-            name: 'Administrador Clínico',
-            email: 'admin@admin.com',
-            image: null,
-            accessToken: 'admin-jwt-token-local',
-            role: 'admin',
-            active: true,
-            tipoTabla: 'admin',
-            debeCambiarPassword: false,
-          };
         }
 
         try {

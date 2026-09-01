@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Eye, EyeOff, Loader2, CheckCircle2, Circle, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Eye, EyeOff, Loader2, CheckCircle2, Circle, ArrowRight, ArrowLeft, Calendar } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { registerSchema, type RegisterFormValues } from '../../../lib/validations/auth';
 
@@ -15,6 +15,9 @@ export default function RegisterPage() {
   const [step, setStep] = useState(1);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  const today = new Date();
+  const maxBirthDate = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate()).toISOString().split('T')[0];
   
   const {
     register,
@@ -31,6 +34,7 @@ export default function RegisterPage() {
       primerApellido: '', 
       segundoApellido: '', 
       apellidoCasado: '', 
+      fechaNacimiento: '',
       correo: '', 
       password: '', 
       confirmPassword: '' 
@@ -79,7 +83,8 @@ export default function RegisterPage() {
            segundoNombre: values.segundoNombre || '',
            primerApellido: values.primerApellido,
            segundoApellido: values.segundoApellido || '',
-           apellidoCasado: values.apellidoCasado || ''
+           apellidoCasado: values.apellidoCasado || '',
+           fechaNacimiento: values.fechaNacimiento
         }),
       });
 
@@ -254,6 +259,25 @@ export default function RegisterPage() {
                 {/* ---------------- PASO 2 ---------------- */}
                 {step === 2 && (
                   <div className="space-y-3 sm:space-y-4 animate-in fade-in duration-300">
+                    {/* Fecha de Nacimiento */}
+                    <div>
+                      <label htmlFor="reg_fechaNacimiento" className="block text-xs font-semibold text-slate-300 mb-1 ml-1">
+                        Fecha de nacimiento (Debes ser mayor de 18 años)*
+                      </label>
+                      <div className="flex h-14 items-center gap-3 rounded-2xl border border-sky-400/30 bg-[#0b234c] px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition focus-within:border-sky-300/70 focus-within:ring-2 focus-within:ring-sky-400/25">
+                        <Calendar className="h-5 w-5 text-sky-400 shrink-0" />
+                        <input 
+                          id="reg_fechaNacimiento"
+                          type="date"
+                          max={maxBirthDate}
+                          {...register('fechaNacimiento')} 
+                          disabled={isSubmitting} 
+                          className="autofill-fix h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 disabled:cursor-not-allowed disabled:opacity-70 sm:text-[0.95rem] [color-scheme:dark]" 
+                        />
+                      </div>
+                      {errors.fechaNacimiento ? <p className="mt-2 text-sm text-rose-300">{errors.fechaNacimiento.message}</p> : null}
+                    </div>
+
                     {/* Correo */}
                     <div>
                       <label htmlFor="reg_correo" className="sr-only">Correo</label>

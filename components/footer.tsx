@@ -31,12 +31,16 @@ export function Footer() {
   const [newsletterEmail, setNewsletterEmail] = useState('');
   const [isSubscribed, setIsSubscribed] = useState(false);
 
-  // No renderizar en páginas de autenticación completas (login, recuperar password)
+  // No renderizar en páginas de autenticación completas (login, registro, recuperación de contraseña, admin) ni en la raíz
   if (
+    !pathname ||
+    pathname === '/' ||
     pathname === '/login' ||
+    pathname === '/register' ||
     pathname === '/olvide-password' ||
     pathname === '/restablecer-password' ||
-    pathname === '/(auth)'
+    pathname === '/admin/login' ||
+    pathname.startsWith('/(auth)')
   ) {
     return null;
   }
@@ -360,7 +364,7 @@ export function Footer() {
             <span className="hover:text-slate-300 transition-colors cursor-pointer">Código de Ética</span>
             <span>•</span>
             <span className="text-slate-400 font-medium flex items-center gap-1">
-              Guatemala <span className="text-sm">🇬🇹</span>
+              Guatemala
             </span>
           </div>
         </div>

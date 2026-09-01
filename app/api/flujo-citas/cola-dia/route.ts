@@ -2,17 +2,22 @@ import { NextResponse } from 'next/server';
 
 const backendBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5010';
 
-export async function POST(request: Request) {
+export async function GET(request: Request) {
   try {
-    const body = await request.json();
+    const { searchParams } = new URL(request.url);
+    const codMedico = searchParams.get('codMedico') || '';
+    const fecha = searchParams.get('fecha') || '';
+    const codPaciente = searchParams.get('codPaciente') || '';
 
-    const response = await fetch(`${backendBaseUrl}/api/Autenticacion/solicitar-recuperacion`, {
-      method: 'POST',
+    const queryParams = new URLSearchParams();
+    if (codMedico) queryParams.set('codMedico', codMedico);
+    if (fecha) queryParams.set('fecha', fecha);
+    if (codPaciente) queryParams.set('codPaciente', codPaciente);
+
+    const response = await fetch(`${backendBaseUrl}/api/FlujoCitas/cola-dia?${queryParams.toString()}`, {
       headers: {
-        'Content-Type': 'application/json',
         Accept: 'application/json',
       },
-      body: JSON.stringify(body),
       cache: 'no-store',
     });
 
@@ -24,14 +29,14 @@ export async function POST(request: Request) {
       try {
         responseBody = JSON.parse(textBody);
       } catch {
-        // Fallback to textBody
+        // Fallback
       }
     }
 
     return NextResponse.json(responseBody, { status: response.status });
   } catch (error: any) {
     return NextResponse.json(
-      { message: error?.message || 'Error de conexión con el servidor.' },
+      { message: error?.message || 'Error al obtener la cola del día' },
       { status: 500 },
     );
   }

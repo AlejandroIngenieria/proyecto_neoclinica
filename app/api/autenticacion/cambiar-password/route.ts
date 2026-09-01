@@ -4,13 +4,15 @@ const backendBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5010
 
 export async function POST(request: Request) {
   try {
+    const authHeader = request.headers.get('authorization') || '';
     const body = await request.json();
 
-    const response = await fetch(`${backendBaseUrl}/api/Autenticacion/solicitar-recuperacion`, {
+    const response = await fetch(`${backendBaseUrl}/api/Autenticacion/cambiar-password`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
+        Authorization: authHeader,
       },
       body: JSON.stringify(body),
       cache: 'no-store',
@@ -31,7 +33,7 @@ export async function POST(request: Request) {
     return NextResponse.json(responseBody, { status: response.status });
   } catch (error: any) {
     return NextResponse.json(
-      { message: error?.message || 'Error de conexión con el servidor.' },
+      { mensaje: error?.message || 'Error de conexión con el servidor.' },
       { status: 500 },
     );
   }

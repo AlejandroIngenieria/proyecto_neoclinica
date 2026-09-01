@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -431,6 +431,16 @@ export default function AdminPage() {
   const router = useRouter();
   const { data: session, status } = useSession();
 
+  // Redirigir a /admin/login si no está autenticado o no posee rol admin
+  useEffect(() => {
+    const userRole = (session?.user as { role?: string } | undefined)?.role;
+    if (status === 'unauthenticated') {
+      router.replace('/admin/login');
+    } else if (status === 'authenticated' && userRole !== 'admin') {
+      router.replace('/admin/login');
+    }
+  }, [status, session, router]);
+
   const { data: citas = [], isLoading, isFetching, refetch } = useAdminCitas();
   const cambiarEstadoMutation = useCambiarEstadoCita();
 
@@ -453,7 +463,7 @@ export default function AdminPage() {
       if (nuevoEstado === 'completada') {
         extraHtml = `
           <div style="background-color: #eef2ff; border: 1px solid #c7d2fe; border-radius: 12px; padding: 12px; text-align: left; color: #3730a3; font-size: 12px; margin-top: 10px;">
-            <p style="font-weight: bold; margin-bottom: 4px;">✨ Acciones automáticas del backend:</p>
+            <p style="font-weight: bold; margin-bottom: 4px;">Acciones automáticas del sistema:</p>
             <ul style="list-style-type: disc; padding-left: 16px; margin: 0; line-height: 1.5;">
               <li>Se otorgarán los puntos de lealtad al paciente.</li>
               <li>Se enviará una notificación en tiempo real (SignalR).</li>
@@ -612,12 +622,12 @@ export default function AdminPage() {
               <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
                 {session?.user?.name || 'Administrador'}
               </span>
-              <span className="text-[11px] text-slate-400">admin@admin.com</span>
+              <span className="text-[11px] text-slate-400">{session?.user?.email || 'admin@neoclinica.com'}</span>
             </div>
 
             <button
               type="button"
-              onClick={() => signOut({ callbackUrl: '/login' })}
+              onClick={() => signOut({ callbackUrl: '/admin/login' })}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50 text-xs font-bold hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors shadow-2xs active:scale-95"
             >
               <LogOut className="w-3.5 h-3.5" />

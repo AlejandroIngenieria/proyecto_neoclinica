@@ -165,17 +165,33 @@ export default function EditWizardPage() {
     }
   }, [citaOriginal, isInitialized]);
 
+  const handleSelectModalidad = (mod: ModalidadCita) => {
+    setModalidad(mod);
+    if (mod !== 'presencial') {
+      setClinicaSeleccionada(null);
+      if (!precio || precio === 0) {
+        setPrecio(doctor?.clinicas?.[0]?.mcl_precio_base || citaOriginal?.ctaPrecio || clinicasList?.[0]?.mclPrecioBase || 0);
+      }
+    } else {
+      if (!clinicaSeleccionada && clinicasList && clinicasList.length > 0) {
+        const matchingClinica = clinicasList.find(c => String(c.cliCodigo) === String(citaOriginal?.ctaConsultorioId) || String(c.mclCodigo) === String(citaOriginal?.ctaConsultorioId)) || clinicasList[0];
+        setClinicaSeleccionada(matchingClinica);
+        setPrecio(matchingClinica.mclPrecioBase || citaOriginal?.ctaPrecio || 0);
+      }
+    }
+  };
+
   // Set the selected clinic once the list is available
   useEffect(() => {
     if (isInitialized && citaOriginal?.ctaModalidad === 'presencial' && citaOriginal.ctaConsultorioId && clinicasList && !clinicaSeleccionada) {
-      const clinica = clinicasList.find(c => String(c.mclCodigo) === String(citaOriginal.ctaConsultorioId));
+      const clinica = clinicasList.find(c => String(c.cliCodigo) === String(citaOriginal.ctaConsultorioId) || String(c.mclCodigo) === String(citaOriginal.ctaConsultorioId));
       if (clinica) setClinicaSeleccionada(clinica);
     }
   }, [isInitialized, citaOriginal, clinicasList, clinicaSeleccionada]);
 
   // Adjust price only when user changes clinic, preserving initial citaOriginal price
   useEffect(() => {
-    if (isInitialized && modalidad === 'presencial' && clinicaSeleccionada) {
+    if (isInitialized && modalidad === 'presencial' && clinicaSeleccionada?.mclPrecioBase) {
       setPrecio(clinicaSeleccionada.mclPrecioBase);
     }
   }, [isInitialized, modalidad, clinicaSeleccionada]);
@@ -261,13 +277,13 @@ export default function EditWizardPage() {
         fecha: fecha ? format(fecha, 'yyyy-MM-dd') : '',
         hora,
         modalidad,
-        precio,
-        motivo: motivo || null,
+        precio: Number(precio) || 0,
+        motivo: motivo?.trim() || null,
         grupoId: grupoId || null,
-        consultorioId: modalidad === 'presencial' ? clinicaSeleccionada?.mclCodigo : null,
-        direccionDomicilio: modalidad === 'domicilio' ? direccion : null,
-        referenciasDomicilio: modalidad === 'domicilio' ? referencias : null,
-        enlaceVideollamada: modalidad === 'virtual' ? enlace : null,
+        consultorioId: modalidad === 'presencial' ? (clinicaSeleccionada?.cliCodigo ?? clinicaSeleccionada?.mclCodigo ?? null) : null,
+        direccionDomicilio: modalidad === 'domicilio' ? (direccion.trim() || null) : null,
+        referenciasDomicilio: modalidad === 'domicilio' ? (referencias.trim() || null) : null,
+        enlaceVideollamada: modalidad === 'virtual' ? (enlace.trim() || null) : null,
         archivos: nuevosArchivos.length > 0 ? nuevosArchivos : undefined,
         archivosConservados: idsConservados,
       };
@@ -283,10 +299,24 @@ export default function EditWizardPage() {
         router.push('/dashboard/citas');
       });
 
-    } catch (e) {
+    } catch (e: any) {
+      console.error('Error al modificar cita:', e);
+      let errorMessage = 'Hubo un problema al actualizar la cita.';
+      if (e?.response?.data?.mensaje) {
+        errorMessage = e.response.data.mensaje;
+      } else if (e?.response?.data?.Detail) {
+        errorMessage = e.response.data.Detail;
+      } else if (e?.response?.data?.detail) {
+        errorMessage = e.response.data.detail;
+      } else if (e?.response?.data?.title) {
+        errorMessage = e.response.data.title;
+      } else if (e?.message) {
+        errorMessage = e.message;
+      }
+
       MySwal.fire({
-        title: 'Error',
-        text: 'Hubo un problema al actualizar la cita.',
+        title: 'Error al modificar cita',
+        text: errorMessage,
         icon: 'error',
         confirmButtonColor: '#e11d48',
       });
@@ -358,7 +388,7 @@ export default function EditWizardPage() {
   const canGoNext = () => {
     if (step === 1) {
       if (modalidad === 'presencial' && !clinicaSeleccionada) return false;
-      if (modalidad === 'domicilio' && (!direccion || !referencias)) return false;
+      if (modalidad === 'domicilio' && !direccion.trim()) return false;
       return true;
     }
     if (step === 2) {
@@ -422,7 +452,7 @@ export default function EditWizardPage() {
                   {(['presencial', 'virtual', 'domicilio'] as ModalidadCita[]).map((mod) => (
                     <button
                       key={mod}
-                      onClick={() => setModalidad(mod)}
+                      onClick={() => handleSelectModalidad(mod)}
                       className={`p-6 rounded-2xl border-2 transition-all flex flex-col items-center gap-4 text-center ${
                         modalidad === mod ? 'border-[#2563EB] bg-[#EFF6FF] dark:bg-blue-900/30' : 'border-[#E5E7EB] dark:border-slate-700 bg-white dark:bg-[#0F172A] hover:border-[#BFDBFE] dark:hover:border-blue-900'
                       }`}

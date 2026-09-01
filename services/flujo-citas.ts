@@ -17,6 +17,7 @@ import type {
   GuardarTarjetaRequest,
   Cita,
   CambiarEstadoCitaPayload,
+  ColaTurnoDto,
 } from '@/types/citas';
 
 export async function fetchModalidades(token: string, codMedico: string): Promise<ModalidadDto[]> {
@@ -84,12 +85,21 @@ export async function fetchGruposCita(token: string, codPaciente: string, codMed
 }
 
 export async function createGrupo(token: string, codPaciente: string, codMedico: string, tema: string, tituloTema: string): Promise<GrupoCitaDto> {
-  const { data } = await expedientesApi.post<GrupoCitaDto>(
+  const { data } = await expedientesApi.post<any>(
     `/api/flujo-citas/grupos?codPaciente=${codPaciente}`,
     { codMedico, tema, tituloTema },
     getAuthHeaders(token)
   );
-  return data;
+  const id = data?.id || data?.grupoId || (typeof data === 'string' ? data : '');
+  return {
+    ...data,
+    id,
+    grupoId: id,
+    codPaciente,
+    codMedico,
+    tema,
+    tituloTema
+  };
 }
 
 export async function createCita(token: string, request: CrearCitaRequest): Promise<string> {
@@ -220,6 +230,10 @@ export const cambiarEstadoCitaDirect = async (citaId: string, nuevoEstado: strin
 
 export async function cancelarCita(token: string, citaId: string): Promise<void> {
   await expedientesApi.post(`/api/flujo-citas/${citaId}/cancelar`, undefined, getAuthHeaders(token));
+}
+
+export async function desvincularGrupoCita(token: string, citaId: string): Promise<void> {
+  await expedientesApi.post(`/api/flujo-citas/${citaId}/desvincular-grupo`, undefined, getAuthHeaders(token));
 }
 
 export async function completarCita(token: string, citaInput: string | CitaListDto): Promise<void> {
@@ -355,3 +369,20 @@ export async function guardarTarjeta(token: string, codPac: string, request: Gua
     getAuthHeaders(token)
   );
 }
+
+export async function fetchColaDelDia(
+  codMedico: string,
+  fecha: string,
+  codPaciente?: string
+): Promise<ColaTurnoDto[]> {
+  const params = new URLSearchParams();
+  if (codMedico) params.set('codMedico', codMedico);
+  if (fecha) params.set('fecha', fecha);
+  if (codPaciente) params.set('codPaciente', codPaciente);
+
+  const { data } = await expedientesApi.get<ColaTurnoDto[]>(
+    `/api/flujo-citas/cola-dia?${params.toString()}`
+  );
+  return Array.isArray(data) ? data : [];
+}
+

@@ -10,7 +10,7 @@ import { es } from 'date-fns/locale';
 import { Navbar } from '@/components/navbar';
 import { NeoLoader } from '@/components/neo-loader';
 import { useSession } from 'next-auth/react';
-import { useCitasPaciente, useAllCitasPacientes, usePacientesSeleccion, useCancelarCita, useGruposMap, useUpdateCita, useAutoCompletarCitasPasadas, isCitaPasada } from '@/hooks/use-flujo-citas';
+import { useCitasPaciente, useAllCitasPacientes, usePacientesSeleccion, useCancelarCita, useDesvincularGrupo, useGruposMap, useUpdateCita, useAutoCompletarCitasPasadas, isCitaPasada } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode, useDoctors } from '@/hooks/use-doctors';
 import { fetchGruposCita, createGrupo } from '@/services/flujo-citas';
 import type { CitaListDto, CitaEstado, GrupoCitaDto } from '@/types/citas';
@@ -19,7 +19,7 @@ import { AnimatedModal } from '@/components/animated-modal';
 import { CitaCard } from '@/components/cita-card';
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
-import { Plus, FolderPlus } from 'lucide-react';
+import { Plus, FolderPlus, FolderMinus } from 'lucide-react';
 
 const MySwal = withReactContent(Swal);
 
@@ -131,6 +131,7 @@ function CitasContent() {
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
 
   const { mutateAsync: cancelarCita, isPending: isCanceling } = useCancelarCita();
+  const desvincularMutation = useDesvincularGrupo();
 
   const handleConfirmCancel = (cita: CitaListDto) => {
     MySwal.fire({
@@ -156,6 +157,34 @@ function CitasContent() {
     }).then((result) => {
       if (result.isConfirmed) {
         setToast({ message: "Cita cancelada correctamente", type: 'success' });
+      }
+    });
+  };
+
+  const handleConfirmUnlink = (cita: CitaListDto) => {
+    MySwal.fire({
+      title: '¿Desanclar Cita del Tema?',
+      html: `¿Estás seguro de que deseas desanclar la cita con <strong>${cita.medicoNombre}</strong> del tema <strong>"${cita.grupoTema || 'Seguimiento'}"</strong>?<br/><br/>La cita se convertirá en una consulta individual independiente.`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#e11d48',
+      cancelButtonColor: '#64748b',
+      confirmButtonText: 'Sí, Desanclar',
+      cancelButtonText: 'Cancelar',
+      showLoaderOnConfirm: true,
+      preConfirm: async () => {
+        try {
+          await desvincularMutation.mutateAsync(cita);
+          return true;
+        } catch (err: any) {
+          Swal.showValidationMessage('Hubo un problema al desanclar la cita del tema.');
+          return false;
+        }
+      },
+      allowOutsideClick: () => !Swal.isLoading()
+    }).then((result) => {
+      if (result.isConfirmed) {
+        setToast({ message: "Cita desanclada del tema de seguimiento", type: 'success' });
       }
     });
   };
@@ -552,7 +581,7 @@ function CitasContent() {
                                   citasGrupo={citasGrupo}
                                   router={router}
                                   handleConfirmCancel={handleConfirmCancel}
-                                  onLinkGroup={(c) => setLinkGroupCita(c)}
+                                  onUnlinkGroup={handleConfirmUnlink}
                                 />
                               ))}
                             </div>
@@ -590,13 +619,13 @@ function SeriesContainer({
   citasGrupo,
   router,
   handleConfirmCancel,
-  onLinkGroup
+  onUnlinkGroup
 }: {
   grupoId: string;
   citasGrupo: CitaListDto[];
   router: any;
   handleConfirmCancel: (c: CitaListDto) => void;
-  onLinkGroup: (c: CitaListDto) => void;
+  onUnlinkGroup: (c: CitaListDto) => void;
 }) {
   const doctorCode = citasGrupo[0]?.ctaCoddoc;
   const { data: doctor } = useDoctorByCode(doctorCode || '');
@@ -671,7 +700,7 @@ function SeriesContainer({
               isPast={(cita as any).isPast || !['programada', 'confirmada', 'pospuesta'].includes(cita.ctaEstado)}
               onModify={(c) => { router.push(`/dashboard/citas/${c.ctaCodigo}/editar`); }}
               onCancel={(c) => { handleConfirmCancel(c); }}
-              onLinkGroup={onLinkGroup}
+              onUnlinkGroup={onUnlinkGroup}
             />
           </div>
         ))}
@@ -745,9 +774,10 @@ function LinkGroupModal({
       });
       onLinked('Cita vinculada al tema de seguimiento correctamente');
       onClose();
-    } catch (e) {
-      console.error(e);
-      alert('Error al vincular el tema de seguimiento');
+    } catch (e: any) {
+      console.error('Error al vincular tema:', e);
+      const msg = e?.response?.data?.mensaje || e?.response?.data?.Detail || e?.message || 'Error al vincular el tema de seguimiento';
+      alert(msg);
     } finally {
       setLoading(false);
     }

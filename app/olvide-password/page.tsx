@@ -35,7 +35,7 @@ function OlvidePasswordForm() {
     setErrorMsg('');
 
     try {
-      await fetch('/api/autenticacion/solicitar-recuperacion', {
+      const res = await fetch('/api/autenticacion/solicitar-recuperacion', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -43,11 +43,23 @@ function OlvidePasswordForm() {
         body: JSON.stringify({ correo: values.correo }),
       });
 
-      // Independientemente del resultado técnico o status de la API,
-      // mostramos siempre el mensaje fijo por privacidad y seguridad del usuario.
+      if (res.status === 429) {
+        setErrorMsg('Has realizado varios intentos recientemente. Por favor espera unos minutos antes de solicitar otro enlace.');
+        return;
+      }
+
+      if (!res.ok) {
+        const text = await res.text();
+        let json: any = null;
+        try { json = JSON.parse(text); } catch {}
+        const msg = json?.mensaje || json?.message || 'Ocurrió un inconveniente al procesar tu solicitud. Intenta más tarde.';
+        setErrorMsg(msg);
+        return;
+      }
+
       setSubmitted(true);
     } catch {
-      setSubmitted(true);
+      setErrorMsg('No se pudo conectar con el servidor. Revisa tu conexión a internet.');
     }
   };
 

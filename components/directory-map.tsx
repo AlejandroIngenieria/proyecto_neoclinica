@@ -20,9 +20,9 @@ import {
 } from 'lucide-react';
 import type { DoctorCardData } from './doctor-card';
 import type { DoctorClinica } from '@/types';
-import { getDoctorPriceDisplay, buildDoctorShortName } from '@/types/doctor';
+import { getDoctorPriceDisplay, buildDoctorShortName, cleanZonaText } from '@/types/doctor';
 
-const MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY || '';
+const MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
 const GUATEMALA_CENTER = { lat: 14.601, lng: -90.515 };
 
@@ -211,7 +211,7 @@ export function DirectoryMap({
           let lng: number;
 
           const clinicName = cli.cli_descripcion?.trim() || cli.cli_direccion_completa?.trim() || `Clínica ${cliIdx + 1}`;
-          const zonaLabel = cli.cli_zona ? `Zona ${cli.cli_zona}` : 'Guatemala';
+          const zonaLabel = cleanZonaText(cli.cli_zona) || 'Guatemala';
           const address = cli.cli_direccion_completa?.trim() || `${clinicName}, ${zonaLabel}`;
 
           if (
@@ -223,7 +223,7 @@ export function DirectoryMap({
             lat = cli.cli_latitud;
             lng = cli.cli_longitud;
           } else {
-            const zona = cli.cli_zona?.toString() || '';
+            const zona = cli.cli_zona?.toString().replace(/[^0-9]/g, '') || '';
             const baseCoords = ZONA_OFFSETS[zona] || GUATEMALA_CENTER;
             // Para clínicas sin coordenadas exactas pero con el mismo nombre y zona, asignar la misma coordenada de edificio
             const nameHash = clinicName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -462,7 +462,7 @@ export function DirectoryMap({
             }
           />
 
-          {/* 🎯 Círculo de Radar Ajustable para "Cerca de ti" */}
+          {/* Circulo de Radar Ajustable para Cerca de ti */}
           {isNearMeActive && userLocation && !searchedLocation && (
             <MapCircle
               center={{ lat: userLocation.lat, lng: userLocation.lng }}
@@ -477,7 +477,7 @@ export function DirectoryMap({
             />
           )}
 
-          {/* 📍 Marcador de Ubicación del Usuario */}
+          {/* Marcador de Ubicación del Usuario */}
           {userLocation && (
             <AdvancedMarker position={userLocation} zIndex={1000}>
               <div className="relative flex flex-col items-center select-none group cursor-pointer -translate-y-full pb-1">
@@ -496,7 +496,7 @@ export function DirectoryMap({
             </AdvancedMarker>
           )}
 
-          {/* 📍 Marcador y Círculo de Radar para Ubicación Buscada */}
+          {/* Marcador y Circulo de Radar para Ubicación Buscada */}
           {searchedLocation && (
             <>
               <MapCircle
@@ -529,10 +529,10 @@ export function DirectoryMap({
             </>
           )}
 
-          {/* 🏥 PINES CONSOLIDADOS POR EDIFICIO / HOSPITAL (2 Estados con Pico de Ubicación) */}
+          {/* Pines Consolidados por Edificio / Hospital */}
           {buildings.map((building) => {
             const hasMultipleDoctors = building.doctors.length > 1;
-            
+
             // Prioridad 1: Hover directo del mouse sobre ESTE pin del mapa
             const isThisBuildingHovered = hoveredBuildingId === building.id;
 
@@ -631,7 +631,7 @@ export function DirectoryMap({
           })}
         </GoogleMap>
 
-        {/* 🪟 POP-UP / TARJETA FLOTANTE CON CARRUSEL DE MÉDICOS DEL EDIFICIO */}
+        {/* Tarjeta flotante con carrusel de medicos del edificio */}
         {activeBuilding && currentCarouselDoctor && (
           <div className="absolute bottom-4 left-4 right-4 sm:left-6 sm:right-auto sm:w-[360px] z-[9999] bg-white dark:bg-slate-900 rounded-3xl p-4 shadow-2xl border border-slate-200/90 dark:border-slate-800 text-slate-900 dark:text-slate-100 animate-in fade-in slide-in-from-bottom-4 duration-300">
             {/* Cabecera del Edificio / Hospital */}
@@ -759,11 +759,10 @@ export function DirectoryMap({
                           setCarouselDoctorIndex(idx);
                           onDoctorSelect(docItem.expCodigo, docItem.clinicIndex);
                         }}
-                        className={`relative w-8 h-8 rounded-full overflow-hidden shrink-0 border-2 transition-all cursor-pointer ${
-                          isSelectedDoc
+                        className={`relative w-8 h-8 rounded-full overflow-hidden shrink-0 border-2 transition-all cursor-pointer ${isSelectedDoc
                             ? 'border-sky-500 ring-2 ring-sky-400/50 scale-110'
                             : 'border-slate-300 dark:border-slate-700 opacity-60 hover:opacity-100'
-                        }`}
+                          }`}
                         title={buildDoctorShortName(docItem.doctorData.doctor) || docItem.doctorData.fullName}
                       >
                         {docItem.doctorData.doctor.exp_foto_perfil ? (

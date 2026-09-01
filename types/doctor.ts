@@ -240,6 +240,31 @@ export function getDoctorPriceDisplay(doctor: DoctorResponse): {
   };
 }
 
+// ─── Helpers de formato de ubicación y zonas ─────────────────────────────────
+
+/** Limpia y formatea el texto de una zona (ej: "15", "Zona 15", "Z. 15", "Z.ona 15" -> "Zona 15"). */
+export function cleanZonaText(zona?: string | number | null): string {
+  if (!zona) return '';
+  let str = String(zona).trim();
+  if (!str) return '';
+  str = str.replace(/^(z\.?ona\s*|zonas?\s*|z\.\s*|z\s+)+/gi, '').trim();
+  return str ? `Zona ${str}` : '';
+}
+
+/** Formato estándar de zona para tarjetas y listados (ej: "15", "Zona 15" -> "Zona 15"). */
+export function cleanZonaShort(zona?: string | number | null): string {
+  return cleanZonaText(zona);
+}
+
+/** Limpia y formatea las zonas para atención a domicilio (ej: "10, 14", "Zonas 10, 14" -> "(Zonas 10, 14)"). */
+export function cleanZonasDomicilio(zonas?: string | null): string {
+  if (!zonas) return '';
+  let str = String(zonas).trim();
+  if (!str) return '';
+  str = str.replace(/^(z\.?onas?\s*|zonas?\s*|z\.\s*|z\s+)+/gi, '').trim();
+  return str ? `(Zonas ${str})` : '';
+}
+
 // ─── Favoritos ────────────────────────────────────────────────────────────────
 
 export type MedicoFavorito = {

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-const backendBaseUrl = process.env.AUTH_BACKEND_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5010';
+const backendBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5010';
 
 /**
  * Proxy para /api/pacientes (sin sub-path).

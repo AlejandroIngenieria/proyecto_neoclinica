@@ -26,6 +26,7 @@ interface CitaState {
   
   pacienteSeleccionado: PacienteSeleccionDto | null;
   grupoId: string | null;
+  grupoNombre: string | null;
   motivo: string;
   direccionDomicilio: string;
   referenciasDomicilio: string;
@@ -52,6 +53,7 @@ interface CitaState {
   
   setPaciente: (paciente: PacienteSeleccionDto | null) => void;
   setGrupo: (grupoId: string | null) => void;
+  setTemaSeguimiento: (grupoId: string | null, temaNombre?: string | null) => void;
   setMotivo: (motivo: string) => void;
   setDireccionDomicilio: (direccion: string) => void;
   setReferenciasDomicilio: (referencias: string) => void;
@@ -84,6 +86,7 @@ const initialState = {
   
   pacienteSeleccionado: null,
   grupoId: null,
+  grupoNombre: null,
   motivo: '',
   direccionDomicilio: '',
   referenciasDomicilio: '',
@@ -128,11 +131,21 @@ export const useCitaStore = create<CitaState>((set, get) => ({
   
   setPaciente: (paciente) => set({ pacienteSeleccionado: paciente }),
   setGrupo: (grupoId) => set({ grupoId, creandoNuevoGrupo: false, nuevoGrupoTema: '' }),
+  setTemaSeguimiento: (grupoId, temaNombre = null) => set({
+    grupoId,
+    grupoNombre: temaNombre,
+    creandoNuevoGrupo: false,
+    nuevoGrupoTema: ''
+  }),
   setMotivo: (motivo) => set({ motivo }),
   setDireccionDomicilio: (direccion) => set({ direccionDomicilio: direccion }),
   setReferenciasDomicilio: (referencias) => set({ referenciasDomicilio: referencias }),
   
-  setCreandoNuevoGrupo: (val) => set({ creandoNuevoGrupo: val, grupoId: val ? null : get().grupoId }),
+  setCreandoNuevoGrupo: (val) => set({ 
+    creandoNuevoGrupo: val, 
+    grupoId: val ? null : get().grupoId,
+    grupoNombre: val ? null : get().grupoNombre
+  }),
   setNuevoGrupoTema: (val) => set({ nuevoGrupoTema: val }),
 
   setArchivos: (archivos) => set({ archivos }),

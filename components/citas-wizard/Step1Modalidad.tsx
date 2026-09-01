@@ -1,15 +1,14 @@
-'use client';
-
 import { useRouter } from 'next/navigation';
 import { useMemo, useEffect } from 'react';
-import { useModalidades, useClinicas, useAreasDomicilio, useHorarios, useHorasOcupadas, useServiciosMedico } from '@/hooks/use-flujo-citas';
+import { useModalidades, useClinicas, useAreasDomicilio, useHorarios, useHorasOcupadas, useServiciosMedico, useGruposCita, usePacientesSeleccion } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
+import { usePacienteTitular } from '@/hooks/use-pacientes';
 import { useCitaStore } from '@/store/use-cita-store';
-import { ChevronLeft, Stethoscope, MapPin, Video, Home, ArrowRight, CalendarDays, Clock, Building2, CalendarClock, Check, Sparkles } from 'lucide-react';
+import { ChevronLeft, Stethoscope, MapPin, Video, Home, ArrowRight, CalendarDays, Clock, Building2, CalendarClock, Check, Sparkles, FolderPlus, Plus, Layers, Info } from 'lucide-react';
 import { DayPicker } from 'react-day-picker';
 import { es } from 'date-fns/locale';
 import { format } from 'date-fns';
-import type { HorarioCitaDto, ServicioMedicoCitaDto } from '@/types/citas';
+import type { HorarioCitaDto, ServicioMedicoCitaDto, GrupoCitaDto } from '@/types/citas';
 import 'react-day-picker/style.css';
 import { NeoLoader } from '@/components/neo-loader';
 
@@ -18,7 +17,11 @@ export function Step1Modalidad() {
     codMedico, modalidad, setModalidad,
     setClinica, setArea, clinicaSeleccionada, areaDomicilio,
     servicioSeleccionado, setServicio, setMotivo,
-    fecha, setFecha, hora, setHora, nextStep, step
+    fecha, setFecha, hora, setHora, nextStep, step,
+    pacienteSeleccionado, setPaciente,
+    grupoId, grupoNombre, setTemaSeguimiento,
+    tipoPagoId, setTipoPagoId,
+    creandoNuevoGrupo, nuevoGrupoTema, setCreandoNuevoGrupo, setNuevoGrupoTema
   } = useCitaStore();
   const router = useRouter();
 
@@ -28,6 +31,92 @@ export function Step1Modalidad() {
   const { data: servicios = [], isLoading: loadingServicios } = useServiciosMedico(codMedico);
 
   const { data: doctor, isLoading: loadingDoctor } = useDoctorByCode(codMedico!);
+
+  const { titular } = usePacienteTitular();
+  const { data: pacientes = [] } = usePacientesSeleccion();
+
+  // Inicializar paciente por defecto si aún no está en el store
+  useEffect(() => {
+    if (!pacienteSeleccionado) {
+      if (titular) {
+        setPaciente({
+          pacCodigo: (titular as any).pacCodigo || titular.pac_codigo,
+          nombreCompleto: (titular as any).nombreCompleto || `${titular.pac_primer_nombre || ''} ${titular.pac_primer_apellido || ''}`.trim(),
+          pacTitular: true,
+          pacFechaNacimiento: (titular as any).pacFechaNacimiento || titular.pac_fecha_nacimiento || null,
+          pacFotoPerfilUrl: (titular as any).pacFotoPerfilUrl || titular.pac_foto_perfil_url || undefined,
+        });
+      } else if (pacientes.length > 0) {
+        setPaciente(pacientes[0]);
+      }
+    }
+  }, [titular, pacientes, pacienteSeleccionado, setPaciente]);
+
+  const codPacActivo = pacienteSeleccionado?.pacCodigo || (titular as any)?.pacCodigo || titular?.pac_codigo || pacientes.find(p => p.pacTitular)?.pacCodigo || pacientes[0]?.pacCodigo || null;
+  const { data: grupos = [], isLoading: loadingGrupos } = useGruposCita(codPacActivo, codMedico);
+
+  const gruposUnicos = useMemo<GrupoCitaDto[]>(() => {
+    if (!grupos) return [];
+    const map = new Map<string, GrupoCitaDto>();
+    grupos.forEach((g: GrupoCitaDto) => {
+      const key = (g.grupoId ? String(g.grupoId) : (g.titulo || g.descripcion || '')).toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, g);
+      }
+    });
+    return Array.from(map.values());
+  }, [grupos]);
+
+  const handleSelectTema = (g: GrupoCitaDto) => {
+    const topicTitle = g.titulo || g.descripcion || 'Tema de Seguimiento';
+    setTemaSeguimiento(g.grupoId, topicTitle);
+    setCreandoNuevoGrupo(false);
+    setNuevoGrupoTema('');
+
+    // 1. Automatizar modalidad
+    if (g.modalidad && (g.modalidad === 'presencial' || g.modalidad === 'virtual' || g.modalidad === 'domicilio')) {
+      setModalidad(g.modalidad as any);
+    }
+
+    // 2. Automatizar motivo
+    if (g.titulo || g.descripcion) {
+      setMotivo(g.titulo || g.descripcion || '');
+    }
+
+    // 3. Automatizar servicio médico
+    if (g.codServicio && servicios.length > 0) {
+      const matchServicio = servicios.find(s => s.sypCodigo === g.codServicio);
+      if (matchServicio) {
+        setServicio(matchServicio);
+      }
+    } else if (servicios.length > 0 && !servicioSeleccionado) {
+      setServicio(servicios[0]);
+    }
+
+    // 4. Automatizar método de pago
+    if (g.codMetodoPago) {
+      setTipoPagoId(g.codMetodoPago);
+    }
+
+    // 5. Automatizar consultorio / clínica
+    if (g.consultorioId && clinicas.length > 0) {
+      const matchClinica = clinicas.find(c => c.mclCodigo === g.consultorioId || (c as any).cliCodigo === g.consultorioId);
+      if (matchClinica) {
+        setClinica(matchClinica);
+      }
+    }
+  };
+
+  // Sincronizar servicio médico cuando servicios terminen de cargar si ya hay un tema seleccionado
+  useEffect(() => {
+    if (grupoId && !servicioSeleccionado && servicios.length > 0) {
+      const g = gruposUnicos.find(item => item.grupoId === grupoId);
+      if (g?.codServicio) {
+        const match = servicios.find(s => s.sypCodigo === g.codServicio);
+        if (match) setServicio(match);
+      }
+    }
+  }, [grupoId, servicioSeleccionado, servicios, gruposUnicos, setServicio]);
 
   const mclCodigo = modalidad === 'presencial' ? clinicaSeleccionada?.mclCodigo || null : 0;
   const { data: horariosClinica = [], isLoading: loadingHorarios } = useHorarios(mclCodigo);
@@ -57,21 +146,71 @@ export function Step1Modalidad() {
     return combined;
   }, [modalidad, horariosClinica, doctor]);
 
+  // Citas previas / existentes del tema de seguimiento seleccionado
+  const temaCitasList = useMemo(() => {
+    if (!grupoId) return [];
+    const g = gruposUnicos.find(item => item.grupoId === grupoId);
+    if (!g) return [];
+
+    const list: { fechaStr: string; horaStr: string; citaId: string }[] = [];
+    if (g.citas && g.citas.length > 0) {
+      g.citas.forEach(c => {
+        if (c.fecha) {
+          list.push({
+            fechaStr: String(c.fecha).split('T')[0],
+            horaStr: String(c.hora).slice(0, 5),
+            citaId: c.citaId,
+          });
+        }
+      });
+    } else if (g.fecha) {
+      list.push({
+        fechaStr: String(g.fecha).split('T')[0],
+        horaStr: String(g.hora || '').slice(0, 5),
+        citaId: g.citaId || '',
+      });
+    }
+    return list;
+  }, [grupoId, gruposUnicos]);
+
+  const fechasTemaSeguimiento = useMemo(() => {
+    return temaCitasList.map(item => {
+      const [year, month, day] = item.fechaStr.split('-').map(Number);
+      return new Date(year, month - 1, day);
+    });
+  }, [temaCitasList]);
+
+  const fechaSelectedStr = fecha ? format(fecha, 'yyyy-MM-dd') : null;
+  const citasTemaEnFecha = useMemo(() => {
+    if (!fechaSelectedStr) return [];
+    return temaCitasList.filter(c => c.fechaStr === fechaSelectedStr);
+  }, [fechaSelectedStr, temaCitasList]);
+
+  const horasTemaEnFecha = useMemo(() => {
+    return citasTemaEnFecha.map(c => c.horaStr);
+  }, [citasTemaEnFecha]);
+
+  const isCitaTemaDate = (date: Date) => {
+    return fechasTemaSeguimiento.some(d =>
+      d.getFullYear() === date.getFullYear() &&
+      d.getMonth() === date.getMonth() &&
+      d.getDate() === date.getDate()
+    );
+  };
+
   const disabledDays = useMemo(() => {
-    if (!horarios.length) return [{ from: new Date(1900, 1, 1), to: new Date(2100, 1, 1) }];
+    if (!horarios.length && !fechasTemaSeguimiento.length) return [{ from: new Date(1900, 1, 1), to: new Date(2100, 1, 1) }];
     const allowedDays = horarios.map(h => h.horDiaSemana);
     return [
-      { before: new Date() },
-      (date: Date) => !allowedDays.includes(date.getDay())
+      { before: new Date(new Date().setHours(0, 0, 0, 0)) },
+      (date: Date) => !isCitaTemaDate(date) && !allowedDays.includes(date.getDay())
     ];
-  }, [horarios]);
+  }, [horarios, fechasTemaSeguimiento]);
 
   const availableTimeSlots = useMemo(() => {
-    if (!fecha || !horarios.length) return [];
+    if (!fecha) return [];
     const dayOfWeek = fecha.getDay();
     const horariosDia = horarios.filter(h => h.horDiaSemana === dayOfWeek);
-
-    if (!horariosDia.length) return [];
 
     const slots = new Set<string>();
 
@@ -85,24 +224,34 @@ export function Step1Modalidad() {
       }
     });
 
+    // Añadir siempre las horas de citas de este tema para esta fecha
+    horasTemaEnFecha.forEach(h => {
+      slots.add(h);
+    });
+
+    if (slots.size === 0) return [];
+
     const uniqueSlots = Array.from(slots).sort();
 
     const now = new Date();
     let validSlots = uniqueSlots;
     if (fecha.toDateString() === now.toDateString()) {
       const currentTimeString = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
-      validSlots = uniqueSlots.filter(s => s > currentTimeString);
+      validSlots = uniqueSlots.filter(s => s > currentTimeString || horasTemaEnFecha.includes(s));
     }
 
     return validSlots.map(slot => {
-      // slot is in "HH:mm" format. The API returns "HH:mm:ss" (e.g. "08:00:00").
       const slotWithSeconds = `${slot}:00`;
+      const isTemaSlot = horasTemaEnFecha.includes(slot);
+      const isBusy = horasOcupadas.includes(slotWithSeconds) || isTemaSlot;
+
       return {
         time: slot,
-        disabled: horasOcupadas.includes(slotWithSeconds)
+        disabled: isBusy,
+        isTemaSlot,
       };
     });
-  }, [fecha, horarios, horasOcupadas]);
+  }, [fecha, horarios, horasOcupadas, horasTemaEnFecha]);
 
   useEffect(() => {
     if (!modalidad && modalidades.length > 0) {
@@ -127,15 +276,6 @@ export function Step1Modalidad() {
     }
   };
 
-  const getSummaryIcon = (tipo: string) => {
-    switch (tipo) {
-      case 'presencial': return <MapPin className="h-4 w-4 text-slate-400" />;
-      case 'virtual': return <Video className="h-4 w-4 text-slate-400" />;
-      case 'domicilio': return <Home className="h-4 w-4 text-slate-400" />;
-      default: return <Stethoscope className="h-4 w-4 text-slate-400" />;
-    }
-  };
-
   const isScheduleEnabled =
     (modalidad === 'virtual') ||
     (modalidad === 'presencial' && clinicaSeleccionada) ||
@@ -146,7 +286,222 @@ export function Step1Modalidad() {
   return (
     <div className="flex flex-col w-full font-sans pb-4">
 
-      {/* 1. SELECCIÓN DE SERVICIO MÉDICO */}
+      {/* 1. TEMA O GRUPO DE SEGUIMIENTO MÉDICO */}
+      <div className="mb-6 bg-white dark:bg-[#1E293B] rounded-2xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-2">
+          <div>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <FolderPlus className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+              Tema o Grupo de Seguimiento Médico
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Asocia esta cita a un tratamiento continuo o crea un nuevo tema de seguimiento con este especialista.
+            </p>
+          </div>
+          {(grupoId || creandoNuevoGrupo) && (
+            <button
+              type="button"
+              onClick={() => {
+                setTemaSeguimiento(null, null);
+                setCreandoNuevoGrupo(false);
+                setNuevoGrupoTema('');
+              }}
+              className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline self-start sm:self-auto cursor-pointer"
+            >
+              Desvincular tema (Cita individual)
+            </button>
+          )}
+        </div>
+
+        {gruposUnicos.length > 0 ? (
+          <div className="space-y-4">
+            {/* Opciones con temas existentes */}
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setCreandoNuevoGrupo(false);
+                  if (!grupoId && gruposUnicos.length > 0) {
+                    handleSelectTema(gruposUnicos[0]);
+                  }
+                }}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
+                  !creandoNuevoGrupo && grupoId
+                    ? 'bg-purple-50 dark:bg-purple-950/60 border-purple-500 text-purple-700 dark:text-purple-300 shadow-sm'
+                    : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                }`}
+              >
+                <FolderPlus className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                <span>Continuar tema existente ({gruposUnicos.length})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setCreandoNuevoGrupo(true);
+                  setTemaSeguimiento(null, null);
+                }}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
+                  creandoNuevoGrupo
+                    ? 'bg-purple-50 dark:bg-purple-950/60 border-purple-500 text-purple-700 dark:text-purple-300 shadow-sm'
+                    : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                }`}
+              >
+                <Plus className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                <span>Iniciar nuevo tema de seguimiento</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setTemaSeguimiento(null, null);
+                  setCreandoNuevoGrupo(false);
+                  setNuevoGrupoTema('');
+                }}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
+                  !grupoId && !creandoNuevoGrupo
+                    ? 'bg-slate-800 text-white dark:bg-slate-700 border-slate-800 dark:border-slate-700 shadow-sm'
+                    : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                }`}
+              >
+                <span>Cita individual (Sin tema)</span>
+              </button>
+            </div>
+
+            {/* Lista de temas existentes para seleccionar */}
+            {!creandoNuevoGrupo && (
+              <div className="space-y-3 pt-1">
+                {grupoId && (
+                  <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-purple-50/80 dark:bg-purple-950/40 border border-purple-200/80 dark:border-purple-800/50 text-xs font-bold text-purple-800 dark:text-purple-300">
+                    <Check className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                    <span>Tema vinculado: <strong>{grupoNombre || 'Seleccionado'}</strong>. Modalidad, servicio y método de pago preconfigurados automáticamente.</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {gruposUnicos.map((g) => {
+                    const isSelected = grupoId === g.grupoId;
+                    const topicTitle = g.titulo || g.descripcion || 'Tema de Seguimiento';
+                    return (
+                      <button
+                        key={g.grupoId}
+                        type="button"
+                        onClick={() => handleSelectTema(g)}
+                        className={`text-left p-3.5 rounded-2xl border-2 transition-all flex items-start justify-between gap-3 cursor-pointer ${
+                          isSelected
+                            ? 'border-purple-500 bg-purple-50/80 dark:bg-purple-950/50 shadow-md text-purple-950 dark:text-purple-200 ring-2 ring-purple-400/20'
+                            : 'border-slate-200 dark:border-slate-700 hover:border-purple-300 dark:hover:border-purple-600/50 bg-slate-50/50 dark:bg-[#0F172A]'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 text-purple-600 dark:text-purple-400 mb-1">
+                            <FolderPlus className="w-4 h-4 shrink-0" />
+                            <span className="text-[10px] font-black uppercase tracking-wider">Tema de Seguimiento</span>
+                          </div>
+                          <h4 className="font-bold text-sm truncate text-slate-900 dark:text-white">
+                            {topicTitle}
+                          </h4>
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                            {g.modalidad && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-purple-100/80 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">
+                                {g.modalidad}
+                              </span>
+                            )}
+                            <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                              {g.citaId ? 'Continuidad de citas' : 'Tema activo'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center mt-0.5 transition ${
+                          isSelected ? 'bg-purple-600 text-white shadow-xs' : 'border border-slate-300 dark:border-slate-600'
+                        }`}>
+                          {isSelected && <Check className="w-3.5 h-3.5" />}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Formulario para ingresar nuevo tema */}
+            {creandoNuevoGrupo && (
+              <div className="pt-2">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
+                  Nombre del nuevo tema o tratamiento:
+                </label>
+                <div className="flex gap-2 max-w-lg">
+                  <input
+                    type="text"
+                    value={nuevoGrupoTema}
+                    onChange={(e) => setNuevoGrupoTema(e.target.value)}
+                    placeholder="Ej: Control Post-operatorio Rodilla, Tratamiento Acné..."
+                    className="flex-1 bg-white dark:bg-[#0F172A] px-4 py-2.5 rounded-xl border border-purple-300 dark:border-purple-700 outline-none focus:ring-2 focus:ring-purple-500/20 text-sm text-slate-800 dark:text-slate-200"
+                    autoFocus
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Si el paciente no tiene temas previos con este médico */
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setCreandoNuevoGrupo(false);
+                  setNuevoGrupoTema('');
+                  setTemaSeguimiento(null, null);
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
+                  !creandoNuevoGrupo
+                    ? 'bg-slate-800 text-white dark:bg-slate-700 border-slate-800 dark:border-slate-700 shadow-sm'
+                    : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                }`}
+              >
+                <span>Cita individual estándar</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setCreandoNuevoGrupo(true);
+                  setTemaSeguimiento(null, null);
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
+                  creandoNuevoGrupo
+                    ? 'bg-purple-50 dark:bg-purple-950/60 border-purple-500 text-purple-700 dark:text-purple-300 shadow-sm'
+                    : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                }`}
+              >
+                <FolderPlus className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                <span>Asociar a un nuevo tema de seguimiento</span>
+              </button>
+            </div>
+
+            {creandoNuevoGrupo && (
+              <div className="pt-2">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
+                  Nombre del nuevo tema o tratamiento:
+                </label>
+                <div className="flex gap-2 max-w-lg">
+                  <input
+                    type="text"
+                    value={nuevoGrupoTema}
+                    onChange={(e) => setNuevoGrupoTema(e.target.value)}
+                    placeholder="Ej: Control Post-operatorio, Tratamiento Ortodoncia..."
+                    className="flex-1 bg-white dark:bg-[#0F172A] px-4 py-2.5 rounded-xl border border-purple-300 dark:border-purple-700 outline-none focus:ring-2 focus:ring-purple-500/20 text-sm text-slate-800 dark:text-slate-200"
+                    autoFocus
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 2. SELECCIÓN DE SERVICIO MÉDICO */}
       {servicios.length > 0 && (
         <div className="mb-6 bg-white dark:bg-[#1E293B] rounded-2xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-2">
@@ -166,7 +521,7 @@ export function Step1Modalidad() {
                   setServicio(null);
                   setMotivo('');
                 }}
-                className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline self-start sm:self-auto"
+                className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline self-start sm:self-auto cursor-pointer"
               >
                 Limpiar selección
               </button>
@@ -184,7 +539,7 @@ export function Step1Modalidad() {
                     setServicio(s);
                     setMotivo(s.servicio);
                   }}
-                  className={`text-left p-4 rounded-xl border-2 transition-all flex flex-col justify-between ${
+                  className={`text-left p-4 rounded-xl border-2 transition-all flex flex-col justify-between cursor-pointer ${
                     isSelected
                       ? 'border-blue-600 dark:border-blue-500 bg-blue-50/70 dark:bg-blue-900/30 shadow-md shadow-blue-600/10'
                       : 'border-slate-200 dark:border-slate-700/80 hover:border-blue-300 dark:hover:border-blue-600/50 bg-slate-50/50 dark:bg-[#0F172A] hover:shadow-sm'
@@ -221,7 +576,7 @@ export function Step1Modalidad() {
         </div>
       )}
 
-      {/* 2. MODALITY TABS (No Heading) */}
+      {/* 3. MODALITY TABS (No Heading) */}
       <div className="border-b border-slate-200 dark:border-slate-800 flex gap-2 overflow-x-auto scrollbar-none pb-1">
         {modalidades.map((mod) => {
           const normalizedTipo = mod.modDescripcion.toLowerCase().includes('domicilio')
@@ -336,16 +691,20 @@ export function Step1Modalidad() {
               {/* Column 2: Calendar */}
               <div className="flex-1 flex flex-col space-y-4 min-w-0 max-w-full overflow-x-auto">
                 <h3 className={`text-lg font-bold text-slate-900 dark:text-white ${modalidad === 'virtual' ? 'text-center md:text-left md:pl-10 lg:pl-20' : ''}`}>Fecha</h3>
-                <div className={`flex ${modalidad === 'virtual' ? 'justify-center md:justify-start md:pl-10 lg:pl-20' : 'justify-center sm:justify-start'}`}>
+                <div className={`flex flex-col ${modalidad === 'virtual' ? 'items-center md:items-start md:pl-10 lg:pl-20' : 'items-center sm:items-start'}`}>
                   <DayPicker
                     mode="single"
                     selected={fecha || undefined}
                     onSelect={(d) => setFecha(d || null)}
                     locale={es}
                     disabled={disabledDays}
+                    modifiers={{
+                      citaTema: fechasTemaSeguimiento,
+                    }}
                     modifiersClassNames={{
                       selected: 'bg-blue-600 dark:bg-blue-500 text-white hover:bg-blue-700 dark:hover:bg-blue-600 font-bold shadow-md rounded-xl',
-                      today: 'font-bold text-blue-600 dark:text-blue-400'
+                      today: 'font-bold text-blue-600 dark:text-blue-400',
+                      citaTema: '!bg-emerald-100 dark:!bg-emerald-950/80 !text-emerald-800 dark:!text-emerald-200 !border-2 !border-emerald-500 font-black rounded-xl hover:!bg-emerald-200 dark:hover:!bg-emerald-900',
                     }}
                     classNames={{
                       day: 'p-0 text-[14px] sm:text-[15px] dark:text-slate-200',
@@ -358,17 +717,39 @@ export function Step1Modalidad() {
                       weekday: 'text-slate-400 dark:text-slate-500 font-medium text-xs sm:text-sm capitalize w-9 h-9 sm:w-11 sm:h-11',
                     }}
                   />
+
+                  {fechasTemaSeguimiento.length > 0 && (
+                    <div className="mt-3 flex items-center gap-2 text-xs font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-50/90 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/70 px-3 py-2 rounded-xl max-w-xs shadow-2xs">
+                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
+                      <span>Días en verde: Citas programadas de este tema de seguimiento</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* Column 3: Time Slots */}
               <div className={`flex-1 flex flex-col space-y-4 border-t md:border-t-0 md:border-l border-slate-200 dark:border-slate-800 pt-8 md:pt-0 md:pl-8 lg:pl-12 ${modalidad === 'virtual' ? 'md:pr-10 lg:pr-20' : ''}`}>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Horarios Disponibles</h3>
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Horarios Disponibles</h3>
+                </div>
+
+                {/* Banner si la fecha tiene una cita agendada de este tema */}
+                {horasTemaEnFecha.length > 0 && (
+                  <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-900 dark:text-emerald-200 flex items-start gap-2.5 shadow-2xs">
+                    <FolderPlus className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold">Cita de este tema ya agendada en esta fecha:</p>
+                      <p className="text-[11px] text-emerald-700 dark:text-emerald-300 mt-0.5">
+                        Horario reservado: <strong>{horasTemaEnFecha.join(', ')}</strong>. Este horario se encuentra bloqueado para evitar duplicados.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {fecha ? (
                   availableTimeSlots.length > 0 ? (
-                    <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 h-[320px] overflow-y-auto pr-2 custom-scrollbar content-start">
-                      {availableTimeSlots.map(({ time: slot, disabled }) => {
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 h-[320px] overflow-y-auto pr-2 custom-scrollbar content-start">
+                      {availableTimeSlots.map(({ time: slot, disabled, isTemaSlot }) => {
                         const isSelected = hora === slot;
 
                         // Format to 12h AM/PM
@@ -378,6 +759,26 @@ export function Step1Modalidad() {
                         hourNum = hourNum % 12;
                         hourNum = hourNum ? hourNum : 12;
                         const displayTime = `${hourNum}:${m} ${ampm}`;
+
+                        if (isTemaSlot) {
+                          return (
+                            <div
+                              key={slot}
+                              className="py-2.5 px-3 sm:px-4 border-2 border-emerald-500/80 bg-emerald-50/90 dark:bg-emerald-950/60 dark:border-emerald-600 rounded-xl text-left text-xs sm:text-sm font-bold text-emerald-900 dark:text-emerald-200 opacity-90 cursor-not-allowed shadow-xs flex flex-col justify-between"
+                              title="Este horario ya está agendado para este tema de seguimiento"
+                            >
+                              <div className="flex items-center justify-between gap-1">
+                                <span>{displayTime}</span>
+                                <span className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase tracking-wider bg-emerald-600 text-white px-1.5 py-0.5 rounded-md">
+                                  <Check className="w-2.5 h-2.5 stroke-[3]" /> Agendada
+                                </span>
+                              </div>
+                              <span className="text-[10px] font-medium text-emerald-700 dark:text-emerald-400 mt-0.5">
+                                Cita de este seguimiento
+                              </span>
+                            </div>
+                          );
+                        }
 
                         return (
                           <label key={slot} className={`block shrink-0 ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`} title={disabled ? "Horario no disponible" : ""}>
@@ -390,7 +791,7 @@ export function Step1Modalidad() {
                               disabled={disabled}
                               className="peer sr-only"
                             />
-                            <div className={`py-3 px-3 sm:px-4 border rounded-lg text-left text-xs sm:text-sm font-semibold transition-all ${isSelected
+                            <div className={`py-3 px-3 sm:px-4 border rounded-xl text-left text-xs sm:text-sm font-semibold transition-all ${isSelected
                               ? 'border-blue-600/50 bg-blue-50/70 dark:bg-blue-900/30 dark:border-blue-500/50 text-slate-900 dark:text-white shadow-sm'
                               : disabled
                                 ? 'border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-[#0B1120] text-slate-400 dark:text-slate-600'
@@ -399,7 +800,7 @@ export function Step1Modalidad() {
                               {displayTime}
                             </div>
                           </label>
-                        )
+                        );
                       })}
                     </div>
                   ) : (

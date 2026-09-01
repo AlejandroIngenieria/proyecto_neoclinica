@@ -2,6 +2,7 @@
 
 import { Suspense, useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useSession } from 'next-auth/react';
 import {
@@ -22,6 +23,7 @@ import {
   Home as HomeIcon,
   Monitor,
   Pill,
+  Activity,
 } from 'lucide-react';
 import { format, parseISO, isAfter } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -35,6 +37,7 @@ import { useTotalPuntos } from '@/hooks/use-recompensas';
 import { readRecentDoctors, type RecentDoctorItem } from '@/lib/recent-doctors';
 import { buildPacienteFullName, getPacienteInitials } from '@/types';
 import type { CitaListDto } from '@/types/citas';
+import { ColaTurnosWidget } from '@/components/cola-turnos-widget';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -131,6 +134,7 @@ function UpcomingCitaCard({
   isFirst: boolean;
   doctorDataMap: Record<string, { image?: string; specialty?: string }>;
 }) {
+  const router = useRouter();
   const fechaFormateada = safeFormatDate(cita.ctaFecha, "EEEE d 'de' MMMM");
   const horaFormateada = cita.ctaHora ? cita.ctaHora.slice(0, 5) : '--:--';
   const doctorInfo = doctorDataMap[cita.ctaCoddoc];
@@ -139,74 +143,82 @@ function UpcomingCitaCard({
   const initials = getDoctorInitials(cita.medicoNombre);
 
   return (
-    <Link href="/dashboard/citas">
-      <motion.div
-        variants={itemVariants}
-        whileHover={{ scale: 1.015, y: -2 }}
-        className={`group relative rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-xs hover:shadow-lg transition-all cursor-pointer ${
-          isFirst
-            ? 'border-2 border-blue-500 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-950/20 shadow-md'
-            : 'border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B]'
-        }`}
-      >
-        {/* Badge para la cita más urgente */}
-        {isFirst && (
-          <div className="absolute -top-3 left-4 sm:left-5">
-            <span className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-xs">
-              <Sparkles className="h-2.5 w-2.5" /> Más Próxima
-            </span>
+    <motion.div
+      variants={itemVariants}
+      whileHover={{ scale: 1.015, y: -2 }}
+      onClick={() => router.push('/dashboard/citas')}
+      className={`group relative rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-xs hover:shadow-lg transition-all cursor-pointer ${
+        isFirst
+          ? 'border-2 border-blue-500 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-950/20 shadow-md'
+          : 'border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B]'
+      }`}
+    >
+      {/* Badge para la cita más urgente */}
+      {isFirst && (
+        <div className="absolute -top-3 left-4 sm:left-5">
+          <span className="inline-flex items-center rounded-full bg-blue-600 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-xs">
+            Más Próxima
+          </span>
+        </div>
+      )}
+
+      <div className="flex items-start justify-between gap-3 pt-1">
+        <div className="flex items-center gap-3 min-w-0">
+          {/* Humanized Avatar: Doctor Photograph or Styled Initials */}
+          <div className="relative flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white text-sm sm:text-base font-black shadow-sm overflow-hidden border-2 border-white dark:border-slate-800">
+            {doctorPhoto ? (
+              <img src={doctorPhoto} alt={cita.medicoNombre} className="h-full w-full object-cover" />
+            ) : (
+              <span className="tracking-tighter">{initials}</span>
+            )}
           </div>
-        )}
 
-        <div className="flex items-start justify-between gap-3 pt-1">
-          <div className="flex items-center gap-3 min-w-0">
-            {/* Humanized Avatar: Doctor Photograph or Styled Initials */}
-            <div className="relative flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white text-sm sm:text-base font-black shadow-sm overflow-hidden border-2 border-white dark:border-slate-800">
-              {doctorPhoto ? (
-                <img src={doctorPhoto} alt={cita.medicoNombre} className="h-full w-full object-cover" />
-              ) : (
-                <span className="tracking-tighter">{initials}</span>
-              )}
-            </div>
-
-            <div className="min-w-0">
-              <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                {cita.medicoNombre || 'Médico'}
-              </h4>
-              <p className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-300 font-semibold truncate">
-                {doctorSpecialty}
+          <div className="min-w-0">
+            <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+              {cita.medicoNombre || 'Médico'}
+            </h4>
+            <p className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-300 font-semibold truncate">
+              {doctorSpecialty}
+            </p>
+            {cita.pacienteNombre && (
+              <p className="text-[10px] text-blue-600 dark:text-blue-400 font-bold truncate">
+                Paciente: {cita.pacienteNombre}
               </p>
-              {cita.pacienteNombre && (
-                <p className="text-[10px] text-blue-600 dark:text-blue-400 font-bold truncate">
-                  Paciente: {cita.pacienteNombre}
-                </p>
-              )}
-              {cita.clinicaNombre && (
-                <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5 truncate">
-                  <MapPin className="h-3 w-3 shrink-0 text-slate-400" /> {cita.clinicaNombre}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="shrink-0 text-right">
-            <div className="inline-flex items-center gap-1 rounded-lg sm:rounded-xl bg-blue-100/80 dark:bg-blue-900/60 px-2.5 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-xs font-bold text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-800">
-              <Clock className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-              {horaFormateada}
-            </div>
+            )}
+            {cita.clinicaNombre && (
+              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5 truncate">
+                <MapPin className="h-3 w-3 shrink-0 text-slate-400" /> {cita.clinicaNombre}
+              </p>
+            )}
           </div>
         </div>
 
-        <div className="mt-3 sm:mt-4 pt-3 border-t border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-200 capitalize">{fechaFormateada}</p>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md sm:rounded-lg border border-slate-200/60 dark:border-slate-700">
-              {getModalityIcon(cita.ctaModalidad)} {cita.ctaModalidad || 'Presencial'}
-            </span>
+        <div className="shrink-0 text-right">
+          <div className="inline-flex items-center gap-1 rounded-lg sm:rounded-xl bg-blue-100/80 dark:bg-blue-900/60 px-2.5 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-xs font-bold text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-800">
+            <Clock className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+            {horaFormateada}
           </div>
         </div>
-      </motion.div>
-    </Link>
+      </div>
+
+      <div className="mt-3 sm:mt-4 pt-3 border-t border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-200 capitalize">{fechaFormateada}</p>
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md sm:rounded-lg border border-slate-200/60 dark:border-slate-700">
+            {getModalityIcon(cita.ctaModalidad)} {cita.ctaModalidad || 'Presencial'}
+          </span>
+
+          <Link
+            href={`/dashboard/citas/sala-espera?citaId=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}&fecha=${cita.ctaFecha?.split('T')[0]}`}
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1 rounded-md sm:rounded-lg bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-800/60 px-2.5 py-1 text-[11px] sm:text-xs font-bold text-blue-700 dark:text-blue-300 shadow-2xs transition active:scale-95 cursor-pointer"
+          >
+            <Activity className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+            <span>Ver Cola</span>
+          </Link>
+        </div>
+      </div>
+    </motion.div>
   );
 }
 
@@ -350,6 +362,33 @@ function HomeContent() {
   const firstName = titular?.pac_primer_nombre || session?.user?.name?.split(' ')[0] || 'Usuario';
   const initials = titular ? getPacienteInitials(titular) : '?';
 
+  // Cita para la Sala de Espera / Cola de Turnos en Vivo
+  const todayStr = useMemo(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, []);
+
+  const citaDeHoy = useMemo(() => {
+    // 1. Cita con estado en_proceso
+    const enProceso = citas.find((c) => (c.ctaEstado || '').toLowerCase() === 'en_proceso');
+    if (enProceso) return enProceso;
+
+    // 2. Cita de hoy
+    const deHoy = citas.find((c) => {
+      const estado = (c.ctaEstado || '').toLowerCase();
+      if (['cancelada', 'rechazada'].includes(estado)) return false;
+      const cDate = c.ctaFecha ? c.ctaFecha.split('T')[0] : '';
+      return cDate === todayStr;
+    });
+    if (deHoy) return deHoy;
+
+    // 3. O la primera cita próxima para poder visualizar la cola
+    return upcomingCitas.length > 0 ? upcomingCitas[0] : null;
+  }, [citas, todayStr, upcomingCitas]);
+
   if (isLoadingTitular) {
     return <NeoLoader />;
   }
@@ -375,7 +414,7 @@ function HomeContent() {
             <div>
               <p className="text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300" suppressHydrationWarning>{greeting}</p>
               <h1 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-black tracking-tight text-slate-900 dark:text-white">
-                {firstName} 👋
+                {firstName}
               </h1>
               <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 font-semibold mt-0.5">
                 Tu salud, en un solo lugar.
@@ -402,12 +441,21 @@ function HomeContent() {
               <CalendarDays className="h-5 w-5 text-blue-600 dark:text-blue-400" />
               <h2 className="text-base sm:text-lg md:text-xl font-black text-slate-900 dark:text-white">Próximas Citas</h2>
             </div>
-            <Link
-              href="/dashboard/citas"
-              className="flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 hover:gap-2 transition-all"
-            >
-              Ver todas <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
+            <div className="flex items-center gap-3">
+              <Link
+                href="/dashboard/citas/sala-espera"
+                className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 px-3 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition"
+              >
+                <Activity className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>Sala de Espera en Vivo</span>
+              </Link>
+              <Link
+                href="/dashboard/citas"
+                className="flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 hover:gap-2 transition-all"
+              >
+                Ver todas <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
           </div>
 
           {isLoadingCitas ? (

@@ -16,6 +16,10 @@ export function CitaSummarySidebar() {
     fecha,
     hora,
     pacienteSeleccionado,
+    grupoId,
+    grupoNombre,
+    creandoNuevoGrupo,
+    nuevoGrupoTema,
     recompensaSeleccionada,
   } = useCitaStore();
 
@@ -130,6 +134,21 @@ export function CitaSummarySidebar() {
             </p>
           </div>
         </div>
+
+        {/* Tema de Seguimiento (si aplica) */}
+        {(grupoId || creandoNuevoGrupo) && (
+          <div className="flex gap-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">
+              <FileText className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">Seguimiento</p>
+              <p className="truncate text-sm font-bold text-slate-900 dark:text-white">
+                {creandoNuevoGrupo ? (nuevoGrupoTema || 'Nuevo tema') : (grupoNombre || 'Tema activo')}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Servicio Seleccionado */}
         {servicioSeleccionado && (

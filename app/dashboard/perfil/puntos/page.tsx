@@ -8,14 +8,14 @@ import {
   Gift,
   Clock,
   Sparkles,
-  Copy,
-  Check,
-  Users,
   Award,
   ArrowUpRight,
   ArrowDownRight,
   Tag,
   CheckCircle2,
+  Zap,
+  X,
+  Check,
 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import Swal from 'sweetalert2';
@@ -27,7 +27,6 @@ import {
   useRecompensasDisponibles,
   useTotalPuntos,
   useCanjearRecompensa,
-  useVincularReferido,
   useHistorialPuntos,
 } from '@/hooks/use-recompensas';
 import { useLealtadEstado, useLealtadTareas, useLealtadNiveles } from '@/hooks/use-lealtad';
@@ -42,22 +41,20 @@ function PuntosContent() {
   const pacCodigo = titular?.pac_codigo;
 
   // ─── Queries ───
-  const { data: lealtadEstado, isLoading: isLoadingLealtadState } = useLealtadEstado();
-  const { data: niveles = [], isLoading: isLoadingNiveles } = useLealtadNiveles();
   const { data: puntosData, isLoading: isLoadingPuntos } = useTotalPuntos(pacCodigo);
+  const { data: lealtadEstado, isLoading: isLoadingEstado } = useLealtadEstado();
+  const { data: niveles = [], isLoading: isLoadingNiveles } = useLealtadNiveles();
   const { data: catalogo = [], isLoading: isLoadingCatalogo } = useCatalogoRecompensas();
-  const { data: misRecompensas = [], isLoading: isLoadingInventario } = useRecompensasDisponibles(pacCodigo);
+  const { data: misRecompensas = [], isLoading: isLoadingDisponibles } = useRecompensasDisponibles(pacCodigo);
   const { data: tareas = [], isLoading: isLoadingTareas } = useLealtadTareas();
   const { data: historial = [], isLoading: isLoadingHistorial } = useHistorialPuntos(pacCodigo);
 
   // ─── Mutations ───
   const canjearMutation = useCanjearRecompensa(pacCodigo);
-  const referidoMutation = useVincularReferido(pacCodigo);
 
-  // ─── Local State ───
-  const [codigoReferidoInput, setCodigoReferidoInput] = useState('');
-  const [copiedCode, setCopiedCode] = useState(false);
-  const [selectedTab, setSelectedTab] = useState<'tienda' | 'inventario' | 'misiones' | 'ligas' | 'historial'>('tienda');
+  // ─── Local State (Exactamente 3 filtros + Modal de Ligas) ───
+  const [selectedTab, setSelectedTab] = useState<'tienda' | 'inventario' | 'historial'>('tienda');
+  const [isNivelesModalOpen, setIsNivelesModalOpen] = useState(false);
 
   // Misiones y Tareas deduplicadas por código de acción / título único
   const uniqueTareas = useMemo<LealtadTarea[]>(() => {
@@ -77,16 +74,12 @@ function PuntosContent() {
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
-    if (tabParam === 'inventario' || tabParam === 'mis-recompensas' || tabParam === 'recompensas') {
+    if (tabParam === 'inventario' || tabParam === 'mis-recompensas' || tabParam === 'recompensas' || tabParam === 'canjeadas') {
       setSelectedTab('inventario');
-    } else if (tabParam === 'tienda' || tabParam === 'catalogo') {
-      setSelectedTab('tienda');
-    } else if (tabParam === 'misiones') {
-      setSelectedTab('misiones');
-    } else if (tabParam === 'ligas' || tabParam === 'niveles') {
-      setSelectedTab('ligas');
-    } else if (tabParam === 'historial') {
+    } else if (tabParam === 'historial' || tabParam === 'misiones-completadas' || tabParam === 'completadas') {
       setSelectedTab('historial');
+    } else {
+      setSelectedTab('tienda');
     }
   }, [searchParams]);
 
@@ -151,15 +144,6 @@ function PuntosContent() {
     ? nivelActual
     : `Nivel ${nivelActual}`;
 
-  // Código de referencia propio
-  const miCodigoReferido = pacCodigo ? `NEO-${pacCodigo.slice(0, 8).toUpperCase()}` : 'N/A';
-
-  const handleCopyCode = () => {
-    navigator.clipboard.writeText(miCodigoReferido);
-    setCopiedCode(true);
-    setTimeout(() => setCopiedCode(false), 2000);
-  };
-
   const handleCanjear = async (recompensa: Recompensa) => {
     if (totalPuntos < recompensa.rcpCostoPuntos) {
       Swal.fire({
@@ -187,7 +171,7 @@ function PuntosContent() {
         Swal.fire({
           icon: 'success',
           title: '¡Recompensa Adquirida!',
-          text: `Has canjeado con éxito "${recompensa.rcpTitulo}". Revisa la pestaña "Mis Recompensas" para usarla.`,
+          text: `Has canjeado con éxito "${recompensa.rcpTitulo}". Revisa la pestaña "Recompensas Canjeadas" para usarla.`,
           confirmButtonColor: '#2563eb',
         });
       } catch (err: any) {
@@ -198,29 +182,6 @@ function PuntosContent() {
           confirmButtonColor: '#dc2626',
         });
       }
-    }
-  };
-
-  const handleVincularReferido = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!codigoReferidoInput.trim()) return;
-
-    try {
-      const res = await referidoMutation.mutateAsync({ codigoReferencia: codigoReferidoInput.trim() });
-      Swal.fire({
-        icon: 'success',
-        title: '¡Código Vinculado!',
-        text: res.mensaje || 'Has ganado puntos adicionales por ingresar tu código de referido.',
-        confirmButtonColor: '#16a34a',
-      });
-      setCodigoReferidoInput('');
-    } catch (err: any) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Código Inválido',
-        text: err.message || 'El código ingresado no es válido o ya ha sido utilizado.',
-        confirmButtonColor: '#dc2626',
-      });
     }
   };
 
@@ -240,31 +201,17 @@ function PuntosContent() {
   return (
     <div className="min-h-screen px-4 py-6 sm:px-8 lg:px-10 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-7xl mx-auto space-y-8 bg-slate-50 dark:bg-[#0B1120]">
       
-      {/* Header Container - Matching Page Background */}
-      <div className="bg-slate-50 dark:bg-[#0B1120] py-2 mb-2">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-3xl md:text-5xl font-black tracking-tight text-slate-900 dark:text-white">
-              Puntos y Recompensas
-            </h1>
-            <p className="mt-1 text-sm sm:text-base text-slate-500 dark:text-slate-400 font-medium">
-              Acumula puntos por tus citas y misiones, sube de nivel y canjea tus beneficios.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setSelectedTab('tienda')}
-              className="inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-5 py-2.5 text-xs font-black uppercase tracking-wider text-white shadow-md transition-all active:scale-95 shrink-0"
-            >
-              <Gift className="h-4 w-4" />
-              Canjear Puntos
-            </button>
-          </div>
-        </div>
+      {/* Header Principal (Sin botón adicional para máxima limpieza) */}
+      <div className="bg-slate-50 dark:bg-[#0B1120] py-2 mb-1">
+        <h1 className="text-3xl md:text-5xl font-black tracking-tight text-slate-900 dark:text-white">
+          Puntos y Recompensas
+        </h1>
+        <p className="mt-1 text-sm sm:text-base text-slate-500 dark:text-slate-400 font-medium">
+          Acumula puntos por tus citas y misiones, sube de nivel y canjea tus beneficios.
+        </p>
       </div>
 
-      {/* Header Dashboard Principal (Matching Page Background Card) */}
+      {/* Recuadro Dashboard Principal: Puntos, Avance y Botón para Ver Ligas */}
       <div className="rounded-3xl bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-800 p-6 sm:p-8 text-slate-900 dark:text-white shadow-sm">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           {/* Nivel Info */}
@@ -277,7 +224,17 @@ function PuntosContent() {
               )}
             </div>
             <div>
-              <p className="text-xs font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">Nivel Actual</p>
+              <div className="flex items-center gap-3">
+                <p className="text-xs font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">Nivel Actual</p>
+                <button
+                  type="button"
+                  onClick={() => setIsNivelesModalOpen(true)}
+                  className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline cursor-pointer"
+                >
+                  <Award className="h-3.5 w-3.5" />
+                  Ver ligas y niveles
+                </button>
+              </div>
               <div className="flex items-center gap-2.5 mt-0.5">
                 <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 dark:text-white">
                   {nombreNivelLimpio}
@@ -292,15 +249,26 @@ function PuntosContent() {
             </div>
           </div>
 
-          {/* Total Puntos Highlight */}
-          <div className="flex flex-col items-start lg:items-end bg-slate-50 dark:bg-slate-900/60 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shrink-0">
-            <span className="text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">Puntos Disponibles</span>
-            <div className="flex items-baseline gap-1.5 mt-1">
-              <span className="text-4xl sm:text-5xl font-black tracking-tighter text-blue-600 dark:text-blue-400">
-                {totalPuntos}
-              </span>
-              <span className="text-base font-bold text-slate-500 dark:text-slate-400">pts</span>
+          {/* Total Puntos Highlight & Botón Ligas */}
+          <div className="flex flex-col sm:flex-row lg:flex-col items-start sm:items-center lg:items-end gap-3 shrink-0">
+            <div className="flex flex-col items-start lg:items-end bg-slate-50 dark:bg-slate-900/60 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shrink-0 w-full sm:w-auto">
+              <span className="text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">Puntos Disponibles</span>
+              <div className="flex items-baseline gap-1.5 mt-1">
+                <span className="text-4xl sm:text-5xl font-black tracking-tighter text-blue-600 dark:text-blue-400">
+                  {totalPuntos}
+                </span>
+                <span className="text-base font-bold text-slate-500 dark:text-slate-400">pts</span>
+              </div>
             </div>
+            
+            <button
+              type="button"
+              onClick={() => setIsNivelesModalOpen(true)}
+              className="inline-flex items-center gap-2 rounded-2xl bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-800/60 px-4 py-2 text-xs font-black uppercase tracking-wider text-blue-700 dark:text-blue-300 shadow-2xs transition-all active:scale-95 cursor-pointer"
+            >
+              <Award className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              Ver Ligas y Niveles
+            </button>
           </div>
         </div>
 
@@ -321,470 +289,442 @@ function PuntosContent() {
         </div>
       </div>
 
-      {/* Tabs Navigation Bar */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
-        <button
-          onClick={() => setSelectedTab('tienda')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
-            selectedTab === 'tienda'
-              ? 'bg-blue-600 text-white shadow-md'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800'
-          }`}
-        >
-          <Gift className="h-4 w-4" />
-          Tienda de Canje ({catalogo.length})
-        </button>
+      {/* ─── SECCIÓN PRINCIPAL CON LOS 3 FILTROS EXCLUSIVOS ─── */}
+      <div id="seccion-canje-filtros" className="space-y-6 pt-2">
+        
+        {/* Barra de 3 Filtros Exclusivos */}
+        <div className="flex flex-wrap items-center gap-2.5 bg-slate-100/80 dark:bg-[#1E293B]/80 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 w-fit">
+          
+          {/* Filtro 1: Tienda de Canje */}
+          <button
+            type="button"
+            onClick={() => setSelectedTab('tienda')}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              selectedTab === 'tienda'
+                ? 'bg-blue-600 text-white shadow-md'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-800/60'
+            }`}
+          >
+            <Gift className="h-4 w-4" />
+            <span>Tienda de Canje ({catalogo.length})</span>
+          </button>
 
-        <button
-          onClick={() => setSelectedTab('inventario')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
-            selectedTab === 'inventario'
-              ? 'bg-blue-600 text-white shadow-md'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800'
-          }`}
-        >
-          <Tag className="h-4 w-4" />
-          Recompensas Canjeadas ({recompensasDisponibles.length})
-        </button>
+          {/* Filtro 2: Recompensas Canjeadas */}
+          <button
+            type="button"
+            onClick={() => setSelectedTab('inventario')}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              selectedTab === 'inventario'
+                ? 'bg-blue-600 text-white shadow-md'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-800/60'
+            }`}
+          >
+            <Tag className="h-4 w-4" />
+            <span>Recompensas Canjeadas ({recompensasDisponibles.length})</span>
+          </button>
 
-        <button
-          onClick={() => setSelectedTab('misiones')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
-            selectedTab === 'misiones'
-              ? 'bg-blue-600 text-white shadow-md'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800'
-          }`}
-        >
-          <Star className="h-4 w-4" />
-          Misiones y Referidos
-        </button>
-
-        <button
-          onClick={() => setSelectedTab('ligas')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
-            selectedTab === 'ligas'
-              ? 'bg-blue-600 text-white shadow-md'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800'
-          }`}
-        >
-          <Award className="h-4 w-4" />
-          Niveles
-        </button>
-
-        <button
-          onClick={() => setSelectedTab('historial')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
-            selectedTab === 'historial'
-              ? 'bg-blue-600 text-white shadow-md'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800'
-          }`}
-        >
-          <Clock className="h-4 w-4" />
-          Misiones Cumplidas
-        </button>
-      </div>
-
-      {/* Tab 1: Tienda de Canje */}
-      {selectedTab === 'tienda' && (
-        <div className="space-y-6">
-          <div>
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Catálogo de Recompensas</h2>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-              Canjea tus puntos acumulados por descuentos y consultas.
-            </p>
-          </div>
-
-          {catalogo.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {catalogo.map((item, idx) => {
-                const costo = item.rcpCostoPuntos ?? (item as any).costoPuntos ?? (item as any).rcp_costo_puntos ?? 0;
-                const titulo = item.rcpTitulo || (item as any).titulo || (item as any).rcp_titulo || (item as any).nombre || 'Recompensa';
-                const desc = item.descripcion || (item as any).rcpDescripcion || (item as any).rcp_descripcion;
-                const canAfford = totalPuntos >= costo;
-                const keyId = item.rcpCodigo || (item as any).id || (item as any).rcp_codigo || `cat-${idx}`;
-
-                return (
-                  <div
-                    key={keyId}
-                    className="flex flex-col justify-between rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] p-6 shadow-sm hover:shadow-md transition-all"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-3 mb-4">
-                        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400">
-                          <Gift className="h-6 w-6" />
-                        </span>
-                        <span className="inline-flex items-center gap-1 font-extrabold text-xs bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 px-3 py-1.5 rounded-full border border-amber-200 dark:border-amber-900/40">
-                          <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
-                          {costo} pts
-                        </span>
-                      </div>
-
-                      <h3 className="text-lg font-black text-slate-900 dark:text-white leading-tight">
-                        {titulo}
-                      </h3>
-                      {desc && (
-                        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                          {desc}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
-                      <button
-                        onClick={() => handleCanjear(item)}
-                        disabled={!canAfford || canjearMutation.isPending}
-                        className={`w-full py-3 rounded-2xl text-xs font-bold transition-all ${
-                          canAfford
-                            ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-md active:scale-95'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'
-                        }`}
-                      >
-                        {canAfford ? 'Canjear Recompensa' : 'Puntos Insuficientes'}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 p-12 text-center bg-white dark:bg-[#1E293B]">
-              <Gift className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-              <h3 className="text-base font-bold text-slate-700 dark:text-slate-300">No hay recompensas configuradas</h3>
-              <p className="mt-1 text-xs text-slate-400 max-w-md mx-auto">
-                Próximamente habrá nuevas opciones disponibles en el catálogo.
-              </p>
-            </div>
-          )}
+          {/* Filtro 3: Misiones Completadas */}
+          <button
+            type="button"
+            onClick={() => setSelectedTab('historial')}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              selectedTab === 'historial'
+                ? 'bg-blue-600 text-white shadow-md'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-800/60'
+            }`}
+          >
+            <CheckCircle2 className="h-4 w-4" />
+            <span>Misiones Completadas ({historial.length})</span>
+          </button>
         </div>
-      )}
 
-      {/* Tab 2: Recompensas Canjeadas (Inventario) */}
-      {selectedTab === 'inventario' && (
-        <div className="space-y-6">
-          <div>
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Recompensas Canjeadas</h2>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-              Cupones activos y disponibles en tu cuenta para aplicar en tus citas.
-            </p>
-          </div>
-
-          {recompensasDisponibles.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {recompensasDisponibles.map((r, idx) => {
-                const titulo = r.tituloRecompensa || (r as any).titulo || (r as any).rcpTitulo || (r as any).rcp_titulo || (r as any).nombre || 'Recompensa';
-                const codigo = r.codigoCanje || (r as any).codigo || (r as any).codigo_canje || (r as any).praCodigoCanje || (r.praCodigo ? `CUPON-${r.praCodigo.slice(0, 6).toUpperCase()}` : `CUPON-${idx + 1}`);
-                const fechaExp = r.praFechaExpiracion || (r as any).fechaExpiracion || (r as any).pra_fecha_expiracion;
-                const keyId = r.praCodigo || (r as any).id || (r as any).pra_codigo || `rec-${idx}`;
-
-                return (
-                  <div
-                    key={keyId}
-                    className="flex flex-col justify-between rounded-3xl border border-emerald-500/20 bg-white dark:bg-[#1E293B] p-6 shadow-sm hover:shadow-md transition-all"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-3 mb-4">
-                        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400">
-                          <Tag className="h-5 w-5" />
-                        </span>
-                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-1 rounded-lg">
-                          Disponible
-                        </span>
-                      </div>
-
-                      <h3 className="text-lg font-black text-slate-900 dark:text-white leading-tight">
-                        {titulo}
-                      </h3>
-
-                      {fechaExp && (
-                        <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1">
-                          <Clock className="h-3.5 w-3.5" /> Vence: {new Date(fechaExp).toLocaleDateString()}
-                        </p>
-                      )}
-
-                      <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
-                        <span className="text-xs font-semibold text-slate-500">Código de Cupón:</span>
-                        <code className="bg-slate-900 text-amber-300 px-3 py-1 rounded-xl text-xs font-mono font-bold tracking-wider">
-                          {codigo}
-                        </code>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 p-12 text-center bg-white dark:bg-[#1E293B]">
-              <Gift className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-              <h3 className="text-base font-bold text-slate-700 dark:text-slate-300">Aún no tienes recompensas en inventario</h3>
-              <p className="mt-1 text-xs text-slate-400 max-w-md mx-auto">
-                Acumula puntos completando misiones o asistiendo a tus citas y canjéalos en la pestaña de tienda.
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Tab 3: Misiones & Referidos */}
-      {selectedTab === 'misiones' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Misiones List */}
-          <div className="lg:col-span-7 space-y-6">
+        {/* ─── CONTENIDO DEL FILTRO 1: Tienda de Canje ─── */}
+        {selectedTab === 'tienda' && (
+          <div className="space-y-6">
             <div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Misiones y Tareas</h2>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Tienda de Canje</h2>
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-                Puntaje otorgado por cada actividad en la plataforma.
+                Canjea tus puntos acumulados por descuentos y consultas médicas.
               </p>
             </div>
 
-            {uniqueTareas.length > 0 ? (
-              <div className="space-y-4">
-                {uniqueTareas.map((tarea: LealtadTarea) => (
-                  <div
-                    key={tarea.tareaId || tarea.codigoAccion}
-                    className="flex items-center justify-between p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] shadow-sm gap-4"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="h-12 w-12 rounded-2xl flex items-center justify-center shrink-0 bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400">
-                        <Star className="h-6 w-6" />
-                      </div>
-                      <div>
-                        <h3 className="text-base font-bold text-slate-900 dark:text-white">{tarea.titulo}</h3>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{tarea.descripcion}</p>
-                      </div>
-                    </div>
-
-                    <div className="shrink-0">
-                      <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 font-extrabold text-xs bg-amber-50 dark:bg-amber-950/40 px-3 py-1.5 rounded-full border border-amber-200 dark:border-amber-900/40">
-                        +{tarea.puntosRecompensa} pts
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 p-12 text-center bg-white dark:bg-[#1E293B]">
-                <Star className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-                <h3 className="text-base font-bold text-slate-700 dark:text-slate-300">No hay misiones disponibles</h3>
-                <p className="mt-1 text-xs text-slate-400 max-w-md mx-auto">
-                  Actualmente no existen misiones o tareas configuradas.
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Referidos Column */}
-          <div className="lg:col-span-5 space-y-6">
-            {/* Mi Código de Referido */}
-            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] p-6 shadow-sm space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-blue-600 text-white flex items-center justify-center">
-                  <Users className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">Invita a tus Amigos</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Comparte tu código con tus familiares o amigos.</p>
-                </div>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-slate-900 text-white flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tu Código Único</p>
-                  <p className="text-lg font-mono font-black text-amber-300 tracking-wider">{miCodigoReferido}</p>
-                </div>
-
-                <button
-                  onClick={handleCopyCode}
-                  className="flex items-center gap-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white px-3 py-2 text-xs font-bold transition-all active:scale-95 border border-white/10"
-                >
-                  {copiedCode ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
-                  <span>{copiedCode ? '¡Copiado!' : 'Copiar'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Vincular Código de Referido */}
-            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] p-6 shadow-sm space-y-4">
-              <div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">¿Tienes un Código de Referido?</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Ingresa el código que te compartió un amigo.</p>
-              </div>
-
-              <form onSubmit={handleVincularReferido} className="space-y-3">
-                <input
-                  type="text"
-                  value={codigoReferidoInput}
-                  onChange={(e) => setCodigoReferidoInput(e.target.value)}
-                  placeholder="Ej: NEO-A1B2C3"
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-2.5 text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <button
-                  type="submit"
-                  disabled={!codigoReferidoInput.trim() || referidoMutation.isPending}
-                  className="w-full rounded-xl bg-blue-600 hover:bg-blue-700 text-white py-2.5 text-xs font-bold transition-all active:scale-95 disabled:opacity-50"
-                >
-                  {referidoMutation.isPending ? 'Vinculando...' : 'Aplicar Código'}
-                </button>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Tab 4: Niveles */}
-      {selectedTab === 'ligas' && (
-        <div className="space-y-6">
-          <div>
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Niveles de Lealtad</h2>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-              Niveles y rangos de puntos oficiales configurados en el sistema.
-            </p>
-          </div>
-
-          {nivelesOrdenados.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {nivelesOrdenados.map((n) => {
-                const esActual = nivelEncontrado?.nvlCodigo === n.nvlCodigo || (totalPuntos >= n.nvlPuntosMin && totalPuntos <= n.nvlPuntosMax);
-                return (
-                  <div
-                    key={n.nvlCodigo}
-                    className={`rounded-3xl border p-6 bg-white dark:bg-[#1E293B] shadow-sm transition-all ${
-                      esActual
-                        ? 'border-blue-500 dark:border-blue-500 ring-2 ring-blue-500/20'
-                        : 'border-slate-200 dark:border-slate-800'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3 mb-4">
-                      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 shrink-0">
-                        {n.nvlImagenUrl ? (
-                          <img src={n.nvlImagenUrl} alt={n.nvlDescripcion} className="h-8 w-8 object-contain" />
-                        ) : (
-                          <Award className="h-6 w-6" />
-                        )}
-                      </span>
-                      {esActual && (
-                        <span className="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-3 py-1 rounded-full border border-blue-200/60 dark:border-blue-900/50">
-                          Nivel Actual
-                        </span>
-                      )}
-                    </div>
-
-                    <h3 className="text-lg font-black text-slate-900 dark:text-white">
-                      Nivel {n.nvlDescripcion}
-                    </h3>
-
-                    <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                      Puntos requeridos: <strong className="text-blue-600 dark:text-blue-400">{n.nvlPuntosMin} - {n.nvlPuntosMax} pts</strong>
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] p-8 shadow-sm space-y-6">
-              <div className="flex items-center gap-6">
-                <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 text-4xl shrink-0 border border-blue-100 dark:border-blue-900/50">
-                  {lealtadEstado?.imagenNivelUrl ? (
-                    <img src={lealtadEstado.imagenNivelUrl} alt={nivelActual} className="h-12 w-12 object-contain" />
-                  ) : (
-                    <Award className="h-10 w-10" />
-                  )}
-                </div>
-
-                <div>
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Nivel Registrado</span>
-                  <h3 className="text-3xl font-black text-slate-900 dark:text-white mt-0.5">
-                    {nombreNivelLimpio}
-                  </h3>
-                  <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 mt-1">
-                    Puntos actuales: {totalPuntos} pts
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-2 pt-4 border-t border-slate-100 dark:border-slate-800">
-                <div className="flex justify-between text-xs font-bold text-slate-600 dark:text-slate-400">
-                  <span>Progreso hacia el siguiente nivel</span>
-                  <span>{progresoPorcentajeTexto}%</span>
-                </div>
-                <div className="h-3 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden border border-slate-200 dark:border-slate-700">
-                  <motion.div
-                    className="h-full rounded-full bg-blue-600 dark:bg-blue-500"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${anchoBarraVisual}%` }}
-                    transition={{ duration: 0.8, ease: 'easeOut' }}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Tab 5: Historial / Misiones Cumplidas */}
-      {selectedTab === 'historial' && (
-        <div className="space-y-6">
-          <div>
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Misiones Cumplidas e Historial</h2>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-              Registro histórico de abonos y canjes de puntos.
-            </p>
-          </div>
-
-          <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] overflow-hidden shadow-sm">
-            {historial.length > 0 ? (
-              <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                {historial.map((item, idx) => {
-                  const ptsRaw = item.trpPuntos ?? item.TrpPuntos ?? item.puntos ?? item.hisPuntos ?? item.hspPuntos ?? item.montoPuntos ?? item.cantidadPuntos ?? 0;
-                  const pts = Math.abs(ptsRaw);
-                  const rawTipo = String(item.trpTipo ?? item.TrpTipo ?? item.tipo ?? item.hisTipo ?? item.hspTipo ?? item.tipoMovimiento ?? '').toLowerCase();
-                  const esGanancia = rawTipo === 'ganancia' || rawTipo === 'g' || rawTipo === 'abono' || rawTipo === 'ingreso' || rawTipo === 'entrada' || (pts > 0 && rawTipo !== 'canje' && rawTipo !== 'c' && rawTipo !== 'salida' && rawTipo !== 'egreso');
-                  const motivoStr = item.trpMotivo || item.TrpMotivo || item.motivo || item.hisMotivo || item.hisDescripcion || item.descripcion || item.concepto || (esGanancia ? 'Abono de puntos' : 'Canje de recompensa');
-                  const rawFecha = item.fechaGrabacion || item.FechaGrabacion || item.fecha || item.hisFecha || item.hspFecha || item.fechaMovimiento;
-                  const fechaStr = rawFecha && !isNaN(new Date(rawFecha).getTime()) ? new Date(rawFecha).toLocaleString() : 'Fecha no especificada';
+            {catalogo.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {catalogo.map((item, idx) => {
+                  const costo = item.rcpCostoPuntos ?? (item as any).costoPuntos ?? (item as any).rcp_costo_puntos ?? 0;
+                  const titulo = item.rcpTitulo || (item as any).titulo || (item as any).rcp_titulo || (item as any).nombre || 'Recompensa';
+                  const desc = item.descripcion || (item as any).rcpDescripcion || (item as any).rcp_descripcion;
+                  const canAfford = totalPuntos >= costo;
+                  const keyId = item.rcpCodigo || (item as any).id || (item as any).rcp_codigo || `cat-${idx}`;
 
                   return (
-                    <div key={item.trpCodigo || item.TrpCodigo || item.id || item.hisCodigo || idx} className="p-4 sm:p-5 flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`h-10 w-10 rounded-2xl flex items-center justify-center shrink-0 ${
-                            esGanancia
-                              ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400'
-                              : 'bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400'
-                          }`}
-                        >
-                          {esGanancia ? (
-                            <ArrowUpRight className="h-5 w-5" />
-                          ) : (
-                            <ArrowDownRight className="h-5 w-5" />
-                          )}
+                    <div
+                      key={keyId}
+                      className="flex flex-col justify-between rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] p-6 shadow-sm hover:shadow-md transition-all"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-3 mb-4">
+                          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400">
+                            <Gift className="h-6 w-6" />
+                          </span>
+                          <span className="inline-flex items-center gap-1 font-extrabold text-xs bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 px-3 py-1.5 rounded-full border border-amber-200 dark:border-amber-900/40">
+                            <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
+                            {costo} pts
+                          </span>
                         </div>
-                        <div>
-                          <p className="text-sm font-bold text-slate-900 dark:text-white">{motivoStr}</p>
-                          <p className="text-xs text-slate-400">{fechaStr}</p>
-                        </div>
+
+                        <h3 className="text-lg font-black text-slate-900 dark:text-white leading-tight">
+                          {titulo}
+                        </h3>
+                        {desc && (
+                          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                            {desc}
+                          </p>
+                        )}
                       </div>
 
-                      <span
-                        className={`text-base font-black ${
-                          esGanancia
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : 'text-rose-600 dark:text-rose-400'
-                        }`}
-                      >
-                        {esGanancia ? `+${pts}` : `-${pts}`} pts
-                      </span>
+                      <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
+                        <button
+                          type="button"
+                          onClick={() => handleCanjear(item)}
+                          disabled={!canAfford || canjearMutation.isPending}
+                          className={`w-full py-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                            canAfford
+                              ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-md active:scale-95'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'
+                          }`}
+                        >
+                          {canAfford ? 'Canjear Recompensa' : 'Puntos Insuficientes'}
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
               </div>
             ) : (
-              <div className="p-12 text-center text-slate-400 text-sm">
-                No hay movimientos registrados en el historial de puntos aún.
+              <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 p-12 text-center bg-white dark:bg-[#1E293B]">
+                <Gift className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                <h3 className="text-base font-bold text-slate-700 dark:text-slate-300">No hay recompensas configuradas</h3>
+                <p className="mt-1 text-xs text-slate-400 max-w-md mx-auto">
+                  Próximamente habrá nuevas opciones disponibles en el catálogo.
+                </p>
               </div>
             )}
           </div>
-        </div>
-      )}
+        )}
+
+        {/* ─── CONTENIDO DEL FILTRO 2: Recompensas Canjeadas + Misiones a la Derecha ─── */}
+        {selectedTab === 'inventario' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+            
+            {/* Columna Izquierda (2 Cols): Recompensas Canjeadas (Cupones) */}
+            <div className="lg:col-span-2 space-y-6">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Recompensas Canjeadas</h2>
+                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+                  Cupones activos y disponibles en tu cuenta para aplicar en tus citas.
+                </p>
+              </div>
+
+              {recompensasDisponibles.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  {recompensasDisponibles.map((r, idx) => {
+                    const titulo = r.tituloRecompensa || (r as any).titulo || (r as any).rcpTitulo || (r as any).rcp_titulo || (r as any).nombre || 'Recompensa';
+                    const codigo = r.codigoCanje || (r as any).codigo || (r as any).codigo_canje || (r as any).praCodigoCanje || (r.praCodigo ? `CUPON-${r.praCodigo.slice(0, 6).toUpperCase()}` : `CUPON-${idx + 1}`);
+                    const fechaExp = r.praFechaExpiracion || (r as any).fechaExpiracion || (r as any).pra_fecha_expiracion;
+                    const keyId = r.praCodigo || (r as any).id || (r as any).pra_codigo || `rec-${idx}`;
+
+                    return (
+                      <div
+                        key={keyId}
+                        className="flex flex-col justify-between rounded-3xl border border-emerald-500/20 bg-white dark:bg-[#1E293B] p-6 shadow-sm hover:shadow-md transition-all"
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-3 mb-4">
+                            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400">
+                              <Tag className="h-5 w-5" />
+                            </span>
+                            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-1 rounded-lg">
+                              Disponible
+                            </span>
+                          </div>
+
+                          <h3 className="text-lg font-black text-slate-900 dark:text-white leading-tight">
+                            {titulo}
+                          </h3>
+
+                          {fechaExp && (
+                            <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1">
+                              <Clock className="h-3.5 w-3.5" /> Vence: {new Date(fechaExp).toLocaleDateString()}
+                            </p>
+                          )}
+
+                          <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+                            <span className="text-xs font-semibold text-slate-500">Código de Cupón:</span>
+                            <code className="bg-slate-900 text-amber-300 px-3 py-1 rounded-xl text-xs font-mono font-bold tracking-wider">
+                              {codigo}
+                            </code>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 p-12 text-center bg-white dark:bg-[#1E293B]">
+                  <Gift className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                  <h3 className="text-base font-bold text-slate-700 dark:text-slate-300">Aún no tienes recompensas en inventario</h3>
+                  <p className="mt-1 text-xs text-slate-400 max-w-md mx-auto">
+                    Acumula puntos completando misiones y canjéalos en la tienda de canje.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Columna Derecha (1 Col): Misiones Disponibles para Ganar Puntos */}
+            <div className="space-y-4 bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <Zap className="h-5 w-5 text-amber-500" />
+                  Misiones Disponibles
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Completa estas actividades para acumular puntos automáticamente.
+                </p>
+              </div>
+
+              <div className="space-y-3 pt-2">
+                {uniqueTareas.length > 0 ? (
+                  uniqueTareas.map((tarea: LealtadTarea) => (
+                    <div
+                      key={tarea.tareaId || tarea.codigoAccion}
+                      className="flex items-center justify-between p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all gap-3"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200/50">
+                          <Star className="h-4 w-4 fill-amber-400" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{tarea.titulo}</p>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{tarea.descripcion}</p>
+                        </div>
+                      </div>
+
+                      <span className="shrink-0 text-amber-700 dark:text-amber-300 font-black text-xs bg-amber-50 dark:bg-amber-950/50 px-2.5 py-1 rounded-lg border border-amber-200 dark:border-amber-800/60">
+                        +{tarea.puntosRecompensa} pts
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-slate-400 p-4 text-center">No hay misiones adicionales configuradas.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── CONTENIDO DEL FILTRO 3: Misiones Completadas ─── */}
+        {selectedTab === 'historial' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Misiones Completadas e Historial</h2>
+              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+                Registro histórico de todas las misiones realizadas, puntos acreditados y canjes procesados.
+              </p>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] overflow-hidden shadow-sm">
+              {historial.length > 0 ? (
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {historial.map((item, idx) => {
+                    const ptsRaw = item.trpPuntos ?? item.TrpPuntos ?? item.puntos ?? item.hisPuntos ?? item.hspPuntos ?? item.montoPuntos ?? item.cantidadPuntos ?? 0;
+                    const pts = Math.abs(ptsRaw);
+                    const rawTipo = String(item.trpTipo ?? item.TrpTipo ?? item.tipo ?? item.hisTipo ?? item.hspTipo ?? item.tipoMovimiento ?? '').toLowerCase();
+                    const esGanancia = rawTipo === 'ganancia' || rawTipo === 'g' || rawTipo === 'abono' || rawTipo === 'ingreso' || rawTipo === 'entrada' || (pts > 0 && rawTipo !== 'canje' && rawTipo !== 'c' && rawTipo !== 'salida' && rawTipo !== 'egreso');
+                    const motivoStr = item.trpMotivo || item.TrpMotivo || item.motivo || item.hisMotivo || item.hisDescripcion || item.descripcion || item.concepto || (esGanancia ? 'Abono de puntos' : 'Canje de recompensa');
+                    const rawFecha = item.fechaGrabacion || item.FechaGrabacion || item.fecha || item.hisFecha || item.hspFecha || item.fechaMovimiento;
+                    const fechaStr = rawFecha && !isNaN(new Date(rawFecha).getTime()) ? new Date(rawFecha).toLocaleString() : 'Fecha no especificada';
+
+                    return (
+                      <div key={item.trpCodigo || item.TrpCodigo || item.id || item.hisCodigo || idx} className="p-4 sm:p-5 flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`h-10 w-10 rounded-2xl flex items-center justify-center shrink-0 ${
+                              esGanancia
+                                ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400'
+                                : 'bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400'
+                            }`}
+                          >
+                            {esGanancia ? (
+                              <ArrowUpRight className="h-5 w-5" />
+                            ) : (
+                              <ArrowDownRight className="h-5 w-5" />
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-900 dark:text-white">{motivoStr}</p>
+                            <p className="text-xs text-slate-400">{fechaStr}</p>
+                          </div>
+                        </div>
+
+                        <span
+                          className={`text-base font-black ${
+                            esGanancia
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-rose-600 dark:text-rose-400'
+                          }`}
+                        >
+                          {esGanancia ? `+${pts}` : `-${pts}`} pts
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="p-12 text-center text-slate-400 text-sm">
+                  No hay movimientos registrados en el historial de misiones completadas aún.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ─── MODAL MINIMALISTA Y BLANCO: LIGAS Y NIVELES (Lista Vertical con Puntos Faltantes) ─── */}
+      <AnimatePresence>
+        {isNivelesModalOpen && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            {/* Backdrop con blur */}
+            <motion.div
+              className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm"
+              onClick={() => setIsNivelesModalOpen(false)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            />
+
+            {/* Contenedor Blanco Minimalista */}
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-xl overflow-hidden rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] shadow-2xl z-10"
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+            >
+              {/* Header Minimalista y Blanco */}
+              <div className="flex items-start justify-between p-6 sm:p-7 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-[#1E293B]">
+                <div>
+                  <span className="text-[11px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                    Programa de Fidelidad
+                  </span>
+                  <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">
+                    Ligas y Niveles
+                  </h3>
+                  <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 font-medium">
+                    Acumula puntos para ascender de liga y desbloquear beneficios exclusivos.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsNivelesModalOpen(false)}
+                  className="rounded-full p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                  aria-label="Cerrar modal"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Body con Lista Vertical */}
+              <div className="p-6 sm:p-7 max-h-[68vh] overflow-y-auto space-y-3 bg-slate-50/50 dark:bg-slate-900/30">
+                {nivelesOrdenados.length > 0 ? (
+                  nivelesOrdenados.map((n) => {
+                    const esActual =
+                      nivelEncontrado?.nvlCodigo === n.nvlCodigo ||
+                      (totalPuntos >= n.nvlPuntosMin && totalPuntos <= n.nvlPuntosMax);
+                    
+                    const esSuperado = totalPuntos > n.nvlPuntosMax;
+                    const esProximo = totalPuntos < n.nvlPuntosMin;
+                    const puntosFaltantesLiga = Math.max(0, n.nvlPuntosMin - totalPuntos);
+
+                    return (
+                      <div
+                        key={n.nvlCodigo}
+                        className={`flex flex-col sm:flex-row sm:items-center justify-between p-4 sm:p-4.5 rounded-2xl border transition-all gap-3.5 ${
+                          esActual
+                            ? 'bg-blue-50/70 dark:bg-blue-950/40 border-blue-300 dark:border-blue-700 ring-2 ring-blue-500/20 shadow-xs'
+                            : 'bg-white dark:bg-[#1E293B] border-slate-200/80 dark:border-slate-800 shadow-2xs'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3.5">
+                          <div
+                            className={`flex h-11 w-11 items-center justify-center rounded-2xl shrink-0 ${
+                              esActual
+                                ? 'bg-blue-600 text-white shadow-sm'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                            }`}
+                          >
+                            {n.nvlImagenUrl ? (
+                              <img src={n.nvlImagenUrl} alt={n.nvlDescripcion} className="h-6 w-6 object-contain" />
+                            ) : (
+                              <Award className="h-5 w-5" />
+                            )}
+                          </div>
+
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
+                                Nivel {n.nvlDescripcion}
+                              </h4>
+                              {esActual && (
+                                <span className="text-[10px] font-black uppercase tracking-wider text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/60 px-2 py-0.5 rounded-md">
+                                  Actual
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">
+                              Rango: <span className="font-bold text-slate-700 dark:text-slate-300">{n.nvlPuntosMin} - {n.nvlPuntosMax} pts</span>
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="sm:text-right shrink-0">
+                          {esActual ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-black text-blue-700 dark:text-blue-300 bg-blue-100/80 dark:bg-blue-900/50 px-3 py-1.5 rounded-xl border border-blue-200 dark:border-blue-800">
+                              <Sparkles className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                              Tu Nivel Actual
+                            </span>
+                          ) : esProximo ? (
+                            <span className="inline-flex items-center text-xs font-bold text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/50 px-3 py-1.5 rounded-xl border border-amber-200 dark:border-amber-800/60">
+                              Te faltan <strong className="mx-1 text-amber-900 dark:text-amber-100 font-black">{puntosFaltantesLiga} pts</strong> para esta liga
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1 rounded-xl">
+                              <Check className="h-3.5 w-3.5 text-emerald-600" /> Nivel superado
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-xs text-slate-400 text-center py-6">No hay niveles configurados en el sistema.</p>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }

@@ -5,7 +5,7 @@ import type { Pais, Departamento, Municipio } from '@/types';
 
 /** Cliente para el backend de autenticación y servicios geográficos. */
 export const api = axios.create({
-  baseURL: process.env.AUTH_BACKEND_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5010',
+  baseURL: process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5010',
   timeout: 20000,
   headers: { 'Content-Type': 'application/json' },
 });
