@@ -9,6 +9,7 @@ import { useForm } from 'react-hook-form';
 import { Eye, EyeOff, Loader2, CheckCircle2, Circle, ArrowRight, ArrowLeft, Calendar } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { registerSchema, type RegisterFormValues } from '../../../lib/validations/auth';
+import { withProgressSwal } from '@/lib/request-handler';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -71,51 +72,76 @@ export default function RegisterPage() {
 
   const onSubmit = async (values: RegisterFormValues) => {
     try {
-      const response = await fetch('/api/autenticacion/registrar-paciente', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      await withProgressSwal(
+        async () => {
+          const response = await fetch('/api/autenticacion/registrar-paciente', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              correo: values.correo,
+              password: values.password,
+              primerNombre: values.primerNombre,
+              segundoNombre: values.segundoNombre || '',
+              primerApellido: values.primerApellido,
+              segundoApellido: values.segundoApellido || '',
+              apellidoCasado: values.apellidoCasado || '',
+              fechaNacimiento: values.fechaNacimiento,
+            }),
+          });
+
+          const contentType = response.headers.get('content-type') ?? '';
+          const responseBody = contentType.includes('application/json')
+            ? await response.json()
+            : await response.text();
+
+          if (!response.ok) {
+            const errorMessage =
+              typeof responseBody === 'string'
+                ? responseBody
+                : responseBody?.mensaje || responseBody?.message || 'Error al registrar.';
+
+            throw new Error(errorMessage);
+          }
+
+          return responseBody;
         },
-        body: JSON.stringify({
-           correo: values.correo,
-           password: values.password,
-           primerNombre: values.primerNombre,
-           segundoNombre: values.segundoNombre || '',
-           primerApellido: values.primerApellido,
-           segundoApellido: values.segundoApellido || '',
-           apellidoCasado: values.apellidoCasado || '',
-           fechaNacimiento: values.fechaNacimiento
-        }),
-      });
-
-      const contentType = response.headers.get('content-type') ?? '';
-      const responseBody = contentType.includes('application/json') ? await response.json() : await response.text();
-
-      if (!response.ok) {
-        const errorMessage =
-          typeof responseBody === 'string'
-            ? responseBody
-            : responseBody?.mensaje || responseBody?.message || 'Error al registrar.';
-
-        throw new Error(errorMessage);
-      }
-
-      await Swal.fire({
-        title: '¡Registro exitoso!',
-        text: 'Tu cuenta ha sido creada correctamente.',
-        icon: 'success',
-        confirmButtonColor: '#0ea5e9'
-      });
+        {
+          progressTitle: 'Creando tu Cuenta',
+          initialMessage: 'Registrando tus datos como paciente...',
+          customMessages: [
+            {
+              afterMs: 0,
+              text: 'Registrando tus datos...',
+              subtext: 'Creando tu expediente y credenciales seguras',
+            },
+            {
+              afterMs: 4000,
+              text: 'Generando tu expediente médico...',
+              subtext: 'Configurando tu perfil y programa de beneficios',
+            },
+            {
+              afterMs: 12000,
+              text: 'Finalizando la creación de tu cuenta...',
+              subtext: 'Un momento por favor, no cierres la ventana',
+            },
+            {
+              afterMs: 22000,
+              text: 'El servidor está completando la configuración...',
+              subtext: 'Gracias por tu paciencia',
+            },
+          ],
+          successTitle: '¡Registro Exitoso!',
+          successText: 'Tu cuenta de paciente ha sido creada correctamente. Ahora puedes iniciar sesión.',
+          showSuccessSwal: true,
+          cancelable: false,
+        }
+      );
 
       router.replace('/login');
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Error al registrar.';
-      Swal.fire({
-        title: 'Error',
-        text: message,
-        icon: 'error',
-        confirmButtonColor: '#ef4444'
-      });
+    } catch {
+      // Error ya manejado por withProgressSwal
     }
   };
 

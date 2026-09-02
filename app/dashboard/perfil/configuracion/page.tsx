@@ -23,6 +23,7 @@ import {
 import { useUIStore } from '@/stores/ui-store';
 import { useCambiarPassword } from '@/hooks/use-auth';
 import Swal from 'sweetalert2';
+import { withProgressSwal } from '@/lib/request-handler';
 
 function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -92,26 +93,45 @@ function CambiarPasswordModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
     setErrorMsg('');
 
     try {
-      await cambiarPasswordMutation.mutateAsync({
-        passwordActual,
-        nuevaPassword,
-      });
+      await withProgressSwal(
+        async () => {
+          return await cambiarPasswordMutation.mutateAsync({
+            passwordActual,
+            nuevaPassword,
+          });
+        },
+        {
+          progressTitle: 'Actualizando Contraseña',
+          initialMessage: 'Validando credenciales y aplicando nueva clave segura...',
+          customMessages: [
+            {
+              afterMs: 0,
+              text: 'Validando contraseña actual...',
+              subtext: 'Verificando seguridad de la cuenta',
+            },
+            {
+              afterMs: 4000,
+              text: 'Encriptando y actualizando tu contraseña...',
+              subtext: 'Aplicando nuevo hash seguro SHA-256',
+            },
+            {
+              afterMs: 10000,
+              text: 'Sincronizando cambios de seguridad...',
+              subtext: 'Un momento por favor',
+            },
+          ],
+          successTitle: '¡Contraseña Actualizada!',
+          successText: 'Tu contraseña se ha cambiado correctamente.',
+          showSuccessSwal: true,
+          cancelable: false,
+        }
+      );
 
       handleClose();
-
-      Swal.fire({
-        icon: 'success',
-        title: '¡Contraseña Actualizada!',
-        text: 'Tu contraseña se ha cambiado correctamente.',
-        confirmButtonColor: '#2563eb',
-        customClass: {
-          popup: 'rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] text-slate-900 dark:text-white',
-          title: 'text-xl font-black text-slate-900 dark:text-white',
-          confirmButton: 'rounded-xl font-bold px-6 py-2.5',
-        },
-      });
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Error al cambiar la contraseña. Verifica tu contraseña actual.');
+      if (!err?.isCancelled) {
+        setErrorMsg(err?.message || 'Error al cambiar la contraseña. Verifica tu contraseña actual.');
+      }
     }
   };
 

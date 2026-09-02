@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import Swal from 'sweetalert2';
+import { withProgressSwal } from '@/lib/request-handler';
 
 import { NeoLoader } from '@/components/neo-loader';
 import { usePacienteTitular } from '@/hooks/use-pacientes';
@@ -167,20 +168,33 @@ function PuntosContent() {
 
     if (confirm.isConfirmed) {
       try {
-        await canjearMutation.mutateAsync({ rcpCodigo: recompensa.rcpCodigo });
-        Swal.fire({
-          icon: 'success',
-          title: '¡Recompensa Adquirida!',
-          text: `Has canjeado con éxito "${recompensa.rcpTitulo}". Revisa la pestaña "Recompensas Canjeadas" para usarla.`,
-          confirmButtonColor: '#2563eb',
-        });
-      } catch (err: any) {
-        Swal.fire({
-          icon: 'error',
-          title: 'No se pudo canjear',
-          text: err.message || 'Error al procesar el canje de la recompensa.',
-          confirmButtonColor: '#dc2626',
-        });
+        await withProgressSwal(
+          async () => {
+            return await canjearMutation.mutateAsync({ rcpCodigo: recompensa.rcpCodigo });
+          },
+          {
+            progressTitle: 'Procesando Canje',
+            initialMessage: `Canjeando "${recompensa.rcpTitulo}"...`,
+            customMessages: [
+              {
+                afterMs: 0,
+                text: `Canjeando "${recompensa.rcpTitulo}"...`,
+                subtext: 'Verificando saldo de puntos de lealtad',
+              },
+              {
+                afterMs: 4000,
+                text: 'Generando cupón y actualizando inventario...',
+                subtext: 'Asignando recompensa a tu billetera digital',
+              },
+            ],
+            successTitle: '¡Recompensa Adquirida!',
+            successText: `Has canjeado con éxito "${recompensa.rcpTitulo}". Revisa la pestaña "Recompensas Canjeadas" para usarla.`,
+            showSuccessSwal: true,
+            cancelable: false,
+          }
+        );
+      } catch {
+        // Error ya manejado por withProgressSwal
       }
     }
   };

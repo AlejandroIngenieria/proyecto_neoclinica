@@ -36,6 +36,7 @@ import {
   Info,
 } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { withProgressSwal } from '@/lib/request-handler';
 import { useAdminCitas, useCambiarEstadoCita } from '@/hooks/use-flujo-citas';
 import type { CitaListDto, CitaEstado, CambiarEstadoCitaPayload } from '@/types/citas';
 import { NeoLoader } from '@/components/neo-loader';
@@ -503,14 +504,40 @@ export default function AdminPage() {
 
       if (!result.isConfirmed) return;
 
-      await cambiarEstadoMutation.mutateAsync({
-        citaId,
-        nuevoEstado,
-      });
+      try {
+        await withProgressSwal(
+          async () => {
+            return await cambiarEstadoMutation.mutateAsync({
+              citaId,
+              nuevoEstado,
+            });
+          },
+          {
+            progressTitle: 'Actualizando Estado',
+            initialMessage: `Cambiando cita a "${targetCfg.label}"...`,
+            customMessages: [
+              {
+                afterMs: 0,
+                text: `Cambiando cita a "${targetCfg.label}"...`,
+                subtext: 'Ejecutando acciones automáticas del sistema',
+              },
+              {
+                afterMs: 4000,
+                text: 'Sincronizando puntos de lealtad y notificaciones...',
+                subtext: 'Un momento por favor',
+              },
+            ],
+            successTitle: '¡Estado Actualizado!',
+            successText: `La cita de ${pacienteName} ahora está marcada como "${targetCfg.label}".`,
+            showSuccessSwal: true,
+            cancelable: false,
+          }
+        );
 
-      if (selectedCitaModal && selectedCitaModal.ctaCodigo === citaId) {
-        setSelectedCitaModal((prev) => (prev ? { ...prev, ctaEstado: nuevoEstado } : null));
-      }
+        if (selectedCitaModal && selectedCitaModal.ctaCodigo === citaId) {
+          setSelectedCitaModal((prev) => (prev ? { ...prev, ctaEstado: nuevoEstado } : null));
+        }
+      } catch {}
     },
     [citas, cambiarEstadoMutation, selectedCitaModal]
   );

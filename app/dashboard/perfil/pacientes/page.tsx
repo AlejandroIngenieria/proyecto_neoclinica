@@ -32,6 +32,7 @@ import {
   History,
 } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { withProgressSwal } from '@/lib/request-handler';
 
 import { NeoLoader } from '@/components/neo-loader';
 import { DocumentDropzone } from '@/components/document-dropzone';
@@ -660,35 +661,46 @@ function IndependizarModal({
 
       if (!confirmResult.isConfirmed) return;
 
-      await independizarMutation.mutateAsync({
-        pacCodigo: paciente.pac_codigo,
-        nuevoCorreo: data.nuevoCorreo,
-        conservarHistorial,
-      });
+      await withProgressSwal(
+        async () => {
+          return await independizarMutation.mutateAsync({
+            pacCodigo: paciente.pac_codigo,
+            nuevoCorreo: data.nuevoCorreo,
+            conservarHistorial,
+          });
+        },
+        {
+          progressTitle: 'Independizando Cuenta',
+          initialMessage: `Creando cuenta titular para ${pacienteName}...`,
+          customMessages: [
+            {
+              afterMs: 0,
+              text: `Creando usuario independiente para ${pacienteName}...`,
+              subtext: 'Configurando credenciales de acceso iniciales',
+            },
+            {
+              afterMs: 4000,
+              text: 'Migrando historial médico y recetas...',
+              subtext: 'Transfiriendo citas y documentos clínicos',
+            },
+            {
+              afterMs: 10000,
+              text: 'Enviando correo con credenciales de acceso...',
+              subtext: 'Un momento por favor',
+            },
+          ],
+          successTitle: '¡Cuenta Independizada con Éxito!',
+          successText: `El paciente ${pacienteName} se ha independizado correctamente. Se ha enviado un correo con las credenciales temporales a ${data.nuevoCorreo}.`,
+          showSuccessSwal: true,
+          cancelable: false,
+        }
+      );
 
       reset();
       setConservarHistorial(true);
       onClose();
-
-      Swal.fire({
-        icon: 'success',
-        title: 'Cuenta Independizada',
-        text: `El paciente ${pacienteName} se ha independizado correctamente. Se ha enviado un correo con las credenciales temporales a ${data.nuevoCorreo}.`,
-        confirmButtonColor: '#2563eb',
-      });
-    } catch (error: any) {
-      const errorMessage =
-        error?.response?.data?.mensaje ||
-        error?.response?.data ||
-        error?.message ||
-        'Ocurrió un error al intentar independizar la cuenta.';
-
-      Swal.fire({
-        icon: 'error',
-        title: 'Error al independizar',
-        text: typeof errorMessage === 'string' ? errorMessage : 'Error al procesar la solicitud.',
-        confirmButtonColor: '#2563eb',
-      });
+    } catch {
+      // Error ya manejado por withProgressSwal
     }
   };
 

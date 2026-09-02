@@ -20,6 +20,7 @@ import { CitaCard } from '@/components/cita-card';
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
 import { Plus, FolderPlus, FolderMinus } from 'lucide-react';
+import { withProgressSwal } from '@/lib/request-handler';
 
 const MySwal = withReactContent(Swal);
 
@@ -133,8 +134,8 @@ function CitasContent() {
   const { mutateAsync: cancelarCita, isPending: isCanceling } = useCancelarCita();
   const desvincularMutation = useDesvincularGrupo();
 
-  const handleConfirmCancel = (cita: CitaListDto) => {
-    MySwal.fire({
+  const handleConfirmCancel = async (cita: CitaListDto) => {
+    const confirm = await Swal.fire({
       title: '¿Cancelar Cita?',
       html: `Estás a punto de cancelar tu cita con <strong>${cita.medicoNombre}</strong> el ${safeFormatDate(cita.ctaFecha, "d 'de' MMMM")}.<br/><br/>Esta acción cambiará el estado de la cita a cancelada.`,
       icon: 'warning',
@@ -143,26 +144,46 @@ function CitasContent() {
       cancelButtonColor: '#64748b', // slate-500
       confirmButtonText: 'Confirmar Cancelación',
       cancelButtonText: 'Mantener cita',
-      showLoaderOnConfirm: true,
-      preConfirm: async () => {
-        try {
-          await cancelarCita(cita);
-          return true;
-        } catch (err: any) {
-          Swal.showValidationMessage('Hubo un problema al cancelar la cita.');
-          return false;
-        }
+      customClass: {
+        popup: 'rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] text-slate-900 dark:text-white',
+        title: 'text-xl font-black text-slate-900 dark:text-white',
+        confirmButton: 'rounded-xl font-bold px-6 py-2.5',
+        cancelButton: 'rounded-xl font-bold px-6 py-2.5',
       },
-      allowOutsideClick: () => !Swal.isLoading()
-    }).then((result) => {
-      if (result.isConfirmed) {
-        setToast({ message: "Cita cancelada correctamente", type: 'success' });
-      }
     });
+
+    if (confirm.isConfirmed) {
+      try {
+        await withProgressSwal(
+          () => cancelarCita(cita),
+          {
+            progressTitle: 'Cancelando Consulta',
+            initialMessage: 'Notificando cancelación al consultorio...',
+            customMessages: [
+              {
+                afterMs: 0,
+                text: 'Notificando cancelación al consultorio...',
+                subtext: 'Liberando turno en el sistema',
+              },
+              {
+                afterMs: 4000,
+                text: 'Actualizando estado de la cita médica...',
+                subtext: 'Un momento por favor',
+              },
+            ],
+            successTitle: 'Cita Cancelada',
+            successText: 'La cita ha sido cancelada correctamente.',
+            showSuccessSwal: true,
+            cancelable: false,
+          }
+        );
+        setToast({ message: 'Cita cancelada correctamente', type: 'success' });
+      } catch {}
+    }
   };
 
-  const handleConfirmUnlink = (cita: CitaListDto) => {
-    MySwal.fire({
+  const handleConfirmUnlink = async (cita: CitaListDto) => {
+    const confirm = await Swal.fire({
       title: '¿Desanclar Cita del Tema?',
       html: `¿Estás seguro de que deseas desanclar la cita con <strong>${cita.medicoNombre}</strong> del tema <strong>"${cita.grupoTema || 'Seguimiento'}"</strong>?<br/><br/>La cita se convertirá en una consulta individual independiente.`,
       icon: 'question',
@@ -171,22 +192,42 @@ function CitasContent() {
       cancelButtonColor: '#64748b',
       confirmButtonText: 'Sí, Desanclar',
       cancelButtonText: 'Cancelar',
-      showLoaderOnConfirm: true,
-      preConfirm: async () => {
-        try {
-          await desvincularMutation.mutateAsync(cita);
-          return true;
-        } catch (err: any) {
-          Swal.showValidationMessage('Hubo un problema al desanclar la cita del tema.');
-          return false;
-        }
+      customClass: {
+        popup: 'rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] text-slate-900 dark:text-white',
+        title: 'text-xl font-black text-slate-900 dark:text-white',
+        confirmButton: 'rounded-xl font-bold px-6 py-2.5',
+        cancelButton: 'rounded-xl font-bold px-6 py-2.5',
       },
-      allowOutsideClick: () => !Swal.isLoading()
-    }).then((result) => {
-      if (result.isConfirmed) {
-        setToast({ message: "Cita desanclada del tema de seguimiento", type: 'success' });
-      }
     });
+
+    if (confirm.isConfirmed) {
+      try {
+        await withProgressSwal(
+          () => desvincularMutation.mutateAsync(cita),
+          {
+            progressTitle: 'Desanclando Cita',
+            initialMessage: 'Desvinculando consulta del tema de seguimiento...',
+            customMessages: [
+              {
+                afterMs: 0,
+                text: 'Desvinculando consulta del tema...',
+                subtext: 'Convirtiendo en consulta individual',
+              },
+              {
+                afterMs: 4000,
+                text: 'Sincronizando con el servidor...',
+                subtext: 'Un momento por favor',
+              },
+            ],
+            successTitle: 'Cita Desanclada',
+            successText: 'La cita ahora es una consulta individual independiente.',
+            showSuccessSwal: true,
+            cancelable: false,
+          }
+        );
+        setToast({ message: 'Cita desanclada del tema de seguimiento', type: 'success' });
+      } catch {}
+    }
   };
 
   // 1. Extraer médicos únicos

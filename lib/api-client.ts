@@ -6,13 +6,14 @@ import type { Pais, Departamento, Municipio } from '@/types';
 /** Cliente para el backend de autenticación y servicios geográficos. */
 export const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5010',
-  timeout: 20000,
+  timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
 });
 
 /** Cliente para el proxy de expedientes (Next.js API routes). */
 export const expedientesApi = axios.create({
   baseURL: '',
+  timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -55,19 +56,36 @@ export const getMunicipios = () => expedientesApi.get<Municipio[]>('/api/municip
 export const getMunicipioByCodigo = (munCodigo: number) => expedientesApi.get<Municipio>(`/api/municipios/${munCodigo}`).then(res => ({ ...res, data: mapMunicipio(res.data) }));
 export const getMunicipiosPorDepartamento = (depCodigo: number) => expedientesApi.get<Municipio[]>(`/api/municipios/por-departamento/${depCodigo}`).then(res => ({ ...res, data: res.data.map?.(mapMunicipio) ?? res.data }));
 
-// ─── Interceptores ───────────────────────────────────────────────────────────
+// ─── Interceptores con Reintento Transparente ────────────────────────────────
 
-api.interceptors.request.use(
-  (config) => config,
-  (error) => Promise.reject(error),
-);
+const setupRetryInterceptor = (axiosInstance: typeof api) => {
+  axiosInstance.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+      const config = error.config;
+      if (!config || config.__isRetry) {
+        return Promise.reject(error);
+      }
 
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      // Lógica global para expiración de sesión
+      const status = error.response?.status;
+      const isNetworkOrTimeout =
+        error.code === 'ECONNABORTED' ||
+        error.code === 'ETIMEDOUT' ||
+        error.code === 'ERR_NETWORK' ||
+        error.message?.includes('Network Error') ||
+        error.message?.includes('timeout');
+
+      // Reintentar una vez si es 502, 503, 504 o caída de conexión
+      if (isNetworkOrTimeout || status === 502 || status === 503 || status === 504) {
+        config.__isRetry = true;
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        return axiosInstance(config);
+      }
+
+      return Promise.reject(error);
     }
-    return Promise.reject(error);
-  },
-);
+  );
+};
+
+setupRetryInterceptor(api);
+setupRetryInterceptor(expedientesApi);

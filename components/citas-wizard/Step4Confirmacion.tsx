@@ -10,6 +10,7 @@ import { completarTareaLealtad } from '@/services/lealtad';
 import { crearNotificacion } from '@/services/notificaciones';
 import { ChevronLeft, Check, FileText, Loader2, Info, Calendar, MapPin, CreditCard, Building2, Stethoscope, Activity, Wallet, AlertCircle, FolderPlus } from 'lucide-react';
 import type { CrearCitaRequest } from '@/types/citas';
+import { withProgressSwal } from '@/lib/request-handler';
 
 export function Step4Confirmacion() {
   const router = useRouter();
@@ -60,115 +61,155 @@ export function Step4Confirmacion() {
     setError(null);
 
     try {
-      // 0. Si se solicitó crear un nuevo tema de seguimiento, crearlo primero
-      let finalGrupoId = grupoId || undefined;
+      await withProgressSwal(
+        async () => {
+          // 0. Si se solicitó crear un nuevo tema de seguimiento, crearlo primero
+          let finalGrupoId = grupoId || undefined;
 
-      if (creandoNuevoGrupo && nuevoGrupoTema.trim() && pacienteSeleccionado && codMedico) {
-        try {
-          const resGrupo = await createGrupo({
+          if (creandoNuevoGrupo && nuevoGrupoTema.trim() && pacienteSeleccionado && codMedico) {
+            try {
+              const resGrupo = await createGrupo({
+                codPaciente: pacienteSeleccionado.pacCodigo,
+                codMedico,
+                tema: nuevoGrupoTema.trim(),
+                tituloTema: nuevoGrupoTema.trim(),
+              });
+              const createdId = (resGrupo as any)?.id || (resGrupo as any)?.grupoId;
+              if (createdId) {
+                finalGrupoId = createdId;
+              }
+            } catch (err) {
+              console.error('No se pudo pre-crear el grupo de seguimiento:', err);
+            }
+          }
+
+          // 1. Preparar DTO
+          let consultorioId = undefined;
+          let dirDomicilio = null;
+          let refDomicilio = null;
+
+          if (modalidad === 'presencial' && clinicaSeleccionada) {
+            consultorioId = clinicaSeleccionada.cliCodigo;
+          } else if (modalidad === 'domicilio' && areaDomicilio) {
+            consultorioId = null;
+            dirDomicilio = direccionDomicilio;
+            refDomicilio = referenciasDomicilio;
+          } else if (modalidad === 'virtual') {
+            consultorioId = null;
+          }
+
+          const rcpCod = recompensaSeleccionada
+            ? recompensaSeleccionada.praCodrcp ||
+              (recompensaSeleccionada as any).rcpCodigo ||
+              (recompensaSeleccionada as any).rcp_codigo
+            : undefined;
+
+          const request: CrearCitaRequest = {
             codPaciente: pacienteSeleccionado.pacCodigo,
             codMedico,
-            tema: nuevoGrupoTema.trim(),
-            tituloTema: nuevoGrupoTema.trim(),
-          });
-          const createdId = (resGrupo as any)?.id || (resGrupo as any)?.grupoId;
-          if (createdId) {
-            finalGrupoId = createdId;
+            grupoId: finalGrupoId,
+            consultorioId,
+            codServicio: servicioSeleccionado?.sypCodigo || undefined,
+            fecha: fecha.toISOString().split('T')[0],
+            hora: hora.length === 5 ? hora + ':00' : hora,
+            modalidad,
+            precio: total,
+            motivo: motivo || servicioSeleccionado?.servicio || undefined,
+            direccionDomicilio: dirDomicilio,
+            referenciasDomicilio: refDomicilio,
+            enlaceVideollamada: null,
+            recompensaCodigo: rcpCod,
+            rcpCodigo: rcpCod,
+            archivos: archivos.length > 0 ? archivos : undefined,
+          };
+
+          // 2. Crear Cita
+          const citaId = await createCita(request);
+
+          // Trigger automatic loyalty task and notification for creating appointment
+          const sessionToken = (session as any)?.accessToken;
+          if (sessionToken) {
+            completarTareaLealtad(sessionToken, 'CREAR_CITA').catch(() => {});
+            completarTareaLealtad(sessionToken, 'CITA_PROGRAMADA').catch(() => {});
+            crearNotificacion(sessionToken, {
+              usuarioId: pacienteSeleccionado.pacCodigo,
+              usuarioTipo: 'paciente',
+              tipo: 'cita',
+              titulo: 'Cita Agendada con Éxito',
+              mensaje: `Tu consulta con ${medicoName} para el ${fecha.toLocaleDateString('es-GT')} a las ${hora} hs fue confirmada.`,
+              accionUrl: `/dashboard/citas/${citaId}/exito`,
+            }).catch(() => {});
           }
-        } catch (err) {
-          console.error('No se pudo pre-crear el grupo de seguimiento:', err);
-        }
-      }
 
-      // 1. Preparar DTO
-      let consultorioId = undefined;
-      let dirDomicilio = null;
-      let refDomicilio = null;
-
-      if (modalidad === 'presencial' && clinicaSeleccionada) {
-        consultorioId = clinicaSeleccionada.cliCodigo;
-      } else if (modalidad === 'domicilio' && areaDomicilio) {
-        consultorioId = null;
-        dirDomicilio = direccionDomicilio;
-        refDomicilio = referenciasDomicilio;
-      } else if (modalidad === 'virtual') {
-        consultorioId = null;
-      }
-
-      const rcpCod = recompensaSeleccionada ? (recompensaSeleccionada.praCodrcp || (recompensaSeleccionada as any).rcpCodigo || (recompensaSeleccionada as any).rcp_codigo) : undefined;
-
-      const request: CrearCitaRequest = {
-        codPaciente: pacienteSeleccionado.pacCodigo,
-        codMedico,
-        grupoId: finalGrupoId,
-        consultorioId,
-        codServicio: servicioSeleccionado?.sypCodigo || undefined,
-        fecha: fecha.toISOString().split('T')[0],
-        hora: hora.length === 5 ? hora + ':00' : hora,
-        modalidad,
-        precio: total,
-        motivo: motivo || servicioSeleccionado?.servicio || undefined,
-        direccionDomicilio: dirDomicilio,
-        referenciasDomicilio: refDomicilio,
-        enlaceVideollamada: null,
-        recompensaCodigo: rcpCod,
-        rcpCodigo: rcpCod,
-        archivos: archivos.length > 0 ? archivos : undefined,
-      };
-
-      // 2. Crear Cita
-      const citaId = await createCita(request);
-
-      toast.success('¡Cita agendada con éxito!', {
-        description: `Tu consulta con ${medicoName} para el ${fecha.toLocaleDateString('es-GT')} a las ${hora} hs ha sido registrada.`,
-      });
-
-      // Trigger automatic loyalty task and notification for creating appointment
-      const sessionToken = (session as any)?.accessToken;
-      if (sessionToken) {
-        completarTareaLealtad(sessionToken, 'CREAR_CITA').catch(() => {});
-        completarTareaLealtad(sessionToken, 'CITA_PROGRAMADA').catch(() => {});
-        crearNotificacion(sessionToken, {
-          usuarioId: pacienteSeleccionado.pacCodigo,
-          usuarioTipo: 'paciente',
-          tipo: 'cita',
-          titulo: 'Cita Agendada con Éxito',
-          mensaje: `Tu consulta con ${medicoName} para el ${fecha.toLocaleDateString('es-GT')} a las ${hora} hs fue confirmada.`,
-          accionUrl: `/dashboard/citas/${citaId}/exito`,
-        }).catch(() => {});
-      }
-
-      // 3. Registrar Pago
-      await pagarCita({
-        citaId,
-        payload: {
-          codTpp: Number(tipoPagoId),
-          estadoPago: 'pendiente',
-          referenciaPago: billeteraItemId || null
-        }
-      });
-
-      // 4. Subir Documentos si hay
-      if (archivos.length > 0) {
-        // Upload concurrently or sequentially. We do sequentially to avoid overwhelming.
-        for (const file of archivos) {
-          await uploadDocumento({
-            codPaciente: pacienteSeleccionado.pacCodigo,
-            codCita: citaId,
-            file
+          // 3. Registrar Pago
+          await pagarCita({
+            citaId,
+            payload: {
+              codTpp: Number(tipoPagoId),
+              estadoPago: 'pendiente',
+              referenciaPago: billeteraItemId || null,
+            },
           });
+
+          // 4. Subir Documentos si hay
+          if (archivos.length > 0) {
+            for (const file of archivos) {
+              await uploadDocumento({
+                codPaciente: pacienteSeleccionado.pacCodigo,
+                codCita: citaId,
+                file,
+              });
+            }
+          }
+
+          // 5. Redireccionar a éxito
+          router.push(`/dashboard/citas/${citaId}/exito`);
+          return citaId;
+        },
+        {
+          progressTitle: 'Agendando tu Consulta Médica',
+          initialMessage: `Registrando tu cita con ${medicoName}...`,
+          customMessages: [
+            {
+              afterMs: 0,
+              text: `Registrando consulta con ${medicoName}...`,
+              subtext: 'Verificando turno y datos del paciente',
+            },
+            {
+              afterMs: 4000,
+              text: 'Confirmando horario y correlativo de turno...',
+              subtext: 'Asignando tu posición en la cola de atención',
+            },
+            {
+              afterMs: 10000,
+              text: 'Procesando método de pago y comprobantes...',
+              subtext: 'Guardando la información de manera segura',
+            },
+            {
+              afterMs: 18000,
+              text: 'Finalizando registro con el servidor...',
+              subtext: 'Gracias por tu paciencia, esto tomará unos segundos más',
+            },
+            {
+              afterMs: 28000,
+              text: 'El servidor está respondiendo lentamente...',
+              subtext: 'Se realizará un reintento automático para garantizar tu cita',
+            },
+          ],
+          successTitle: '¡Cita Confirmada con Éxito!',
+          successText: `Tu consulta con ${medicoName} para el ${fecha.toLocaleDateString('es-GT')} a las ${hora} hs fue registrada.`,
+          showSuccessSwal: true,
+          cancelable: true,
         }
-      }
-
-      // 5. Redirect a éxito
-      router.push(`/dashboard/citas/${citaId}/exito`);
-
+      );
     } catch (e: any) {
-      console.error('Error al agendar cita', e);
-      if (e.response && e.response.data) {
-        console.error('Detalles del error (Backend):', e.response.data);
+      if (e?.isCancelled) {
+        toast.info('Operación cancelada');
+      } else {
+        console.error('Error al agendar cita', e);
+        setError('Ocurrió un error al agendar la cita. Por favor intenta de nuevo.');
       }
-      setError('Ocurrió un error al agendar la cita. Por favor intenta de nuevo.');
+    } finally {
       setIsSubmitting(false);
     }
   };

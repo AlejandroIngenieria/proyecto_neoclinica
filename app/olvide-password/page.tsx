@@ -11,6 +11,7 @@ import {
   solicitarRecuperacionSchema,
   type SolicitarRecuperacionFormValues,
 } from '@/lib/validations/auth';
+import { resilientRequest } from '@/lib/request-handler';
 
 function OlvidePasswordForm() {
   const searchParams = useSearchParams();
@@ -35,31 +36,46 @@ function OlvidePasswordForm() {
     setErrorMsg('');
 
     try {
-      const res = await fetch('/api/autenticacion/solicitar-recuperacion', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const res = await resilientRequest(
+        async () => {
+          const response = await fetch('/api/autenticacion/solicitar-recuperacion', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ correo: values.correo }),
+          });
+
+          // Si es 429 (rate limit), no es un error de red pero no queremos reintentar
+          if (response.status === 429) {
+            const err = new Error('Has realizado varios intentos recientemente. Por favor espera unos minutos antes de solicitar otro enlace.');
+            (err as any).status = 429;
+            (err as any).isRateLimit = true;
+            throw err;
+          }
+
+          if (!response.ok) {
+            const text = await response.text();
+            let json: any = null;
+            try { json = JSON.parse(text); } catch {}
+            const msg = json?.mensaje || json?.message || 'Ocurrió un inconveniente al procesar tu solicitud. Intenta más tarde.';
+            const err = new Error(msg);
+            (err as any).status = response.status;
+            throw err;
+          }
+
+          return response;
         },
-        body: JSON.stringify({ correo: values.correo }),
-      });
-
-      if (res.status === 429) {
-        setErrorMsg('Has realizado varios intentos recientemente. Por favor espera unos minutos antes de solicitar otro enlace.');
-        return;
-      }
-
-      if (!res.ok) {
-        const text = await res.text();
-        let json: any = null;
-        try { json = JSON.parse(text); } catch {}
-        const msg = json?.mensaje || json?.message || 'Ocurrió un inconveniente al procesar tu solicitud. Intenta más tarde.';
-        setErrorMsg(msg);
-        return;
-      }
+        { maxRetries: 2, retryDelayMs: 2000 }
+      );
 
       setSubmitted(true);
-    } catch {
-      setErrorMsg('No se pudo conectar con el servidor. Revisa tu conexión a internet.');
+    } catch (err: any) {
+      if (err?.isRateLimit) {
+        setErrorMsg(err.message);
+      } else {
+        setErrorMsg(err?.message || 'No se pudo conectar con el servidor. Revisa tu conexión a internet.');
+      }
     }
   };
 
