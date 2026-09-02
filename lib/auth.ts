@@ -125,28 +125,56 @@ async function postLoginWithRetries(
   return null;
 }
 
-async function postGoogleLogin(idToken: string): Promise<BackendAuthResponse | null> {
+async function postGoogleLogin(idToken: string, maxRetries = 3): Promise<BackendAuthResponse | null> {
   const url = `${apiBaseUrl}/api/Autenticacion/google`;
-  try {
-    console.log(`=> NextAuth Google login request to ${url}`);
-    const { data } = await api.post<BackendAuthResponse>(url, { idToken });
-    return data;
-  } catch (error: any) {
-    console.error("=> Google login error:", error?.response?.status, error?.response?.data || error?.message);
-    return null;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`=> NextAuth Google login request to ${url} (attempt ${attempt}/${maxRetries})`);
+      const { data } = await api.post<BackendAuthResponse>(url, { idToken });
+      return data;
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const isClientError = status >= 400 && status < 500 && status !== 408;
+      console.error(`=> Google login error (attempt ${attempt}):`, status, error?.response?.data || error?.message);
+
+      if (isClientError) {
+        return null;
+      }
+
+      if (attempt < maxRetries) {
+        const delayMs = attempt * 1200;
+        console.log(`=> Backend cold-start during Google login. Retrying in ${delayMs}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
   }
+  return null;
 }
 
-async function postFacebookLogin(accessToken: string): Promise<BackendAuthResponse | null> {
+async function postFacebookLogin(accessToken: string, maxRetries = 3): Promise<BackendAuthResponse | null> {
   const url = `${apiBaseUrl}/api/Autenticacion/facebook`;
-  try {
-    console.log(`=> NextAuth Facebook login request to ${url}`);
-    const { data } = await api.post<BackendAuthResponse>(url, { accessToken });
-    return data;
-  } catch (error: any) {
-    console.error("=> Facebook login error:", error?.response?.status, error?.response?.data || error?.message);
-    return null;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`=> NextAuth Facebook login request to ${url} (attempt ${attempt}/${maxRetries})`);
+      const { data } = await api.post<BackendAuthResponse>(url, { accessToken });
+      return data;
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const isClientError = status >= 400 && status < 500 && status !== 408;
+      console.error(`=> Facebook login error (attempt ${attempt}):`, status, error?.response?.data || error?.message);
+
+      if (isClientError) {
+        return null;
+      }
+
+      if (attempt < maxRetries) {
+        const delayMs = attempt * 1200;
+        console.log(`=> Backend cold-start during Facebook login. Retrying in ${delayMs}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
   }
+  return null;
 }
 
 export const authOptions: NextAuthOptions = {

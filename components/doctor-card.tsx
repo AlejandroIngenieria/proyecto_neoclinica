@@ -835,39 +835,42 @@ export function DoctorCard({
           )}
         </div>
 
-        {/* Fila 5: Precio + Botones de Acción (Agendar Cita + Ver Perfil) */}
-        <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
-          <div className="min-w-0 flex-1">
+        {/* Fila 5: Precio arriba + Botones de Acción abajo (Agendar Cita + Ver Perfil) */}
+        <div className="pt-2.5 border-t border-slate-100 space-y-2">
+          {/* Precio de la consulta */}
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-xs text-slate-500 font-medium">Precio consulta:</span>
             {priceInfo.hasPrice ? (
-              <span className="font-bold text-slate-900 text-sm block leading-tight break-words">
+              <span className="font-extrabold text-slate-900 text-sm">
                 {priceInfo.label}
               </span>
             ) : (
-              <span className="text-[11px] font-semibold text-slate-400 block leading-tight break-words">
-                Clínica sin precio establecido
+              <span className="text-[11px] font-semibold text-slate-400">
+                Sin precio base
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
+          {/* Botones de acción en cuadrícula de 2 columnas */}
+          <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
               onClick={handleBookAppointment}
-              className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-sky-600 hover:bg-sky-700 active:scale-95 text-white cursor-pointer shadow-sm shadow-sky-600/20"
+              className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all bg-sky-600 hover:bg-sky-700 active:scale-95 text-white cursor-pointer shadow-xs shadow-sky-600/20"
               title="Agendar Cita con este médico"
             >
-              <Calendar className="w-3.5 h-3.5" />
-              <span>Agendar Cita</span>
+              <Calendar className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">Agendar Cita</span>
             </button>
 
             <button
               type="button"
               onClick={handleVisitProfile}
-              className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all bg-sky-50 text-sky-700 hover:bg-sky-100 dark:bg-sky-950/40 dark:text-sky-300 dark:hover:bg-sky-900/50 cursor-pointer shadow-2xs border border-sky-200/60 dark:border-sky-800/60"
+              className="w-full inline-flex items-center justify-center gap-1 px-3 py-2 rounded-xl text-xs font-bold transition-all bg-sky-50 text-sky-700 hover:bg-sky-100 dark:bg-sky-950/40 dark:text-sky-300 dark:hover:bg-sky-900/50 cursor-pointer shadow-2xs border border-sky-200/60 dark:border-sky-800/60"
               title="Ver perfil completo del especialista"
             >
-              <span>Ver Perfil</span>
-              <ChevronRight className="w-3.5 h-3.5" />
+              <span className="truncate">Ver Perfil</span>
+              <ChevronRight className="w-3.5 h-3.5 shrink-0" />
             </button>
           </div>
         </div>

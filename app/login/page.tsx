@@ -79,14 +79,25 @@ export default function LoginPage() {
     setAuthError('');
     setLoginStatusText('Autenticando con Google...');
 
+    const timer1 = setTimeout(() => {
+      setLoginStatusText('Conectando con el servidor de autenticación...');
+    }, 3000);
+
+    const timer2 = setTimeout(() => {
+      setLoginStatusText('Iniciando recursos compartidos del servidor, un momento...');
+    }, 8000);
+
     try {
       const result = await signIn('credentials', {
         redirect: false,
         googleIdToken: credentialResponse.credential,
       });
 
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+
       if (result?.ok) {
-        setLoginStatusText('');
+        setLoginStatusText('¡Inicio de sesión exitoso! Redirigiendo...');
         try {
           if (typeof window !== 'undefined') {
             sessionStorage.setItem('neoclinica_random_seed', String(Math.floor(Math.random() * 1000000) + 1));
@@ -101,6 +112,8 @@ export default function LoginPage() {
       setLoginStatusText('');
       setAuthError(result?.error ? 'Error de autenticación con Google.' : 'Credenciales inválidas de Google.');
     } catch {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
       setLoginStatusText('');
       setAuthError('No se pudo contactar al servidor de autenticación.');
     }
@@ -115,14 +128,25 @@ export default function LoginPage() {
     setAuthError('');
     setLoginStatusText('Autenticando con Facebook...');
 
+    const timer1 = setTimeout(() => {
+      setLoginStatusText('Conectando con el servidor de autenticación...');
+    }, 3000);
+
+    const timer2 = setTimeout(() => {
+      setLoginStatusText('Iniciando recursos compartidos del servidor, un momento...');
+    }, 8000);
+
     try {
       const result = await signIn('credentials', {
         redirect: false,
         facebookAccessToken: response.accessToken,
       });
 
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+
       if (result?.ok) {
-        setLoginStatusText('');
+        setLoginStatusText('¡Inicio de sesión exitoso! Redirigiendo...');
         try {
           if (typeof window !== 'undefined') {
             sessionStorage.setItem('neoclinica_random_seed', String(Math.floor(Math.random() * 1000000) + 1));
@@ -137,6 +161,8 @@ export default function LoginPage() {
       setLoginStatusText('');
       setAuthError(result?.error ? 'Error de autenticación con Facebook.' : 'Credenciales inválidas de Facebook.');
     } catch {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
       setLoginStatusText('');
       setAuthError('No se pudo contactar al servidor de autenticación.');
     }
