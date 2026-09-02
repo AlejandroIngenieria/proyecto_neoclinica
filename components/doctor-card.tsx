@@ -347,14 +347,15 @@ export function DoctorCard({
             </div>
 
             {/* Columna Derecha: Información Compacta y Sedes */}
-            <div className="flex-1 min-w-0 flex flex-col gap-3 pr-6 sm:pr-8">
-              {/* Header: Nombre + Colegiado + Rating & Precio */}
-              <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-lg md:text-xl font-black text-slate-900 leading-snug break-words whitespace-normal">
+            <div className="flex-1 min-w-0 flex flex-col gap-3">
+              {/* Header: Nombre arriba (ancho completo) + Metadatos/Precio abajo */}
+              <div className="flex flex-col gap-2 border-b border-slate-100 pb-2.5">
+                {/* Fila 1: Nombre completo y Profesión / Colegiado */}
+                <div className="min-w-0 pr-8 sm:pr-10">
+                  <h3 className="text-lg md:text-xl font-black text-slate-900 leading-snug break-words">
                     <HighlightText text={fullDetailedName} highlight={searchHighlight} />
                   </h3>
-                  <p className="text-xs font-semibold text-sky-700 mt-0.5 break-words whitespace-normal leading-snug">
+                  <p className="text-xs font-semibold text-sky-700 mt-0.5 break-words leading-snug">
                     {doctor.exp_profesion || specialtyPreview[0] || 'Médico y Cirujano'}
                     {doctor.exp_colegiado_gt && (
                       <span className="text-slate-500 font-normal ml-1.5">
@@ -364,31 +365,37 @@ export function DoctorCard({
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2.5 shrink-0">
-                  {activeClinicDistanceFormatted && (
-                    <div className="flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200/80 px-2 py-0.5 rounded-lg text-xs font-bold shadow-2xs">
-                      <Navigation className="w-3 h-3 text-emerald-600 shrink-0" />
-                      <span>{activeClinicDistanceFormatted}</span>
-                    </div>
-                  )}
-
-                  {doctor.total_resenas > 0 && doctor.promedio_valoracion > 0 ? (
-                    <div className="flex items-center gap-1 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg text-xs font-bold text-slate-900">
-                      <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                      <span>{doctor.promedio_valoracion.toFixed(1)}</span>
-                      <span className="text-[10px] text-slate-500">({doctor.total_resenas})</span>
-                    </div>
-                  ) : (
-                    <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
-                      Nuevo
-                    </span>
-                  )}
-
-                  <span className="text-sm font-black text-slate-900">
-                    {priceInfo.hasPrice ? priceInfo.label : (
-                      <span className="text-[11px] text-slate-400 font-semibold">Sin precio base</span>
+                {/* Fila 2: Items secundarios (Distancia, Rating, Precio) */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {activeClinicDistanceFormatted && (
+                      <div className="flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200/80 px-2 py-0.5 rounded-lg text-xs font-bold shadow-2xs">
+                        <Navigation className="w-3 h-3 text-emerald-600 shrink-0" />
+                        <span>{activeClinicDistanceFormatted}</span>
+                      </div>
                     )}
-                  </span>
+
+                    {doctor.total_resenas > 0 && doctor.promedio_valoracion > 0 ? (
+                      <div className="flex items-center gap-1 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg text-xs font-bold text-slate-900">
+                        <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                        <span>{doctor.promedio_valoracion.toFixed(1)}</span>
+                        <span className="text-[10px] text-slate-500">({doctor.total_resenas})</span>
+                      </div>
+                    ) : (
+                      <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                        Nuevo
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="shrink-0 flex items-center gap-1">
+                    <span className="text-xs text-slate-500 font-medium">Consulta:</span>
+                    <span className="text-sm font-black text-slate-900">
+                      {priceInfo.hasPrice ? priceInfo.label : (
+                        <span className="text-[11px] text-slate-400 font-semibold">Sin precio base</span>
+                      )}
+                    </span>
+                  </div>
                 </div>
               </div>
 
