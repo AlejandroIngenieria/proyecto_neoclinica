@@ -103,9 +103,30 @@ const initialState = {
 export const useCitaStore = create<CitaState>((set, get) => ({
   ...initialState,
   
-  setStep: (step) => set({ step }),
-  nextStep: () => set((state) => ({ step: Math.min(state.step + 1, 4) as CitaStep })),
-  prevStep: () => set((state) => ({ step: Math.max(state.step - 1, 1) as CitaStep })),
+  setStep: (step) => {
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    }
+    set({ step });
+  },
+  nextStep: () => {
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    }
+    set((state) => ({ step: Math.min(state.step + 1, 4) as CitaStep }));
+  },
+  prevStep: () => {
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    }
+    set((state) => ({ step: Math.max(state.step - 1, 1) as CitaStep }));
+  },
   
   setMedico: (cod, name) => set({ codMedico: cod, medicoName: name }),
   
@@ -144,7 +165,8 @@ export const useCitaStore = create<CitaState>((set, get) => ({
   setCreandoNuevoGrupo: (val) => set({ 
     creandoNuevoGrupo: val, 
     grupoId: val ? null : get().grupoId,
-    grupoNombre: val ? null : get().grupoNombre
+    grupoNombre: val ? null : get().grupoNombre,
+    nuevoGrupoTema: val ? get().nuevoGrupoTema : ''
   }),
   setNuevoGrupoTema: (val) => set({ nuevoGrupoTema: val }),
 

@@ -31,6 +31,13 @@ export default function AgendarCitaPage({ params }: { params: Promise<{ codMedic
     reset();
   }, [reset]);
 
+  // Posicionar siempre hasta arriba de la página cada vez que cambie de paso
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [step]);
+
   const currentDoctor = doctors.find(d => d.exp_codigo === codMedico);
 
   useEffect(() => {

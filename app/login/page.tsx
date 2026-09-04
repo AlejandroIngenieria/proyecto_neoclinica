@@ -277,6 +277,61 @@ export default function LoginPage() {
     setAuthView('login');
   };
 
+  const renderSocialButtons = () => (
+    <div className="space-y-3">
+      <div className="flex w-full justify-center items-center py-0.5">
+        <div className="flex justify-center w-[240px] max-w-full overflow-hidden [&>div]:!mx-auto [&>div]:!flex [&>div]:!justify-center [&_iframe]:!mx-auto">
+          <GoogleLogin
+            onSuccess={handleGoogleSuccess}
+            onError={() => {
+              setAuthError('No se pudo completar el inicio de sesión con Google.');
+            }}
+            text="continue_with"
+            shape="pill"
+            size="large"
+            theme="outline"
+            width="240"
+          />
+        </div>
+      </div>
+
+      <div className="flex w-full justify-center items-center py-0.5">
+        <FacebookLogin
+          appId={process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || ''}
+          onSuccess={handleFacebookSuccess}
+          onFail={(error: FailResponse) => {
+            console.error('Facebook login failed:', error);
+            setAuthError('No se pudo completar el inicio de sesión con Facebook.');
+          }}
+          render={({ onClick }) => (
+            <button
+              type="button"
+              onClick={onClick}
+              className="relative flex h-[40px] w-[240px] max-w-full items-center justify-center rounded-full border border-[#dadce0] bg-white text-[14px] pl-[11px] transition hover:bg-[#f8fafd] hover:border-[#d2e3fc] cursor-pointer select-none antialiased"
+              style={{
+                fontFamily: 'var(--font-roboto), Roboto, "Google Sans", Arial, sans-serif',
+                fontWeight: 500,
+                color: '#3c4043',
+                letterSpacing: '0.25px',
+              }}
+            >
+              <span className="absolute left-[12px] flex h-[18px] w-[18px] items-center justify-center">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle cx="12" cy="12" r="12" fill="#1877F2" />
+                  <path
+                    d="M15.5 12h-2.5v7h-3v-7h-1.5v-2.5h1.5v-1.8c0-2 1.2-3.2 3.2-3.2 1 0 1.8.1 2 .1v2.4h-1.3c-.9 0-1.1.4-1.1 1.1v1.4h2.5l-.3 2.5z"
+                    fill="#ffffff"
+                  />
+                </svg>
+              </span>
+              <span className="truncate">Continuar con Facebook</span>
+            </button>
+          )}
+        />
+      </div>
+    </div>
+  );
+
   const renderAuthBody = () => {
     if (authView === 'choice') {
       return (
@@ -299,58 +354,7 @@ export default function LoginPage() {
             <div className="h-px flex-1 bg-white/15" />
           </div>
 
-          <div className="space-y-3">
-            <div className="flex w-full justify-center items-center py-0.5">
-              <div className="flex justify-center w-[240px] max-w-full overflow-hidden [&>div]:!mx-auto [&>div]:!flex [&>div]:!justify-center [&_iframe]:!mx-auto">
-                <GoogleLogin
-                  onSuccess={handleGoogleSuccess}
-                  onError={() => {
-                    setAuthError('No se pudo completar el inicio de sesión con Google.');
-                  }}
-                  text="continue_with"
-                  shape="pill"
-                  size="large"
-                  theme="outline"
-                  width="240"
-                />
-              </div>
-            </div>
-
-            <div className="flex w-full justify-center items-center py-0.5">
-              <FacebookLogin
-                appId={process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || ''}
-                onSuccess={handleFacebookSuccess}
-                onFail={(error: FailResponse) => {
-                  console.error('Facebook login failed:', error);
-                  setAuthError('No se pudo completar el inicio de sesión con Facebook.');
-                }}
-                render={({ onClick }) => (
-                  <button
-                    type="button"
-                    onClick={onClick}
-                    className="relative flex h-[40px] w-[240px] max-w-full items-center justify-center rounded-full border border-[#dadce0] bg-white text-[14px] pl-[11px] transition hover:bg-[#f8fafd] hover:border-[#d2e3fc] cursor-pointer select-none antialiased"
-                    style={{
-                      fontFamily: 'var(--font-roboto), Roboto, "Google Sans", Arial, sans-serif',
-                      fontWeight: 500,
-                      color: '#3c4043',
-                      letterSpacing: '0.25px',
-                    }}
-                  >
-                    <span className="absolute left-[12px] flex h-[18px] w-[18px] items-center justify-center">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <circle cx="12" cy="12" r="12" fill="#1877F2" />
-                        <path
-                          d="M15.5 12h-2.5v7h-3v-7h-1.5v-2.5h1.5v-1.8c0-2 1.2-3.2 3.2-3.2 1 0 1.8.1 2 .1v2.4h-1.3c-.9 0-1.1.4-1.1 1.1v1.4h2.5l-.3 2.5z"
-                          fill="#ffffff"
-                        />
-                      </svg>
-                    </span>
-                    <span className="truncate">Continuar con Facebook</span>
-                  </button>
-                )}
-              />
-            </div>
-          </div>
+          {renderSocialButtons()}
         </>
       );
     }
@@ -483,18 +487,13 @@ export default function LoginPage() {
           )}
         </button>
 
-        <button
-          type="button"
-          onClick={() => {
-            setAuthError('');
-            setRecoveryNotice('');
-            setShowPassword(false);
-            setAuthView('choice');
-          }}
-          className="w-full text-center font-medium text-cyan-300 underline underline-offset-4 transition hover:text-cyan-200"
-        >
-          Iniciar sesión con otro método
-        </button>
+        <div className="flex items-center gap-4 py-0.5 my-1">
+          <div className="h-px flex-1 bg-white/15" />
+          <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">o continuar con</span>
+          <div className="h-px flex-1 bg-white/15" />
+        </div>
+
+        {renderSocialButtons()}
       </>
     );
   };

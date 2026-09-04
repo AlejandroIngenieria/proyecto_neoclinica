@@ -554,7 +554,12 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            router.push(`/dashboard/agendar?doctor=${cita.ctaCoddoc}`);
+            const doctorId = cita.ctaCoddoc || doctor?.exp_codigo;
+            if (doctorId) {
+              router.push(`/dashboard/agendar/${doctorId}`);
+            } else {
+              router.push('/dashboard/directorio');
+            }
           }}
           className={`${btnBaseClass} bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80`}
           title="Agendar una nueva cita con este médico"

@@ -339,7 +339,6 @@ export function Step1Modalidad() {
                 type="button"
                 onClick={() => {
                   setCreandoNuevoGrupo(true);
-                  setTemaSeguimiento(null, null);
                 }}
                 className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
                   creandoNuevoGrupo
@@ -467,7 +466,6 @@ export function Step1Modalidad() {
                 type="button"
                 onClick={() => {
                   setCreandoNuevoGrupo(true);
-                  setTemaSeguimiento(null, null);
                 }}
                 className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
                   creandoNuevoGrupo
@@ -824,7 +822,12 @@ export function Step1Modalidad() {
       {/* Footer Next Button ALWAYS VISIBLE BUT BLOCKED IF NOT COMPLETE */}
       <div className="sticky bottom-0 z-30 bg-transparent flex justify-end items-center py-4 border-t border-slate-200/60 dark:border-slate-800/40 mt-8">
         <button
-          onClick={nextStep}
+          onClick={() => {
+            window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
+            nextStep();
+          }}
           disabled={!isComplete}
           className={`w-full sm:w-auto font-bold py-3.5 px-8 sm:px-10 rounded-xl transition-all flex items-center justify-center gap-2 ${isComplete
             ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-md cursor-pointer'

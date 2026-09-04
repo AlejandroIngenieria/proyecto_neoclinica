@@ -1,12 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import {
   Star,
   Award,
   Heart,
+  Share2,
   ChevronRight,
   MapPin,
   Video,
@@ -21,6 +23,7 @@ import {
   Calendar,
   X,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   type DoctorResponse,
   type DoctorClinica,
@@ -131,6 +134,20 @@ export function DoctorCard({
 }: DoctorCardProps) {
   const router = useRouter();
   const [isHorariosModalOpen, setIsHorariosModalOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isHorariosModalOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsHorariosModalOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isHorariosModalOpen]);
 
   const { titular } = usePacienteTitular();
   const codPac = titular?.pac_codigo;
@@ -150,6 +167,60 @@ export function DoctorCard({
       removeFavMutation.mutate({ codPac, codDoc: data.doctor.exp_codigo });
     } else {
       addFavMutation.mutate({ codPac, codDoc: data.doctor.exp_codigo });
+    }
+  };
+
+  const handleShare = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const profileUrl = `${origin}/dashboard/${data.doctor.exp_codigo}`;
+    const doctorTitle = fullName || 'Médico Especialista';
+    const shareTitle = `${doctorTitle} - NeoClínica`;
+    const shareText = `Conoce el perfil de ${doctorTitle} en NeoClínica:`;
+
+    const copyFallback = async () => {
+      try {
+        if (navigator?.clipboard?.writeText) {
+          await navigator.clipboard.writeText(profileUrl);
+          toast.success('¡Enlace del perfil copiado al portapapeles!', {
+            description: profileUrl,
+          });
+        } else {
+          const textArea = document.createElement('textarea');
+          textArea.value = profileUrl;
+          textArea.style.position = 'fixed';
+          textArea.style.opacity = '0';
+          document.body.appendChild(textArea);
+          textArea.focus();
+          textArea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textArea);
+          toast.success('¡Enlace del perfil copiado al portapapeles!', {
+            description: profileUrl,
+          });
+        }
+      } catch (err) {
+        console.error('Error al copiar enlace:', err);
+        toast.error('No se pudo copiar el enlace.');
+      }
+    };
+
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: shareTitle,
+          text: shareText,
+          url: profileUrl,
+        });
+      } catch (err: any) {
+        if (err?.name !== 'AbortError') {
+          await copyFallback();
+        }
+      }
+    } else {
+      await copyFallback();
     }
   };
 
@@ -293,22 +364,36 @@ export function DoctorCard({
                   </div>
                 ) : null}
 
-                {titular && (
+                {/* Floating Action Buttons Top-Right (Share + Favorite) */}
+                <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={toggleFavorite}
-                    className="absolute top-2 right-2 z-10 p-1.5 rounded-full bg-black/30 backdrop-blur-xs transition-transform hover:scale-110 focus:outline-none"
-                    aria-label={isFavorito ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+                    onClick={handleShare}
+                    className="p-1.5 rounded-full bg-black/30 backdrop-blur-xs text-white hover:text-sky-300 transition-transform hover:scale-110 focus:outline-none cursor-pointer"
+                    title="Compartir perfil"
+                    aria-label="Compartir perfil"
                   >
-                    <Heart
-                      className={`w-4 h-4 transition-colors drop-shadow-md ${
-                        isFavorito
-                          ? 'fill-rose-500 text-rose-500'
-                          : 'text-white fill-white/20 hover:text-rose-400'
-                      }`}
-                    />
+                    <Share2 className="w-4 h-4 drop-shadow-md" />
                   </button>
-                )}
+
+                  {titular && (
+                    <button
+                      type="button"
+                      onClick={toggleFavorite}
+                      className="p-1.5 rounded-full bg-black/30 backdrop-blur-xs transition-transform hover:scale-110 focus:outline-none cursor-pointer"
+                      aria-label={isFavorito ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+                      title={isFavorito ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+                    >
+                      <Heart
+                        className={`w-4 h-4 transition-colors drop-shadow-md ${
+                          isFavorito
+                            ? 'fill-rose-500 text-rose-500'
+                            : 'text-white fill-white/20 hover:text-rose-400'
+                        }`}
+                      />
+                    </button>
+                  )}
+                </div>
 
                 {doctor.exp_foto_perfil ? (
                   <Image
@@ -499,7 +584,7 @@ export function DoctorCard({
                       })()}
 
                       {/* Fila 3: Tres botones de acción en fila inferior exclusiva */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full pt-1">
+                      <div className="grid grid-cols-3 gap-1.5 w-full pt-1">
                         {/* Botón Ver Horarios */}
                         {activeClinic.horarios_atencion && activeClinic.horarios_atencion.length > 0 ? (
                           <button
@@ -508,16 +593,16 @@ export function DoctorCard({
                               e.stopPropagation();
                               setIsHorariosModalOpen(true);
                             }}
-                            className="w-full h-8.5 px-2 rounded-xl bg-sky-50 hover:bg-sky-100 active:scale-98 text-sky-700 text-xs font-bold transition-all border border-sky-200/80 cursor-pointer shadow-2xs flex items-center justify-center gap-1.5"
+                            className="w-full h-8 px-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 active:scale-98 text-sky-700 text-[11px] font-bold transition-all border border-sky-200/80 cursor-pointer shadow-2xs flex items-center justify-center gap-1 whitespace-nowrap min-w-0"
                             title="Ver horarios de atención"
                           >
-                            <Clock className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                            <span>Horarios ({activeClinic.horarios_atencion.length})</span>
+                            <Clock className="w-3 h-3 text-sky-600 shrink-0" />
+                            <span className="truncate">Horarios ({activeClinic.horarios_atencion.length})</span>
                           </button>
                         ) : (
-                          <div className="w-full h-8.5 px-2 rounded-xl bg-slate-50 text-slate-400 text-xs font-medium border border-slate-100 flex items-center justify-center gap-1.5">
-                            <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            <span>Previa cita</span>
+                          <div className="w-full h-8 px-1.5 rounded-xl bg-slate-50 text-slate-400 text-[11px] font-medium border border-slate-100 flex items-center justify-center gap-1 whitespace-nowrap min-w-0">
+                            <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span className="truncate">Previa cita</span>
                           </div>
                         )}
 
@@ -528,16 +613,16 @@ export function DoctorCard({
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="w-full h-8.5 px-2 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-98 text-white text-xs font-bold shadow-2xs transition-all flex items-center justify-center gap-1.5"
+                            className="w-full h-8 px-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-98 text-white text-[11px] font-bold shadow-2xs transition-all flex items-center justify-center gap-1 whitespace-nowrap min-w-0"
                             title="Abrir en Google Maps"
                           >
-                            <Navigation className="w-3 h-3 fill-white text-white shrink-0" />
-                            <span>Google Maps</span>
+                            <Navigation className="w-2.5 h-2.5 fill-white text-white shrink-0" />
+                            <span className="truncate">Google Maps</span>
                             <ExternalLink className="w-2.5 h-2.5 opacity-60 shrink-0" />
                           </a>
                         ) : (
-                          <div className="w-full h-8.5 px-2 rounded-xl bg-slate-50 text-slate-400 text-xs font-medium border border-slate-100 flex items-center justify-center">
-                            <span>Sin Maps</span>
+                          <div className="w-full h-8 px-1.5 rounded-xl bg-slate-50 text-slate-400 text-[11px] font-medium border border-slate-100 flex items-center justify-center whitespace-nowrap min-w-0">
+                            <span className="truncate">Sin Maps</span>
                           </div>
                         )}
 
@@ -548,16 +633,16 @@ export function DoctorCard({
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="w-full h-8.5 px-2 rounded-xl bg-[#33ccff] hover:bg-[#2bb8e6] active:scale-98 text-slate-900 text-xs font-bold shadow-2xs transition-all flex items-center justify-center gap-1.5"
+                            className="w-full h-8 px-1.5 rounded-xl bg-[#33ccff] hover:bg-[#2bb8e6] active:scale-98 text-slate-900 text-[11px] font-bold shadow-2xs transition-all flex items-center justify-center gap-1 whitespace-nowrap min-w-0"
                             title="Abrir en Waze"
                           >
-                            <Navigation className="w-3 h-3 text-slate-900 shrink-0" />
-                            <span>Waze</span>
+                            <Navigation className="w-2.5 h-2.5 text-slate-900 shrink-0" />
+                            <span className="truncate">Waze</span>
                             <ExternalLink className="w-2.5 h-2.5 opacity-60 shrink-0" />
                           </a>
                         ) : (
-                          <div className="w-full h-8.5 px-2 rounded-xl bg-slate-50 text-slate-400 text-xs font-medium border border-slate-100 flex items-center justify-center">
-                            <span>Sin Waze</span>
+                          <div className="w-full h-8 px-1.5 rounded-xl bg-slate-50 text-slate-400 text-[11px] font-medium border border-slate-100 flex items-center justify-center whitespace-nowrap min-w-0">
+                            <span className="truncate">Sin Waze</span>
                           </div>
                         )}
                       </div>
@@ -577,17 +662,17 @@ export function DoctorCard({
           </div>
         </div>
 
-        {/* MODAL DE HORARIOS DE ATENCIÓN */}
-        {isHorariosModalOpen && activeClinic && (
+        {/* MODAL DE HORARIOS DE ATENCIÓN (Portal a document.body para evitar conflicto de stacking contexts) */}
+        {mounted && isHorariosModalOpen && activeClinic && createPortal(
           <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-xs animate-in fade-in duration-150"
+            className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-150"
             onClick={(e) => {
               e.stopPropagation();
               setIsHorariosModalOpen(false);
             }}
           >
             <div
-              className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 space-y-4 animate-in zoom-in-95 duration-150"
+              className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 space-y-4 animate-in zoom-in-95 duration-150 relative z-10"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header Modal */}
@@ -609,8 +694,12 @@ export function DoctorCard({
 
                 <button
                   type="button"
-                  onClick={() => setIsHorariosModalOpen(false)}
-                  className="p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsHorariosModalOpen(false);
+                  }}
+                  className="p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 transition-colors cursor-pointer"
+                  title="Cerrar"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -647,14 +736,18 @@ export function DoctorCard({
               <div className="pt-2 flex justify-end">
                 <button
                   type="button"
-                  onClick={() => setIsHorariosModalOpen(false)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsHorariosModalOpen(false);
+                  }}
                   className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-colors cursor-pointer"
                 >
                   Entendido
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
       </>
     );
@@ -685,23 +778,36 @@ export function DoctorCard({
           </div>
         ) : null}
 
-        {/* Floating Favorite Heart Top-Right */}
-        {titular && (
+        {/* Floating Actions Top-Right (Share + Favorite) */}
+        <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
           <button
             type="button"
-            onClick={toggleFavorite}
-            className="absolute top-3 right-3 z-10 p-1 rounded-full transition-transform hover:scale-110 focus:outline-none"
-            aria-label={isFavorito ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+            onClick={handleShare}
+            className="p-1.5 rounded-full bg-black/30 backdrop-blur-xs text-white hover:text-sky-300 transition-transform hover:scale-110 focus:outline-none cursor-pointer shadow-xs"
+            title="Compartir perfil"
+            aria-label="Compartir perfil"
           >
-            <Heart
-              className={`w-6 h-6 transition-colors drop-shadow-md ${
-                isFavorito
-                  ? 'fill-rose-500 text-rose-500'
-                  : 'text-white fill-black/20 hover:text-rose-400'
-              }`}
-            />
+            <Share2 className="w-4.5 h-4.5 drop-shadow-sm" />
           </button>
-        )}
+
+          {titular && (
+            <button
+              type="button"
+              onClick={toggleFavorite}
+              className="p-1.5 rounded-full bg-black/30 backdrop-blur-xs transition-transform hover:scale-110 focus:outline-none cursor-pointer shadow-xs"
+              aria-label={isFavorito ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+              title={isFavorito ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+            >
+              <Heart
+                className={`w-4.5 h-4.5 transition-colors drop-shadow-sm ${
+                  isFavorito
+                    ? 'fill-rose-500 text-rose-500'
+                    : 'text-white fill-white/20 hover:text-rose-400'
+                }`}
+              />
+            </button>
+          )}
+        </div>
 
         {/* Photo */}
         {doctor.exp_foto_perfil ? (

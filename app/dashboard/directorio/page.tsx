@@ -339,19 +339,15 @@ function DashboardContent() {
     const [modality, setModality] = useParamString('modality', 'all');
     const [specialtyParam, setSpecialtyParam] = useParamString('specialty', 'all');
 
-    // Semilla aleatoria con hidratación segura
+    // Semilla aleatoria con hidratación segura: genera un nuevo orden aleatorio en cada ingreso al directorio
     const [sessionSeed, setSessionSeed] = useState<number>(42);
 
     useEffect(() => {
+        // Cada vez que se ingrese al directorio de médicos, generar un orden aleatorio nuevo
+        const newSeed = Math.floor(Math.random() * 10000000) + 1;
+        setSessionSeed(newSeed);
         try {
-            const stored = sessionStorage.getItem('neoclinica_random_seed');
-            if (stored) {
-                setSessionSeed(parseInt(stored, 10));
-            } else {
-                const newSeed = Math.floor(Math.random() * 1000000) + 1;
-                sessionStorage.setItem('neoclinica_random_seed', newSeed.toString());
-                setSessionSeed(newSeed);
-            }
+            sessionStorage.setItem('neoclinica_random_seed', newSeed.toString());
         } catch {}
     }, []);
     
@@ -700,7 +696,12 @@ function DashboardContent() {
         setTargetPage(null);
         setActivePopover(null);
 
-        // 2. Limpiar todos los parámetros de la URL en una sola navegación limpia
+        // 2. Limpiar todos los parámetros de la URL en una sola navegación limpia y reordenar aleatoriamente
+        const newSeed = Math.floor(Math.random() * 10000000) + 1;
+        setSessionSeed(newSeed);
+        try {
+            sessionStorage.setItem('neoclinica_random_seed', newSeed.toString());
+        } catch {}
         resetParams();
     };
 
