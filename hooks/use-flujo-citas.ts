@@ -16,6 +16,7 @@ import {
   fetchCitasPaciente,
   cancelarCita,
   desvincularGrupoCita,
+  eliminarGrupoCita,
   completarCita,
   updateCita,
   fetchMetodosPago,
@@ -363,41 +364,27 @@ export function isCitaPasada(ctaFecha?: string, ctaHora?: string): boolean {
   }
 }
 
-const globalProcessedCitas = new Set<string>();
+/**
+ * Las citas pasadas no atendidas son marcadas como 'no_asistio' por el procedimiento almacenado
+ * en la base de datos tras 1 hora de tolerancia post-cita. No se autocompletan artificialmente.
+ */
+export function useAutoCompletarCitasPasadas(_citas: CitaListDto[] | undefined) {
+  // Manejado centralizadamente en SQL Server (dbo.sp_FlujoCita_ObtenerCitas)
+}
 
-export function useAutoCompletarCitasPasadas(citas: CitaListDto[] | undefined) {
-  const { token, isAuthenticated } = useAuthInfo();
+export function useEliminarGrupo() {
+  const { token } = useAuthInfo();
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    if (!isAuthenticated || !token || !citas || citas.length === 0) return;
-
-    // Filtrar citas pasadas que no hayan sido intentadas en esta sesión
-    const citasPasadas = citas.filter((c) => {
-      if (!c.ctaCodigo || globalProcessedCitas.has(c.ctaCodigo)) return false;
-      const estadoActual = (c.ctaEstado || '').toLowerCase();
-      if (!['programada', 'confirmada', 'pospuesta'].includes(estadoActual)) return false;
-
-      return isCitaPasada(c.ctaFecha, c.ctaHora);
-    });
-
-    if (citasPasadas.length === 0) return;
-
-    // Marcar en la caché global inmediatamente para evitar cualquier reintento en segundo plano
-    citasPasadas.forEach((c) => globalProcessedCitas.add(c.ctaCodigo));
-
-    // Ejecución suave en segundo plano (1 a la vez de forma asíncrona y pausada)
-    const processBatch = async () => {
-      for (const cita of citasPasadas) {
-        try {
-          await completarCita(token, cita);
-        } catch {
-          // Silencioso para mantener la experiencia de usuario 100% fluida
-        }
-      }
-    };
-
-    processBatch();
-  }, [citas, token, isAuthenticated]);
+  return useMutation({
+    mutationFn: (grupoId: string) => eliminarGrupoCita(token!, grupoId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['citasPaciente'] });
+      queryClient.invalidateQueries({ queryKey: ['citasTodosPacientes'] });
+      queryClient.invalidateQueries({ queryKey: ['gruposCita'] });
+      queryClient.invalidateQueries({ queryKey: ['gruposMap'] });
+    },
+  });
 }
 
 export function useUpdateCita() {

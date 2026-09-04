@@ -10,7 +10,7 @@ import { es } from 'date-fns/locale';
 import { Navbar } from '@/components/navbar';
 import { NeoLoader } from '@/components/neo-loader';
 import { useSession } from 'next-auth/react';
-import { useCitasPaciente, useAllCitasPacientes, usePacientesSeleccion, useCancelarCita, useDesvincularGrupo, useGruposMap, useUpdateCita, useAutoCompletarCitasPasadas, isCitaPasada } from '@/hooks/use-flujo-citas';
+import { useCitasPaciente, useAllCitasPacientes, usePacientesSeleccion, useCancelarCita, useDesvincularGrupo, useEliminarGrupo, useGruposMap, useUpdateCita, useAutoCompletarCitasPasadas, isCitaPasada } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode, useDoctors } from '@/hooks/use-doctors';
 import { fetchGruposCita, createGrupo } from '@/services/flujo-citas';
 import type { CitaListDto, CitaEstado, GrupoCitaDto } from '@/types/citas';
@@ -133,6 +133,7 @@ function CitasContent() {
 
   const { mutateAsync: cancelarCita, isPending: isCanceling } = useCancelarCita();
   const desvincularMutation = useDesvincularGrupo();
+  const eliminarGrupoMutation = useEliminarGrupo();
 
   const handleConfirmCancel = async (cita: CitaListDto) => {
     const confirm = await Swal.fire({
@@ -230,6 +231,65 @@ function CitasContent() {
     }
   };
 
+  const handleConfirmEliminarGrupo = async (grupoId: string, temaNombre: string) => {
+    const confirm = await Swal.fire({
+      title: '¿Eliminar tema de seguimiento?',
+      html: `Estás a punto de eliminar el tema de seguimiento <strong>"${temaNombre}"</strong>.<br/><br/>
+      <div class="text-xs text-left bg-slate-50 dark:bg-slate-800 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
+        <p class="font-bold mb-1.5 text-slate-800 dark:text-white flex items-center gap-1.5">
+          <span>ℹ️</span> <span>Las citas asociadas se conservarán:</span>
+        </p>
+        <p class="mb-1">• <strong>No se borrará ninguna cita</strong>; permanecerán en tu historial y próximas citas como consultas individuales.</p>
+        <p>• Este tema ya no aparecerá como opción para reutilizar en nuevas citas.</p>
+      </div>`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#e11d48',
+      cancelButtonColor: '#64748b',
+      confirmButtonText: 'Sí, eliminar tema',
+      cancelButtonText: 'Cancelar',
+      customClass: {
+        popup: 'rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] text-slate-900 dark:text-white',
+        title: 'text-xl font-black text-slate-900 dark:text-white',
+        confirmButton: 'rounded-xl font-bold px-6 py-2.5',
+        cancelButton: 'rounded-xl font-bold px-6 py-2.5',
+      },
+    });
+
+    if (confirm.isConfirmed) {
+      try {
+        await withProgressSwal(
+          () => eliminarGrupoMutation.mutateAsync(grupoId),
+          {
+            progressTitle: 'Eliminando tema',
+            initialMessage: 'Desvinculando citas del tema de seguimiento...',
+            customMessages: [
+              {
+                afterMs: 0,
+                text: 'Desvinculando citas del tema...',
+                subtext: 'Conservando consultas como individuales',
+              },
+              {
+                afterMs: 3000,
+                text: 'Actualizando registro...',
+                subtext: 'Un momento por favor',
+              },
+            ],
+            successTitle: 'Tema Eliminado',
+            successText: 'El tema de seguimiento ha sido eliminado. Las citas ahora son consultas individuales independientes.',
+            showSuccessSwal: true,
+            cancelable: false,
+          }
+        );
+        setToast({ message: 'Tema de seguimiento eliminado correctamente', type: 'success' });
+      } catch (e: any) {
+        console.error('Error al eliminar grupo:', e);
+        const msg = e?.response?.data?.mensaje || e?.message || 'Error al eliminar el tema de seguimiento';
+        setToast({ message: msg, type: 'error' });
+      }
+    }
+  };
+
   // 1. Extraer médicos únicos
   const medicosUnicosIds = useMemo(() => {
     const ids = new Set<string>();
@@ -248,8 +308,9 @@ function CitasContent() {
         const citaDateTime = new Date(`${c.ctaFecha.split('T')[0]}T${c.ctaHora || '00:00:00'}`);
         if (citaDateTime < now) {
           isPast = true;
-          if (['programada', 'confirmada', 'pospuesta'].includes(estado)) {
-            estado = 'completada' as CitaEstado;
+          // Si han transcurrido más de 60 minutos de la hora programada y sigue en 'programada', debe figurar como 'no_asistio'
+          if (estado === 'programada' && (now.getTime() - citaDateTime.getTime() >= 60 * 60 * 1000)) {
+            estado = 'no_asistio' as CitaEstado;
           }
         }
       } catch (e) {}
@@ -287,21 +348,22 @@ function CitasContent() {
     const msInWeek = 7 * 24 * 60 * 60 * 1000;
     const proximosEstados = ['programada', 'confirmada', 'pospuesta'];
 
-    // Resultado: map de codpac -> { nombre, standalone: [], series: { [grupoId]: citas } }
+    // Resultado: map de codpac -> { nombre, standalone: [], series: { [grupoId]: citas }, seriesStats: { [grupoId]: stats } }
     type PacienteCitas = {
       nombre: string;
       standalone: CitaListDto[];
       series: Record<string, CitaListDto[]>;
+      seriesStats: Record<string, { total: number; completed: number }>;
     };
     const pacientesMap = new Map<string, PacienteCitas>();
 
-    // Primero agrupar TODO por paciente y por serie (sin filtrar por fecha aún, salvo el medico/grupo seleccionado)
+    // Primero agrupar TODO por paciente y por serie
     citasConTemas.forEach(c => {
       if (medicoSeleccionado && c.ctaCoddoc !== medicoSeleccionado) return;
       if (grupoSeleccionado && c.ctaGrupoId !== grupoSeleccionado) return;
 
       if (!pacientesMap.has(c.ctaCodpac)) {
-        pacientesMap.set(c.ctaCodpac, { nombre: c.pacienteNombre, standalone: [], series: {} });
+        pacientesMap.set(c.ctaCodpac, { nombre: c.pacienteNombre, standalone: [], series: {}, seriesStats: {} });
       }
       
       const p = pacientesMap.get(c.ctaCodpac)!;
@@ -311,6 +373,16 @@ function CitasContent() {
       } else {
         p.standalone.push(c);
       }
+    });
+
+    // Calcular estadísticas globales de cada serie (total y completadas en el tratamiento entero)
+    pacientesMap.forEach(p => {
+      Object.entries(p.series).forEach(([grupoId, citasGrupo]) => {
+        p.seriesStats[grupoId] = {
+          total: citasGrupo.length,
+          completed: citasGrupo.filter(c => c.ctaEstado === 'completada').length,
+        };
+      });
     });
 
     // Ahora filtramos según tabActual y viewFilter y quickFilter
@@ -342,28 +414,39 @@ function CitasContent() {
       // Filtrar Series
       if (viewFilter === 'todas' || viewFilter === 'series') {
         Object.entries(p.series).forEach(([grupoId, citasGrupo]) => {
-          const hasUpcoming = citasGrupo.some(c => proximosEstados.includes(c.ctaEstado) && !isCitaPasada(c.ctaFecha, c.ctaHora));
-          
-          if (tabActual === 'proximas' && !hasUpcoming) return;
-          if (tabActual === 'historial' && hasUpcoming) return;
+          if (tabActual === 'proximas') {
+            // En PRÓXIMAS: Únicamente mostrar las citas próximas de la serie
+            const upcomingCitas = citasGrupo.filter(c => proximosEstados.includes(c.ctaEstado) && !isCitaPasada(c.ctaFecha, c.ctaHora));
+            if (upcomingCitas.length === 0) return;
 
-          // En proximas, el quick filter aplica si la PRÓXIMA cita de la serie cumple
-          if (tabActual === 'proximas' && quickFilter !== 'todas') {
-            const upcomingDates = citasGrupo
-              .filter(c => proximosEstados.includes(c.ctaEstado))
-              .map(c => new Date(`${c.ctaFecha.split('T')[0]}T${c.ctaHora}`).getTime() - now.getTime());
-            
-            const nextDiff = Math.min(...upcomingDates);
-            if (quickFilter === '24hrs' && (nextDiff < 0 || nextDiff > msIn24Hrs)) return;
-            if (quickFilter === 'semana' && (nextDiff < 0 || nextDiff > msInWeek)) return;
+            // En proximas, el quick filter aplica si la PRÓXIMA cita de la serie cumple
+            if (quickFilter !== 'todas') {
+              const upcomingDates = upcomingCitas
+                .map(c => new Date(`${c.ctaFecha.split('T')[0]}T${c.ctaHora}`).getTime() - now.getTime());
+              
+              const nextDiff = Math.min(...upcomingDates);
+              if (quickFilter === '24hrs' && (nextDiff < 0 || nextDiff > msIn24Hrs)) return;
+              if (quickFilter === 'semana' && (nextDiff < 0 || nextDiff > msInWeek)) return;
+            }
+
+            // Ordenar las citas próximas del grupo cronológicamente (ascendente)
+            filteredSeries[grupoId] = upcomingCitas.sort((a, b) => {
+              const dateA = new Date(`${a.ctaFecha.split('T')[0]}T${a.ctaHora}`).getTime();
+              const dateB = new Date(`${b.ctaFecha.split('T')[0]}T${b.ctaHora}`).getTime();
+              return dateA - dateB;
+            });
+          } else {
+            // En HISTORIAL: Únicamente mostrar las citas pasadas de la serie
+            const pastCitas = citasGrupo.filter(c => !proximosEstados.includes(c.ctaEstado) || isCitaPasada(c.ctaFecha, c.ctaHora));
+            if (pastCitas.length === 0) return;
+
+            // Ordenar las citas del historial cronológicamente (descendente)
+            filteredSeries[grupoId] = pastCitas.sort((a, b) => {
+              const dateA = new Date(`${a.ctaFecha.split('T')[0]}T${a.ctaHora}`).getTime();
+              const dateB = new Date(`${b.ctaFecha.split('T')[0]}T${b.ctaHora}`).getTime();
+              return dateB - dateA;
+            });
           }
-
-          // Ordenar las citas del grupo cronológicamente
-          filteredSeries[grupoId] = citasGrupo.sort((a, b) => {
-            const dateA = new Date(`${a.ctaFecha.split('T')[0]}T${a.ctaHora}`).getTime();
-            const dateB = new Date(`${b.ctaFecha.split('T')[0]}T${b.ctaHora}`).getTime();
-            return dateA - dateB;
-          });
         });
       }
 
@@ -372,13 +455,14 @@ function CitasContent() {
         filteredStandalone.sort((a, b) => {
           const dateA = new Date(`${a.ctaFecha.split('T')[0]}T${a.ctaHora}`).getTime();
           const dateB = new Date(`${b.ctaFecha.split('T')[0]}T${b.ctaHora}`).getTime();
-          return dateA - dateB;
+          return tabActual === 'proximas' ? dateA - dateB : dateB - dateA;
         });
 
         resultadoMap.set(codpac, {
           nombre: p.nombre,
           standalone: filteredStandalone,
-          series: filteredSeries
+          series: filteredSeries,
+          seriesStats: p.seriesStats
         });
       }
     });
@@ -387,10 +471,8 @@ function CitasContent() {
   }, [citasConTemas, medicoSeleccionado, grupoSeleccionado, tabActual, quickFilter, viewFilter]);
 
   const proximosEstados = ['programada', 'confirmada', 'pospuesta'];
-  const citasHistorial = citasConTemas.filter(c => !proximosEstados.includes(c.ctaEstado));
-
-  const totalProximas = citasConTemas.filter(c => proximosEstados.includes(c.ctaEstado)).length;
-  const totalHistorial = citasConTemas.filter(c => !proximosEstados.includes(c.ctaEstado)).length;
+  const totalProximas = citasConTemas.filter(c => proximosEstados.includes(c.ctaEstado) && !isCitaPasada(c.ctaFecha, c.ctaHora)).length;
+  const totalHistorial = citasConTemas.filter(c => !proximosEstados.includes(c.ctaEstado) || isCitaPasada(c.ctaFecha, c.ctaHora)).length;
 
   return (
     <div className="min-h-screen text-slate-900 pb-20">
@@ -554,7 +636,7 @@ function CitasContent() {
                   </div>
                 )}
 
-                {citasMostradasPorPaciente.map(([codpac, { nombre, standalone, series }]) => {
+                {citasMostradasPorPaciente.map(([codpac, { nombre, standalone, series, seriesStats }]) => {
                   const totalCitas = standalone.length + Object.values(series).reduce((acc, curr) => acc + curr.length, 0);
                   const isCollapsed = pacientesExpandidos[codpac];
 
@@ -620,9 +702,12 @@ function CitasContent() {
                                   key={`grupo-${grupoId}`}
                                   grupoId={grupoId}
                                   citasGrupo={citasGrupo}
+                                  totalCitasSerie={seriesStats[grupoId]?.total || citasGrupo.length}
+                                  completedCitasSerie={seriesStats[grupoId]?.completed || 0}
                                   router={router}
                                   handleConfirmCancel={handleConfirmCancel}
                                   onUnlinkGroup={handleConfirmUnlink}
+                                  onDeleteGroup={handleConfirmEliminarGrupo}
                                 />
                               ))}
                             </div>
@@ -658,15 +743,21 @@ function CitasContent() {
 function SeriesContainer({
   grupoId,
   citasGrupo,
+  totalCitasSerie,
+  completedCitasSerie,
   router,
   handleConfirmCancel,
-  onUnlinkGroup
+  onUnlinkGroup,
+  onDeleteGroup,
 }: {
   grupoId: string;
   citasGrupo: CitaListDto[];
+  totalCitasSerie: number;
+  completedCitasSerie: number;
   router: any;
   handleConfirmCancel: (c: CitaListDto) => void;
   onUnlinkGroup: (c: CitaListDto) => void;
+  onDeleteGroup: (grupoId: string, temaNombre: string) => void;
 }) {
   const doctorCode = citasGrupo[0]?.ctaCoddoc;
   const { data: doctor } = useDoctorByCode(doctorCode || '');
@@ -677,9 +768,9 @@ function SeriesContainer({
   
   const initials = medicoNombre.split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join('') || 'MD';
 
-  const total = citasGrupo.length;
-  const completed = citasGrupo.filter(c => ['completada'].includes(c.ctaEstado)).length;
-  const percent = Math.round((completed / total) * 100) || 0;
+  const total = totalCitasSerie || citasGrupo.length;
+  const completed = completedCitasSerie;
+  const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
 
   return (
     <div className="bg-sky-50/40 dark:bg-[#1E293B] rounded-3xl border border-sky-100 dark:border-slate-700 p-4 sm:p-6 shadow-sm overflow-hidden relative">
@@ -724,10 +815,25 @@ function SeriesContainer({
           </div>
         </div>
         
-        <div className="hidden sm:block text-right shrink-0">
-          <p className="text-[10px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest flex items-center justify-end gap-1 group-hover:text-sky-600 dark:group-hover:text-blue-400 transition-colors">
-            Ver Serie <ChevronRight className="w-4 h-4" />
-          </p>
+        <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-center">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeleteGroup(grupoId, nombreGrupo);
+            }}
+            title="Eliminar tema de seguimiento (Las citas no se borrarán)"
+            className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-slate-200/80 dark:border-slate-700 hover:border-rose-200 dark:hover:border-rose-900 transition-all cursor-pointer flex items-center gap-1.5 group/del"
+          >
+            <X className="w-4 h-4 text-slate-400 group-hover/del:text-rose-600 dark:group-hover/del:text-rose-400 transition-colors" />
+            <span className="text-[11px] font-bold text-slate-500 group-hover/del:text-rose-600 dark:text-slate-400 dark:group-hover/del:text-rose-400 hidden lg:inline">Eliminar tema</span>
+          </button>
+
+          <div className="hidden sm:block text-right">
+            <p className="text-[10px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest flex items-center justify-end gap-1 group-hover:text-sky-600 dark:group-hover:text-blue-400 transition-colors">
+              Ver Serie <ChevronRight className="w-4 h-4" />
+            </p>
+          </div>
         </div>
       </div>
 

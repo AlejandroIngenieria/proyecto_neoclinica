@@ -102,6 +102,13 @@ export async function createGrupo(token: string, codPaciente: string, codMedico:
   };
 }
 
+export async function eliminarGrupoCita(token: string, grupoId: string): Promise<void> {
+  await expedientesApi.delete(
+    `/api/flujo-citas/grupos/${grupoId}`,
+    getAuthHeaders(token)
+  );
+}
+
 export async function createCita(token: string, request: CrearCitaRequest): Promise<string> {
   const formData = new FormData();
 

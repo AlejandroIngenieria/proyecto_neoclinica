@@ -3,15 +3,17 @@
 import { useState } from 'react';
 
 import { useParams, useRouter } from 'next/navigation';
-import { useCitasPaciente, useAllCitasPacientes, usePacientesSeleccion, useAutoCompletarCitasPasadas } from '@/hooks/use-flujo-citas';
+import { useCitasPaciente, useAllCitasPacientes, usePacientesSeleccion, useAutoCompletarCitasPasadas, useEliminarGrupo } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { Navbar } from '@/components/navbar';
-import { ArrowLeft, Loader2, CheckCircle2, AlertCircle, HelpCircle, User, CalendarDays, Monitor, MapPin, Clock } from 'lucide-react';
+import { ArrowLeft, Loader2, CheckCircle2, AlertCircle, HelpCircle, User, CalendarDays, Monitor, MapPin, Clock, X } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import type { CitaListDto } from '@/types/citas';
 import { CitaDetailDrawer } from '@/components/citas/cita-detail-drawer';
 import Image from 'next/image';
+import Swal from 'sweetalert2';
+import { withProgressSwal } from '@/lib/request-handler';
 
 function safeFormatDate(dateStr: string | undefined, formatStr: string): string {
   if (!dateStr) return 'Fecha sin definir';
@@ -87,20 +89,92 @@ export default function GrupoDetailPage() {
   const medicoNombre = citasGrupo[0]?.medicoNombre || '';
   const medicoEspecialidad = citasGrupo[0]?.medicoEspecialidad || '';
 
+  const { mutateAsync: eliminarGrupo } = useEliminarGrupo();
+
+  const handleEliminarGrupo = async () => {
+    const confirm = await Swal.fire({
+      title: '¿Eliminar tema de seguimiento?',
+      html: `Estás a punto de eliminar el tema de seguimiento <strong>"${nombreGrupo}"</strong>.<br/><br/>
+      <div class="text-xs text-left bg-slate-50 dark:bg-slate-800 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
+        <p class="font-bold mb-1.5 text-slate-800 dark:text-white flex items-center gap-1.5">
+          <span>ℹ️</span> <span>Las citas asociadas se conservarán:</span>
+        </p>
+        <p class="mb-1">• <strong>No se borrará ninguna cita</strong>; permanecerán en tu historial y próximas citas como consultas individuales.</p>
+        <p>• Este tema ya no aparecerá como opción para reutilizar en nuevas citas.</p>
+      </div>`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#e11d48',
+      cancelButtonColor: '#64748b',
+      confirmButtonText: 'Sí, eliminar tema',
+      cancelButtonText: 'Cancelar',
+      customClass: {
+        popup: 'rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] text-slate-900 dark:text-white',
+        title: 'text-xl font-black text-slate-900 dark:text-white',
+        confirmButton: 'rounded-xl font-bold px-6 py-2.5',
+        cancelButton: 'rounded-xl font-bold px-6 py-2.5',
+      },
+    });
+
+    if (confirm.isConfirmed) {
+      try {
+        await withProgressSwal(
+          () => eliminarGrupo(grupoId),
+          {
+            progressTitle: 'Eliminando tema',
+            initialMessage: 'Desvinculando citas del tema de seguimiento...',
+            customMessages: [
+              {
+                afterMs: 0,
+                text: 'Desvinculando citas del tema...',
+                subtext: 'Conservando consultas como individuales',
+              },
+              {
+                afterMs: 3000,
+                text: 'Actualizando registro...',
+                subtext: 'Un momento por favor',
+              },
+            ],
+            successTitle: 'Tema Eliminado',
+            successText: 'El tema de seguimiento ha sido eliminado. Las citas ahora son consultas individuales independientes.',
+            showSuccessSwal: true,
+            cancelable: false,
+          }
+        );
+        router.push('/dashboard/citas');
+      } catch (e: any) {
+        console.error('Error al eliminar grupo:', e);
+        const msg = e?.response?.data?.mensaje || e?.message || 'Error al eliminar el tema de seguimiento';
+        alert(msg);
+      }
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#F9FAFB] dark:bg-[#0B1120] font-sans text-[#111827] dark:text-slate-200">
       <Navbar />
 
       <main className="pt-8 pb-24 max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8">
 
-        {/* Botón de retroceso */}
-        <button
-          onClick={() => router.push('/dashboard/citas')}
-          className="flex items-center text-[#6B7280] dark:text-slate-400 hover:text-[#2563EB] dark:hover:text-blue-400 font-bold mb-6 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Volver a Mis Tratamientos
-        </button>
+        {/* Barra superior de navegación y acciones */}
+        <div className="flex items-center justify-between mb-6">
+          <button
+            onClick={() => router.push('/dashboard/citas')}
+            className="flex items-center text-[#6B7280] dark:text-slate-400 hover:text-[#2563EB] dark:hover:text-blue-400 font-bold transition-colors cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Volver a Mis Tratamientos
+          </button>
+
+          <button
+            type="button"
+            onClick={handleEliminarGrupo}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-rose-600 bg-white dark:bg-[#1E293B] hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-slate-200 dark:border-slate-700 hover:border-rose-200 dark:hover:border-rose-900 transition-all shadow-2xs cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5 text-rose-500" />
+            <span>Eliminar tema de seguimiento</span>
+          </button>
+        </div>
 
         {/* Layout Principal 8/4 (2.2fr / 1fr) */}
         <div className="grid grid-cols-1 lg:grid-cols-[2.2fr_1fr] gap-8 items-start">

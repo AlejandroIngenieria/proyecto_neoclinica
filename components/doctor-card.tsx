@@ -788,28 +788,28 @@ export function DoctorCard({
           </div>
         ) : null}
 
-        {/* Floating Actions Top-Right (Share + Favorite) */}
-        <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
+        {/* Floating Actions Top-Right (Share + Favorite) - Compact size for unselected cards */}
+        <div className="absolute top-2.5 right-2.5 z-10 flex items-center gap-1">
           <button
             type="button"
             onClick={handleShare}
-            className="p-1.5 rounded-full bg-black/30 backdrop-blur-xs text-white hover:text-sky-300 transition-transform hover:scale-110 focus:outline-none cursor-pointer shadow-xs"
+            className="p-1 rounded-full bg-black/35 backdrop-blur-xs text-white hover:text-sky-300 transition-transform hover:scale-110 focus:outline-none cursor-pointer shadow-xs"
             title="Compartir perfil"
             aria-label="Compartir perfil"
           >
-            <Share2 className="w-4.5 h-4.5 drop-shadow-sm" />
+            <Share2 className="w-3.5 h-3.5 drop-shadow-sm" />
           </button>
 
           {titular && (
             <button
               type="button"
               onClick={toggleFavorite}
-              className="p-1.5 rounded-full bg-black/30 backdrop-blur-xs transition-transform hover:scale-110 focus:outline-none cursor-pointer shadow-xs"
+              className="p-1 rounded-full bg-black/35 backdrop-blur-xs transition-transform hover:scale-110 focus:outline-none cursor-pointer shadow-xs"
               aria-label={isFavorito ? 'Quitar de favoritos' : 'Guardar en favoritos'}
               title={isFavorito ? 'Quitar de favoritos' : 'Guardar en favoritos'}
             >
               <Heart
-                className={`w-4.5 h-4.5 transition-colors drop-shadow-sm ${
+                className={`w-3.5 h-3.5 transition-colors drop-shadow-sm ${
                   isFavorito
                     ? 'fill-rose-500 text-rose-500'
                     : 'text-white fill-white/20 hover:text-rose-400'

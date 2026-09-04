@@ -145,6 +145,8 @@ function MapController({
     });
   }, [map]);
 
+  const hadDoctorSelectedRef = useRef(false);
+
   // Centrado y zoom según selección de sede específica o encuadre de todas las sedes del médico
   useEffect(() => {
     if (!map) return;
@@ -156,6 +158,7 @@ function MapController({
     }
 
     if (selectedDoctorBuildings && selectedDoctorBuildings.length > 0) {
+      hadDoctorSelectedRef.current = true;
       if (selectedDoctorBuildings.length === 1) {
         map.panTo({ lat: selectedDoctorBuildings[0].lat, lng: selectedDoctorBuildings[0].lng });
         map.setZoom(15);
@@ -167,7 +170,15 @@ function MapController({
       }
       return;
     }
-  }, [map, targetCoords?.lat, targetCoords?.lng, selectedDoctorBuildings]);
+
+    // Si antes había un médico seleccionado y ahora ya no (ej. se cerró la selección para ver el mapa general)
+    if (hadDoctorSelectedRef.current && (!selectedDoctorBuildings || selectedDoctorBuildings.length === 0)) {
+      hadDoctorSelectedRef.current = false;
+      const target = defaultCenterCoords || GUATEMALA_CENTER;
+      map.panTo(target);
+      map.setZoom(13);
+    }
+  }, [map, targetCoords?.lat, targetCoords?.lng, selectedDoctorBuildings, defaultCenterCoords]);
 
   // Manejo de "Cerca de ti" y centrado inicial dentro de Ciudad de Guatemala
   useEffect(() => {
@@ -347,41 +358,6 @@ export function DirectoryMap({
     return Array.from(buildingMap.values());
   }, [doctors]);
 
-  // Edificio más cercano a la ubicación del usuario
-  const closestBuilding = useMemo(() => {
-    if (buildings.length === 0) return null;
-    const refPoint = userLocation || GUATEMALA_CENTER;
-
-    let minDistance = Infinity;
-    let closest = buildings[0];
-
-    for (const b of buildings) {
-      const dist = Math.hypot(b.lat - refPoint.lat, b.lng - refPoint.lng);
-      if (dist < minDistance) {
-        minDistance = dist;
-        closest = b;
-      }
-    }
-    return closest;
-  }, [buildings, userLocation]);
-
-  // Edificio activo o seleccionado
-  const activeBuilding = useMemo(() => {
-    return buildings.find((b) => b.id === activeBuildingId) || null;
-  }, [buildings, activeBuildingId]);
-
-  // Edificio asociado al doctor y clínica seleccionada en la lista lateral
-  const selectedDoctorBuilding = useMemo(() => {
-    if (!selectedDoctorId || selectedClinicIndex === null || selectedClinicIndex === undefined) return null;
-    return (
-      buildings.find((b) =>
-        b.doctors.some(
-          (d) => d.expCodigo === selectedDoctorId && d.clinicIndex === selectedClinicIndex
-        )
-      ) || null
-    );
-  }, [selectedDoctorId, selectedClinicIndex, buildings]);
-
   // Todos los edificios/sedes donde labora el doctor seleccionado
   const selectedDoctorBuildingIds = useMemo(() => {
     if (!selectedDoctorId) return new Set<string>();
@@ -399,6 +375,52 @@ export function DirectoryMap({
     if (!selectedDoctorId) return [];
     return buildings.filter((b) => selectedDoctorBuildingIds.has(b.id));
   }, [selectedDoctorId, selectedDoctorBuildingIds, buildings]);
+
+  // Edificios a mostrar: si hay un médico seleccionado, mostrar únicamente las sedes del médico seleccionado
+  // para que el usuario se concentre en ellas; si no hay médico seleccionado (ej. al presionar "Ver mapa"),
+  // mostrar todos los punteros de las ubicaciones.
+  const displayedBuildings = useMemo(() => {
+    if (selectedDoctorId) {
+      return selectedDoctorBuildings;
+    }
+    return buildings;
+  }, [selectedDoctorId, selectedDoctorBuildings, buildings]);
+
+  // Edificio más cercano a la ubicación del usuario
+  const closestBuilding = useMemo(() => {
+    const list = displayedBuildings.length > 0 ? displayedBuildings : buildings;
+    if (list.length === 0) return null;
+    const refPoint = userLocation || GUATEMALA_CENTER;
+
+    let minDistance = Infinity;
+    let closest = list[0];
+
+    for (const b of list) {
+      const dist = Math.hypot(b.lat - refPoint.lat, b.lng - refPoint.lng);
+      if (dist < minDistance) {
+        minDistance = dist;
+        closest = b;
+      }
+    }
+    return closest;
+  }, [displayedBuildings, buildings, userLocation]);
+
+  // Edificio activo o seleccionado
+  const activeBuilding = useMemo(() => {
+    return displayedBuildings.find((b) => b.id === activeBuildingId) || null;
+  }, [displayedBuildings, activeBuildingId]);
+
+  // Edificio asociado al doctor y clínica seleccionada en la lista lateral
+  const selectedDoctorBuilding = useMemo(() => {
+    if (!selectedDoctorId || selectedClinicIndex === null || selectedClinicIndex === undefined) return null;
+    return (
+      displayedBuildings.find((b) =>
+        b.doctors.some(
+          (d) => d.expCodigo === selectedDoctorId && d.clinicIndex === selectedClinicIndex
+        )
+      ) || null
+    );
+  }, [selectedDoctorId, selectedClinicIndex, displayedBuildings]);
 
   // Notificar al componente padre el edificio activo
   useEffect(() => {
@@ -567,7 +589,7 @@ export function DirectoryMap({
           )}
 
           {/* Pines Consolidados por Edificio / Hospital */}
-          {buildings.map((building) => {
+          {displayedBuildings.map((building) => {
             const hasMultipleDoctors = building.doctors.length > 1;
 
             // Prioridad 1: Hover directo del mouse sobre ESTE pin del mapa
