@@ -4,7 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState, useDeferredValue, useCallback } from 'react';
-import { DirectoryMap } from '@/components/directory-map';
+import { DirectoryMap, type BuildingLocation } from '@/components/directory-map';
 import { useSession } from 'next-auth/react';
 import {
     BadgeCheck,
@@ -423,8 +423,14 @@ function DashboardContent() {
     const [isMapVisible, setIsMapVisible] = useState(false);
     const [hoveredDoctorId, setHoveredDoctorId] = useState<string | null>(null);
     const [selectedDoctorId, setSelectedDoctorId] = useState<string | null>(null);
-    const [selectedClinicIndex, setSelectedClinicIndex] = useState<number>(0);
+    const [selectedClinicIndex, setSelectedClinicIndex] = useState<number | null>(null);
+    const [selectedBuilding, setSelectedBuilding] = useState<BuildingLocation | null>(null);
     const [showMapMobile, setShowMapMobile] = useState(false);
+
+    const selectedBuildingDoctorCodes = useMemo(() => {
+        if (!selectedBuilding) return new Set<string>();
+        return new Set(selectedBuilding.doctors.map((d) => d.expCodigo));
+    }, [selectedBuilding]);
 
     // Estado para ubicación buscada por Google Places / Geocoding
     const [searchedLocation, setSearchedLocation] = useState<{
@@ -602,7 +608,7 @@ function DashboardContent() {
         const nextSelectedId = isCurrentlySelected ? null : data.doctor.exp_codigo;
 
         setSelectedDoctorId(nextSelectedId);
-        setSelectedClinicIndex(0);
+        setSelectedClinicIndex(null);
 
         if (nextSelectedId) {
             if (!isMapVisible) setIsMapVisible(true);
@@ -612,6 +618,7 @@ function DashboardContent() {
                 if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }, 50);
         } else {
+            setSelectedBuilding(null);
             setIsMapVisible(false);
             setShowMapMobile(false);
         }
@@ -619,19 +626,20 @@ function DashboardContent() {
 
     const handleCloseSelectedDoctor = () => {
         setSelectedDoctorId(null);
+        setSelectedBuilding(null);
         setIsMapVisible(false);
         setShowMapMobile(false);
-        setSelectedClinicIndex(0);
+        setSelectedClinicIndex(null);
     };
 
-    const handleDoctorSelectFromMap = (expCodigo: string, clinicIndex = 0) => {
+    const handleDoctorSelectFromMap = (expCodigo: string, clinicIndex?: number | null) => {
         if (!expCodigo) {
             setSelectedDoctorId(null);
-            setSelectedClinicIndex(0);
+            setSelectedClinicIndex(null);
             return;
         }
         setSelectedDoctorId(expCodigo);
-        setSelectedClinicIndex(clinicIndex);
+        setSelectedClinicIndex(typeof clinicIndex === 'number' ? clinicIndex : null);
         if (!isMapVisible) setIsMapVisible(true);
         if (currentPage !== 1) setCurrentPage(1);
         setTimeout(() => {
@@ -2032,6 +2040,8 @@ function DashboardContent() {
                                                 variant={selectedDoctorId === doctor.doctor.exp_codigo ? 'expanded' : 'compact'}
                                                 isHovered={hoveredDoctorId === doctor.doctor.exp_codigo}
                                                 isSelected={selectedDoctorId === doctor.doctor.exp_codigo}
+                                                isHighlightedByLocation={selectedBuildingDoctorCodes.has(doctor.doctor.exp_codigo)}
+                                                highlightedLocationName={selectedBuilding?.name}
                                                 onMouseEnter={() => setHoveredDoctorId(doctor.doctor.exp_codigo)}
                                                 onMouseLeave={() => setHoveredDoctorId(null)}
                                             />
@@ -2117,6 +2127,7 @@ function DashboardContent() {
                                         onDoctorHover={setHoveredDoctorId}
                                         onDoctorSelect={handleDoctorSelectFromMap}
                                         onNavigateToProfile={handleNavigateToProfile}
+                                        onBuildingSelect={(bld) => setSelectedBuilding(bld)}
                                     />
                                 </div>
                             )}

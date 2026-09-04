@@ -56,11 +56,13 @@ type DoctorCardProps = {
   onVisit?: (data: DoctorCardData) => void;
   onSelect?: (data: DoctorCardData) => void;
   onClose?: () => void;
-  onSelectClinic?: (clinicIndex: number) => void;
-  selectedClinicIndex?: number;
+  onSelectClinic?: (clinicIndex: number | null) => void;
+  selectedClinicIndex?: number | null;
   variant?: 'compact' | 'expanded';
   isHovered?: boolean;
   isSelected?: boolean;
+  isHighlightedByLocation?: boolean;
+  highlightedLocationName?: string | null;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
 };
@@ -129,6 +131,8 @@ export function DoctorCard({
   variant = 'compact',
   isHovered = false,
   isSelected = false,
+  isHighlightedByLocation = false,
+  highlightedLocationName,
   onMouseEnter,
   onMouseLeave,
 }: DoctorCardProps) {
@@ -303,7 +307,8 @@ export function DoctorCard({
   // VARIANT 1: EXPANDED (COMPACT, HIGH-DENSITY VIEW FOR SELECTED DOCTOR)
   // ═════════════════════════════════════════════════════════════════════════════════
   if (variant === 'expanded' || isSelected) {
-    const activeClinic: DoctorClinica | undefined = doctor.clinicas?.[selectedClinicIndex] || doctor.clinicas?.[0];
+    const hasSelectedClinic = typeof selectedClinicIndex === 'number' && selectedClinicIndex >= 0 && !!doctor.clinicas?.[selectedClinicIndex];
+    const activeClinic: DoctorClinica | undefined = hasSelectedClinic ? doctor.clinicas?.[selectedClinicIndex] : undefined;
     
     // Coordenadas y enlaces de navegación
     const hasCoords = activeClinic && typeof activeClinic.cli_latitud === 'number' && typeof activeClinic.cli_longitud === 'number';
@@ -518,37 +523,35 @@ export function DoctorCard({
               {/* Sedes de Atención con Botones de Navegación y Ver Horarios en 3 Filas */}
               {doctor.clinicas && doctor.clinicas.length > 0 ? (
                 <div className="bg-sky-50/70 p-3 rounded-2xl border border-sky-200/70 space-y-2.5">
-                  {/* Selector de Sedes si hay más de 1 - Pestañas limpias solo con nombre comercial */}
-                  {doctor.clinicas.length > 1 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {doctor.clinicas.map((cli, idx) => {
-                        const isCliSelected = (selectedClinicIndex === idx);
-                        const name = cli.cli_descripcion || `Sede ${idx + 1}`;
+                  {/* Selector de Sedes de Atención */}
+                  <div className="flex flex-wrap gap-1.5">
+                    {doctor.clinicas.map((cli, idx) => {
+                      const isCliSelected = (selectedClinicIndex === idx);
+                      const name = cli.cli_descripcion || `Sede ${idx + 1}`;
 
-                        return (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSelectClinic?.(idx);
-                            }}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
-                              isCliSelected
-                                ? 'bg-sky-600 text-white shadow-xs'
-                                : 'bg-white text-slate-700 border border-slate-200 hover:bg-sky-50 hover:text-sky-700'
-                            }`}
-                          >
-                            <MapPin className="w-3.5 h-3.5 shrink-0" />
-                            <span>{name}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectClinic?.(isCliSelected ? null : idx);
+                          }}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                            isCliSelected
+                              ? 'bg-sky-600 text-white shadow-xs ring-2 ring-sky-300'
+                              : 'bg-white text-slate-700 border border-slate-200 hover:bg-sky-50 hover:text-sky-700'
+                          }`}
+                        >
+                          <MapPin className="w-3.5 h-3.5 shrink-0" />
+                          <span>{name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
 
                   {/* Tarjeta de la Clínica Activa: 3 Filas Bien Definidas */}
-                  {activeClinic && (
+                  {activeClinic ? (
                     <div className="flex flex-col gap-2 bg-white p-3 rounded-xl border border-sky-100 w-full shadow-2xs">
                       {/* Fila 1: Nombre de la clínica (Izq) + Chip de distancia (Der) */}
                       <div className="flex items-center justify-between gap-2 w-full">
@@ -646,6 +649,11 @@ export function DoctorCard({
                           </div>
                         )}
                       </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl bg-white border border-dashed border-sky-200 text-xs text-sky-800 font-medium text-center">
+                      <MapPin className="w-4 h-4 text-sky-500 shrink-0" />
+                      <span>Selecciona una sede arriba o en el mapa para ver horarios y ubicación</span>
                     </div>
                   )}
                 </div>
@@ -765,7 +773,9 @@ export function DoctorCard({
       className={`doctor-card group flex flex-col h-full bg-white rounded-2xl overflow-hidden transition-all duration-300 border cursor-pointer relative ${
         isHovered
           ? 'shadow-md border-sky-300 ring-2 ring-sky-200/50 -translate-y-0.5'
-          : 'shadow-xs hover:shadow-md hover:-translate-y-0.5 border-slate-100'
+          : isHighlightedByLocation
+            ? 'shadow-md border-sky-400 ring-2 ring-sky-400/20 bg-sky-50/15 -translate-y-0.5'
+            : 'shadow-xs hover:shadow-md hover:-translate-y-0.5 border-slate-100'
       }`}
     >
       {/* Photo Container (Aspect 4/3 Airbnb style) */}
@@ -828,6 +838,14 @@ export function DoctorCard({
       {/* Information Body */}
       <div className="p-4 flex flex-col flex-1 justify-between gap-3 bg-white">
         <div className="space-y-2">
+          {/* Badge minimalista de sede seleccionada en el mapa */}
+          {isHighlightedByLocation && highlightedLocationName && (
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sky-50 border border-sky-200/90 text-sky-800 text-[10.5px] font-bold">
+              <Building2 className="w-3 h-3 text-sky-600 shrink-0" />
+              <span className="truncate max-w-[200px]">{highlightedLocationName}</span>
+            </div>
+          )}
+
           {/* Fila 1: Nombre (Izq) | Calificación (Der) */}
           <div className="flex items-start justify-between gap-2 min-w-0">
             <h3
