@@ -1,4 +1,4 @@
-import Swal, { SweetAlertOptions, SweetAlertResult } from 'sweetalert2';
+import { toast } from 'sonner';
 
 // ─── Web Audio API & Haptic Feedback ─────────────────────────────────────────
 
@@ -90,21 +90,25 @@ export interface ResilientRequestOptions {
   maxRetries?: number;
   /** Tiempo base en ms para backoff exponencial (default: 1500) */
   retryDelayMs?: number;
-  /** Título principal del modal de carga */
+  /** Título principal del proceso */
   progressTitle?: string;
   /** Mensaje inicial mientras se procesa */
   initialMessage?: string;
   /** Lista de mensajes progresivos según el tiempo transcurrido */
   customMessages?: ProgressMessage[];
-  /** Título del modal cuando la solicitud se completa con éxito */
+  /** Título de la notificación de éxito */
   successTitle?: string;
-  /** Mensaje del modal de éxito */
+  /** Mensaje de la notificación de éxito */
   successText?: string;
-  /** Si debe mostrar modal de éxito automático (default: true) */
+  /** Si debe mostrar notificación de éxito (default: true) */
+  showSuccessToast?: boolean;
+  /** Alias retrocompatible para showSuccessToast */
   showSuccessSwal?: boolean;
-  /** Si debe mostrar modal de error automático al fallar (default: true) */
+  /** Si debe mostrar notificación de error al fallar (default: true) */
+  showErrorToast?: boolean;
+  /** Alias retrocompatible para showErrorToast */
   showErrorSwal?: boolean;
-  /** Permite al usuario cancelar la operación desde el modal (default: true) */
+  /** Permite al usuario cancelar la operación (default: true) */
   cancelable?: boolean;
   /** Texto del botón cancelar */
   cancelButtonText?: string;
@@ -134,11 +138,6 @@ const DEFAULT_PROGRESS_MESSAGES: ProgressMessage[] = [
     text: 'Seguimos trabajando en tu solicitud...',
     subtext: 'Gracias por tu paciencia, no cierres esta ventana',
   },
-  {
-    afterMs: 28000,
-    text: 'El servidor está tardando en responder...',
-    subtext: 'Se realizará un reintento automático si es necesario',
-  },
 ];
 
 /**
@@ -147,7 +146,6 @@ const DEFAULT_PROGRESS_MESSAGES: ProgressMessage[] = [
 function isRetryableError(error: any): boolean {
   if (!error) return false;
 
-  // Si fue cancelado por el usuario, no reintentar
   if (error.name === 'AbortError' || error.isCancelled) {
     return false;
   }
@@ -167,11 +165,9 @@ function isRetryableError(error: any): boolean {
   // Status HTTP del backend
   const status = error.status || error.response?.status;
   if (status) {
-    // 500, 502, 503, 504, 408 (Request Timeout), 429 (Too Many Requests - esperar)
     if ([408, 429, 500, 502, 503, 504].includes(status)) {
       return true;
     }
-    // Errores de cliente (400, 401, 403, 404, 409, 422) NO son reintentables
     if (status >= 400 && status < 500) {
       return false;
     }
@@ -193,6 +189,8 @@ export function extractErrorMessage(error: any): string {
     if (data.mensaje) return data.mensaje;
     if (data.message) return data.message;
     if (data.error) return data.error;
+    if (data.title) return data.title;
+    if (data.detail) return data.detail;
   }
 
   if (error.message) {
@@ -254,175 +252,50 @@ export async function resilientRequest<T>(
   throw lastError;
 }
 
-// ─── Wrapper Visual con SweetAlert2 y Mensajes Progresivos ──────────────────
+// ─── Wrapper de Ejecución con Toasts Laterales ───────────────────────────────
 
 /**
- * Ejecuta una petición mostrando un diálogo SweetAlert2 moderno con:
- * - Indicador de carga animado
- * - Mensajes progresivos que cambian automáticamente según el tiempo
- * - Botón opcional de cancelación
- * - Transición fluida a estado de éxito o error con tono auditivo y háptico
+ * Ejecuta una petición mostrando notificaciones laterales profesionales (toasts)
+ * sin interrumpir el flujo innecesariamente con modales de carga o éxito.
  */
-export async function withProgressSwal<T>(
+export async function withProgress<T>(
   requestFn: (signal?: AbortSignal) => Promise<T>,
   options: ResilientRequestOptions = {}
 ): Promise<T> {
   const {
-    progressTitle = 'Procesando tu solicitud',
-    initialMessage = 'Un momento por favor...',
-    customMessages = DEFAULT_PROGRESS_MESSAGES,
     successTitle = '¡Operación Exitosa!',
     successText,
+    showSuccessToast = true,
     showSuccessSwal = true,
+    showErrorToast = true,
     showErrorSwal = true,
-    cancelable = true,
-    cancelButtonText = 'Cancelar espera',
     enableSound = true,
   } = options;
 
-  let isCancelled = false;
-  let intervalId: any = null;
-  const abortController = new AbortController();
-
-  const startTime = Date.now();
-
-  // Función para actualizar el contenido del modal Swal abierto
-  const updateSwalContent = (text: string, subtext?: string) => {
-    const titleElem = Swal.getTitle();
-    const htmlContainer = Swal.getHtmlContainer();
-
-    if (htmlContainer) {
-      htmlContainer.innerHTML = `
-        <div class="flex flex-col items-center justify-center text-center space-y-2.5 py-1">
-          <p class="text-sm font-semibold text-slate-700 dark:text-slate-200 transition-all duration-300">
-            ${text}
-          </p>
-          ${
-            subtext
-              ? `<p class="text-xs text-slate-400 dark:text-slate-400 transition-all duration-300">
-                  ${subtext}
-                </p>`
-              : ''
-          }
-          <div class="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden mt-3">
-            <div class="h-full bg-blue-600 rounded-full animate-pulse w-3/4 mx-auto"></div>
-          </div>
-        </div>
-      `;
-    }
-  };
-
-  // Abrir Swal de carga con spinner y diseño consistente
-  const swalPromise = Swal.fire({
-    title: progressTitle,
-    html: `
-      <div class="flex flex-col items-center justify-center text-center space-y-2.5 py-1">
-        <p class="text-sm font-semibold text-slate-700 dark:text-slate-200">
-          ${initialMessage}
-        </p>
-        <p class="text-xs text-slate-400 dark:text-slate-400">
-          Conectando con el servidor seguro
-        </p>
-        <div class="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden mt-3">
-          <div class="h-full bg-blue-600 rounded-full animate-pulse w-1/2 mx-auto"></div>
-        </div>
-      </div>
-    `,
-    allowOutsideClick: false,
-    allowEscapeKey: false,
-    showConfirmButton: false,
-    showCancelButton: cancelable,
-    cancelButtonText: cancelButtonText,
-    customClass: {
-      popup: 'rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] text-slate-900 dark:text-white max-w-md p-6',
-      title: 'text-lg font-black text-slate-900 dark:text-white tracking-tight',
-      cancelButton: 'rounded-xl font-bold px-5 py-2.5 text-xs text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition active:scale-95 cursor-pointer mt-2',
-    },
-    didOpen: () => {
-      Swal.showLoading(Swal.getCancelButton() as any);
-
-      // Iniciar el temporizador para rotar mensajes según tiempo transcurrido
-      let lastMessageIndex = 0;
-      intervalId = setInterval(() => {
-        const elapsed = Date.now() - startTime;
-        // Encontrar el mensaje más reciente según elapsed
-        for (let i = customMessages.length - 1; i >= 0; i--) {
-          if (elapsed >= customMessages[i].afterMs) {
-            if (lastMessageIndex !== i) {
-              lastMessageIndex = i;
-              updateSwalContent(customMessages[i].text, customMessages[i].subtext);
-            }
-            break;
-          }
-        }
-      }, 1000);
-    },
-  });
-
-  // Manejar si el usuario presiona el botón cancelar
-  swalPromise.then((result: SweetAlertResult) => {
-    if (result.dismiss === Swal.DismissReason.cancel) {
-      isCancelled = true;
-      abortController.abort();
-    }
-  });
+  const shouldShowSuccess = showSuccessToast && showSuccessSwal;
+  const shouldShowError = showErrorToast && showErrorSwal;
 
   try {
-    // Ejecutar la petición con soporte de reintentos
     const result = await resilientRequest(
-      async (signal, attempt) => {
-        if (isCancelled) {
-          const err = new Error('Operación cancelada por el usuario.');
-          (err as any).isCancelled = true;
-          throw err;
-        }
-        return await requestFn(abortController.signal);
+      async (signal) => {
+        return await requestFn(signal);
       },
-      options,
-      (text, subtext) => {
-        updateSwalContent(text, subtext);
-      }
+      options
     );
 
-    clearInterval(intervalId);
-
-    if (isCancelled) {
-      const err = new Error('Operación cancelada por el usuario.');
-      (err as any).isCancelled = true;
-      throw err;
+    if (enableSound) {
+      playSuccessChime();
     }
 
-    // Modal de éxito
-    if (showSuccessSwal) {
-      if (enableSound) {
-        playSuccessChime();
-      }
-
-      await Swal.fire({
-        icon: 'success',
-        title: successTitle,
-        text: successText || 'La solicitud se completó correctamente.',
-        confirmButtonColor: '#2563eb',
-        confirmButtonText: 'Continuar',
-        customClass: {
-          popup: 'rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] text-slate-900 dark:text-white max-w-md p-6',
-          title: 'text-lg font-black text-slate-900 dark:text-white tracking-tight',
-          confirmButton: 'rounded-xl font-bold px-6 py-2.5 text-xs text-white bg-blue-600 hover:bg-blue-700 shadow-md transition active:scale-95 cursor-pointer',
-        },
+    if (shouldShowSuccess) {
+      toast.success(successTitle, {
+        description: successText || 'La solicitud se completó correctamente.',
       });
-    } else {
-      Swal.close();
-      if (enableSound) {
-        playSuccessChime();
-      }
     }
 
     return result;
   } catch (error: any) {
-    clearInterval(intervalId);
-
-    if (error?.isCancelled || isCancelled) {
-      Swal.close();
+    if (error?.isCancelled) {
       throw error;
     }
 
@@ -430,24 +303,18 @@ export async function withProgressSwal<T>(
       playErrorChime();
     }
 
-    if (showErrorSwal) {
+    if (shouldShowError) {
       const errorMsg = extractErrorMessage(error);
-      await Swal.fire({
-        icon: 'error',
-        title: 'No se pudo completar la solicitud',
-        text: errorMsg,
-        confirmButtonColor: '#ef4444',
-        confirmButtonText: 'Entendido',
-        customClass: {
-          popup: 'rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] text-slate-900 dark:text-white max-w-md p-6',
-          title: 'text-lg font-black text-slate-900 dark:text-white tracking-tight',
-          confirmButton: 'rounded-xl font-bold px-6 py-2.5 text-xs text-white bg-rose-600 hover:bg-rose-700 shadow-md transition active:scale-95 cursor-pointer',
-        },
+      toast.error('No se pudo completar la solicitud', {
+        description: errorMsg,
       });
-    } else {
-      Swal.close();
     }
 
     throw error;
   }
 }
+
+/**
+ * Alias retrocompatible para withProgress (reemplazo sin SweetAlert2)
+ */
+export const withProgressSwal = withProgress;

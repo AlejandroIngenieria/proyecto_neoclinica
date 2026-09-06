@@ -1,10 +1,10 @@
 import { useRouter } from 'next/navigation';
-import { useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useModalidades, useClinicas, useAreasDomicilio, useHorarios, useHorasOcupadas, useServiciosMedico, useGruposCita, usePacientesSeleccion } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { usePacienteTitular } from '@/hooks/use-pacientes';
 import { useCitaStore } from '@/store/use-cita-store';
-import { ChevronLeft, Stethoscope, MapPin, Video, Home, ArrowRight, CalendarDays, Clock, Building2, CalendarClock, Check, Sparkles, FolderPlus, Plus, Layers, Info } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Stethoscope, MapPin, Video, Home, ArrowRight, CalendarDays, Clock, Building2, CalendarClock, Check, Sparkles, FolderPlus, Plus, Layers, Info } from 'lucide-react';
 import { DayPicker } from 'react-day-picker';
 import { es } from 'date-fns/locale';
 import { format } from 'date-fns';
@@ -67,11 +67,34 @@ export function Step1Modalidad() {
     return Array.from(map.values());
   }, [grupos]);
 
+  const [currentMonth, setCurrentMonth] = useState<Date>(() => {
+    const today = new Date();
+    if (fecha) {
+      return new Date(fecha.getFullYear(), fecha.getMonth(), 1);
+    }
+    return new Date(today.getFullYear(), today.getMonth(), 1);
+  });
+
+  // Si la fecha seleccionada cambia y es en el pasado, limpiar cualquier hora de agendamiento
+  useEffect(() => {
+    if (fecha) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const f = new Date(fecha);
+      f.setHours(0, 0, 0, 0);
+      if (f < today) {
+        setHora(null);
+      }
+    }
+  }, [fecha, setHora]);
+
   const handleSelectTema = (g: GrupoCitaDto) => {
     const topicTitle = g.titulo || g.descripcion || 'Tema de Seguimiento';
     setTemaSeguimiento(g.grupoId, topicTitle);
     setCreandoNuevoGrupo(false);
     setNuevoGrupoTema('');
+    setFecha(null);
+    setHora(null);
 
     // 1. Automatizar modalidad
     if (g.modalidad && (g.modalidad === 'presencial' || g.modalidad === 'virtual' || g.modalidad === 'domicilio')) {
@@ -107,16 +130,25 @@ export function Step1Modalidad() {
     }
   };
 
-  // Sincronizar servicio médico cuando servicios terminen de cargar si ya hay un tema seleccionado
+  // Sincronizar automáticamente tema seleccionado, servicio, clínica y modalidad
   useEffect(() => {
-    if (grupoId && !servicioSeleccionado && servicios.length > 0) {
-      const g = gruposUnicos.find(item => item.grupoId === grupoId);
-      if (g?.codServicio) {
-        const match = servicios.find(s => s.sypCodigo === g.codServicio);
-        if (match) setServicio(match);
+    if (grupoId && gruposUnicos.length > 0) {
+      const g = gruposUnicos.find(item => String(item.grupoId).toLowerCase() === String(grupoId).toLowerCase());
+      if (g) {
+        if (!modalidad && g.modalidad && (g.modalidad === 'presencial' || g.modalidad === 'virtual' || g.modalidad === 'domicilio')) {
+          setModalidad(g.modalidad as any);
+        }
+        if (!servicioSeleccionado && g.codServicio && servicios.length > 0) {
+          const match = servicios.find(s => s.sypCodigo === g.codServicio);
+          if (match) setServicio(match);
+        }
+        if (!clinicaSeleccionada && g.consultorioId && clinicas.length > 0) {
+          const matchClinica = clinicas.find(c => c.mclCodigo === g.consultorioId || (c as any).cliCodigo === g.consultorioId);
+          if (matchClinica) setClinica(matchClinica);
+        }
       }
     }
-  }, [grupoId, servicioSeleccionado, servicios, gruposUnicos, setServicio]);
+  }, [grupoId, gruposUnicos, modalidad, servicioSeleccionado, servicios, clinicaSeleccionada, clinicas, setModalidad, setServicio, setClinica]);
 
   const mclCodigo = modalidad === 'presencial' ? clinicaSeleccionada?.mclCodigo || null : 0;
   const { data: horariosClinica = [], isLoading: loadingHorarios } = useHorarios(mclCodigo);
@@ -146,38 +178,45 @@ export function Step1Modalidad() {
     return combined;
   }, [modalidad, horariosClinica, doctor]);
 
-  // Citas previas / existentes del tema de seguimiento seleccionado
+  // Citas del tema de seguimiento seleccionado (incluyendo tanto previas como futuras para resaltar en verde)
   const temaCitasList = useMemo(() => {
     if (!grupoId) return [];
     const g = gruposUnicos.find(item => item.grupoId === grupoId);
     if (!g) return [];
 
-    const list: { fechaStr: string; horaStr: string; citaId: string }[] = [];
+    const list: { fechaStr: string; horaStr: string; citaId: string; dateObj: Date; isPast: boolean }[] = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const processCita = (fechaRaw: any, horaRaw: any, citaId: string) => {
+      if (!fechaRaw) return;
+      const fechaStr = String(fechaRaw).split('T')[0];
+      const [year, month, day] = fechaStr.split('-').map(Number);
+      if (isNaN(year) || isNaN(month) || isNaN(day)) return;
+      const dateObj = new Date(year, month - 1, day);
+      dateObj.setHours(0, 0, 0, 0);
+
+      list.push({
+        fechaStr,
+        horaStr: String(horaRaw || '').slice(0, 5),
+        citaId: citaId || '',
+        dateObj,
+        isPast: dateObj < today,
+      });
+    };
+
     if (g.citas && g.citas.length > 0) {
       g.citas.forEach(c => {
-        if (c.fecha) {
-          list.push({
-            fechaStr: String(c.fecha).split('T')[0],
-            horaStr: String(c.hora).slice(0, 5),
-            citaId: c.citaId,
-          });
-        }
+        processCita(c.fecha, c.hora, c.citaId);
       });
     } else if (g.fecha) {
-      list.push({
-        fechaStr: String(g.fecha).split('T')[0],
-        horaStr: String(g.hora || '').slice(0, 5),
-        citaId: g.citaId || '',
-      });
+      processCita(g.fecha, g.hora, g.citaId || '');
     }
     return list;
   }, [grupoId, gruposUnicos]);
 
   const fechasTemaSeguimiento = useMemo(() => {
-    return temaCitasList.map(item => {
-      const [year, month, day] = item.fechaStr.split('-').map(Number);
-      return new Date(year, month - 1, day);
-    });
+    return temaCitasList.map(item => item.dateObj);
   }, [temaCitasList]);
 
   const fechaSelectedStr = fecha ? format(fecha, 'yyyy-MM-dd') : null;
@@ -198,19 +237,64 @@ export function Step1Modalidad() {
     );
   };
 
+  const isPastDateSelected = useMemo(() => {
+    if (!fecha) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const sel = new Date(fecha);
+    sel.setHours(0, 0, 0, 0);
+    return sel < today;
+  }, [fecha]);
+
   const disabledDays = useMemo(() => {
-    if (!horarios.length && !fechasTemaSeguimiento.length) return [{ from: new Date(1900, 1, 1), to: new Date(2100, 1, 1) }];
-    const allowedDays = horarios.map(h => h.horDiaSemana);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const allowedJsDays = new Set<number>();
+    horarios.forEach(h => {
+      if (h.horDiaSemana === 7 || h.horDiaSemana === 0) {
+        allowedJsDays.add(0);
+      } else {
+        allowedJsDays.add(h.horDiaSemana);
+      }
+    });
+
     return [
-      { before: new Date(new Date().setHours(0, 0, 0, 0)) },
-      (date: Date) => !isCitaTemaDate(date) && !allowedDays.includes(date.getDay())
+      (date: Date) => {
+        const d = new Date(date);
+        d.setHours(0, 0, 0, 0);
+
+        // Si es una fecha con cita de este tema (pasada o futura), permitir seleccionarla para inspeccionar su info
+        if (isCitaTemaDate(d)) return false;
+
+        // Si es fecha en el pasado sin cita del tema, está deshabilitada
+        if (d < today) return true;
+
+        // Si el doctor no tiene horarios configurados
+        if (!horarios.length) return true;
+
+        // Si no atiende este día de la semana
+        return !allowedJsDays.has(d.getDay());
+      }
     ];
-  }, [horarios, fechasTemaSeguimiento]);
+  }, [horarios, fechasTemaSeguimiento, isCitaTemaDate]);
 
   const availableTimeSlots = useMemo(() => {
-    if (!fecha) return [];
+    if (!fecha || isPastDateSelected) return [];
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const selectedDate = new Date(fecha);
+    selectedDate.setHours(0, 0, 0, 0);
+
+    // Fechas pasadas no tienen horarios de agendamiento disponibles
+    if (selectedDate < today) return [];
+
     const dayOfWeek = fecha.getDay();
-    const horariosDia = horarios.filter(h => h.horDiaSemana === dayOfWeek);
+    const horariosDia = horarios.filter(h => {
+      if (dayOfWeek === 0) return h.horDiaSemana === 0 || h.horDiaSemana === 7;
+      return h.horDiaSemana === dayOfWeek;
+    });
 
     const slots = new Set<string>();
 
@@ -224,7 +308,7 @@ export function Step1Modalidad() {
       }
     });
 
-    // Añadir siempre las horas de citas de este tema para esta fecha
+    // Añadir las horas de citas de este tema para esta fecha (para mostrarlas como ya reservadas)
     horasTemaEnFecha.forEach(h => {
       slots.add(h);
     });
@@ -251,7 +335,7 @@ export function Step1Modalidad() {
         isTemaSlot,
       };
     });
-  }, [fecha, horarios, horasOcupadas, horasTemaEnFecha]);
+  }, [fecha, isPastDateSelected, horarios, horasOcupadas, horasTemaEnFecha]);
 
   useEffect(() => {
     if (!modalidad && modalidades.length > 0) {
@@ -281,7 +365,8 @@ export function Step1Modalidad() {
     (modalidad === 'presencial' && clinicaSeleccionada) ||
     (modalidad === 'domicilio' && areaDomicilio);
 
-  const isComplete = isScheduleEnabled && fecha && hora;
+  const isDateValidForBooking = !!(fecha && !isPastDateSelected);
+  const isComplete = isScheduleEnabled && isDateValidForBooking && !!hora;
 
   return (
     <div className="flex flex-col w-full font-sans pb-4">
@@ -690,10 +775,55 @@ export function Step1Modalidad() {
               <div className="flex-1 flex flex-col space-y-4 min-w-0 max-w-full overflow-x-auto">
                 <h3 className={`text-lg font-bold text-slate-900 dark:text-white ${modalidad === 'virtual' ? 'text-center md:text-left md:pl-10 lg:pl-20' : ''}`}>Fecha</h3>
                 <div className={`flex flex-col ${modalidad === 'virtual' ? 'items-center md:items-start md:pl-10 lg:pl-20' : 'items-center sm:items-start'}`}>
+                  {/* Robust Direct Calendar Month Navigation Header */}
+                  <div className="w-full max-w-[280px] sm:max-w-[320px] flex items-center justify-between mb-2 px-1">
+                    <span className="text-base font-bold capitalize text-slate-900 dark:text-white">
+                      {format(currentMonth, 'MMMM yyyy', { locale: es })}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+                        }}
+                        className="h-8 w-8 flex items-center justify-center bg-white dark:bg-[#1E293B] shadow-sm border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 p-1 rounded-full transition-colors text-slate-600 dark:text-slate-400 cursor-pointer"
+                        title="Mes anterior"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+                        }}
+                        className="h-8 w-8 flex items-center justify-center bg-white dark:bg-[#1E293B] shadow-sm border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 p-1 rounded-full transition-colors text-slate-600 dark:text-slate-400 cursor-pointer"
+                        title="Siguiente mes"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+
                   <DayPicker
                     mode="single"
+                    month={currentMonth}
+                    onMonthChange={setCurrentMonth}
+                    startMonth={new Date(2024, 0, 1)}
+                    endMonth={new Date(2028, 11, 31)}
                     selected={fecha || undefined}
-                    onSelect={(d) => setFecha(d || null)}
+                    onSelect={(d) => {
+                      if (!d) {
+                        setFecha(null);
+                        setHora(null);
+                        return;
+                      }
+                      setFecha(d);
+                      setHora(null);
+                    }}
                     locale={es}
                     disabled={disabledDays}
                     modifiers={{
@@ -706,11 +836,11 @@ export function Step1Modalidad() {
                     }}
                     classNames={{
                       day: 'p-0 text-[14px] sm:text-[15px] dark:text-slate-200',
-                      day_button: 'h-9 w-9 sm:h-11 sm:w-11 font-medium hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-xl transition-all mx-auto flex items-center justify-center',
-                      month_caption: 'flex justify-between pt-1 relative items-center mb-5 px-3',
-                      caption_label: 'text-base font-bold capitalize text-slate-900 dark:text-white',
-                      button_previous: 'h-8 w-8 flex items-center justify-center bg-white dark:bg-[#1E293B] shadow-sm border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 p-1 rounded-full transition-colors text-slate-600 dark:text-slate-400',
-                      button_next: 'h-8 w-8 flex items-center justify-center bg-white dark:bg-[#1E293B] shadow-sm border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 p-1 rounded-full transition-colors text-slate-600 dark:text-slate-400',
+                      day_button: 'h-9 w-9 sm:h-11 sm:w-11 font-medium hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-xl transition-all mx-auto flex items-center justify-center cursor-pointer',
+                      month_caption: 'hidden',
+                      nav: 'hidden',
+                      button_previous: 'hidden',
+                      button_next: 'hidden',
                       month_grid: 'w-full border-collapse',
                       weekday: 'text-slate-400 dark:text-slate-500 font-medium text-xs sm:text-sm capitalize w-9 h-9 sm:w-11 sm:h-11',
                     }}
@@ -719,7 +849,7 @@ export function Step1Modalidad() {
                   {fechasTemaSeguimiento.length > 0 && (
                     <div className="mt-3 flex items-center gap-2 text-xs font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-50/90 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/70 px-3 py-2 rounded-xl max-w-xs shadow-2xs">
                       <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
-                      <span>Días en verde: Citas programadas de este tema de seguimiento</span>
+                      <span>Días en verde: Citas del tema de seguimiento</span>
                     </div>
                   )}
                 </div>
@@ -731,81 +861,107 @@ export function Step1Modalidad() {
                   <h3 className="text-lg font-bold text-slate-900 dark:text-white">Horarios Disponibles</h3>
                 </div>
 
-                {/* Banner si la fecha tiene una cita agendada de este tema */}
-                {horasTemaEnFecha.length > 0 && (
-                  <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-900 dark:text-emerald-200 flex items-start gap-2.5 shadow-2xs">
-                    <FolderPlus className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-bold">Cita de este tema ya agendada en esta fecha:</p>
-                      <p className="text-[11px] text-emerald-700 dark:text-emerald-300 mt-0.5">
-                        Horario reservado: <strong>{horasTemaEnFecha.join(', ')}</strong>. Este horario se encuentra bloqueado para evitar duplicados.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
                 {fecha ? (
-                  availableTimeSlots.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 h-[320px] overflow-y-auto pr-2 custom-scrollbar content-start">
-                      {availableTimeSlots.map(({ time: slot, disabled, isTemaSlot }) => {
-                        const isSelected = hora === slot;
-
-                        // Format to 12h AM/PM
-                        const [h, m] = slot.split(':');
-                        let hourNum = parseInt(h);
-                        const ampm = hourNum >= 12 ? 'PM' : 'AM';
-                        hourNum = hourNum % 12;
-                        hourNum = hourNum ? hourNum : 12;
-                        const displayTime = `${hourNum}:${m} ${ampm}`;
-
-                        if (isTemaSlot) {
-                          return (
-                            <div
-                              key={slot}
-                              className="py-2.5 px-3 sm:px-4 border-2 border-emerald-500/80 bg-emerald-50/90 dark:bg-emerald-950/60 dark:border-emerald-600 rounded-xl text-left text-xs sm:text-sm font-bold text-emerald-900 dark:text-emerald-200 opacity-90 cursor-not-allowed shadow-xs flex flex-col justify-between"
-                              title="Este horario ya está agendado para este tema de seguimiento"
-                            >
-                              <div className="flex items-center justify-between gap-1">
-                                <span>{displayTime}</span>
-                                <span className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase tracking-wider bg-emerald-600 text-white px-1.5 py-0.5 rounded-md">
-                                  <Check className="w-2.5 h-2.5 stroke-[3]" /> Agendada
-                                </span>
-                              </div>
-                              <span className="text-[10px] font-medium text-emerald-700 dark:text-emerald-400 mt-0.5">
-                                Cita de este seguimiento
-                              </span>
-                            </div>
-                          );
-                        }
-
-                        return (
-                          <label key={slot} className={`block shrink-0 ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`} title={disabled ? "Horario no disponible" : ""}>
-                            <input
-                              type="radio"
-                              name="time"
-                              value={slot}
-                              checked={isSelected}
-                              onChange={() => !disabled && setHora(slot)}
-                              disabled={disabled}
-                              className="peer sr-only"
-                            />
-                            <div className={`py-3 px-3 sm:px-4 border rounded-xl text-left text-xs sm:text-sm font-semibold transition-all ${isSelected
-                              ? 'border-blue-600/50 bg-blue-50/70 dark:bg-blue-900/30 dark:border-blue-500/50 text-slate-900 dark:text-white shadow-sm'
-                              : disabled
-                                ? 'border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-[#0B1120] text-slate-400 dark:text-slate-600'
-                                : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                              }`}>
-                              {displayTime}
-                            </div>
-                          </label>
-                        );
-                      })}
+                  isPastDateSelected ? (
+                    <div className="flex flex-col gap-3 p-4 rounded-2xl bg-amber-50/80 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-800/80 text-amber-900 dark:text-amber-200 shadow-2xs">
+                      <div className="flex items-center gap-2 font-bold text-sm text-amber-900 dark:text-amber-200">
+                        <FolderPlus className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
+                        <span>Historial: Cita previa del tema de seguimiento</span>
+                      </div>
+                      <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                        Esta fecha ({format(fecha, "dd 'de' MMMM, yyyy", { locale: es })}) corresponde a una cita previa del tema <strong>{grupoNombre || 'Tema de Seguimiento'}</strong>.
+                      </p>
+                      {horasTemaEnFecha.length > 0 && (
+                        <div className="p-3 bg-white dark:bg-[#0F172A] rounded-xl border border-amber-200 dark:border-amber-800 flex items-center justify-between text-xs">
+                          <span className="font-semibold text-slate-600 dark:text-slate-300">Horario de consulta:</span>
+                          <span className="font-black text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/60 px-2.5 py-1 rounded-lg">
+                            {horasTemaEnFecha.join(', ')} · Realizada
+                          </span>
+                        </div>
+                      )}
+                      <div className="p-3 rounded-xl bg-amber-100/70 dark:bg-amber-900/30 text-xs font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                        <Info className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                        <span>No es posible agendar en fechas pasadas. Selecciona una fecha futura para agendar tu próxima cita.</span>
+                      </div>
                     </div>
                   ) : (
-                    <div className="text-sm text-slate-500 dark:text-slate-400 mt-2 flex flex-col items-center justify-center h-[200px] bg-slate-50 dark:bg-[#0F172A] rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
-                      <Clock className="h-6 w-6 text-slate-300 dark:text-slate-600 mb-2" />
-                      No hay horarios para esta fecha.
-                    </div>
+                    <>
+                      {/* Banner si la fecha futura tiene una cita agendada de este tema */}
+                      {horasTemaEnFecha.length > 0 && (
+                        <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-900 dark:text-emerald-200 flex items-start gap-2.5 shadow-2xs">
+                          <FolderPlus className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="font-bold">Cita de este tema ya agendada en esta fecha:</p>
+                            <p className="text-[11px] text-emerald-700 dark:text-emerald-300 mt-0.5">
+                              Horario reservado: <strong>{horasTemaEnFecha.join(', ')}</strong>. Este horario se encuentra bloqueado para evitar duplicados.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {availableTimeSlots.length > 0 ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 h-[320px] overflow-y-auto pr-2 custom-scrollbar content-start">
+                          {availableTimeSlots.map(({ time: slot, disabled, isTemaSlot }) => {
+                            const isSelected = hora === slot;
+
+                            // Format to 12h AM/PM
+                            const [h, m] = slot.split(':');
+                            let hourNum = parseInt(h);
+                            const ampm = hourNum >= 12 ? 'PM' : 'AM';
+                            hourNum = hourNum % 12;
+                            hourNum = hourNum ? hourNum : 12;
+                            const displayTime = `${hourNum}:${m} ${ampm}`;
+
+                            if (isTemaSlot) {
+                              return (
+                                <div
+                                  key={slot}
+                                  className="py-2.5 px-3 sm:px-4 border-2 border-emerald-500/80 bg-emerald-50/90 dark:bg-emerald-950/60 dark:border-emerald-600 rounded-xl text-left text-xs sm:text-sm font-bold text-emerald-900 dark:text-emerald-200 opacity-90 cursor-not-allowed shadow-xs flex flex-col justify-between"
+                                  title="Este horario ya está agendado para este tema de seguimiento"
+                                >
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span>{displayTime}</span>
+                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase tracking-wider bg-emerald-600 text-white px-1.5 py-0.5 rounded-md">
+                                      <Check className="w-2.5 h-2.5 stroke-[3]" /> Agendada
+                                    </span>
+                                  </div>
+                                  <span className="text-[10px] font-medium text-emerald-700 dark:text-emerald-400 mt-0.5">
+                                    Cita de este seguimiento
+                                  </span>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <label key={slot} className={`block shrink-0 ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`} title={disabled ? "Horario no disponible" : ""}>
+                                <input
+                                  type="radio"
+                                  name="time"
+                                  value={slot}
+                                  checked={isSelected}
+                                  onChange={() => !disabled && setHora(slot)}
+                                  disabled={disabled}
+                                  className="peer sr-only"
+                                />
+                                <div className={`py-3 px-3 sm:px-4 border rounded-xl text-left text-xs sm:text-sm font-semibold transition-all ${isSelected
+                                  ? 'border-blue-600/50 bg-blue-50/70 dark:bg-blue-900/30 dark:border-blue-500/50 text-slate-900 dark:text-white shadow-sm'
+                                  : disabled
+                                    ? 'border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-[#0B1120] text-slate-400 dark:text-slate-600'
+                                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                                  }`}>
+                                  {displayTime}
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-slate-500 dark:text-slate-400 mt-2 flex flex-col items-center justify-center h-[200px] bg-slate-50 dark:bg-[#0F172A] rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+                          <Clock className="h-6 w-6 text-slate-300 dark:text-slate-600 mb-2" />
+                          No hay horarios para esta fecha.
+                        </div>
+                      )}
+                    </>
                   )
                 ) : (
                   <div className="text-sm text-slate-500 dark:text-slate-400 mt-2 flex flex-col items-center justify-center h-[200px] bg-slate-50 dark:bg-[#0F172A] rounded-xl border border-dashed border-slate-200 dark:border-slate-700">

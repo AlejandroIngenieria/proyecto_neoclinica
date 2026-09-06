@@ -31,8 +31,7 @@ import {
   Clock,
   History,
 } from 'lucide-react';
-import Swal from 'sweetalert2';
-import { withProgressSwal } from '@/lib/request-handler';
+import { toast } from 'sonner';
 
 import { NeoLoader } from '@/components/neo-loader';
 import { DocumentDropzone } from '@/components/document-dropzone';
@@ -628,79 +627,23 @@ function IndependizarModal({
 
   const onSubmit = async (data: { nuevoCorreo: string }) => {
     try {
-      // Confirmación con SweetAlert2 y advertencia clara de implicaciones
-      const confirmResult = await Swal.fire({
-        title: '¿Confirmar Independización?',
-        html: `
-          <div style="text-align: left; font-size: 13px; line-height: 1.5; color: #475569;">
-            <p style="margin-bottom: 10px;">Estás a punto de convertir a <strong>${pacienteName}</strong> en un usuario titular independiente.</p>
-            <div style="background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 12px; padding: 12px; color: #92400e; font-size: 12px;">
-              <p style="font-weight: bold; margin-bottom: 6px;">Implicaciones de esta acción:</p>
-              <ul style="list-style-type: disc; padding-left: 16px; margin: 0; display: flex; flex-direction: column; gap: 4px;">
-                <li>Se creará una cuenta titular asociada a <strong>${data.nuevoCorreo}</strong>.</li>
-                <li>Se enviará un correo con credenciales temporales de acceso.</li>
-                <li>${conservarHistorial ? '<strong>Se trasladará</strong> todo su historial médico, citas y recetas a su nueva cuenta.' : '<strong>NO se trasladará</strong> el historial de citas previas.'}</li>
-                <li>El paciente quedará registrado en tu perfil como cuenta independiente (histórico).</li>
-                <li>Ya no podrás agendar citas en su nombre desde tu perfil titular.</li>
-              </ul>
-            </div>
-          </div>
-        `,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: 'Sí, independizar paciente',
-        cancelButtonText: 'Cancelar',
-        confirmButtonColor: '#2563eb',
-        cancelButtonColor: '#64748b',
-        customClass: {
-          popup: 'rounded-3xl',
-          confirmButton: 'rounded-xl px-5 py-2.5 font-bold',
-          cancelButton: 'rounded-xl px-5 py-2.5 font-semibold',
-        },
+      await independizarMutation.mutateAsync({
+        pacCodigo: paciente.pac_codigo,
+        nuevoCorreo: data.nuevoCorreo,
+        conservarHistorial,
       });
 
-      if (!confirmResult.isConfirmed) return;
-
-      await withProgressSwal(
-        async () => {
-          return await independizarMutation.mutateAsync({
-            pacCodigo: paciente.pac_codigo,
-            nuevoCorreo: data.nuevoCorreo,
-            conservarHistorial,
-          });
-        },
-        {
-          progressTitle: 'Independizando Cuenta',
-          initialMessage: `Creando cuenta titular para ${pacienteName}...`,
-          customMessages: [
-            {
-              afterMs: 0,
-              text: `Creando usuario independiente para ${pacienteName}...`,
-              subtext: 'Configurando credenciales de acceso iniciales',
-            },
-            {
-              afterMs: 4000,
-              text: 'Migrando historial médico y recetas...',
-              subtext: 'Transfiriendo citas y documentos clínicos',
-            },
-            {
-              afterMs: 10000,
-              text: 'Enviando correo con credenciales de acceso...',
-              subtext: 'Un momento por favor',
-            },
-          ],
-          successTitle: '¡Cuenta Independizada con Éxito!',
-          successText: `El paciente ${pacienteName} se ha independizado correctamente. Se ha enviado un correo con las credenciales temporales a ${data.nuevoCorreo}.`,
-          showSuccessSwal: true,
-          cancelable: false,
-        }
-      );
+      toast.success('¡Cuenta Independizada con Éxito!', {
+        description: `El paciente ${pacienteName} se ha independizado correctamente. Se ha enviado un correo con las credenciales temporales a ${data.nuevoCorreo}.`,
+      });
 
       reset();
       setConservarHistorial(true);
       onClose();
-    } catch {
-      // Error ya manejado por withProgressSwal
+    } catch (err: any) {
+      toast.error('Error al independizar cuenta', {
+        description: err?.message || 'Hubo un problema al procesar la solicitud.',
+      });
     }
   };
 

@@ -7,9 +7,9 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Eye, EyeOff, Loader2, CheckCircle2, Circle, ArrowRight, ArrowLeft, Calendar } from 'lucide-react';
-import Swal from 'sweetalert2';
+import { toast } from 'sonner';
 import { registerSchema, type RegisterFormValues } from '../../../lib/validations/auth';
-import { withProgressSwal } from '@/lib/request-handler';
+import { withProgress } from '@/lib/request-handler';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -72,7 +72,7 @@ export default function RegisterPage() {
 
   const onSubmit = async (values: RegisterFormValues) => {
     try {
-      await withProgressSwal(
+      await withProgress(
         async () => {
           const response = await fetch('/api/autenticacion/registrar-paciente', {
             method: 'POST',
@@ -110,38 +110,15 @@ export default function RegisterPage() {
         {
           progressTitle: 'Creando tu Cuenta',
           initialMessage: 'Registrando tus datos como paciente...',
-          customMessages: [
-            {
-              afterMs: 0,
-              text: 'Registrando tus datos...',
-              subtext: 'Creando tu expediente y credenciales seguras',
-            },
-            {
-              afterMs: 4000,
-              text: 'Generando tu expediente médico...',
-              subtext: 'Configurando tu perfil y programa de beneficios',
-            },
-            {
-              afterMs: 12000,
-              text: 'Finalizando la creación de tu cuenta...',
-              subtext: 'Un momento por favor, no cierres la ventana',
-            },
-            {
-              afterMs: 22000,
-              text: 'El servidor está completando la configuración...',
-              subtext: 'Gracias por tu paciencia',
-            },
-          ],
           successTitle: '¡Registro Exitoso!',
           successText: 'Tu cuenta de paciente ha sido creada correctamente. Ahora puedes iniciar sesión.',
-          showSuccessSwal: true,
-          cancelable: false,
         }
       );
 
+      toast.success('¡Registro Exitoso! Tu cuenta de paciente ha sido creada correctamente.');
       router.replace('/login');
-    } catch {
-      // Error ya manejado por withProgressSwal
+    } catch (e: any) {
+      toast.error(e?.message || 'Error al crear la cuenta de paciente');
     }
   };
 

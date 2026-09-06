@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
       const contentType = response.headers.get('content-type') ?? '';
       if (contentType.includes('application/json')) {
         const backendData = await response.json();
-        if (Array.isArray(backendData) && backendData.length > 0) {
+        if (Array.isArray(backendData)) {
           return NextResponse.json(backendData, { status: 200 });
         }
       }
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
     // Backend inalcanzable, usar almacenamiento híbrido
   }
 
-  // Fallback a almacenamiento local en memoria
+  // Fallback a almacenamiento local en memoria solo si el backend está inalcanzable
   const localNotifs = getMemoryNotifications(soloNoLeidas);
   return NextResponse.json(localNotifs, { status: 200 });
 }

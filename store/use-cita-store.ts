@@ -36,6 +36,8 @@ interface CitaState {
   billeteraItemId: string | null;
   
   recompensaSeleccionada: RecompensaAdquirida | null;
+  citaConfirmada: boolean;
+  setCitaConfirmada: (val: boolean) => void;
 
   // Acciones
   setStep: (step: CitaStep) => void;
@@ -98,11 +100,14 @@ const initialState = {
   tipoPagoId: null,
   billeteraItemId: null,
   recompensaSeleccionada: null,
+  citaConfirmada: false,
 };
 
 export const useCitaStore = create<CitaState>((set, get) => ({
   ...initialState,
   
+  setCitaConfirmada: (val) => set({ citaConfirmada: val }),
+
   setStep: (step) => {
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, left: 0, behavior: 'instant' });

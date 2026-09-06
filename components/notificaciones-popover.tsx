@@ -285,11 +285,22 @@ export function NotificacionesPopover() {
               )}
             </div>
 
-            {/* Footer */}
-            <div className="p-3 border-t border-outline-variant/15 dark:border-slate-800 bg-surface-container-lowest/80 dark:bg-slate-900/80 flex items-center justify-between">
-              <span className="text-[10px] font-semibold text-outline dark:text-slate-400">
-                NeoClínica Hub
+            {/* Footer con Enlace al Centro de Notificaciones */}
+            <div className="p-3 border-t border-outline-variant/15 dark:border-slate-800 bg-surface-container-lowest/80 dark:bg-slate-900/80 flex items-center justify-between gap-2">
+              <span className="text-[11px] font-semibold text-outline dark:text-slate-400">
+                NeoClínica Live
               </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  router.push('/dashboard/notificaciones');
+                }}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-sky-600 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300 hover:underline transition cursor-pointer"
+              >
+                <span>Centro de Notificaciones</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
             </div>
           </motion.div>
         )}

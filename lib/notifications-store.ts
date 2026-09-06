@@ -26,7 +26,7 @@ export function addMemoryNotification(req: Partial<CrearNotificacionRequest>): N
 }
 
 export function markMemoryNotificationAsRead(notCodigo: string): boolean {
-  if (notCodigo === 'all' || notCodigo === 'todas') {
+  if (notCodigo === 'all' || notCodigo === 'todas' || notCodigo === 'leer-todas') {
     memoryNotifications.forEach((n) => (n.leida = true));
     return true;
   }
@@ -37,3 +37,23 @@ export function markMemoryNotificationAsRead(notCodigo: string): boolean {
   }
   return false;
 }
+
+export function deleteMemoryNotification(notCodigo: string): boolean {
+  const idx = memoryNotifications.findIndex((n) => n.notCodigo === notCodigo);
+  if (idx !== -1) {
+    memoryNotifications.splice(idx, 1);
+    return true;
+  }
+  return false;
+}
+
+export function clearMemoryNotifications(soloLeidas?: boolean): void {
+  if (soloLeidas) {
+    const unread = memoryNotifications.filter((n) => !n.leida);
+    memoryNotifications.length = 0;
+    memoryNotifications.push(...unread);
+  } else {
+    memoryNotifications.length = 0;
+  }
+}
+

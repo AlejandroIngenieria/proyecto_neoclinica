@@ -4,7 +4,7 @@ import { useEffect, use } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Check } from 'lucide-react';
 import { useDoctors } from '@/hooks/use-doctors';
-import { useServiciosMedico } from '@/hooks/use-flujo-citas';
+import { useServiciosMedico, usePacientesSeleccion } from '@/hooks/use-flujo-citas';
 import { useCitaStore } from '@/store/use-cita-store';
 import { Step1Modalidad } from '@/components/citas-wizard/Step1Modalidad';
 import { Step2PacienteMotivo } from '@/components/citas-wizard/Step2PacienteMotivo';
@@ -19,17 +19,49 @@ export default function AgendarCitaPage({ params }: { params: Promise<{ codMedic
   const searchParams = useSearchParams();
   const paramMotivo = searchParams.get('motivo');
   const paramSypCodigo = searchParams.get('sypCodigo');
+  const paramGrupoId = searchParams.get('grupoId');
+  const paramTema = searchParams.get('tema') || searchParams.get('grupoTema');
+  const paramModalidad = searchParams.get('modalidad');
+  const paramPacCodigo = searchParams.get('pacCodigo') || searchParams.get('pacienteId');
 
   const { codMedico } = use(params);
   const { data: doctors = [], isLoading: isLoadingDoctors } = useDoctors();
   const { data: servicios = [] } = useServiciosMedico(codMedico);
+  const { data: pacientes = [] } = usePacientesSeleccion();
   
-  const { step, setStep, setMedico, setServicio, setMotivo, reset } = useCitaStore();
+  const { 
+    step, setStep, setMedico, setServicio, setMotivo, 
+    setTemaSeguimiento, setModalidad, setPaciente, reset 
+  } = useCitaStore();
 
   // Inicializar estado del wizard
   useEffect(() => {
     reset();
   }, [reset]);
+
+  // Pre-seleccionar tema de seguimiento si viene en los parámetros
+  useEffect(() => {
+    if (paramGrupoId) {
+      setTemaSeguimiento(paramGrupoId, paramTema || null);
+    }
+  }, [paramGrupoId, paramTema, setTemaSeguimiento]);
+
+  // Pre-seleccionar modalidad si viene en los parámetros
+  useEffect(() => {
+    if (paramModalidad && (paramModalidad === 'presencial' || paramModalidad === 'virtual' || paramModalidad === 'domicilio')) {
+      setModalidad(paramModalidad as any);
+    }
+  }, [paramModalidad, setModalidad]);
+
+  // Pre-seleccionar paciente si viene en los parámetros
+  useEffect(() => {
+    if (paramPacCodigo && pacientes.length > 0) {
+      const matchPac = pacientes.find(p => p.pacCodigo === paramPacCodigo);
+      if (matchPac) {
+        setPaciente(matchPac);
+      }
+    }
+  }, [paramPacCodigo, pacientes, setPaciente]);
 
   // Posicionar siempre hasta arriba de la página cada vez que cambie de paso
   useEffect(() => {

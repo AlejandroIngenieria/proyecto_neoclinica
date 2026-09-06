@@ -6,7 +6,11 @@ import { toast } from 'sonner';
 import {
   fetchNotificaciones,
   marcarNotificacionLeida,
+  marcarTodasNotificacionesLeidas,
+  eliminarNotificacion,
+  limpiarNotificaciones,
   crearNotificacion,
+  generarNotificacionesEjemplo,
 } from '@/services/notificaciones';
 import type { NotificacionDto, CrearNotificacionRequest } from '@/types';
 
@@ -130,13 +134,9 @@ export function useMarcarNotificacionLeida() {
   return useMutation({
     mutationFn: (notCodigo: string) => marcarNotificacionLeida(token!, notCodigo),
     onMutate: async (notCodigo) => {
-      // Cancelar consultas salientes
       await queryClient.cancelQueries({ queryKey: ['notificaciones'] });
-
-      // Guardar snapshot previo para rollback si falla
       const previousData = queryClient.getQueriesData<NotificacionDto[]>({ queryKey: ['notificaciones'] });
 
-      // Actualización optimista del estado local
       queryClient.setQueriesData<NotificacionDto[]>(
         { queryKey: ['notificaciones'] },
         (old) => {
@@ -163,6 +163,127 @@ export function useMarcarNotificacionLeida() {
 }
 
 /**
+ * Hook para marcar todas las notificaciones como leídas (PUT /api/Notificaciones/leer-todas).
+ */
+export function useMarcarTodasNotificacionesLeidas() {
+  const { token } = useAuthToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => marcarTodasNotificacionesLeidas(token!),
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['notificaciones'] });
+      const previousData = queryClient.getQueriesData<NotificacionDto[]>({ queryKey: ['notificaciones'] });
+
+      queryClient.setQueriesData<NotificacionDto[]>(
+        { queryKey: ['notificaciones'] },
+        (old) => {
+          if (!old) return [];
+          return old.map((item) => ({ ...item, leida: true }));
+        }
+      );
+
+      return { previousData };
+    },
+    onSuccess: (res) => {
+      toast.success(res?.mensaje || 'Todas las notificaciones marcadas como leídas');
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousData) {
+        context.previousData.forEach(([queryKey, data]) => {
+          queryClient.setQueryData(queryKey, data);
+        });
+      }
+      toast.error('No se pudieron marcar todas las notificaciones como leídas');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['notificaciones'] });
+    },
+  });
+}
+
+/**
+ * Hook para eliminar una notificación individual (DELETE /api/Notificaciones/{notCodigo}).
+ */
+export function useEliminarNotificacion() {
+  const { token } = useAuthToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (notCodigo: string) => eliminarNotificacion(token!, notCodigo),
+    onMutate: async (notCodigo) => {
+      await queryClient.cancelQueries({ queryKey: ['notificaciones'] });
+      const previousData = queryClient.getQueriesData<NotificacionDto[]>({ queryKey: ['notificaciones'] });
+
+      queryClient.setQueriesData<NotificacionDto[]>(
+        { queryKey: ['notificaciones'] },
+        (old) => {
+          if (!old) return [];
+          return old.filter((item) => item.notCodigo !== notCodigo);
+        }
+      );
+
+      return { previousData };
+    },
+    onSuccess: () => {
+      toast.success('Notificación eliminada');
+    },
+    onError: (_err, _notCodigo, context) => {
+      if (context?.previousData) {
+        context.previousData.forEach(([queryKey, data]) => {
+          queryClient.setQueryData(queryKey, data);
+        });
+      }
+      toast.error('No se pudo eliminar la notificación');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['notificaciones'] });
+    },
+  });
+}
+
+/**
+ * Hook para limpiar notificaciones (DELETE /api/Notificaciones/limpiar).
+ */
+export function useLimpiarNotificaciones() {
+  const { token } = useAuthToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (soloLeidas?: boolean) => limpiarNotificaciones(token!, soloLeidas),
+    onMutate: async (soloLeidas) => {
+      await queryClient.cancelQueries({ queryKey: ['notificaciones'] });
+      const previousData = queryClient.getQueriesData<NotificacionDto[]>({ queryKey: ['notificaciones'] });
+
+      queryClient.setQueriesData<NotificacionDto[]>(
+        { queryKey: ['notificaciones'] },
+        (old) => {
+          if (!old) return [];
+          if (soloLeidas) return old.filter((item) => !item.leida);
+          return [];
+        }
+      );
+
+      return { previousData };
+    },
+    onSuccess: (res) => {
+      toast.success(res?.mensaje || 'Notificaciones limpiadas');
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousData) {
+        context.previousData.forEach(([queryKey, data]) => {
+          queryClient.setQueryData(queryKey, data);
+        });
+      }
+      toast.error('No se pudieron limpiar las notificaciones');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['notificaciones'] });
+    },
+  });
+}
+
+/**
  * Hook para crear una notificación manualmente (POST /api/Notificaciones).
  */
 export function useCrearNotificacion() {
@@ -177,6 +298,25 @@ export function useCrearNotificacion() {
     },
     onError: (err: any) => {
       toast.error(err?.response?.data?.message || 'Error al crear la notificación');
+    },
+  });
+}
+
+/**
+ * Hook para generar alertas de prueba / ejemplo en todas las categorías.
+ */
+export function useGenerarNotificacionesEjemplo() {
+  const { token } = useAuthToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => generarNotificacionesEjemplo(token!),
+    onSuccess: (res) => {
+      toast.success(res?.mensaje || 'Notificaciones de ejemplo generadas');
+      queryClient.invalidateQueries({ queryKey: ['notificaciones'] });
+    },
+    onError: () => {
+      toast.error('No se pudieron generar las alertas de ejemplo');
     },
   });
 }

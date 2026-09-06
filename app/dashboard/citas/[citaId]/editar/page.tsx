@@ -11,8 +11,8 @@ import { Navbar } from '@/components/navbar';
 import Image from 'next/image';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import Swal from 'sweetalert2';
-import withReactContent from 'sweetalert2-react-content';
+import { toast } from 'sonner';
+import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/style.css';
 
@@ -23,8 +23,6 @@ import {
 import { uploadDocumentoCita } from '@/services/flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import type { ModalidadCita, UpdateCitaRequest, ClinicaCitaDto, AreaDomicilioDto, HorarioCitaDto, CitaArchivoDto } from '@/types/citas';
-
-const MySwal = withReactContent(Swal);
 
 function safeFormatDate(dateStr: string | undefined, formatStr: string): string {
   if (!dateStr) return 'Fecha sin definir';
@@ -51,6 +49,7 @@ export default function EditWizardPage() {
   const cancelarCitaMutation = useCancelarCita();
   const isUpdating = updateCitaMutation.isPending;
   const isCanceling = cancelarCitaMutation.isPending;
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
 
   // -- 1. Data Fetching --
   const { data: citaDirecta, isLoading: loadingCitaDirecta, isFetching: fetchingCitaDirecta } = useCitaByCodigo(citaId);
@@ -112,19 +111,13 @@ export default function EditWizardPage() {
         await uploadDocumentoCita(token, codPaciente, citaId, file);
         setUploadedDocs(prev => [...prev, { nombre: file.name }]);
       }
-      MySwal.fire({
-        title: '¡Documento Adjuntado!',
-        text: 'El archivo / examen se subió correctamente a la cita.',
-        icon: 'success',
-        confirmButtonColor: '#2563EB',
+      toast.success('¡Documento Adjuntado!', {
+        description: 'El archivo / examen se subió correctamente a la cita.',
       });
     } catch (err: any) {
       console.error(err);
-      MySwal.fire({
-        title: 'Error al subir',
-        text: 'Hubo un problema al adjuntar el archivo.',
-        icon: 'error',
-        confirmButtonColor: '#e11d48',
+      toast.error('Error al subir', {
+        description: 'Hubo un problema al adjuntar el archivo.',
       });
     } finally {
       setIsUploadingDoc(false);
@@ -290,14 +283,10 @@ export default function EditWizardPage() {
 
       await updateCitaMutation.mutateAsync({ citaId, payload, medicoNombre: citaOriginal?.medicoNombre });
       
-      MySwal.fire({
-        title: '¡Cita modificada!',
-        text: 'La cita ha sido actualizada correctamente en tu agenda.',
-        icon: 'success',
-        confirmButtonColor: '#2563EB',
-      }).then(() => {
-        router.push('/dashboard/citas');
+      toast.success('¡Cita modificada!', {
+        description: 'La cita ha sido actualizada correctamente en tu agenda.',
       });
+      router.push('/dashboard/citas');
 
     } catch (e: any) {
       console.error('Error al modificar cita:', e);
@@ -314,41 +303,29 @@ export default function EditWizardPage() {
         errorMessage = e.message;
       }
 
-      MySwal.fire({
-        title: 'Error al modificar cita',
-        text: errorMessage,
-        icon: 'error',
-        confirmButtonColor: '#e11d48',
+      toast.error('Error al modificar cita', {
+        description: errorMessage,
       });
     }
   };
 
   const handleCancel = () => {
-    MySwal.fire({
-      title: '¿Cancelar Cita Definitivamente?',
-      html: `Estás a punto de cancelar tu cita original con <strong>Dr(a). ${citaOriginal?.medicoNombre}</strong>.<br/><br/>Esta acción no se puede deshacer.`,
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#e11d48',
-      cancelButtonColor: '#6B7280',
-      confirmButtonText: 'Sí, Cancelar Cita',
-      cancelButtonText: 'Mantener cita',
-      showLoaderOnConfirm: true,
-      preConfirm: async () => {
-        try {
-          await cancelarCitaMutation.mutateAsync(citaOriginal || citaId);
-          return true;
-        } catch (err: any) {
-          Swal.showValidationMessage('Hubo un problema al cancelar la cita.');
-          return false;
-        }
-      },
-      allowOutsideClick: () => !Swal.isLoading()
-    }).then((result) => {
-      if (result.isConfirmed) {
-        router.push('/dashboard/citas');
-      }
-    });
+    setIsCancelModalOpen(true);
+  };
+
+  const confirmCancelCita = async () => {
+    try {
+      await cancelarCitaMutation.mutateAsync(citaOriginal || citaId);
+      setIsCancelModalOpen(false);
+      toast.success('Cita Cancelada', {
+        description: 'Tu cita ha sido cancelada correctamente.',
+      });
+      router.push('/dashboard/citas');
+    } catch (err: any) {
+      toast.error('Error al cancelar', {
+        description: 'Hubo un problema al cancelar la cita.',
+      });
+    }
   };
 
   const isStillLoading = loadingCitaDirecta || fetchingCitaDirecta || loadingPacientes || fetchingPacientes || (codigosPacientes.length > 0 && (loadingCitas || fetchingCitas)) || (!!codMedico && loadingDoctor);
@@ -876,6 +853,24 @@ export default function EditWizardPage() {
         </div>
       </div>
 
+      <ConfirmModal
+        isOpen={isCancelModalOpen}
+        onClose={() => setIsCancelModalOpen(false)}
+        onConfirm={confirmCancelCita}
+        variant="danger"
+        title="¿Cancelar Cita Definitivamente?"
+        description={
+          <>
+            Estás a punto de cancelar tu cita original con <strong>Dr(a). {citaOriginal?.medicoNombre}</strong>.
+            <br />
+            <br />
+            Esta acción no se puede deshacer.
+          </>
+        }
+        confirmText="Sí, Cancelar Cita"
+        cancelText="Mantener cita"
+        isLoading={isCanceling}
+      />
     </div>
   );
 }

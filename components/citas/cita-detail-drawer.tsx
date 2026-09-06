@@ -50,7 +50,7 @@ export function CitaDetailDrawer({ isOpen, onClose, cita, onEdit, onCancel, doct
       }
       subtitle={
         <span className="inline-flex items-center gap-1.5 mt-2 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-slate-700 px-2.5 py-1 rounded-md text-xs font-bold text-[#111827] dark:text-white uppercase tracking-wider">
-          {cita.ctaEstado}
+          {cita.ctaEstado?.toLowerCase() === 'no_asistio' ? 'No asistió' : (cita.ctaEstado || '').replace(/_/g, ' ')}
         </span>
       }
     >

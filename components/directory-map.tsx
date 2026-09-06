@@ -121,16 +121,20 @@ function MapController({
   targetCoords,
   defaultCenterCoords,
   selectedDoctorBuildings,
+  selectedDoctorId,
 }: {
   userLocation?: { lat: number; lng: number } | null;
   isNearMeActive?: boolean;
   targetCoords?: { lat: number; lng: number } | null;
   defaultCenterCoords?: { lat: number; lng: number } | null;
   selectedDoctorBuildings?: BuildingLocation[];
+  selectedDoctorId?: string | null;
 }) {
   const map = useMap();
   const lastCenteredNearMeRef = useRef<boolean>(false);
   const hasCenteredDefaultRef = useRef(false);
+  const prevSelectedDoctorIdRef = useRef<string | null | undefined>(undefined);
+  const prevTargetKeyRef = useRef<string | null>(null);
 
   // Desactivar iconos cliqueables de Google y ocultar POIs
   useEffect(() => {
@@ -145,40 +149,55 @@ function MapController({
     });
   }, [map]);
 
-  const hadDoctorSelectedRef = useRef(false);
-
-  // Centrado y zoom según selección de sede específica o encuadre de todas las sedes del médico
+  // Centrado cuando cambia el médico seleccionado o cuando se deselecciona
   useEffect(() => {
     if (!map) return;
+
+    // Solo actuar si realmente cambió el médico seleccionado (evita recentrar abruptamente al arrastrar el mapa)
+    if (prevSelectedDoctorIdRef.current === selectedDoctorId) {
+      return;
+    }
+
+    const wasDoctorSelected = !!prevSelectedDoctorIdRef.current;
+    prevSelectedDoctorIdRef.current = selectedDoctorId;
+
+    if (selectedDoctorId) {
+      // Si hay un médico seleccionado, encuadrar sus ubicaciones una única vez
+      if (selectedDoctorBuildings && selectedDoctorBuildings.length > 0) {
+        if (selectedDoctorBuildings.length === 1) {
+          map.panTo({ lat: selectedDoctorBuildings[0].lat, lng: selectedDoctorBuildings[0].lng });
+          map.setZoom(15);
+        } else {
+          const avgLat = selectedDoctorBuildings.reduce((sum, b) => sum + b.lat, 0) / selectedDoctorBuildings.length;
+          const avgLng = selectedDoctorBuildings.reduce((sum, b) => sum + b.lng, 0) / selectedDoctorBuildings.length;
+          map.panTo({ lat: avgLat, lng: avgLng });
+          map.setZoom(14);
+        }
+      }
+    } else if (wasDoctorSelected) {
+      // Si antes había un médico seleccionado y ahora se deseleccionó, volver a la vista general una sola vez
+      const target = defaultCenterCoords || GUATEMALA_CENTER;
+      map.panTo(target);
+      map.setZoom(13);
+      prevTargetKeyRef.current = null;
+    }
+  }, [map, selectedDoctorId, selectedDoctorBuildings, defaultCenterCoords]);
+
+  // Centrado cuando el usuario selecciona una sede / clínica específica
+  useEffect(() => {
+    if (!map) return;
+
+    const currentKey = targetCoords ? `${targetCoords.lat.toFixed(5)}_${targetCoords.lng.toFixed(5)}` : null;
+    if (currentKey === prevTargetKeyRef.current) {
+      return;
+    }
+    prevTargetKeyRef.current = currentKey;
 
     if (targetCoords) {
       map.panTo(targetCoords);
       map.setZoom(16);
-      return;
     }
-
-    if (selectedDoctorBuildings && selectedDoctorBuildings.length > 0) {
-      hadDoctorSelectedRef.current = true;
-      if (selectedDoctorBuildings.length === 1) {
-        map.panTo({ lat: selectedDoctorBuildings[0].lat, lng: selectedDoctorBuildings[0].lng });
-        map.setZoom(15);
-      } else {
-        const avgLat = selectedDoctorBuildings.reduce((sum, b) => sum + b.lat, 0) / selectedDoctorBuildings.length;
-        const avgLng = selectedDoctorBuildings.reduce((sum, b) => sum + b.lng, 0) / selectedDoctorBuildings.length;
-        map.panTo({ lat: avgLat, lng: avgLng });
-        map.setZoom(14);
-      }
-      return;
-    }
-
-    // Si antes había un médico seleccionado y ahora ya no (ej. se cerró la selección para ver el mapa general)
-    if (hadDoctorSelectedRef.current && (!selectedDoctorBuildings || selectedDoctorBuildings.length === 0)) {
-      hadDoctorSelectedRef.current = false;
-      const target = defaultCenterCoords || GUATEMALA_CENTER;
-      map.panTo(target);
-      map.setZoom(13);
-    }
-  }, [map, targetCoords?.lat, targetCoords?.lng, selectedDoctorBuildings, defaultCenterCoords]);
+  }, [map, targetCoords]);
 
   // Manejo de "Cerca de ti" y centrado inicial dentro de Ciudad de Guatemala
   useEffect(() => {
@@ -197,13 +216,13 @@ function MapController({
       lastCenteredNearMeRef.current = false;
     }
 
-    if (!hasCenteredDefaultRef.current && !targetCoords && (!selectedDoctorBuildings || selectedDoctorBuildings.length === 0)) {
+    if (!hasCenteredDefaultRef.current && !targetCoords && !selectedDoctorId) {
       const target = defaultCenterCoords || GUATEMALA_CENTER;
       map.panTo(target);
       map.setZoom(14);
       hasCenteredDefaultRef.current = true;
     }
-  }, [map, userLocation, isNearMeActive, targetCoords, defaultCenterCoords, selectedDoctorBuildings]);
+  }, [map, userLocation, isNearMeActive, targetCoords, defaultCenterCoords, selectedDoctorId]);
 
   return null;
 }
@@ -405,6 +424,11 @@ export function DirectoryMap({
     return closest;
   }, [displayedBuildings, buildings, userLocation]);
 
+  // Coordenadas fijas por defecto para centrado general
+  const defaultCenterCoords = useMemo(() => {
+    return closestBuilding ? { lat: closestBuilding.lat, lng: closestBuilding.lng } : null;
+  }, [closestBuilding?.lat, closestBuilding?.lng]);
+
   // Edificio activo o seleccionado
   const activeBuilding = useMemo(() => {
     return displayedBuildings.find((b) => b.id === activeBuildingId) || null;
@@ -514,11 +538,8 @@ export function DirectoryMap({
             isNearMeActive={isNearMeActive}
             targetCoords={targetCoords}
             selectedDoctorBuildings={selectedDoctorBuildings}
-            defaultCenterCoords={
-              closestBuilding
-                ? { lat: closestBuilding.lat, lng: closestBuilding.lng }
-                : null
-            }
+            selectedDoctorId={selectedDoctorId}
+            defaultCenterCoords={defaultCenterCoords}
           />
 
           {/* Circulo de Radar Ajustable para Cerca de ti */}

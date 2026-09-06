@@ -18,8 +18,9 @@ import {
   Check,
 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
-import Swal from 'sweetalert2';
-import { withProgressSwal } from '@/lib/request-handler';
+import { toast } from 'sonner';
+import { ConfirmModal } from '@/components/ui/confirm-modal';
+import { extractErrorMessage } from '@/lib/request-handler';
 
 import { NeoLoader } from '@/components/neo-loader';
 import { usePacienteTitular } from '@/hooks/use-pacientes';
@@ -56,6 +57,7 @@ function PuntosContent() {
   // ─── Local State (Exactamente 3 filtros + Modal de Ligas) ───
   const [selectedTab, setSelectedTab] = useState<'tienda' | 'inventario' | 'historial'>('tienda');
   const [isNivelesModalOpen, setIsNivelesModalOpen] = useState(false);
+  const [recompensaACanjear, setRecompensaACanjear] = useState<Recompensa | null>(null);
 
   // Misiones y Tareas deduplicadas por código de acción / título único
   const uniqueTareas = useMemo<LealtadTarea[]>(() => {
@@ -145,57 +147,29 @@ function PuntosContent() {
     ? nivelActual
     : `Nivel ${nivelActual}`;
 
-  const handleCanjear = async (recompensa: Recompensa) => {
+  const handleCanjear = (recompensa: Recompensa) => {
     if (totalPuntos < recompensa.rcpCostoPuntos) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Puntos Insuficientes',
-        text: `Necesitas ${recompensa.rcpCostoPuntos} puntos para canjear "${recompensa.rcpTitulo}". Tienes ${totalPuntos} pts.`,
-        confirmButtonColor: '#2563eb',
+      toast.error('Puntos Insuficientes', {
+        description: `Necesitas ${recompensa.rcpCostoPuntos} puntos para canjear "${recompensa.rcpTitulo}". Tienes ${totalPuntos} pts.`,
       });
       return;
     }
 
-    const confirm = await Swal.fire({
-      title: '¿Confirmar Canje?',
-      text: `Se descontarán ${recompensa.rcpCostoPuntos} puntos de tu saldo para obtener "${recompensa.rcpTitulo}".`,
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonText: 'Sí, Canjear Ahora',
-      cancelButtonText: 'Cancelar',
-      confirmButtonColor: '#16a34a',
-    });
+    setRecompensaACanjear(recompensa);
+  };
 
-    if (confirm.isConfirmed) {
-      try {
-        await withProgressSwal(
-          async () => {
-            return await canjearMutation.mutateAsync({ rcpCodigo: recompensa.rcpCodigo });
-          },
-          {
-            progressTitle: 'Procesando Canje',
-            initialMessage: `Canjeando "${recompensa.rcpTitulo}"...`,
-            customMessages: [
-              {
-                afterMs: 0,
-                text: `Canjeando "${recompensa.rcpTitulo}"...`,
-                subtext: 'Verificando saldo de puntos de lealtad',
-              },
-              {
-                afterMs: 4000,
-                text: 'Generando cupón y actualizando inventario...',
-                subtext: 'Asignando recompensa a tu billetera digital',
-              },
-            ],
-            successTitle: '¡Recompensa Adquirida!',
-            successText: `Has canjeado con éxito "${recompensa.rcpTitulo}". Revisa la pestaña "Recompensas Canjeadas" para usarla.`,
-            showSuccessSwal: true,
-            cancelable: false,
-          }
-        );
-      } catch {
-        // Error ya manejado por withProgressSwal
-      }
+  const confirmCanjeAction = async () => {
+    if (!recompensaACanjear) return;
+    try {
+      await canjearMutation.mutateAsync({ rcpCodigo: recompensaACanjear.rcpCodigo });
+      toast.success('¡Recompensa Adquirida!', {
+        description: `Has canjeado con éxito "${recompensaACanjear.rcpTitulo}". Revisa la pestaña "Recompensas Canjeadas" para usarla.`,
+      });
+      setRecompensaACanjear(null);
+    } catch (e: any) {
+      toast.error('Error al canjear', {
+        description: extractErrorMessage(e),
+      });
     }
   };
 
@@ -739,6 +713,23 @@ function PuntosContent() {
         )}
       </AnimatePresence>
 
+      <ConfirmModal
+        isOpen={!!recompensaACanjear}
+        onClose={() => setRecompensaACanjear(null)}
+        onConfirm={confirmCanjeAction}
+        variant="success"
+        title="¿Confirmar Canje de Recompensa?"
+        description={
+          recompensaACanjear ? (
+            <>
+              Se descontarán <strong>{recompensaACanjear.rcpCostoPuntos} puntos</strong> de tu saldo para obtener <strong>"{recompensaACanjear.rcpTitulo}"</strong>.
+            </>
+          ) : undefined
+        }
+        confirmText="Sí, Canjear Ahora"
+        cancelText="Cancelar"
+        isLoading={canjearMutation.isPending}
+      />
     </div>
   );
 }

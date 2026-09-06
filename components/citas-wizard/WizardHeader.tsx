@@ -1,114 +1,141 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useCitaStore } from '@/store/use-cita-store';
+import { useCitaStore, type CitaStep } from '@/store/use-cita-store';
 import { useDoctorByCode } from '@/hooks/use-doctors';
-import { ChevronLeft, MapPin, Building2, CalendarDays, CalendarClock, Stethoscope } from 'lucide-react';
+import {
+  ChevronLeft,
+  CalendarClock,
+  User,
+  CreditCard,
+  ShieldCheck,
+  Check,
+} from 'lucide-react';
 
 export function WizardHeader() {
   const router = useRouter();
   const { 
-    codMedico, modalidad, clinicaSeleccionada, areaDomicilio,
+    codMedico, modalidad,
     servicioSeleccionado,
-    fecha, hora, step
+    fecha, hora, step, setStep,
+    pacienteSeleccionado, motivo,
+    tipoPagoId, billeteraItemId,
+    citaConfirmada
   } = useCitaStore();
 
   const { data: doctor } = useDoctorByCode(codMedico || "");
 
-  // We show 4 steps maximum in the wizard UI
-  const displayStep = step > 4 ? 4 : step;
+  if (citaConfirmada) {
+    return null;
+  }
+
+  const isStep1Done = step > 1 || !!(modalidad && servicioSeleccionado && fecha && hora);
+  const isStep2Done = step > 2 || (isStep1Done && !!(pacienteSeleccionado && motivo));
+  const isStep3Done = step > 3 || (isStep2Done && !!(tipoPagoId || billeteraItemId));
+  const isStep4Done = step === 4;
+
+  const stepsList: { num: CitaStep; label: string; icon: any; isDone: boolean; isCurrent: boolean; canNavigate: boolean }[] = [
+    { num: 1, label: 'Horario', icon: CalendarClock, isDone: isStep1Done, isCurrent: step === 1, canNavigate: step > 1 },
+    { num: 2, label: 'Paciente', icon: User, isDone: isStep2Done, isCurrent: step === 2, canNavigate: isStep1Done && step > 2 },
+    { num: 3, label: 'Pago', icon: CreditCard, isDone: isStep3Done, isCurrent: step === 3, canNavigate: isStep2Done && step > 3 },
+    { num: 4, label: 'Confirmar', icon: ShieldCheck, isDone: isStep4Done, isCurrent: step === 4, canNavigate: false },
+  ];
 
   return (
-    <div className="sticky top-0 z-30 bg-slate-50/90 dark:bg-transparent backdrop-blur-md flex flex-col xl:flex-row xl:items-center gap-6 mb-8 py-4">
-      
-      {/* Doctor Info */}
-      <div className="flex items-center gap-2 pr-6">
-        <button 
-          onClick={() => router.back()}
-          className="flex items-center justify-center p-1 text-blue-700 dark:text-blue-400 hover:bg-slate-100 dark:hover:bg-[#1E293B] rounded-full transition-colors mr-2"
-        >
-          <ChevronLeft className="h-8 w-8" strokeWidth={1.5} />
-        </button>
+    <div className="sticky top-0 z-30 bg-slate-50/95 dark:bg-[#0B1120]/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 py-3.5 px-2 mb-6 transition-colors">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
         
-        {doctor && (
-          <div className="flex items-center gap-4">
-            <div className="h-16 w-16 overflow-hidden rounded-full border border-slate-100 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 shrink-0 shadow-sm">
-              <img 
-                src={doctor.exp_foto_perfil || `https://ui-avatars.com/api/?name=${encodeURIComponent(doctor.exp_primer_nom + ' ' + doctor.exp_primer_ape)}&background=0D8ABC&color=fff`} 
-                alt={`${doctor.exp_primer_nom} ${doctor.exp_primer_ape}`}
-                className="h-full w-full object-cover"
-              />
+        {/* Left: Doctor Profile Info */}
+        <div className="flex items-center gap-3 min-w-0">
+          <button 
+            onClick={() => router.back()}
+            className="flex items-center justify-center p-1.5 text-slate-600 dark:text-slate-300 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded-full transition cursor-pointer shrink-0"
+            title="Regresar"
+            aria-label="Regresar"
+          >
+            <ChevronLeft className="h-6 w-6 stroke-[2]" />
+          </button>
+          
+          {doctor && (
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-11 w-11 rounded-full overflow-hidden border-2 border-white dark:border-slate-700 shadow-sm bg-slate-100 dark:bg-slate-800 shrink-0">
+                <img 
+                  src={doctor.exp_foto_perfil || `https://ui-avatars.com/api/?name=${encodeURIComponent(doctor.exp_primer_nom + ' ' + doctor.exp_primer_ape)}&background=0284c7&color=fff`} 
+                  alt={`${doctor.exp_primer_nom} ${doctor.exp_primer_ape}`}
+                  className="h-full w-full object-cover object-top"
+                />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <h1 className="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight leading-tight truncate">
+                  Dr{doctor.exp_sexo === 'F' ? 'a' : ''}. {doctor.exp_primer_nom} {doctor.exp_primer_ape}
+                </h1>
+                <p className="text-[11px] text-sky-700 dark:text-sky-400 font-semibold truncate">
+                  {doctor.especialidades?.map(e => e.especialidad).join(', ') || 'Especialista Médico'}
+                </p>
+              </div>
             </div>
-            <div className="flex flex-col justify-center">
-              <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight leading-none mb-1">
-                Dr{doctor.exp_sexo === 'F' ? 'a' : ''}. {doctor.exp_primer_nom} {doctor.exp_primer_ape}
-              </h1>
-              <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">
-                {doctor.especialidades?.map(e => e.especialidad).join(', ') || 'Especialista'}
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Separator */}
-      <div className="hidden xl:block w-px h-12 bg-slate-200 dark:bg-slate-800"></div>
-
-      {/* Info Strip (Right side) */}
-      <div className="flex flex-1 flex-col sm:flex-row items-start sm:items-center justify-between gap-6 pl-0 xl:pl-6">
-        <div className="flex flex-col gap-1.5 mt-2 xl:mt-0">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[15px] font-medium text-slate-600 dark:text-slate-300">
-              {servicioSeleccionado && (
-                <>
-                  <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 font-bold">
-                    <Stethoscope className="w-4 h-4 shrink-0" />
-                    {servicioSeleccionado.servicio} (Q{servicioSeleccionado.costoTotal.toFixed(2)})
-                  </span>
-                  <span className="text-slate-300 dark:text-slate-700 text-xs">•</span>
-                </>
-              )}
-
-              <span className="capitalize flex items-center gap-1.5">
-                <MapPin className="w-4 h-4 text-blue-600 dark:text-blue-400" /> 
-                {modalidad || 'Pendiente'}
-              </span>
-              
-              {modalidad !== 'virtual' && (
-                <>
-                  <span className="text-slate-300 dark:text-slate-700 text-xs">•</span>
-                  <span className="leading-snug max-w-[200px] xl:max-w-[250px] whitespace-normal break-words flex items-start gap-1.5 pt-0.5">
-                    <Building2 className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-[2px]" />
-                    <span className="flex-1">
-                      {modalidad === 'presencial' ? (clinicaSeleccionada?.cliDescripcion || 'Pendiente') : 
-                       modalidad === 'domicilio' ? (areaDomicilio?.municipio || 'Pendiente') : 'Virtual'}
-                    </span>
-                  </span>
-                </>
-              )}
-              
-              <span className="text-slate-300 dark:text-slate-700 text-xs">•</span>
-              
-              <span className="flex items-center gap-1.5">
-                <CalendarDays className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                {fecha ? `${fecha.getDate()} ${fecha.toLocaleString('es', { month: 'short' })}` : 'Pendiente'}
-              </span>
-              
-              <span className="text-slate-300 dark:text-slate-700 text-xs">•</span>
-              
-              <span className="flex items-center gap-1.5">
-                <CalendarClock className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                {hora || 'Pendiente'}
-              </span>
-            </div>
+          )}
         </div>
 
-        {/* Step Number at Far Right */}
-        <div className="flex flex-col items-center justify-center bg-slate-50 dark:bg-[#0F172A] px-5 py-2 rounded-xl border border-slate-100 dark:border-slate-800 min-w-[80px]">
-          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-none mb-1">Paso</span>
-          <div className="flex items-baseline gap-1">
-            <span className="text-3xl font-black text-blue-600 dark:text-blue-400 leading-none">{displayStep}</span>
-            <span className="text-sm font-bold text-slate-400 dark:text-slate-500">/ 4</span>
-          </div>
+        {/* Right: Minimalist Icon Stepper with Dynamic Checkmarks */}
+        <div className="flex items-center gap-1.5 sm:gap-2.5 bg-white dark:bg-[#1E293B] px-3.5 py-1.5 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xs shrink-0">
+          {stepsList.map((s, idx, arr) => {
+            const IconComponent = s.icon;
+            const isCompleted = s.isDone && !s.isCurrent;
+
+            return (
+              <div key={s.num} className="flex items-center gap-1.5 sm:gap-2">
+                <button
+                  type="button"
+                  onClick={() => s.canNavigate && setStep(s.num)}
+                  disabled={!s.canNavigate}
+                  className={`flex items-center gap-1.5 py-1 px-1.5 sm:px-2 rounded-xl transition-all duration-200 ${
+                    s.canNavigate ? 'cursor-pointer hover:opacity-80' : 'cursor-default'
+                  } ${
+                    isCompleted
+                      ? 'text-emerald-700 dark:text-emerald-300'
+                      : s.isCurrent
+                      ? 'text-sky-700 dark:text-sky-300 font-extrabold'
+                      : 'text-slate-400 dark:text-slate-500'
+                  }`}
+                  title={`Paso ${s.num}: ${s.label}${isCompleted ? ' (Completado - Clic para volver)' : ''}`}
+                >
+                  {/* Minimalist Icon Badge */}
+                  <div
+                    className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 ${
+                      isCompleted
+                        ? 'bg-emerald-500 text-white shadow-xs ring-2 ring-emerald-200 dark:ring-emerald-900/60'
+                        : s.isCurrent
+                        ? 'bg-sky-600 text-white shadow-sm shadow-sky-600/30 ring-2 ring-sky-300 dark:ring-sky-700'
+                        : 'bg-slate-100 dark:bg-slate-800/80 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    {isCompleted ? (
+                      <Check className="w-3.5 h-3.5 stroke-[3.5]" />
+                    ) : (
+                      <IconComponent className="w-3.5 h-3.5" />
+                    )}
+                  </div>
+
+                  {/* Minimalist Label */}
+                  <span className={`text-[11px] font-bold tracking-tight hidden sm:inline ${
+                    s.isCurrent ? 'text-slate-900 dark:text-white font-extrabold' : ''
+                  }`}>
+                    {s.label}
+                  </span>
+                </button>
+
+                {/* Connecting Track */}
+                {idx < arr.length - 1 && (
+                  <div
+                    className={`w-2 sm:w-3.5 h-0.5 rounded-full transition-colors duration-300 ${
+                      s.isDone ? 'bg-emerald-400 dark:bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'
+                    }`}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

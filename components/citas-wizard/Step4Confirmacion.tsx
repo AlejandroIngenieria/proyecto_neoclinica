@@ -5,12 +5,35 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { toast } from 'sonner';
 import { useCreateCita, useUploadDocumentoCita, usePagarCita, useMetodosPago, useBilletera, useCreateGrupo } from '@/hooks/use-flujo-citas';
+import { useDoctorByCode } from '@/hooks/use-doctors';
 import { useCitaStore } from '@/store/use-cita-store';
 import { completarTareaLealtad } from '@/services/lealtad';
 import { crearNotificacion } from '@/services/notificaciones';
-import { ChevronLeft, Check, FileText, Loader2, Info, Calendar, MapPin, CreditCard, Building2, Stethoscope, Activity, Wallet, AlertCircle, FolderPlus } from 'lucide-react';
+import {
+  ChevronLeft,
+  Check,
+  FileText,
+  Loader2,
+  Info,
+  Calendar,
+  MapPin,
+  CreditCard,
+  Building2,
+  Stethoscope,
+  Activity,
+  Wallet,
+  AlertCircle,
+  FolderPlus,
+  CalendarDays,
+  ArrowRight,
+  ShieldCheck,
+  Home,
+  Video,
+  Sparkles,
+} from 'lucide-react';
 import type { CrearCitaRequest } from '@/types/citas';
-import { withProgressSwal } from '@/lib/request-handler';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 
 export function Step4Confirmacion() {
   const router = useRouter();
@@ -20,7 +43,8 @@ export function Step4Confirmacion() {
     servicioSeleccionado,
     fecha, hora, pacienteSeleccionado, grupoId, grupoNombre, creandoNuevoGrupo, nuevoGrupoTema, motivo,
     archivos, prevStep, tipoPagoId, billeteraItemId,
-    direccionDomicilio, referenciasDomicilio, recompensaSeleccionada
+    direccionDomicilio, referenciasDomicilio, recompensaSeleccionada, reset,
+    setCitaConfirmada
   } = useCitaStore();
 
   const { mutateAsync: createCita } = useCreateCita();
@@ -28,12 +52,15 @@ export function Step4Confirmacion() {
   const { mutateAsync: uploadDocumento } = useUploadDocumentoCita();
   const { mutateAsync: pagarCita } = usePagarCita();
 
-  const { data: metodosPago = [] } = useMetodosPago(codMedico!);
-  const { data: billetera = [] } = useBilletera(pacienteSeleccionado?.pacCodigo!);
+  const { data: doctor } = useDoctorByCode(codMedico || '');
+  const { data: metodosPago = [] } = useMetodosPago(codMedico || '');
+  const { data: billetera = [] } = useBilletera(pacienteSeleccionado?.pacCodigo || '');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitStatusText, setSubmitStatusText] = useState('Registrando tu cita médica...');
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [createdCitaId, setCreatedCitaId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   // Pricing calculations reales basados en el servicio o la clínica
   const precioBase = servicioSeleccionado
@@ -54,176 +81,340 @@ export function Step4Confirmacion() {
   const metodoSeleccionado = metodosPago.find(m => m.tipoPagoId === tipoPagoId);
   const itemBilletera = billetera.find(b => b.id_metodo === billeteraItemId);
 
+  const formatHoraDisplay = (rawHora: string | null) => {
+    if (!rawHora) return '';
+    const [h, m] = rawHora.split(':');
+    let hourNum = parseInt(h);
+    if (isNaN(hourNum)) return rawHora;
+    const ampm = hourNum >= 12 ? 'PM' : 'AM';
+    hourNum = hourNum % 12;
+    hourNum = hourNum ? hourNum : 12;
+    return `${hourNum}:${m} ${ampm}`;
+  };
+
   const handleConfirm = async () => {
     if (!codMedico || !pacienteSeleccionado || !fecha || !hora || !modalidad || !tipoPagoId) return;
 
     setIsSubmitting(true);
     setError(null);
+    setSubmitStatusText('Verificando turno y registrando consulta...');
 
     try {
-      await withProgressSwal(
-        async () => {
-          // 0. Si se solicitó crear un nuevo tema de seguimiento, crearlo primero
-          let finalGrupoId = grupoId || undefined;
+      // 0. Si se solicitó crear un nuevo tema de seguimiento, crearlo primero
+      let finalGrupoId = grupoId || undefined;
 
-          if (creandoNuevoGrupo && nuevoGrupoTema.trim() && pacienteSeleccionado && codMedico) {
-            try {
-              const resGrupo = await createGrupo({
-                codPaciente: pacienteSeleccionado.pacCodigo,
-                codMedico,
-                tema: nuevoGrupoTema.trim(),
-                tituloTema: nuevoGrupoTema.trim(),
-              });
-              const createdId = (resGrupo as any)?.id || (resGrupo as any)?.grupoId;
-              if (createdId) {
-                finalGrupoId = createdId;
-              }
-            } catch (err) {
-              console.error('No se pudo pre-crear el grupo de seguimiento:', err);
-            }
-          }
-
-          // 1. Preparar DTO
-          let consultorioId = undefined;
-          let dirDomicilio = null;
-          let refDomicilio = null;
-
-          if (modalidad === 'presencial' && clinicaSeleccionada) {
-            consultorioId = clinicaSeleccionada.cliCodigo;
-          } else if (modalidad === 'domicilio' && areaDomicilio) {
-            consultorioId = null;
-            dirDomicilio = direccionDomicilio;
-            refDomicilio = referenciasDomicilio;
-          } else if (modalidad === 'virtual') {
-            consultorioId = null;
-          }
-
-          const rcpCod = recompensaSeleccionada
-            ? recompensaSeleccionada.praCodrcp ||
-              (recompensaSeleccionada as any).rcpCodigo ||
-              (recompensaSeleccionada as any).rcp_codigo
-            : undefined;
-
-          const request: CrearCitaRequest = {
+      if (creandoNuevoGrupo && nuevoGrupoTema.trim() && pacienteSeleccionado && codMedico) {
+        try {
+          setSubmitStatusText('Iniciando nuevo tema de seguimiento...');
+          const resGrupo = await createGrupo({
             codPaciente: pacienteSeleccionado.pacCodigo,
             codMedico,
-            grupoId: finalGrupoId,
-            consultorioId,
-            codServicio: servicioSeleccionado?.sypCodigo || undefined,
-            fecha: fecha.toISOString().split('T')[0],
-            hora: hora.length === 5 ? hora + ':00' : hora,
-            modalidad,
-            precio: total,
-            motivo: motivo || servicioSeleccionado?.servicio || undefined,
-            direccionDomicilio: dirDomicilio,
-            referenciasDomicilio: refDomicilio,
-            enlaceVideollamada: null,
-            recompensaCodigo: rcpCod,
-            rcpCodigo: rcpCod,
-            archivos: archivos.length > 0 ? archivos : undefined,
-          };
-
-          // 2. Crear Cita
-          const citaId = await createCita(request);
-
-          // Trigger automatic loyalty task and notification for creating appointment
-          const sessionToken = (session as any)?.accessToken;
-          if (sessionToken) {
-            completarTareaLealtad(sessionToken, 'CREAR_CITA').catch(() => {});
-            completarTareaLealtad(sessionToken, 'CITA_PROGRAMADA').catch(() => {});
-            crearNotificacion(sessionToken, {
-              usuarioId: pacienteSeleccionado.pacCodigo,
-              usuarioTipo: 'paciente',
-              tipo: 'cita',
-              titulo: 'Cita Agendada con Éxito',
-              mensaje: `Tu consulta con ${medicoName} para el ${fecha.toLocaleDateString('es-GT')} a las ${hora} hs fue confirmada.`,
-              accionUrl: `/dashboard/citas/${citaId}/exito`,
-            }).catch(() => {});
-          }
-
-          // 3. Registrar Pago
-          await pagarCita({
-            citaId,
-            payload: {
-              codTpp: Number(tipoPagoId),
-              estadoPago: 'pendiente',
-              referenciaPago: billeteraItemId || null,
-            },
+            tema: nuevoGrupoTema.trim(),
+            tituloTema: nuevoGrupoTema.trim(),
           });
-
-          // 4. Subir Documentos si hay
-          if (archivos.length > 0) {
-            for (const file of archivos) {
-              await uploadDocumento({
-                codPaciente: pacienteSeleccionado.pacCodigo,
-                codCita: citaId,
-                file,
-              });
-            }
+          const createdId = (resGrupo as any)?.id || (resGrupo as any)?.grupoId;
+          if (createdId) {
+            finalGrupoId = createdId;
           }
-
-          // 5. Redireccionar a éxito
-          router.push(`/dashboard/citas/${citaId}/exito`);
-          return citaId;
-        },
-        {
-          progressTitle: 'Agendando tu Consulta Médica',
-          initialMessage: `Registrando tu cita con ${medicoName}...`,
-          customMessages: [
-            {
-              afterMs: 0,
-              text: `Registrando consulta con ${medicoName}...`,
-              subtext: 'Verificando turno y datos del paciente',
-            },
-            {
-              afterMs: 4000,
-              text: 'Confirmando horario y correlativo de turno...',
-              subtext: 'Asignando tu posición en la cola de atención',
-            },
-            {
-              afterMs: 10000,
-              text: 'Procesando método de pago y comprobantes...',
-              subtext: 'Guardando la información de manera segura',
-            },
-            {
-              afterMs: 18000,
-              text: 'Finalizando registro con el servidor...',
-              subtext: 'Gracias por tu paciencia, esto tomará unos segundos más',
-            },
-            {
-              afterMs: 28000,
-              text: 'El servidor está respondiendo lentamente...',
-              subtext: 'Se realizará un reintento automático para garantizar tu cita',
-            },
-          ],
-          successTitle: '¡Cita Confirmada con Éxito!',
-          successText: `Tu consulta con ${medicoName} para el ${fecha.toLocaleDateString('es-GT')} a las ${hora} hs fue registrada.`,
-          showSuccessSwal: true,
-          cancelable: true,
+        } catch (err) {
+          console.error('No se pudo pre-crear el grupo de seguimiento:', err);
         }
-      );
-    } catch (e: any) {
-      if (e?.isCancelled) {
-        toast.info('Operación cancelada');
-      } else {
-        console.error('Error al agendar cita', e);
-        setError('Ocurrió un error al agendar la cita. Por favor intenta de nuevo.');
       }
-    } finally {
+
+      // 1. Preparar DTO
+      setSubmitStatusText('Guardando los datos de tu consulta...');
+      let consultorioId = undefined;
+      let dirDomicilio = null;
+      let refDomicilio = null;
+
+      if (modalidad === 'presencial' && clinicaSeleccionada) {
+        consultorioId = clinicaSeleccionada.cliCodigo;
+      } else if (modalidad === 'domicilio' && areaDomicilio) {
+        consultorioId = null;
+        dirDomicilio = direccionDomicilio;
+        refDomicilio = referenciasDomicilio;
+      } else if (modalidad === 'virtual') {
+        consultorioId = null;
+      }
+
+      const rcpCod = recompensaSeleccionada
+        ? recompensaSeleccionada.praCodrcp ||
+          (recompensaSeleccionada as any).rcpCodigo ||
+          (recompensaSeleccionada as any).rcp_codigo
+        : undefined;
+
+      const request: CrearCitaRequest = {
+        codPaciente: pacienteSeleccionado.pacCodigo,
+        codMedico,
+        grupoId: finalGrupoId,
+        consultorioId,
+        codServicio: servicioSeleccionado?.sypCodigo || undefined,
+        fecha: fecha.toISOString().split('T')[0],
+        hora: hora.length === 5 ? hora + ':00' : hora,
+        modalidad,
+        precio: total,
+        motivo: motivo || servicioSeleccionado?.servicio || undefined,
+        direccionDomicilio: dirDomicilio,
+        referenciasDomicilio: refDomicilio,
+        enlaceVideollamada: null,
+        recompensaCodigo: rcpCod,
+        rcpCodigo: rcpCod,
+        archivos: archivos.length > 0 ? archivos : undefined,
+      };
+
+      // 2. Crear Cita
+      const citaId = await createCita(request);
+      setCreatedCitaId(citaId);
+
+      // Trigger automatic loyalty task and notification for creating appointment
+      const sessionToken = (session as any)?.accessToken;
+      if (sessionToken) {
+        completarTareaLealtad(sessionToken, 'CREAR_CITA').catch(() => {});
+        completarTareaLealtad(sessionToken, 'CITA_PROGRAMADA').catch(() => {});
+        crearNotificacion(sessionToken, {
+          usuarioId: pacienteSeleccionado.pacCodigo,
+          usuarioTipo: 'paciente',
+          tipo: 'cita',
+          titulo: 'Cita Agendada con Éxito',
+          mensaje: `Tu consulta con ${medicoName} para el ${fecha.toLocaleDateString('es-GT')} a las ${hora} hs fue confirmada.`,
+          accionUrl: `/dashboard/citas/${citaId}/exito`,
+        }).catch(() => {});
+      }
+
+      // 3. Registrar Pago
+      setSubmitStatusText('Configurando método de pago y confirmación...');
+      await pagarCita({
+        citaId,
+        payload: {
+          codTpp: Number(tipoPagoId),
+          estadoPago: 'pendiente',
+          referenciaPago: billeteraItemId || null,
+        },
+      });
+
+      // 4. Subir Documentos si hay
+      if (archivos.length > 0) {
+        setSubmitStatusText('Adjuntando documentos médicos...');
+        for (const file of archivos) {
+          await uploadDocumento({
+            codPaciente: pacienteSeleccionado.pacCodigo,
+            codCita: citaId,
+            file,
+          });
+        }
+      }
+
+      // 5. Marcar éxito
+      setCitaConfirmada(true);
+      setIsSuccess(true);
+      window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+    } catch (e: any) {
+      console.error('Error al agendar cita', e);
+      setError('Ocurrió un error al agendar la cita. Por favor intenta de nuevo.');
       setIsSubmitting(false);
     }
   };
 
+  // 1. ESTADO DE ÉXITO (CITA PROGRAMADA CON ÉXITO)
+  if (isSuccess) {
+    const docPhoto = doctor?.exp_foto_perfil || `https://ui-avatars.com/api/?name=${encodeURIComponent(medicoName || 'Doctor')}&background=0284c7&color=fff`;
+    const docSpecialties = doctor?.especialidades?.map(e => e.especialidad).join(', ') || 'Especialista Médico';
+
+    return (
+      <div className="max-w-2xl mx-auto py-6 sm:py-10 animate-in fade-in zoom-in-95 duration-300">
+        <div className="bg-white dark:bg-[#1E293B] rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-700/80 shadow-xl text-center">
+          
+          {/* Success Check Icon Badge */}
+          <div className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center mx-auto mb-4 shadow-lg shadow-emerald-500/30">
+            <Check className="w-9 h-9 stroke-[3]" />
+          </div>
+
+          <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+            ¡Cita Programada con Éxito!
+          </h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
+            Tu consulta médica ha sido reservada y registrada en el sistema de SaludYa.
+          </p>
+
+          {/* Doctor Info with Circular Photo */}
+          <div className="my-6 p-4 sm:p-5 rounded-2xl bg-sky-50/60 dark:bg-sky-950/40 border border-sky-200/80 dark:border-sky-800/60 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
+            <div className="w-20 h-20 rounded-full overflow-hidden border-3 border-white dark:border-slate-700 shadow-md shrink-0 bg-slate-100 dark:bg-slate-800">
+              <img
+                src={docPhoto}
+                alt={medicoName || 'Doctor'}
+                className="w-full h-full object-cover object-top"
+              />
+            </div>
+            <div className="min-w-0">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-sky-600 dark:text-sky-400 block mb-0.5">
+                Especialista Asignado
+              </span>
+              <h3 className="text-lg font-black text-slate-900 dark:text-white truncate">
+                Dr{doctor?.exp_sexo === 'F' ? 'a' : ''}. {medicoName}
+              </h3>
+              <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                {docSpecialties}
+              </p>
+            </div>
+          </div>
+
+          {/* Appointment Details Card */}
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-[#0F172A]/80 p-5 text-left space-y-3.5 mb-8">
+            <div className="flex items-center justify-between text-xs pb-3 border-b border-slate-200/70 dark:border-slate-800">
+              <span className="font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Detalles de la Cita</span>
+              <span className="inline-flex items-center gap-1 font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100/80 dark:bg-emerald-950 px-2 py-0.5 rounded-md text-[11px]">
+                <ShieldCheck className="w-3.5 h-3.5" /> Confirmada
+              </span>
+            </div>
+
+            {/* Fecha y Hora */}
+            <div className="flex items-start gap-3">
+              <CalendarDays className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Fecha y Horario</p>
+                <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  {fecha ? format(fecha, "EEEE dd 'de' MMMM, yyyy", { locale: es }) : ''} · {formatHoraDisplay(hora)}
+                </p>
+              </div>
+            </div>
+
+            {/* Servicio Médico */}
+            {servicioSeleccionado && (
+              <div className="flex items-start gap-3">
+                <Stethoscope className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Servicio</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                    {servicioSeleccionado.servicio} <span className="text-sky-600 dark:text-sky-400 font-extrabold">(Q{total.toFixed(2)})</span>
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Modalidad y Ubicación */}
+            <div className="flex items-start gap-3">
+              {modalidad === 'virtual' ? (
+                <Video className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
+              ) : modalidad === 'domicilio' ? (
+                <Home className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
+              ) : (
+                <MapPin className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
+              )}
+              <div>
+                <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Modalidad / Ubicación</p>
+                <p className="text-sm font-bold text-slate-900 dark:text-slate-100 capitalize">
+                  {modalidad === 'presencial' && clinicaSeleccionada
+                    ? `Presencial · ${clinicaSeleccionada.cliDescripcion}`
+                    : modalidad === 'domicilio' && areaDomicilio
+                    ? `A Domicilio · ${areaDomicilio.municipio}`
+                    : 'Telemedicina Virtual (Videollamada)'}
+                </p>
+              </div>
+            </div>
+
+            {/* Paciente */}
+            <div className="flex items-start gap-3">
+              <Activity className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Paciente</p>
+                <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  {pacienteSeleccionado?.nombreCompleto || 'Paciente titular'}
+                </p>
+              </div>
+            </div>
+
+            {/* Tema de Seguimiento (si aplica) */}
+            {(grupoId || creandoNuevoGrupo) && (
+              <div className="flex items-start gap-3">
+                <FolderPlus className="w-5 h-5 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider">Tema de Seguimiento</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                    {creandoNuevoGrupo ? nuevoGrupoTema : (grupoNombre || 'Tema vinculado')}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Action Navigation Buttons */}
+          <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
+            <button
+              type="button"
+              onClick={() => {
+                reset();
+                router.push('/dashboard/citas');
+              }}
+              className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-sm shadow-md shadow-sky-600/25 flex items-center justify-center gap-2 transition cursor-pointer"
+            >
+              <CalendarDays className="w-4 h-4" />
+              <span>Ver mis Citas</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                reset();
+                router.push('/dashboard');
+              }}
+              className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-sm border border-slate-200 dark:border-slate-700 transition flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>Volver al Inicio</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+
+        </div>
+      </div>
+    );
+  }
+
+  // 2. ESTADO DE CARGA (IN-PAGE SPINNER SIN MODALES)
+  if (isSubmitting) {
+    return (
+      <div className="max-w-2xl mx-auto py-12 sm:py-20 animate-in fade-in duration-300">
+        <div className="bg-white dark:bg-[#1E293B] rounded-3xl p-8 sm:p-12 border border-slate-200 dark:border-slate-700 shadow-xl text-center flex flex-col items-center justify-center">
+          
+          {/* Animated Spinner with Glow */}
+          <div className="relative mb-6">
+            <div className="w-16 h-16 rounded-full border-4 border-sky-200 dark:border-sky-900 animate-spin border-t-sky-600 dark:border-t-sky-400" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Stethoscope className="w-6 h-6 text-sky-600 dark:text-sky-400 animate-pulse" />
+            </div>
+          </div>
+
+          <h3 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+            Procesando tu Consulta Médica
+          </h3>
+          
+          <p className="text-sm font-semibold text-sky-600 dark:text-sky-400 mt-2">
+            {submitStatusText}
+          </p>
+
+          <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 max-w-sm">
+            Estamos comunicándonos con el servidor para agendar tu horario y garantizar tu cita con {medicoName}.
+          </p>
+
+          <div className="mt-8 w-full max-w-xs bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
+            <div className="bg-sky-600 h-full rounded-full w-2/3 animate-pulse" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 3. ESTADO NORMAL DE REVISIÓN Y CONFIRMACIÓN
   return (
     <div className="space-y-8">
       <div>
         <h2 className="text-2xl font-black text-slate-900 dark:text-white">Confirma tu cita</h2>
-        <p className="mt-1 text-slate-500 dark:text-slate-400">Revisa los datos de tu consulta y aprueba el resumen para finalizar.</p>
+        <p className="mt-1 text-slate-500 dark:text-slate-400">Revisa los datos de tu consulta y confirma para finalizar.</p>
       </div>
 
       {error && (
-        <div className="rounded-xl bg-rose-50 dark:bg-rose-900/20 p-4 text-sm font-semibold text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800">
-          {error}
+        <div className="rounded-xl bg-rose-50 dark:bg-rose-900/20 p-4 text-sm font-semibold text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 flex items-center gap-2">
+          <AlertCircle className="w-5 h-5 shrink-0" />
+          <span>{error}</span>
         </div>
       )}
 
@@ -272,7 +463,7 @@ export function Step4Confirmacion() {
                 {fecha ? `${fecha.getDate()} ${fecha.toLocaleString('es', { month: 'short', year: 'numeric' })}` : 'Pendiente'}
               </p>
               <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-1">
-                A las {hora} hrs
+                A las {formatHoraDisplay(hora)}
               </p>
             </div>
           </div>
@@ -405,7 +596,7 @@ export function Step4Confirmacion() {
           </div>
         )}
 
-        {/* Políticas y Alertas */}
+        {/* Términos y Condiciones Informativos (Sin checkbox obligatorio) */}
         <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-700 space-y-4">
           {modalidad === 'virtual' && (
             <div className="bg-sky-50 dark:bg-sky-900/30 text-sky-800 dark:text-sky-300 p-4 rounded-xl flex items-start gap-3">
@@ -417,54 +608,33 @@ export function Step4Confirmacion() {
             </div>
           )}
 
-          <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-transparent hover:border-slate-100 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-[#0B1120] transition-colors cursor-pointer group">
-            <div className="relative flex items-center pt-1">
-              <input
-                type="checkbox"
-                checked={acceptedTerms}
-                onChange={(e) => setAcceptedTerms(e.target.checked)}
-                className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-600 cursor-pointer"
-              />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-sm font-bold text-slate-800 dark:text-slate-200 group-hover:text-blue-700 dark:group-hover:text-blue-400 transition-colors">
-                He leído y acepto las políticas de cancelación y reembolso.
-              </span>
-              <span className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                Las cancelaciones o reprogramaciones con menos de 24 horas de anticipación pueden estar sujetas a cargos de hasta el 50% del costo de la consulta.
-              </span>
-            </div>
-          </label>
+          {/* Términos informativos */}
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-700/80 flex items-start gap-3">
+            <Info className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              Al hacer clic en <strong>Confirmar Cita</strong>, aceptas los <strong>Términos y Condiciones</strong>, el consentimiento informado y las políticas de cancelación y reembolso de <strong>SaludYa</strong>. Las cancelaciones con menos de 24 horas de anticipación pueden estar sujetas a cargos según las políticas del especialista.
+            </p>
+          </div>
         </div>
       </div>
 
+      {/* Botones de Navegación */}
       <div className="sticky bottom-0 z-30 bg-transparent flex flex-col-reverse sm:flex-row justify-between items-center gap-3 py-4 border-t border-slate-200/60 dark:border-slate-800/40 mt-8">
         <button
           onClick={prevStep}
           disabled={isSubmitting}
-          className="w-full sm:w-auto font-bold py-3.5 px-8 rounded-xl transition-all flex items-center justify-center gap-2 bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#0F172A] shadow-sm"
+          className="w-full sm:w-auto font-bold py-3.5 px-8 rounded-xl transition-all flex items-center justify-center gap-2 bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#0F172A] shadow-sm cursor-pointer"
         >
           <ChevronLeft className="h-5 w-5" /> Regresar
         </button>
+
         <button
           onClick={handleConfirm}
-          disabled={isSubmitting || !acceptedTerms}
-          className={`w-full sm:w-auto font-bold py-3.5 px-10 rounded-xl transition-all flex items-center justify-center gap-2 ${isSubmitting || !acceptedTerms
-            ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'
-            : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md cursor-pointer'
-            }`}
+          disabled={isSubmitting}
+          className="w-full sm:w-auto font-bold py-3.5 px-10 rounded-xl transition-all flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-600/25 cursor-pointer"
         >
-          {isSubmitting ? (
-            <>
-              <Loader2 className="h-5 w-5 animate-spin" />
-              Procesando...
-            </>
-          ) : (
-            <>
-              Confirmar Cita
-              <Check className="h-5 w-5" />
-            </>
-          )}
+          Confirmar Cita
+          <Check className="h-5 w-5 stroke-[2.5]" />
         </button>
       </div>
     </div>

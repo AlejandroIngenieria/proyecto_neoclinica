@@ -22,8 +22,7 @@ import {
 } from 'lucide-react';
 import { useUIStore } from '@/stores/ui-store';
 import { useCambiarPassword } from '@/hooks/use-auth';
-import Swal from 'sweetalert2';
-import { withProgressSwal } from '@/lib/request-handler';
+import { toast } from 'sonner';
 
 function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -93,45 +92,18 @@ function CambiarPasswordModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
     setErrorMsg('');
 
     try {
-      await withProgressSwal(
-        async () => {
-          return await cambiarPasswordMutation.mutateAsync({
-            passwordActual,
-            nuevaPassword,
-          });
-        },
-        {
-          progressTitle: 'Actualizando Contraseña',
-          initialMessage: 'Validando credenciales y aplicando nueva clave segura...',
-          customMessages: [
-            {
-              afterMs: 0,
-              text: 'Validando contraseña actual...',
-              subtext: 'Verificando seguridad de la cuenta',
-            },
-            {
-              afterMs: 4000,
-              text: 'Encriptando y actualizando tu contraseña...',
-              subtext: 'Aplicando nuevo hash seguro SHA-256',
-            },
-            {
-              afterMs: 10000,
-              text: 'Sincronizando cambios de seguridad...',
-              subtext: 'Un momento por favor',
-            },
-          ],
-          successTitle: '¡Contraseña Actualizada!',
-          successText: 'Tu contraseña se ha cambiado correctamente.',
-          showSuccessSwal: true,
-          cancelable: false,
-        }
-      );
+      await cambiarPasswordMutation.mutateAsync({
+        passwordActual,
+        nuevaPassword,
+      });
+
+      toast.success('¡Contraseña Actualizada!', {
+        description: 'Tu contraseña se ha cambiado correctamente.',
+      });
 
       handleClose();
     } catch (err: any) {
-      if (!err?.isCancelled) {
-        setErrorMsg(err?.message || 'Error al cambiar la contraseña. Verifica tu contraseña actual.');
-      }
+      setErrorMsg(err?.message || 'Error al cambiar la contraseña. Verifica tu contraseña actual.');
     }
   };
 

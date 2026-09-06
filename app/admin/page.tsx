@@ -35,8 +35,8 @@ import {
   SlidersHorizontal,
   Info,
 } from 'lucide-react';
-import Swal from 'sweetalert2';
-import { withProgressSwal } from '@/lib/request-handler';
+import { toast } from 'sonner';
+import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { useAdminCitas, useCambiarEstadoCita } from '@/hooks/use-flujo-citas';
 import type { CitaListDto, CitaEstado, CambiarEstadoCitaPayload } from '@/types/citas';
 import { NeoLoader } from '@/components/neo-loader';
@@ -451,96 +451,42 @@ export default function AdminPage() {
   const [selectedModalidad, setSelectedModalidad] = useState<string>('todas');
   const [selectedCitaModal, setSelectedCitaModal] = useState<CitaListDto | null>(null);
 
-  // Ejecución de cambio de estado con confirmación SweetAlert2
+  const [pendingEstadoChange, setPendingEstadoChange] = useState<{
+    citaId: string;
+    nuevoEstado: CitaEstado;
+  } | null>(null);
+
+  // Ejecución de cambio de estado con confirmación en Modal
   const handleCambiarEstado = useCallback(
-    async (citaId: string, nuevoEstado: CitaEstado) => {
-      const targetCfg = ESTADOS_CONFIG[nuevoEstado];
-      const cita = citas.find((c) => c.ctaCodigo === citaId);
-      const pacienteName = cita?.pacienteNombre || 'el paciente';
+    (citaId: string, nuevoEstado: CitaEstado) => {
+      setPendingEstadoChange({ citaId, nuevoEstado });
+    },
+    []
+  );
 
-      let confirmText = `¿Estás seguro de cambiar el estado de la cita a "${targetCfg.label}"?`;
-      let extraHtml = '';
+  const confirmEstadoChange = async () => {
+    if (!pendingEstadoChange) return;
+    const { citaId, nuevoEstado } = pendingEstadoChange;
+    const targetCfg = ESTADOS_CONFIG[nuevoEstado];
+    const cita = citas.find((c) => c.ctaCodigo === citaId);
+    const pacienteName = cita?.pacienteNombre || 'el paciente';
 
-      if (nuevoEstado === 'completada') {
-        extraHtml = `
-          <div style="background-color: #eef2ff; border: 1px solid #c7d2fe; border-radius: 12px; padding: 12px; text-align: left; color: #3730a3; font-size: 12px; margin-top: 10px;">
-            <p style="font-weight: bold; margin-bottom: 4px;">Acciones automáticas del sistema:</p>
-            <ul style="list-style-type: disc; padding-left: 16px; margin: 0; line-height: 1.5;">
-              <li>Se otorgarán los puntos de lealtad al paciente.</li>
-              <li>Se enviará una notificación en tiempo real (SignalR).</li>
-              <li>Se despachará el correo electrónico con la invitación a dejar reseña.</li>
-            </ul>
-          </div>
-        `;
-      } else if (nuevoEstado === 'cancelada' || nuevoEstado === 'rechazada') {
-        extraHtml = `
-          <div style="background-color: #fff1f2; border: 1px solid #fecdd3; border-radius: 12px; padding: 12px; text-align: left; color: #9f1239; font-size: 12px; margin-top: 10px;">
-            <p style="margin: 0;">La cita quedará marcada como no realizada.</p>
-          </div>
-        `;
-      }
-
-      const result = await Swal.fire({
-        title: `Cambiar a ${targetCfg.label}`,
-        html: `
-          <div style="font-size: 13px; color: #475569; text-align: left;">
-            <p>Cita para <strong>${pacienteName}</strong>.</p>
-            <p style="margin-top: 6px;">${confirmText}</p>
-            ${extraHtml}
-          </div>
-        `,
-        icon: nuevoEstado === 'completada' ? 'question' : 'warning',
-        showCancelButton: true,
-        confirmButtonText: `Sí, marcar como ${targetCfg.label}`,
-        cancelButtonText: 'Cancelar',
-        confirmButtonColor: nuevoEstado === 'completada' ? '#4f46e5' : '#2563eb',
-        cancelButtonColor: '#64748b',
-        customClass: {
-          popup: 'rounded-3xl',
-          confirmButton: 'rounded-xl px-4 py-2 font-bold',
-          cancelButton: 'rounded-xl px-4 py-2 font-semibold',
-        },
+    try {
+      await cambiarEstadoMutation.mutateAsync({
+        citaId,
+        nuevoEstado,
       });
 
-      if (!result.isConfirmed) return;
+      toast.success(`Cita de ${pacienteName} marcada como "${targetCfg?.label || nuevoEstado}".`);
 
-      try {
-        await withProgressSwal(
-          async () => {
-            return await cambiarEstadoMutation.mutateAsync({
-              citaId,
-              nuevoEstado,
-            });
-          },
-          {
-            progressTitle: 'Actualizando Estado',
-            initialMessage: `Cambiando cita a "${targetCfg.label}"...`,
-            customMessages: [
-              {
-                afterMs: 0,
-                text: `Cambiando cita a "${targetCfg.label}"...`,
-                subtext: 'Ejecutando acciones automáticas del sistema',
-              },
-              {
-                afterMs: 4000,
-                text: 'Sincronizando puntos de lealtad y notificaciones...',
-                subtext: 'Un momento por favor',
-              },
-            ],
-            successTitle: '¡Estado Actualizado!',
-            successText: `La cita de ${pacienteName} ahora está marcada como "${targetCfg.label}".`,
-            showSuccessSwal: true,
-            cancelable: false,
-          }
-        );
-
-        if (selectedCitaModal && selectedCitaModal.ctaCodigo === citaId) {
-          setSelectedCitaModal((prev) => (prev ? { ...prev, ctaEstado: nuevoEstado } : null));
-        }
-      } catch {}
-    },
-    [citas, cambiarEstadoMutation, selectedCitaModal]
-  );
+      if (selectedCitaModal && selectedCitaModal.ctaCodigo === citaId) {
+        setSelectedCitaModal((prev) => (prev ? { ...prev, ctaEstado: nuevoEstado } : null));
+      }
+      setPendingEstadoChange(null);
+    } catch (e: any) {
+      toast.error(e?.message || 'Error al actualizar el estado de la cita');
+    }
+  };
 
   // Estadísticas calculadas
   const stats = useMemo(() => {
@@ -1053,6 +999,61 @@ export default function AdminPage() {
           </div>
         )}
       </main>
+
+      {/* Modal de confirmación de cambio de estado */}
+      <ConfirmModal
+        isOpen={!!pendingEstadoChange}
+        onClose={() => setPendingEstadoChange(null)}
+        onConfirm={confirmEstadoChange}
+        title={
+          pendingEstadoChange && ESTADOS_CONFIG[pendingEstadoChange.nuevoEstado]
+            ? `Cambiar a ${ESTADOS_CONFIG[pendingEstadoChange.nuevoEstado].label}`
+            : 'Cambiar Estado'
+        }
+        description={
+          pendingEstadoChange ? (
+            <div className="space-y-3">
+              <p>
+                Estás a punto de cambiar el estado de la cita a{' '}
+                <strong className="text-slate-900 dark:text-white">
+                  "{ESTADOS_CONFIG[pendingEstadoChange.nuevoEstado]?.label || pendingEstadoChange.nuevoEstado}"
+                </strong>.
+              </p>
+              {pendingEstadoChange.nuevoEstado === 'completada' && (
+                <div className="bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 rounded-xl p-3 text-xs text-indigo-900 dark:text-indigo-200 space-y-1">
+                  <p className="font-bold">Acciones automáticas del sistema:</p>
+                  <ul className="list-disc pl-4 space-y-0.5">
+                    <li>Se otorgarán los puntos de lealtad al paciente.</li>
+                    <li>Se enviará una notificación en tiempo real.</li>
+                    <li>Se despachará la invitación a calificar el servicio.</li>
+                  </ul>
+                </div>
+              )}
+              {(pendingEstadoChange.nuevoEstado === 'cancelada' || pendingEstadoChange.nuevoEstado === 'rechazada') && (
+                <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded-xl p-3 text-xs text-rose-800 dark:text-rose-300">
+                  <p>La cita quedará registrada como no realizada y se liberará la agenda.</p>
+                </div>
+              )}
+            </div>
+          ) : undefined
+        }
+        confirmText={
+          pendingEstadoChange && ESTADOS_CONFIG[pendingEstadoChange.nuevoEstado]
+            ? `Sí, marcar como ${ESTADOS_CONFIG[pendingEstadoChange.nuevoEstado].label}`
+            : 'Confirmar'
+        }
+        cancelText="Cancelar"
+        variant={
+          pendingEstadoChange?.nuevoEstado === 'cancelada' || pendingEstadoChange?.nuevoEstado === 'rechazada'
+            ? 'danger'
+            : pendingEstadoChange?.nuevoEstado === 'completada'
+            ? 'success'
+            : pendingEstadoChange?.nuevoEstado === 'confirmada'
+            ? 'primary'
+            : 'warning'
+        }
+        isLoading={cambiarEstadoMutation.isPending}
+      />
     </div>
   );
 }

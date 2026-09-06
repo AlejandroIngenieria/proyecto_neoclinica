@@ -91,36 +91,50 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
   };
 
   const getStatusDotColor = (estado: string) => {
-    switch (estado) {
+    switch (estado?.toLowerCase()) {
       case 'programada': return 'bg-sky-500';
       case 'confirmada': return 'bg-emerald-500';
       case 'pospuesta': return 'bg-amber-500';
       case 'completada': return 'bg-slate-400';
-      case 'cancelada': return 'bg-rose-500';
+      case 'cancelada':
+      case 'rechazada':
+      case 'no_asistio': return 'bg-rose-500';
       default: return 'bg-slate-400';
     }
   };
 
   const getStatusTextColor = (estado: string) => {
-    switch (estado) {
+    switch (estado?.toLowerCase()) {
       case 'programada': return 'text-sky-600 dark:text-sky-400';
       case 'confirmada': return 'text-emerald-600 dark:text-emerald-400';
       case 'pospuesta': return 'text-amber-600 dark:text-amber-400';
       case 'completada': return 'text-slate-600 dark:text-slate-400';
-      case 'cancelada': return 'text-rose-600 dark:text-rose-400';
+      case 'cancelada':
+      case 'rechazada':
+      case 'no_asistio': return 'text-rose-600 dark:text-rose-400';
       default: return 'text-slate-600 dark:text-slate-400';
     }
   };
 
   const getEstadoColor = (estado: string) => {
-    switch (estado) {
+    switch (estado?.toLowerCase()) {
       case 'programada': return 'bg-sky-100 text-sky-700';
       case 'confirmada': return 'bg-emerald-100 text-emerald-700';
       case 'pospuesta': return 'bg-amber-100 text-amber-700';
       case 'completada': return 'bg-slate-100 text-slate-700';
-      case 'cancelada': return 'bg-rose-100 text-rose-700';
+      case 'cancelada':
+      case 'rechazada':
+      case 'no_asistio': return 'bg-rose-100 text-rose-700';
       default: return 'bg-slate-100 text-slate-700';
     }
+  };
+
+  const formatCitaEstado = (estado: string | undefined | null) => {
+    if (!estado) return '';
+    const clean = estado.toLowerCase().trim();
+    if (clean === 'no_asistio' || clean === 'no-asistio') return 'No asistió';
+    if (clean === 'en_proceso') return 'En proceso';
+    return clean.charAt(0).toUpperCase() + clean.slice(1).replace(/_/g, ' ');
   };
 
   const dateObj = parseISO(cita.ctaFecha);
@@ -596,8 +610,8 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
               </p>
               <div className="mt-1 flex items-center gap-1.5">
                 <span className={`h-2 w-2 rounded-full ${getStatusDotColor(cita.ctaEstado)}`} />
-                <span className={`text-xs font-bold capitalize ${getStatusTextColor(cita.ctaEstado)}`}>
-                  {cita.ctaEstado}
+                <span className={`text-xs font-bold ${getStatusTextColor(cita.ctaEstado)}`}>
+                  {formatCitaEstado(cita.ctaEstado)}
                 </span>
               </div>
             </div>
@@ -848,7 +862,7 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
           {!isCompletedState && (
             <div className="flex flex-wrap items-center gap-1.5 sm:ml-auto w-full sm:w-auto justify-between sm:justify-end mt-2 sm:mt-0 pt-2 sm:pt-0 border-t sm:border-0 border-slate-100 dark:border-slate-800">
               <span className={`inline-flex px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-md ${getEstadoColor(cita.ctaEstado)}`}>
-                {cita.ctaEstado}
+                {formatCitaEstado(cita.ctaEstado)}
               </span>
 
               {/* Botón Detalles */}
@@ -965,7 +979,7 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
           
           <div className="absolute top-3 left-3 hidden sm:block">
             <span className={`inline-flex px-2 py-0.5 sm:px-3 sm:py-1 text-[10px] sm:text-xs font-black uppercase tracking-wider rounded-full shadow-sm ${getEstadoColor(cita.ctaEstado)}`}>
-              {cita.ctaEstado}
+              {formatCitaEstado(cita.ctaEstado)}
             </span>
           </div>
         </div>

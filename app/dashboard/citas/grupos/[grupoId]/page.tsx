@@ -12,8 +12,8 @@ import { es } from 'date-fns/locale';
 import type { CitaListDto } from '@/types/citas';
 import { CitaDetailDrawer } from '@/components/citas/cita-detail-drawer';
 import Image from 'next/image';
-import Swal from 'sweetalert2';
-import { withProgressSwal } from '@/lib/request-handler';
+import { toast } from 'sonner';
+import { ConfirmModal } from '@/components/ui/confirm-modal';
 
 function safeFormatDate(dateStr: string | undefined, formatStr: string): string {
   if (!dateStr) return 'Fecha sin definir';
@@ -29,6 +29,8 @@ export default function GrupoDetailPage() {
   const router = useRouter();
   const grupoId = params.grupoId as string;
   const [citaSeleccionada, setCitaSeleccionada] = useState<CitaListDto | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const { data: pacientes, isLoading: loadingPacientes } = usePacientesSeleccion();
   const codigosPacientes = pacientes?.map(p => p.pacCodigo) || [];
@@ -91,62 +93,25 @@ export default function GrupoDetailPage() {
 
   const { mutateAsync: eliminarGrupo } = useEliminarGrupo();
 
-  const handleEliminarGrupo = async () => {
-    const confirm = await Swal.fire({
-      title: '¿Eliminar tema de seguimiento?',
-      html: `Estás a punto de eliminar el tema de seguimiento <strong>"${nombreGrupo}"</strong>.<br/><br/>
-      <div class="text-xs text-left bg-slate-50 dark:bg-slate-800 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
-        <p class="font-bold mb-1.5 text-slate-800 dark:text-white flex items-center gap-1.5">
-          <span>ℹ️</span> <span>Las citas asociadas se conservarán:</span>
-        </p>
-        <p class="mb-1">• <strong>No se borrará ninguna cita</strong>; permanecerán en tu historial y próximas citas como consultas individuales.</p>
-        <p>• Este tema ya no aparecerá como opción para reutilizar en nuevas citas.</p>
-      </div>`,
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#e11d48',
-      cancelButtonColor: '#64748b',
-      confirmButtonText: 'Sí, eliminar tema',
-      cancelButtonText: 'Cancelar',
-      customClass: {
-        popup: 'rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] text-slate-900 dark:text-white',
-        title: 'text-xl font-black text-slate-900 dark:text-white',
-        confirmButton: 'rounded-xl font-bold px-6 py-2.5',
-        cancelButton: 'rounded-xl font-bold px-6 py-2.5',
-      },
-    });
+  const handleEliminarGrupo = () => {
+    setIsDeleteModalOpen(true);
+  };
 
-    if (confirm.isConfirmed) {
-      try {
-        await withProgressSwal(
-          () => eliminarGrupo(grupoId),
-          {
-            progressTitle: 'Eliminando tema',
-            initialMessage: 'Desvinculando citas del tema de seguimiento...',
-            customMessages: [
-              {
-                afterMs: 0,
-                text: 'Desvinculando citas del tema...',
-                subtext: 'Conservando consultas como individuales',
-              },
-              {
-                afterMs: 3000,
-                text: 'Actualizando registro...',
-                subtext: 'Un momento por favor',
-              },
-            ],
-            successTitle: 'Tema Eliminado',
-            successText: 'El tema de seguimiento ha sido eliminado. Las citas ahora son consultas individuales independientes.',
-            showSuccessSwal: true,
-            cancelable: false,
-          }
-        );
-        router.push('/dashboard/citas');
-      } catch (e: any) {
-        console.error('Error al eliminar grupo:', e);
-        const msg = e?.response?.data?.mensaje || e?.message || 'Error al eliminar el tema de seguimiento';
-        alert(msg);
-      }
+  const confirmDeleteGroup = async () => {
+    try {
+      setIsDeleting(true);
+      await eliminarGrupo(grupoId);
+      setIsDeleteModalOpen(false);
+      toast.success('Tema Eliminado', {
+        description: 'El tema de seguimiento ha sido eliminado. Las citas asociadas se conservan como consultas individuales.',
+      });
+      router.push('/dashboard/citas');
+    } catch (e: any) {
+      console.error('Error al eliminar grupo:', e);
+      const msg = e?.response?.data?.mensaje || e?.message || 'Error al eliminar el tema de seguimiento';
+      toast.error('Error al eliminar', { description: msg });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -400,6 +365,32 @@ export default function GrupoDetailPage() {
         onCancel={(cita) => {
           router.push(`/dashboard/citas/${cita.ctaCodigo}/editar`);
         }}
+      />
+
+      <ConfirmModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={confirmDeleteGroup}
+        variant="danger"
+        maxWidth="lg"
+        title="¿Eliminar tema de seguimiento?"
+        description={
+          <>
+            Estás a punto de eliminar el tema de seguimiento <strong>"{nombreGrupo}"</strong>.
+            <div className="mt-3 text-xs bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
+              <p className="font-bold mb-1.5 text-slate-800 dark:text-white flex items-center gap-1.5">
+                <span>ℹ️</span> <span>Las citas asociadas se conservarán:</span>
+              </p>
+              <p className="mb-1">
+                • <strong>No se borrará ninguna cita</strong>; permanecerán en tu historial y próximas citas como consultas individuales.
+              </p>
+              <p>• Este tema ya no aparecerá como opción para asociar nuevas citas.</p>
+            </div>
+          </>
+        }
+        confirmText="Sí, eliminar tema"
+        cancelText="Cancelar"
+        isLoading={isDeleting}
       />
     </div>
   );

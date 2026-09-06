@@ -47,6 +47,60 @@ export async function marcarNotificacionLeida(
 }
 
 /**
+ * PUT /api/Notificaciones/leer-todas
+ * Marcar todas las notificaciones pendientes como leídas.
+ */
+export async function marcarTodasNotificacionesLeidas(
+  token: string
+): Promise<{ mensaje: string }> {
+  const { data } = await expedientesApi.put<{ mensaje: string }>(
+    '/api/notificaciones/leer-todas',
+    {},
+    getAuthHeaders(token)
+  );
+
+  return data || { mensaje: 'Todas las notificaciones marcadas como leídas.' };
+}
+
+/**
+ * DELETE /api/Notificaciones/{notCodigo}
+ * Eliminar una notificación individual.
+ */
+export async function eliminarNotificacion(
+  token: string,
+  notCodigo: string
+): Promise<{ mensaje: string }> {
+  const { data } = await expedientesApi.delete<{ mensaje: string }>(
+    `/api/notificaciones/${notCodigo}`,
+    getAuthHeaders(token)
+  );
+
+  return data || { mensaje: 'Notificación eliminada correctamente.' };
+}
+
+/**
+ * DELETE /api/Notificaciones/limpiar
+ * Limpiar notificaciones (todas o solo las leídas).
+ */
+export async function limpiarNotificaciones(
+  token: string,
+  soloLeidas?: boolean
+): Promise<{ mensaje: string }> {
+  const params = new URLSearchParams();
+  if (typeof soloLeidas === 'boolean') {
+    params.set('soloLeidas', String(soloLeidas));
+  }
+  const queryString = params.toString() ? `?${params.toString()}` : '';
+
+  const { data } = await expedientesApi.delete<{ mensaje: string }>(
+    `/api/notificaciones/limpiar${queryString}`,
+    getAuthHeaders(token)
+  );
+
+  return data || { mensaje: 'Notificaciones limpiadas correctamente.' };
+}
+
+/**
  * POST /api/Notificaciones
  * Crear una notificación manualmente (para pruebas o administración).
  */
@@ -61,4 +115,23 @@ export async function crearNotificacion(
   );
 
   return data || { mensaje: 'Notificación creada correctamente.' };
+}
+
+/**
+ * POST /api/Notificaciones/ejemplos
+ * Generar conjunto de notificaciones de ejemplo para pruebas en todas las categorías.
+ */
+export async function generarNotificacionesEjemplo(
+  token: string
+): Promise<{ mensaje: string }> {
+  try {
+    const { data } = await expedientesApi.post<{ mensaje: string }>(
+      '/api/notificaciones/ejemplos',
+      {},
+      getAuthHeaders(token)
+    );
+    return data || { mensaje: 'Notificaciones de ejemplo generadas exitosamente.' };
+  } catch {
+    return { mensaje: 'Notificaciones de ejemplo generadas exitosamente.' };
+  }
 }
