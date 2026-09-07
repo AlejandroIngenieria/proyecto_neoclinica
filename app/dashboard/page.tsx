@@ -158,7 +158,10 @@ function UpcomingCitaCard({
   pacientesMap?: Map<string, string>;
 }) {
   const router = useRouter();
-  const fechaFormateada = safeFormatDate(cita.ctaFecha, "EEEE d 'de' MMMM");
+  
+  // 1. Formato de fecha acortado (ej. "Jue 10 Sep") para evitar truncamientos
+  const fechaFormateada = safeFormatDate(cita.ctaFecha, "EEE d MMM");
+  
   const horaFormateada = cita.ctaHora ? cita.ctaHora.slice(0, 5) : '--:--';
   const doctorInfo = doctorDataMap[cita.ctaCoddoc];
   const doctorPhoto = doctorInfo?.image;
@@ -180,7 +183,7 @@ function UpcomingCitaCard({
       variants={itemVariants}
       whileHover={{ scale: 1.015, y: -2 }}
       onClick={() => router.push('/dashboard/citas')}
-      className={`group relative rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-xs hover:shadow-lg transition-all cursor-pointer ${
+      className={`group relative flex flex-col h-full rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-xs hover:shadow-lg transition-all cursor-pointer ${
         isFirst
           ? 'border-2 border-blue-500 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-950/20 shadow-md'
           : 'border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B]'
@@ -195,9 +198,9 @@ function UpcomingCitaCard({
         </div>
       )}
 
-      <div className="flex items-start justify-between gap-3 pt-1">
-        <div className="flex items-center gap-3 min-w-0">
-          {/* Humanized Avatar: Doctor Photograph or Styled Initials */}
+      {/* Contenedor Superior (Flex-1 empuja el pie hacia abajo) */}
+      <div className="flex items-start justify-between gap-3 pt-1 flex-1">
+        <div className="flex items-start gap-3 min-w-0">
           <div className="relative flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white text-sm sm:text-base font-black shadow-sm overflow-hidden border-2 border-white dark:border-slate-800">
             {doctorPhoto ? (
               <img src={doctorPhoto} alt={cita.medicoNombre} className="h-full w-full object-cover" />
@@ -206,7 +209,7 @@ function UpcomingCitaCard({
             )}
           </div>
 
-          <div className="min-w-0">
+          <div className="min-w-0 flex flex-col justify-start">
             <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
               {cita.medicoNombre || 'Médico'}
             </h4>
@@ -214,19 +217,20 @@ function UpcomingCitaCard({
               {doctorSpecialty}
             </p>
             {pacienteDisplay && (
-              <p className="text-[10px] text-blue-600 dark:text-blue-400 font-bold truncate">
+              <p className="text-[10px] text-blue-600 dark:text-blue-400 font-bold truncate mt-0.5">
                 Paciente: {pacienteDisplay}
               </p>
             )}
             {cita.clinicaNombre && (
-              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5 truncate">
+              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-1 truncate">
                 <MapPin className="h-3 w-3 shrink-0 text-slate-400" /> {cita.clinicaNombre}
               </p>
             )}
           </div>
         </div>
 
-        <div className="shrink-0 text-right">
+        {/* Píldora de Hora Fija a la derecha */}
+        <div className="shrink-0 text-right ml-2">
           <div className="inline-flex items-center gap-1 rounded-lg sm:rounded-xl bg-blue-100/80 dark:bg-blue-900/60 px-2.5 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-xs font-bold text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-800">
             <Clock className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
             {horaFormateada}
@@ -234,20 +238,24 @@ function UpcomingCitaCard({
         </div>
       </div>
 
-      <div className="mt-3 sm:mt-4 pt-3 border-t border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-200 capitalize">{fechaFormateada}</p>
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md sm:rounded-lg border border-slate-200/60 dark:border-slate-700">
-            {getModalityIcon(cita.ctaModalidad)} {cita.ctaModalidad || 'Presencial'}
+      {/* Contenedor Inferior Fijo - Se añade flex-wrap por seguridad en pantallas muy pequeñas */}
+      <div className="mt-4 pt-3 border-t border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-x-2 gap-y-3 shrink-0">
+        <p className="text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-200 capitalize truncate pr-2">
+          {fechaFormateada}
+        </p>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md sm:rounded-lg border border-slate-200/60 dark:border-slate-700 lowercase">
+            {getModalityIcon(cita.ctaModalidad)} {cita.ctaModalidad || 'presencial'}
           </span>
 
           <Link
             href={`/dashboard/citas/sala-espera?citaId=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}&fecha=${cita.ctaFecha?.split('T')[0]}`}
             onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1 rounded-md sm:rounded-lg bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-800/60 px-2.5 py-1 text-[11px] sm:text-xs font-bold text-blue-700 dark:text-blue-300 shadow-2xs transition active:scale-95 cursor-pointer"
+            className="inline-flex items-center gap-1 rounded-md sm:rounded-lg bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-800/60 px-2.5 py-1 text-[11px] sm:text-xs font-bold text-blue-600 dark:text-blue-300 shadow-2xs transition active:scale-95 cursor-pointer"
           >
             <Activity className="h-3 w-3 text-blue-600 dark:text-blue-400" />
-            <span>Ver Cola</span>
+            {/* 3. Oculta el texto "Ver Cola" en pantallas extra pequeñas si fuera necesario */}
+            <span className="hidden sm:inline-block">Ver Cola</span>
           </Link>
         </div>
       </div>
@@ -618,19 +626,6 @@ function HomeContent() {
                     />
                   </div>
                 </div>
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-2 sm:gap-2.5 mt-5 sm:mt-6 pt-2">
-                <Link href="/dashboard/perfil/puntos?tab=tienda" className="flex-1">
-                  <button className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all active:scale-95 shadow-md flex items-center justify-center gap-1.5 cursor-pointer">
-                    <Gift className="h-4 w-4" /> Canjear Puntos
-                  </button>
-                </Link>
-                <Link href="/dashboard/perfil/puntos?tab=misiones" className="flex-1">
-                  <button className="w-full py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-bold transition-all hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 flex items-center justify-center gap-1.5 cursor-pointer">
-                    <Star className="h-4 w-4" /> Misiones
-                  </button>
-                </Link>
               </div>
             </div>
           </motion.section>
