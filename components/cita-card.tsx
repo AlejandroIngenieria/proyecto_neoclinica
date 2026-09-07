@@ -455,8 +455,9 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
     );
   };
 
-  const renderPinButton = () => {
+  const renderPinButton = (isAbsolute = true) => {
     const isPinned = !!cita.ctaGrupoId;
+    const posClass = isAbsolute ? 'absolute top-3 right-3 z-20' : 'relative';
 
     if (isPinned) {
       if (!onUnlinkGroup) return null;
@@ -467,12 +468,12 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
             e.stopPropagation();
             onUnlinkGroup(cita);
           }}
-          className="group/pin absolute top-3 right-3 z-20 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full border text-xs font-bold transition-all duration-300 ease-out shadow-2xs hover:shadow-md active:scale-95 cursor-pointer overflow-hidden max-w-[34px] hover:max-w-[260px] bg-purple-50/90 dark:bg-purple-950/80 border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 hover:bg-rose-50 hover:border-rose-300 hover:text-rose-700 dark:hover:bg-rose-950/70 dark:hover:border-rose-700 dark:hover:text-rose-300"
-          title={`Desanclar cita del tema: ${cita.grupoTema || 'Seguimiento'}`}
+          className={`group/pin ${posClass} inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full border text-xs font-bold transition-all duration-300 ease-out shadow-2xs hover:shadow-md active:scale-95 cursor-pointer overflow-hidden max-w-[34px] hover:max-w-[260px] bg-purple-50/90 dark:bg-purple-950/80 border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 hover:bg-rose-50 hover:border-rose-300 hover:text-rose-700 dark:hover:bg-rose-950/70 dark:hover:border-rose-700 dark:hover:text-rose-300`}
+          title={`Quitar cita del grupo: ${cita.grupoTema || 'Grupo'}`}
         >
           <FolderMinus className="w-3.5 h-3.5 shrink-0 transition-transform duration-300 group-hover/pin:scale-110 text-purple-600 dark:text-purple-400 group-hover/pin:text-rose-600 dark:group-hover/pin:text-rose-400" />
           <span className="whitespace-nowrap opacity-0 group-hover/pin:opacity-100 transition-opacity duration-300 delay-75 text-[11px] font-bold">
-            Desanclar del Tema
+            Quitar del grupo
           </span>
         </button>
       );
@@ -487,12 +488,12 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
           e.stopPropagation();
           onLinkGroup(cita);
         }}
-        className="group/pin absolute top-3 right-3 z-20 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full border text-xs font-bold transition-all duration-300 ease-out shadow-2xs hover:shadow-md active:scale-95 cursor-pointer overflow-hidden max-w-[34px] hover:max-w-[260px] bg-white/95 dark:bg-slate-800/95 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-300 hover:border-purple-300 dark:hover:border-purple-700 hover:bg-purple-50 dark:hover:bg-purple-950/60"
-        title="Anclar a tema de seguimiento"
+        className={`group/pin ${posClass} inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full border text-xs font-bold transition-all duration-300 ease-out shadow-2xs hover:shadow-md active:scale-95 cursor-pointer overflow-hidden max-w-[34px] hover:max-w-[260px] bg-white/95 dark:bg-slate-800/95 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-300 hover:border-purple-300 dark:hover:border-purple-700 hover:bg-purple-50 dark:hover:bg-purple-950/60`}
+        title="Incluir cita en un grupo"
       >
         <FolderPlus className="w-3.5 h-3.5 shrink-0 transition-transform duration-300 group-hover/pin:scale-110 text-slate-500 dark:text-slate-400 group-hover/pin:text-purple-600 dark:group-hover/pin:text-purple-300" />
         <span className="whitespace-nowrap opacity-0 group-hover/pin:opacity-100 transition-opacity duration-300 delay-75 text-[11px] font-bold">
-          Anclar a Tema
+          Incluir en un grupo
         </span>
       </button>
     );
@@ -587,173 +588,261 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
 
   if (layout === 'row') {
     return (
-      <div className="group relative flex flex-col bg-white dark:bg-[#0B1120] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md hover:border-sky-300 dark:hover:border-sky-600 transition-all overflow-visible">
-        {/* Franja lateral de estado basada en código de color */}
-        <div className={`absolute left-0 top-0 bottom-0 w-1.5 sm:w-2 rounded-l-2xl ${getStatusDotColor(cita.ctaEstado)}`} />
-        
-        {/* Botón de anclar en la esquina superior derecha con hover suave */}
-        {renderPinButton()}
+      <div
+        onClick={() => setMostrarModalInfo(true)}
+        className="group relative flex flex-col bg-white dark:bg-[#0B1120] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md hover:border-sky-300 dark:hover:border-sky-600 transition-all overflow-visible cursor-pointer"
+      >
+        {/* Franja lateral de estado reducida a 3px */}
+        <div className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-l-2xl ${getStatusDotColor(cita.ctaEstado)}`} />
 
         <div className="flex flex-col p-4 sm:p-5 pl-5 sm:pl-6">
           
-          {/* Fila principal de datos */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 pr-10 sm:pr-12">
+          {/* Fila principal de datos y acciones */}
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 sm:gap-6">
             
-            {/* Col 1: Cuándo & Indicador de Estado Sutil */}
-            <div className="flex flex-col min-w-[125px] shrink-0">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-0.5">Fecha y Hora</p>
-              <p className="text-sm font-black text-slate-900 dark:text-white capitalize leading-tight break-words">
-                {format(dateObj, "EEE d MMM", { locale: es })}
-              </p>
-              <p className="text-sm font-bold text-sky-600 dark:text-sky-400">
-                {cita.ctaHora.slice(0, 5)}
-              </p>
-              <div className="mt-1 flex items-center gap-1.5">
-                <span className={`h-2 w-2 rounded-full ${getStatusDotColor(cita.ctaEstado)}`} />
-                <span className={`text-xs font-bold ${getStatusTextColor(cita.ctaEstado)}`}>
-                  {formatCitaEstado(cita.ctaEstado)}
-                </span>
-              </div>
-            </div>
-
-            {/* Col 2: Quién (Médico) */}
-            <div className="flex items-center gap-3 flex-1 min-w-[170px]">
-              <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shrink-0 overflow-hidden relative flex items-center justify-center">
-                {doctor?.exp_foto_perfil ? (
-                  <Image src={doctor.exp_foto_perfil} alt={cita.medicoNombre} fill sizes="40px" className="object-cover" />
-                ) : (
-                  <span className="text-xs font-black text-slate-500 dark:text-slate-400">{initials}</span>
-                )}
-              </div>
-              <div className="flex flex-col min-w-0">
-                <p className="text-sm font-bold text-slate-900 dark:text-white leading-tight break-words">Dr. {cita.medicoNombre.split(' ').slice(0,2).join(' ')}</p>
-                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 break-words leading-tight mt-0.5">{cita.medicoEspecialidad}</p>
-                {cita.ctaMotivo && (
-                  <p className="text-[11px] text-slate-400 truncate max-w-[200px]" title={cita.ctaMotivo}>
-                    {cita.grupoTema ? `[${cita.grupoTema}] ` : ''}{cita.ctaMotivo}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Col 3: Dónde & Modalidad con Botón explícito Cómo llegar */}
-            <div className="flex items-center gap-3 flex-1 min-w-[180px]">
-              <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 border border-blue-200/60 dark:border-blue-800/40 shadow-2xs">
-                {cita.ctaModalidad === 'presencial' && <MapPin className="h-5 w-5" />}
-                {cita.ctaModalidad === 'virtual' && <Video className="h-5 w-5" />}
-                {cita.ctaModalidad === 'domicilio' && <Home className="h-5 w-5" />}
-              </div>
-
-              <div className="flex flex-col min-w-0 flex-1">
-                <p className="text-xs font-bold text-slate-800 dark:text-slate-200 capitalize leading-tight break-words">
-                  {cita.ctaModalidad}
+            {/* Columnas de datos de la cita (Cuándo, Quién, Dónde) */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 flex-1 min-w-0">
+              {/* Col 1: Cuándo & Indicador de Estado en Píldora (Badge) */}
+              <div className="flex flex-col min-w-[125px] shrink-0">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-0.5">Fecha y Hora</p>
+                <p className="text-sm font-black text-slate-900 dark:text-white capitalize leading-tight break-words">
+                  {format(dateObj, "EEE d MMM", { locale: es })}
                 </p>
-                {cita.ctaModalidad === 'presencial' && cita.clinicaNombre && (
-                  <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 break-words leading-tight mt-0.5">
-                    {cita.clinicaNombre}
-                  </p>
-                )}
-                {cita.ctaModalidad === 'virtual' && (
-                  <p className="text-[11px] font-medium text-sky-600 dark:text-sky-400 break-words leading-tight mt-0.5">
-                    Consulta por videollamada
-                  </p>
-                )}
-                {cita.ctaModalidad === 'domicilio' && (
-                  <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 break-words leading-tight mt-0.5">
-                    Visita a domicilio
-                  </p>
-                )}
+                <p className="text-sm font-bold text-sky-600 dark:text-sky-400">
+                  {cita.ctaHora.slice(0, 5)}
+                </p>
+                <div className="mt-1.5 flex items-center">
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                    cita.ctaEstado?.toLowerCase() === 'programada'
+                      ? 'bg-sky-50 text-sky-700 border border-sky-200/80 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-800/60'
+                      : cita.ctaEstado?.toLowerCase() === 'confirmada'
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800/60'
+                      : cita.ctaEstado?.toLowerCase() === 'pospuesta'
+                      ? 'bg-amber-50 text-amber-700 border border-amber-200/80 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800/60'
+                      : cita.ctaEstado?.toLowerCase() === 'completada'
+                      ? 'bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                      : 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800/60'
+                  }`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotColor(cita.ctaEstado)}`} />
+                    <span>{formatCitaEstado(cita.ctaEstado)}</span>
+                  </span>
+                </div>
+              </div>
 
-                {(cita.ctaModalidad === 'presencial' || cita.ctaModalidad === 'domicilio') && (
-                  <div className="relative mt-1.5">
-                    <button
-                      ref={navButtonRef}
-                      type="button"
-                      onClick={handleToggleNavMenu}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/80 text-[11px] font-bold transition-all duration-150 active:scale-95 cursor-pointer shadow-2xs w-fit group"
-                      title="Ver opciones de navegación (Google Maps / Waze)"
-                    >
-                      <Navigation className="h-3 w-3 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform shrink-0" />
-                      <span>Cómo llegar</span>
-                      <ChevronDown className="h-3 w-3 opacity-60 group-hover:opacity-100 transition-opacity shrink-0" />
-                    </button>
+              {/* Col 2: Quién (Médico) */}
+              <div className="flex items-center gap-3 flex-1 min-w-[170px]">
+                <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shrink-0 overflow-hidden relative flex items-center justify-center">
+                  {doctor?.exp_foto_perfil ? (
+                    <Image src={doctor.exp_foto_perfil} alt={cita.medicoNombre} fill sizes="40px" className="object-cover" />
+                  ) : (
+                    <span className="text-xs font-black text-slate-500 dark:text-slate-400">{initials}</span>
+                  )}
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <p className="text-sm font-bold text-slate-900 dark:text-white leading-tight break-words">Dr. {cita.medicoNombre.split(' ').slice(0,2).join(' ')}</p>
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400 break-words leading-tight mt-0.5">{cita.medicoEspecialidad}</p>
+                  {cita.ctaMotivo && (
+                    <p className="text-[11px] text-slate-400 truncate max-w-[200px]" title={cita.ctaMotivo}>
+                      {cita.grupoTema ? `[${cita.grupoTema}] ` : ''}{cita.ctaMotivo}
+                    </p>
+                  )}
+                </div>
+              </div>
 
-                    {isNavMenuOpen && menuPos && typeof window !== 'undefined' && createPortal(
-                      <motion.div
-                        ref={navMenuRef}
-                        initial={{ opacity: 0, scale: 0.94, y: 4 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.94, y: 4 }}
-                        transition={{ duration: 0.15 }}
-                        style={{
-                          position: 'absolute',
-                          top: `${menuPos.top}px`,
-                          left: `${menuPos.left}px`,
-                          zIndex: 999999,
-                        }}
-                        className="min-w-[160px] overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-1.5 shadow-2xl shadow-slate-900/30 dark:shadow-black/70 text-slate-800 dark:text-slate-100"
+              {/* Col 3: Dónde & Modalidad con Botón explícito Cómo llegar */}
+              <div className="flex items-center gap-3 flex-1 min-w-[180px]">
+                <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 border border-blue-200/60 dark:border-blue-800/40 shadow-2xs">
+                  {cita.ctaModalidad === 'presencial' && <MapPin className="h-5 w-5" />}
+                  {cita.ctaModalidad === 'virtual' && <Video className="h-5 w-5" />}
+                  {cita.ctaModalidad === 'domicilio' && <Home className="h-5 w-5" />}
+                </div>
+
+                <div className="flex flex-col min-w-0 flex-1">
+                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200 capitalize leading-tight break-words">
+                    {cita.ctaModalidad}
+                  </p>
+                  {cita.ctaModalidad === 'presencial' && cita.clinicaNombre && (
+                    <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 break-words leading-tight mt-0.5">
+                      {cita.clinicaNombre}
+                    </p>
+                  )}
+                  {cita.ctaModalidad === 'virtual' && (
+                    <p className="text-[11px] font-medium text-sky-600 dark:text-sky-400 break-words leading-tight mt-0.5">
+                      Consulta por videollamada
+                    </p>
+                  )}
+                  {cita.ctaModalidad === 'domicilio' && (
+                    <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 break-words leading-tight mt-0.5">
+                      Visita a domicilio
+                    </p>
+                  )}
+
+                  {(cita.ctaModalidad === 'presencial' || cita.ctaModalidad === 'domicilio') && (
+                    <div className="relative mt-1.5">
+                      <button
+                        ref={navButtonRef}
+                        type="button"
+                        onClick={handleToggleNavMenu}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/80 text-[11px] font-bold transition-all duration-150 active:scale-95 cursor-pointer shadow-2xs w-fit group"
+                        title="Ver opciones de navegación (Google Maps / Waze)"
                       >
-                        <p className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                          ¿Cómo llegar?
-                        </p>
-                        <a
-                          href={gmapsUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setIsNavMenuOpen(false);
+                        <Navigation className="h-3 w-3 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform shrink-0" />
+                        <span>Cómo llegar</span>
+                        <ChevronDown className="h-3 w-3 opacity-60 group-hover:opacity-100 transition-opacity shrink-0" />
+                      </button>
+
+                      {isNavMenuOpen && menuPos && typeof window !== 'undefined' && createPortal(
+                        <motion.div
+                          ref={navMenuRef}
+                          initial={{ opacity: 0, scale: 0.94, y: 4 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.94, y: 4 }}
+                          transition={{ duration: 0.15 }}
+                          style={{
+                            position: 'absolute',
+                            top: `${menuPos.top}px`,
+                            left: `${menuPos.left}px`,
+                            zIndex: 999999,
                           }}
-                          className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-950/50 hover:text-blue-600 dark:hover:text-blue-400 transition cursor-pointer"
+                          className="min-w-[160px] overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-1.5 shadow-2xl shadow-slate-900/30 dark:shadow-black/70 text-slate-800 dark:text-slate-100"
                         >
-                          <span className="flex h-5 w-5 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400">
-                            <MapPin className="h-3 w-3" />
-                          </span>
-                          Google Maps
-                        </a>
-                        <a
-                          href={wazeUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setIsNavMenuOpen(false);
-                          }}
-                          className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-sky-50 dark:hover:bg-sky-950/50 hover:text-sky-600 dark:hover:text-sky-400 transition cursor-pointer"
-                        >
-                          <span className="flex h-5 w-5 items-center justify-center rounded-lg bg-sky-100 dark:bg-sky-900/50 text-sky-600 dark:text-sky-400">
-                            <Navigation className="h-3 w-3" />
-                          </span>
-                          Waze
-                        </a>
-                      </motion.div>,
-                      document.body
-                    )}
-                  </div>
-                )}
+                          <p className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                            ¿Cómo llegar?
+                          </p>
+                          <a
+                            href={gmapsUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setIsNavMenuOpen(false);
+                            }}
+                            className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-950/50 hover:text-blue-600 dark:hover:text-blue-400 transition cursor-pointer"
+                          >
+                            <span className="flex h-5 w-5 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400">
+                              <MapPin className="h-3 w-3" />
+                            </span>
+                            Google Maps
+                          </a>
+                          <a
+                            href={wazeUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setIsNavMenuOpen(false);
+                            }}
+                            className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-sky-50 dark:hover:bg-sky-950/50 hover:text-sky-600 dark:hover:text-sky-400 transition cursor-pointer"
+                          >
+                            <span className="flex h-5 w-5 items-center justify-center rounded-lg bg-sky-100 dark:bg-sky-900/50 text-sky-600 dark:text-sky-400">
+                              <Navigation className="h-3 w-3" />
+                            </span>
+                            Waze
+                          </a>
+                        </motion.div>,
+                        document.body
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* Acciones para citas activas / programadas */}
+            {/* Acciones para citas activas / programadas en Grid de 2 columnas */}
             {!isCompletedState && (
-              <div className="flex flex-wrap items-center justify-start sm:justify-end gap-2 sm:ml-auto w-full sm:w-auto shrink-0 pt-3 sm:pt-0 border-t sm:border-0 border-slate-100 dark:border-slate-800">
-                {/* 1. Botón Detalles (Información de la cita) */}
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setMostrarModalInfo(true); }}
-                  className="h-9 px-3 inline-flex items-center justify-center gap-1.5 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/80 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer whitespace-nowrap"
-                  title="Ver información y detalles de la cita"
-                >
-                  <ClipboardList className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                  <span>Detalles</span>
-                </button>
+              <div className="flex flex-col items-start sm:items-end justify-center shrink-0 sm:ml-auto w-full sm:w-auto pt-3 sm:pt-0 border-t sm:border-0 border-slate-100 dark:border-slate-800">
+                <div className="grid grid-cols-2 gap-2 w-full sm:w-auto min-w-[220px]">
+                  {/* Fila 1, Col 1: Detalles */}
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setMostrarModalInfo(true); }}
+                    className="h-8.5 px-3.5 inline-flex items-center justify-center gap-1.5 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/80 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer whitespace-nowrap"
+                    title="Ver información y detalles de la cita"
+                  >
+                    <ClipboardList className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                    <span>Detalles</span>
+                  </button>
 
-                {/* 2. Botón Documentos adjuntos (si la cita los tiene) */}
+                  {/* Fila 1, Col 2: Modificar */}
+                  {canModify ? (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onModify(cita);
+                      }}
+                      className="h-8.5 px-3.5 inline-flex items-center justify-center gap-1.5 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer whitespace-nowrap"
+                      title="Modificar fecha u hora de la cita"
+                    >
+                      <Edit2 className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 shrink-0" />
+                      <span>Modificar</span>
+                    </button>
+                  ) : (
+                    <div />
+                  )}
+
+                  {/* Fila 2, Col 1: Agrupar (o Desagrupar si ya tiene grupo) */}
+                  {cita.ctaGrupoId ? (
+                    onUnlinkGroup ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onUnlinkGroup(cita);
+                        }}
+                        className="h-8.5 px-3.5 inline-flex items-center justify-center gap-1.5 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/80 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer whitespace-nowrap"
+                        title={`Quitar del grupo: ${cita.grupoTema || 'Grupo'}`}
+                      >
+                        <FolderMinus className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                        <span>Desagrupar</span>
+                      </button>
+                    ) : (
+                      <div />
+                    )
+                  ) : (
+                    onLinkGroup ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onLinkGroup(cita);
+                        }}
+                        className="h-8.5 px-3.5 inline-flex items-center justify-center gap-1.5 bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 border border-purple-200/80 dark:border-purple-800/80 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer whitespace-nowrap"
+                        title="Incluir cita en un grupo"
+                      >
+                        <FolderPlus className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                        <span>Agrupar</span>
+                      </button>
+                    ) : (
+                      <div />
+                    )
+                  )}
+
+                  {/* Fila 2, Col 2: Cancelar */}
+                  {canModify ? (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onCancel(cita);
+                      }}
+                      className="h-8.5 px-3.5 inline-flex items-center justify-center gap-1.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 border border-rose-200/80 dark:border-rose-800/80 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer whitespace-nowrap"
+                      title="Cancelar cita médica"
+                    >
+                      <XCircle className="w-3.5 h-3.5 text-rose-500 dark:text-rose-400 shrink-0" />
+                      <span>Cancelar</span>
+                    </button>
+                  ) : (
+                    <div />
+                  )}
+                </div>
+
+                {/* Botón Documentos adjuntos (si la cita los tiene) */}
                 {tieneArchivos && (
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); setMostrarModalArchivos(true); }}
-                    className="h-9 px-3 inline-flex items-center justify-center gap-1.5 bg-sky-50 dark:bg-sky-950/50 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800/80 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer whitespace-nowrap"
+                    className="mt-2 w-full h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-sky-50 dark:bg-sky-950/50 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800/80 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer whitespace-nowrap"
                     title="Ver documentos adjuntos de la cita"
                   >
                     <Paperclip className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
@@ -768,7 +857,7 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
                       e.stopPropagation();
                       router.push(`/paciente/resenas/nueva?cita=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}`);
                     }}
-                    className="h-9 px-3.5 inline-flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 whitespace-nowrap cursor-pointer"
+                    className="mt-2 w-full h-8 px-3.5 inline-flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 whitespace-nowrap cursor-pointer"
                   >
                     <Star className="w-3.5 h-3.5 fill-white text-white" />
                     <span>Escribir reseña</span>
@@ -779,34 +868,19 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); setMostrarModalResena(true); }}
-                    className="h-9 px-3 inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/80 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition active:scale-95"
+                    className="mt-2 w-full h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/80 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition active:scale-95"
                   >
                     <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
                     <span>Calificada ({cita.ctaCalificacion}/5)</span>
                   </button>
                 )}
+              </div>
+            )}
 
-                {canModify && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); onModify(cita); }}
-                      className="h-9 px-4 inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-600 dark:hover:bg-blue-500 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 whitespace-nowrap cursor-pointer"
-                    >
-                      <Edit2 className="w-3.5 h-3.5 shrink-0 text-white" />
-                      <span>Modificar</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); onCancel(cita); }}
-                      className="h-9 px-2.5 inline-flex items-center justify-center gap-1 text-xs font-bold text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:underline transition-all whitespace-nowrap active:scale-95 cursor-pointer"
-                    >
-                      <XCircle className="w-3.5 h-3.5 shrink-0" />
-                      <span>Cancelar</span>
-                    </button>
-                  </>
-                )}
+            {/* Si es cita completada y tiene opción de vincular/desvincular */}
+            {isCompletedState && (onLinkGroup || onUnlinkGroup) && (
+              <div className="flex items-center justify-end shrink-0 sm:ml-auto mb-2 sm:mb-0">
+                {renderPinButton(false)}
               </div>
             )}
 

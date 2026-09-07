@@ -156,13 +156,13 @@ function PatientCard({
   const isMinor = edad !== null && edad < 18;
 
   return (
-    <div className={`group relative flex flex-row overflow-hidden rounded-3xl bg-white dark:bg-[#1E293B] shadow-xl shadow-slate-900/5 border transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl animate-in fade-in zoom-in-95 duration-500 w-[420px] max-w-full h-[250px] mx-auto ${
+    <div className={`group relative flex flex-row overflow-hidden rounded-3xl bg-white dark:bg-[#1E293B] shadow-xl shadow-slate-900/5 border transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl animate-in fade-in zoom-in-95 duration-500 w-full max-w-[460px] min-h-[250px] h-full mx-auto ${
       isIndependiente
         ? 'border-indigo-200/80 dark:border-indigo-900/50 bg-slate-50/40 dark:bg-slate-900/40'
         : 'border-slate-200/80 dark:border-slate-800'
     }`}>
-      {/* === CONTENEDOR DE FOTOGRAFÍA (Ancho Estricto 140px, Alto 100%, Selfies top center) === */}
-      <div className="relative w-[140px] h-full shrink-0 bg-slate-900 overflow-hidden flex items-center justify-center">
+      {/* === CONTENEDOR DE FOTOGRAFÍA (Ancho 130px-140px, Alto auto stretch, Selfies top center) === */}
+      <div className="relative w-[130px] sm:w-[140px] self-stretch shrink-0 bg-slate-900 overflow-hidden flex items-center justify-center">
         {paciente.pac_foto_perfil_url ? (
           <img
             src={paciente.pac_foto_perfil_url}
@@ -201,8 +201,8 @@ function PatientCard({
         )}
       </div>
 
-      {/* === CONTENEDOR DE INFORMACIÓN (Lado Derecho, flex:1, calc(100%-140px), min-w:0, Padding: 16px 20px) === */}
-      <div className="flex-1 min-w-0 w-[calc(100%-140px)] h-full flex flex-col justify-between p-4 sm:px-5 sm:py-4 bg-white dark:bg-[#1E293B]">
+      {/* === CONTENEDOR DE INFORMACIÓN (Lado Derecho, flex:1, min-w:0, Padding: 16px 20px) === */}
+      <div className="flex-1 min-w-0 flex flex-col justify-between p-4 sm:px-5 sm:py-4 bg-white dark:bg-[#1E293B]">
         {/* Header con Nombre de Paciente (line-clamp-2) + Kebab Menu (dimensiones fijas 24px) */}
         <div>
           <div className="flex items-start justify-between gap-2 mb-2 pb-2 border-b border-slate-100 dark:border-slate-800">
@@ -325,11 +325,11 @@ function PatientCard({
         </div>
 
         {/* Action buttons (margin-top: auto, flex: 1 gap: 12px 50% cada uno) */}
-        <div className="mt-auto flex items-center gap-3 pt-2.5 border-t border-slate-100 dark:border-slate-800">
+        <div className="mt-auto flex items-center gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
           <button
             type="button"
             onClick={() => onViewDetails(paciente)}
-            className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-slate-200 hover:border-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-600 transition-colors shadow-2xs"
+            className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-slate-200 hover:border-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-600 transition-colors shadow-2xs cursor-pointer"
             title="Ver detalles completos del paciente"
           >
             <Eye className="h-3.5 w-3.5 text-blue-500" />
@@ -339,7 +339,7 @@ function PatientCard({
           <button
             type="button"
             onClick={() => onEdit(paciente)}
-            className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-slate-200 hover:border-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-600 transition-colors shadow-2xs"
+            className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-slate-200 hover:border-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-600 transition-colors shadow-2xs cursor-pointer"
             title="Editar paciente"
           >
             <Pencil className="h-3.5 w-3.5 text-slate-500" />
