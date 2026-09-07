@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { SessionProvider } from 'next-auth/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GoogleOAuthProvider } from '@react-oauth/google';
-import { Toaster } from 'sonner';
 
 const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
 
@@ -28,7 +27,6 @@ export default function Providers({ children }: Readonly<{ children: React.React
       <QueryClientProvider client={queryClient}>
         <SessionProvider>
           {children}
-          <Toaster richColors closeButton position="top-right" duration={4500} />
         </SessionProvider>
       </QueryClientProvider>
     </GoogleOAuthProvider>

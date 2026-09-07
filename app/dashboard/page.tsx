@@ -71,6 +71,27 @@ function getDoctorInitials(name: string | undefined): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
+function getPrimerNombrePrimerApellido(paciente?: {
+  pac_primer_nombre?: string;
+  pac_primer_apellido?: string;
+  nombreCompleto?: string;
+  nombre?: string;
+}): string {
+  if (!paciente) return 'Paciente';
+  if (paciente.pac_primer_nombre && paciente.pac_primer_apellido) {
+    return `${paciente.pac_primer_nombre.trim()} ${paciente.pac_primer_apellido.trim()}`;
+  }
+  const raw = (paciente.nombreCompleto || paciente.nombre || '').trim();
+  if (!raw) return 'Paciente';
+  const parts = raw.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return parts[0];
+  if (parts.length === 2) return `${parts[0]} ${parts[1]}`;
+  if (parts.length >= 3) {
+    return `${parts[0]} ${parts[2]}`;
+  }
+  return raw;
+}
+
 // ─── Animation Variants ─────────────────────────────────────────────────────
 
 const containerVariants = {
@@ -129,10 +150,12 @@ function UpcomingCitaCard({
   cita,
   isFirst,
   doctorDataMap,
+  pacientesMap,
 }: {
   cita: CitaListDto;
   isFirst: boolean;
   doctorDataMap: Record<string, { image?: string; specialty?: string }>;
+  pacientesMap?: Map<string, string>;
 }) {
   const router = useRouter();
   const fechaFormateada = safeFormatDate(cita.ctaFecha, "EEEE d 'de' MMMM");
@@ -141,6 +164,16 @@ function UpcomingCitaCard({
   const doctorPhoto = doctorInfo?.image;
   const doctorSpecialty = cita.medicoEspecialidad || doctorInfo?.specialty || 'Especialidad médica';
   const initials = getDoctorInitials(cita.medicoNombre);
+
+  const pacienteDisplay = useMemo(() => {
+    if (cita.ctaCodpac && pacientesMap?.has(cita.ctaCodpac)) {
+      return pacientesMap.get(cita.ctaCodpac);
+    }
+    if (cita.pacienteNombre) {
+      return getPrimerNombrePrimerApellido({ nombre: cita.pacienteNombre });
+    }
+    return null;
+  }, [cita, pacientesMap]);
 
   return (
     <motion.div
@@ -180,9 +213,9 @@ function UpcomingCitaCard({
             <p className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-300 font-semibold truncate">
               {doctorSpecialty}
             </p>
-            {cita.pacienteNombre && (
+            {pacienteDisplay && (
               <p className="text-[10px] text-blue-600 dark:text-blue-400 font-bold truncate">
-                Paciente: {cita.pacienteNombre}
+                Paciente: {pacienteDisplay}
               </p>
             )}
             {cita.clinicaNombre && (
@@ -267,6 +300,22 @@ function HomeContent() {
     }
     return list;
   }, [pacientesList, pacCodigo]);
+
+  // Mapa de nombres formateados de pacientes (Titular y Dependientes)
+  const pacientesMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (titular?.pac_codigo) {
+      const nom = titular.pac_primer_nombre && titular.pac_primer_apellido
+        ? `${titular.pac_primer_nombre.trim()} ${titular.pac_primer_apellido.trim()}`
+        : getPrimerNombrePrimerApellido({ nombreCompleto: buildPacienteFullName(titular) });
+      map.set(titular.pac_codigo, nom);
+    }
+    pacientesList.forEach((p) => {
+      const nom = getPrimerNombrePrimerApellido({ nombreCompleto: p.nombreCompleto });
+      map.set(p.pacCodigo, nom);
+    });
+    return map;
+  }, [titular, pacientesList]);
 
   // Citas reales para todos los miembros de la cuenta
   const { data: citas = [], isLoading: isLoadingCitas } = useAllCitasPacientes(codigosPacientes);
@@ -443,13 +492,6 @@ function HomeContent() {
             </div>
             <div className="flex items-center gap-3">
               <Link
-                href="/dashboard/citas/sala-espera"
-                className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 px-3 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition"
-              >
-                <Activity className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span>Sala de Espera en Vivo</span>
-              </Link>
-              <Link
                 href="/dashboard/citas"
                 className="flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 hover:gap-2 transition-all"
               >
@@ -473,6 +515,7 @@ function HomeContent() {
                   cita={cita}
                   isFirst={idx === 0}
                   doctorDataMap={doctorDataMap}
+                  pacientesMap={pacientesMap}
                 />
               ))}
             </div>

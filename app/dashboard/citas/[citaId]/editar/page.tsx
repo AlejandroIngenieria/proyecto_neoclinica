@@ -5,9 +5,11 @@ import { useParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSession } from 'next-auth/react';
 import { 
-  ArrowLeft, Loader2, CalendarDays, Clock, MapPin, Monitor, CheckCircle2, AlertCircle, Home, Building2, CalendarClock, CreditCard, Upload, FileText, Paperclip, FileCheck, Check, X
+  ArrowLeft, Loader2, CalendarDays, Clock, MapPin, Monitor, CheckCircle2, AlertCircle, 
+  Home, Building2, CalendarClock, CreditCard, Upload, FileText, Paperclip, FileCheck, 
+  Check, X, ChevronLeft, ChevronRight, Stethoscope, Video, Sparkles, User, ShieldCheck, 
+  ArrowRight, Info, FolderPlus
 } from 'lucide-react';
-import { Navbar } from '@/components/navbar';
 import Image from 'next/image';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -18,11 +20,12 @@ import 'react-day-picker/style.css';
 
 import { 
   usePacientesSeleccion, useAllCitasPacientes, useCitaByCodigo, useUpdateCita, useCancelarCita, 
-  useModalidades, useClinicas, useAreasDomicilio, useHorarios, useGruposCita, useHorasOcupadas
+  useModalidades, useClinicas, useAreasDomicilio, useHorarios, useGruposCita, useHorasOcupadas,
+  useServiciosMedico
 } from '@/hooks/use-flujo-citas';
 import { uploadDocumentoCita } from '@/services/flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
-import type { ModalidadCita, UpdateCitaRequest, ClinicaCitaDto, AreaDomicilioDto, HorarioCitaDto, CitaArchivoDto } from '@/types/citas';
+import type { ModalidadCita, UpdateCitaRequest, ClinicaCitaDto, AreaDomicilioDto, HorarioCitaDto, CitaArchivoDto, ServicioMedicoCitaDto, GrupoCitaDto } from '@/types/citas';
 
 function safeFormatDate(dateStr: string | undefined, formatStr: string): string {
   if (!dateStr) return 'Fecha sin definir';
@@ -31,6 +34,17 @@ function safeFormatDate(dateStr: string | undefined, formatStr: string): string 
   } catch {
     return 'Fecha inválida';
   }
+}
+
+function format12Hour(timeStr: string | null | undefined): string {
+  if (!timeStr) return '';
+  const [h, m] = timeStr.split(':');
+  let hourNum = parseInt(h);
+  if (isNaN(hourNum)) return timeStr;
+  const ampm = hourNum >= 12 ? 'PM' : 'AM';
+  hourNum = hourNum % 12;
+  hourNum = hourNum ? hourNum : 12;
+  return `${hourNum}:${m} ${ampm}`;
 }
 
 export default function EditWizardPage() {
@@ -68,19 +82,24 @@ export default function EditWizardPage() {
   const codPaciente = citaOriginal?.ctaCodpac || '';
   const { data: doctor, isLoading: loadingDoctor } = useDoctorByCode(codMedico);
 
-  const { data: modalidadesList } = useModalidades(codMedico || null);
+  const { data: modalidadesList = [] } = useModalidades(codMedico || null);
+  const { data: serviciosMedico = [] } = useServiciosMedico(codMedico || null);
   
-  // -- 2. Wizard State --
-  const [step, setStep] = useState(1);
+  // -- 2. Wizard Step State (1: Horario & Modalidad, 2: Detalles & Motivo, 3: Confirmación & Comparación) --
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [isInitialized, setIsInitialized] = useState(false);
 
+  // Scheduling & Location State
   const [modalidad, setModalidad] = useState<ModalidadCita>('presencial');
   const [clinicaSeleccionada, setClinicaSeleccionada] = useState<ClinicaCitaDto | null>(null);
   const [areaSeleccionada, setAreaSeleccionada] = useState<AreaDomicilioDto | null>(null);
   
   const [fecha, setFecha] = useState<Date | undefined>(undefined);
   const [hora, setHora] = useState<string>('');
+  const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   
+  // Details State
+  const [servicioSeleccionado, setServicioSeleccionado] = useState<ServicioMedicoCitaDto | null>(null);
   const [direccion, setDireccion] = useState<string>('');
   const [referencias, setReferencias] = useState<string>('');
   const [enlace, setEnlace] = useState<string>('');
@@ -88,52 +107,41 @@ export default function EditWizardPage() {
   const [grupoId, setGrupoId] = useState<string>('');
   const [precio, setPrecio] = useState<number>(0);
 
-  // -- 3. Fetching Dependencies --
-  const { data: clinicasList } = useClinicas(codMedico || null, modalidad);
-  const { data: areasList } = useAreasDomicilio(codMedico || null, modalidad);
-  const mclCodigo = modalidad === 'presencial' ? clinicaSeleccionada?.mclCodigo || null : 0;
-  const { data: horariosClinica = [] } = useHorarios(mclCodigo);
-  const { data: gruposList } = useGruposCita(codPaciente || null, codMedico || null);
-
-  const { data: session } = useSession();
-  const token = (session as any)?.accessToken || '';
-  const [uploadedDocs, setUploadedDocs] = useState<{ nombre: string; url?: string }[]>([]);
-  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0 || !token || !codPaciente) return;
-
-    setIsUploadingDoc(true);
-    try {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        await uploadDocumentoCita(token, codPaciente, citaId, file);
-        setUploadedDocs(prev => [...prev, { nombre: file.name }]);
-      }
-      toast.success('¡Documento Adjuntado!', {
-        description: 'El archivo / examen se subió correctamente a la cita.',
-      });
-    } catch (err: any) {
-      console.error(err);
-      toast.error('Error al subir', {
-        description: 'Hubo un problema al adjuntar el archivo.',
-      });
-    } finally {
-      setIsUploadingDoc(false);
-    }
-  };
-
+  // Files
   const [archivosExistentes, setArchivosExistentes] = useState<CitaArchivoDto[]>([]);
   const [nuevosArchivos, setNuevosArchivos] = useState<File[]>([]);
 
-  // -- 4. Initialization --
+  // Dependencies Fetching
+  const { data: clinicasList = [] } = useClinicas(codMedico || null, modalidad);
+  const { data: areasList = [] } = useAreasDomicilio(codMedico || null, modalidad);
+  const mclCodigo = modalidad === 'presencial' ? clinicaSeleccionada?.mclCodigo || null : 0;
+  const { data: horariosClinica = [] } = useHorarios(mclCodigo);
+  const { data: gruposList = [] } = useGruposCita(codPaciente || null, codMedico || null);
+
+  // Previously scheduled date & time for highlighting in purple
+  const fechaOriginalStr = citaOriginal?.ctaFecha ? citaOriginal.ctaFecha.split('T')[0] : '';
+  const fechaOriginalDate = useMemo(() => {
+    if (!fechaOriginalStr) return null;
+    try {
+      return parseISO(fechaOriginalStr);
+    } catch {
+      return null;
+    }
+  }, [fechaOriginalStr]);
+
+  const horaOriginalStr = useMemo(() => {
+    if (!citaOriginal?.ctaHora) return '';
+    return citaOriginal.ctaHora;
+  }, [citaOriginal?.ctaHora]);
+
+  // -- 3. Initialization from original appointment --
   useEffect(() => {
     if (citaOriginal && !isInitialized) {
       setModalidad(citaOriginal.ctaModalidad);
-      try {
-        setFecha(parseISO(citaOriginal.ctaFecha));
-      } catch (e) {
+      if (fechaOriginalDate) {
+        setFecha(fechaOriginalDate);
+        setCurrentMonth(new Date(fechaOriginalDate.getFullYear(), fechaOriginalDate.getMonth(), 1));
+      } else {
         setFecha(new Date());
       }
       setHora(citaOriginal.ctaHora);
@@ -156,40 +164,58 @@ export default function EditWizardPage() {
 
       setIsInitialized(true);
     }
-  }, [citaOriginal, isInitialized]);
+  }, [citaOriginal, isInitialized, fechaOriginalDate]);
+
+  // Match initial clinic once clinicasList is loaded
+  useEffect(() => {
+    if (isInitialized && citaOriginal?.ctaModalidad === 'presencial' && clinicasList.length > 0 && !clinicaSeleccionada) {
+      const match = clinicasList.find(c => 
+        String(c.cliCodigo) === String(citaOriginal.ctaConsultorioId) || 
+        String(c.mclCodigo) === String(citaOriginal.ctaConsultorioId)
+      ) || clinicasList[0];
+      if (match) setClinicaSeleccionada(match);
+    }
+  }, [isInitialized, citaOriginal, clinicasList, clinicaSeleccionada]);
+
+  // Match initial service once serviciosMedico is loaded
+  useEffect(() => {
+    if (isInitialized && serviciosMedico.length > 0 && !servicioSeleccionado) {
+      if (citaOriginal?.ctaMotivo) {
+        const match = serviciosMedico.find(s => s.servicio?.toLowerCase() === citaOriginal.ctaMotivo?.toLowerCase());
+        if (match) setServicioSeleccionado(match);
+      }
+    }
+  }, [isInitialized, serviciosMedico, servicioSeleccionado, citaOriginal]);
 
   const handleSelectModalidad = (mod: ModalidadCita) => {
     setModalidad(mod);
     if (mod !== 'presencial') {
       setClinicaSeleccionada(null);
       if (!precio || precio === 0) {
-        setPrecio(doctor?.clinicas?.[0]?.mcl_precio_base || citaOriginal?.ctaPrecio || clinicasList?.[0]?.mclPrecioBase || 0);
+        setPrecio(doctor?.clinicas?.[0]?.mcl_precio_base || citaOriginal?.ctaPrecio || 0);
       }
     } else {
-      if (!clinicaSeleccionada && clinicasList && clinicasList.length > 0) {
-        const matchingClinica = clinicasList.find(c => String(c.cliCodigo) === String(citaOriginal?.ctaConsultorioId) || String(c.mclCodigo) === String(citaOriginal?.ctaConsultorioId)) || clinicasList[0];
+      if (!clinicaSeleccionada && clinicasList.length > 0) {
+        const matchingClinica = clinicasList.find(c => 
+          String(c.cliCodigo) === String(citaOriginal?.ctaConsultorioId) || 
+          String(c.mclCodigo) === String(citaOriginal?.ctaConsultorioId)
+        ) || clinicasList[0];
         setClinicaSeleccionada(matchingClinica);
         setPrecio(matchingClinica.mclPrecioBase || citaOriginal?.ctaPrecio || 0);
       }
     }
   };
 
-  // Set the selected clinic once the list is available
-  useEffect(() => {
-    if (isInitialized && citaOriginal?.ctaModalidad === 'presencial' && citaOriginal.ctaConsultorioId && clinicasList && !clinicaSeleccionada) {
-      const clinica = clinicasList.find(c => String(c.cliCodigo) === String(citaOriginal.ctaConsultorioId) || String(c.mclCodigo) === String(citaOriginal.ctaConsultorioId));
-      if (clinica) setClinicaSeleccionada(clinica);
-    }
-  }, [isInitialized, citaOriginal, clinicasList, clinicaSeleccionada]);
-
-  // Adjust price only when user changes clinic, preserving initial citaOriginal price
+  // Adjust price on clinic selection change
   useEffect(() => {
     if (isInitialized && modalidad === 'presencial' && clinicaSeleccionada?.mclPrecioBase) {
-      setPrecio(clinicaSeleccionada.mclPrecioBase);
+      if (!servicioSeleccionado) {
+        setPrecio(clinicaSeleccionada.mclPrecioBase);
+      }
     }
-  }, [isInitialized, modalidad, clinicaSeleccionada]);
+  }, [isInitialized, modalidad, clinicaSeleccionada, servicioSeleccionado]);
 
-  // -- 5. Computed Availability --
+  // -- 4. Computed Availability --
   const horarios = useMemo(() => {
     if (modalidad === 'presencial') {
       return horariosClinica;
@@ -209,17 +235,36 @@ export default function EditWizardPage() {
   }, [modalidad, horariosClinica, doctor]);
 
   const disabledDays = useMemo(() => {
-    if (!horarios.length) return [{ from: new Date(1900, 1, 1), to: new Date(2100, 1, 1) }];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (!horarios.length) {
+      // If no schedules loaded, allow original date if available
+      return [
+        (date: Date) => {
+          if (fechaOriginalDate && format(date, 'yyyy-MM-dd') === format(fechaOriginalDate, 'yyyy-MM-dd')) return false;
+          return date < today;
+        }
+      ];
+    }
     const allowedDays = horarios.map(h => h.horDiaSemana);
     return [
-      { before: new Date() },
-      (date: Date) => !allowedDays.includes(date.getDay())
+      (date: Date) => {
+        if (fechaOriginalDate && format(date, 'yyyy-MM-dd') === format(fechaOriginalDate, 'yyyy-MM-dd')) return false;
+        if (date < today) return true;
+        return !allowedDays.includes(date.getDay());
+      }
     ];
-  }, [horarios]);
+  }, [horarios, fechaOriginalDate]);
 
-  const { data: horasOcupadas = [] } = useHorasOcupadas(codMedico || null, fecha ? format(fecha, 'yyyy-MM-dd') : null);
+  const selectedFechaStr = fecha ? format(fecha, 'yyyy-MM-dd') : null;
+  const { data: horasOcupadas = [] } = useHorasOcupadas(codMedico || null, selectedFechaStr);
 
-  const timeSlots = useMemo(() => {
+  const isCurrentSelectionOriginalDate = Boolean(
+    fecha && fechaOriginalStr && format(fecha, 'yyyy-MM-dd') === fechaOriginalStr
+  );
+
+  const availableTimeSlots = useMemo(() => {
     if (!fecha || !horarios.length) return [];
     const dayOfWeek = fecha.getDay();
     const daySchedules = horarios.filter(h => h.horDiaSemana === dayOfWeek);
@@ -234,16 +279,34 @@ export default function EditWizardPage() {
         current = new Date(current.getTime() + 30 * 60000); // 30 min slots
       }
     });
+
+    // Also include original time slot if we are on the original date, just in case
+    if (isCurrentSelectionOriginalDate && horaOriginalStr) {
+      const normalizedOriginal = horaOriginalStr.length === 5 ? `${horaOriginalStr}:00` : horaOriginalStr;
+      if (!slots.includes(normalizedOriginal)) {
+        slots.push(normalizedOriginal);
+      }
+    }
     
     const uniqueSlots = Array.from(new Set(slots)).sort();
     
-    const isOriginalDate = citaOriginal && format(fecha, 'yyyy-MM-dd') === citaOriginal.ctaFecha.split('T')[0];
-    
-    return uniqueSlots.map(slot => ({
-      time: slot,
-      disabled: !isOriginalDate || slot !== citaOriginal.ctaHora ? horasOcupadas.includes(slot) : false
-    }));
-  }, [fecha, horarios, horasOcupadas, citaOriginal]);
+    const normOriginal = horaOriginalStr.slice(0, 5);
+
+    return uniqueSlots.map(slot => {
+      const isOriginalSlot = isCurrentSelectionOriginalDate && slot.slice(0, 5) === normOriginal;
+      const slotShort = slot.slice(0, 5);
+      // If it's the original slot of this appointment, it's NEVER disabled!
+      const disabled = isOriginalSlot 
+        ? false 
+        : horasOcupadas.includes(slot) || horasOcupadas.includes(slotShort);
+
+      return {
+        time: slot,
+        disabled,
+        isOriginalSlot,
+      };
+    });
+  }, [fecha, horarios, horasOcupadas, isCurrentSelectionOriginalDate, horaOriginalStr]);
 
   const handleNuevosArchivosChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -259,7 +322,7 @@ export default function EditWizardPage() {
     setArchivosExistentes(prev => prev.filter(a => a.arcCodigo !== arcCodigo));
   };
 
-  // -- 6. Handlers --
+  // -- 5. Save & Cancel Handlers --
   const handleSave = async () => {
     try {
       const idsConservados = archivosExistentes
@@ -268,11 +331,12 @@ export default function EditWizardPage() {
 
       const payload: UpdateCitaRequest = {
         fecha: fecha ? format(fecha, 'yyyy-MM-dd') : '',
-        hora,
+        hora: hora ? (hora.length === 5 ? `${hora}:00` : hora) : '',
         modalidad,
         precio: Number(precio) || 0,
         motivo: motivo?.trim() || null,
         grupoId: grupoId || null,
+        codServicio: servicioSeleccionado?.sypCodigo || null,
         consultorioId: modalidad === 'presencial' ? (clinicaSeleccionada?.cliCodigo ?? clinicaSeleccionada?.mclCodigo ?? null) : null,
         direccionDomicilio: modalidad === 'domicilio' ? (direccion.trim() || null) : null,
         referenciasDomicilio: modalidad === 'domicilio' ? (referencias.trim() || null) : null,
@@ -283,8 +347,8 @@ export default function EditWizardPage() {
 
       await updateCitaMutation.mutateAsync({ citaId, payload, medicoNombre: citaOriginal?.medicoNombre });
       
-      toast.success('¡Cita modificada!', {
-        description: 'La cita ha sido actualizada correctamente en tu agenda.',
+      toast.success('¡Cita modificada con éxito!', {
+        description: 'La cita ha sido actualizada y reprogramada correctamente.',
       });
       router.push('/dashboard/citas');
 
@@ -309,10 +373,6 @@ export default function EditWizardPage() {
     }
   };
 
-  const handleCancel = () => {
-    setIsCancelModalOpen(true);
-  };
-
   const confirmCancelCita = async () => {
     try {
       await cancelarCitaMutation.mutateAsync(citaOriginal || citaId);
@@ -328,531 +388,1037 @@ export default function EditWizardPage() {
     }
   };
 
+  const canGoToStep2 = Boolean(
+    fecha && hora && (modalidad !== 'presencial' || clinicaSeleccionada) && (modalidad !== 'domicilio' || direccion.trim())
+  );
+
+  const canGoToStep3 = Boolean(canGoToStep2 && motivo.trim());
+
+  // Comparison helpers
+  const isDateChanged = Boolean(fecha && fechaOriginalStr && format(fecha, 'yyyy-MM-dd') !== fechaOriginalStr);
+  const isTimeChanged = Boolean(hora && horaOriginalStr && hora.slice(0, 5) !== horaOriginalStr.slice(0, 5));
+  const isModalidadChanged = Boolean(citaOriginal && modalidad !== citaOriginal.ctaModalidad);
+  const isPrecioChanged = Boolean(citaOriginal && Math.abs(precio - (citaOriginal.ctaPrecio || 0)) > 0.01);
+
+  // Loading Screen
   const isStillLoading = loadingCitaDirecta || fetchingCitaDirecta || loadingPacientes || fetchingPacientes || (codigosPacientes.length > 0 && (loadingCitas || fetchingCitas)) || (!!codMedico && loadingDoctor);
 
   if (isStillLoading && !citaOriginal) {
     return (
-      <div className="min-h-screen bg-[#F9FAFB] dark:bg-[#0B1120] flex flex-col">
-        <Navbar />
-        <main className="flex-1 flex flex-col items-center justify-center">
-          <Loader2 className="w-12 h-12 text-[#2563EB] dark:text-blue-500 animate-spin mb-4" />
-          <p className="font-bold text-[#6B7280] dark:text-slate-400 animate-pulse">Cargando expediente de la cita...</p>
-        </main>
+      <div className="min-h-screen bg-slate-50 dark:bg-[#0B1120] flex flex-col items-center justify-center p-6">
+        <Loader2 className="w-12 h-12 text-blue-600 dark:text-blue-400 animate-spin mb-4" />
+        <p className="font-bold text-slate-600 dark:text-slate-300 animate-pulse text-base">Cargando expediente de la cita...</p>
       </div>
     );
   }
 
   if (!citaOriginal) {
     return (
-      <div className="min-h-screen bg-[#F9FAFB] dark:bg-[#0B1120] flex flex-col">
-        <Navbar />
-        <main className="flex-1 max-w-xl mx-auto w-full px-4 py-20 text-center flex flex-col items-center justify-center">
-          <AlertCircle className="w-16 h-16 text-rose-500 mb-4" />
-          <h2 className="text-2xl font-black text-slate-900 dark:text-white">Cita no encontrada</h2>
-          <p className="text-slate-500 dark:text-slate-400 mt-2 mb-6">No se encontró la cita solicitada o no tienes permisos para editarla.</p>
-          <button
-            onClick={() => router.push('/dashboard/citas')}
-            className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-md hover:bg-blue-700 transition"
-          >
-            Volver a Mis Citas
-          </button>
-        </main>
+      <div className="min-h-screen bg-slate-50 dark:bg-[#0B1120] flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-16 h-16 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-500 flex items-center justify-center mb-4 mx-auto">
+          <AlertCircle className="w-8 h-8" />
+        </div>
+        <h2 className="text-2xl font-black text-slate-900 dark:text-white">Cita no encontrada</h2>
+        <p className="text-slate-500 dark:text-slate-400 mt-2 mb-6 max-w-md">No se encontró la cita solicitada o no tienes permisos para editarla.</p>
+        <button
+          type="button"
+          onClick={() => router.push('/dashboard/citas')}
+          className="px-6 py-3 bg-blue-600 text-white font-bold rounded-2xl shadow-md hover:bg-blue-700 transition cursor-pointer"
+        >
+          Volver a Mis Citas
+        </button>
       </div>
     );
   }
 
-  // Validador de siguiente paso
-  const canGoNext = () => {
-    if (step === 1) {
-      if (modalidad === 'presencial' && !clinicaSeleccionada) return false;
-      if (modalidad === 'domicilio' && !direccion.trim()) return false;
-      return true;
-    }
-    if (step === 2) {
-      if (!fecha || !hora) return false;
-      return true;
-    }
-    return true;
-  };
+  // Stepper Items
+  const stepsList = [
+    { num: 1 as const, label: 'Horario y Modalidad', icon: CalendarClock, isDone: canGoToStep2 },
+    { num: 2 as const, label: 'Detalles y Motivo', icon: FileText, isDone: canGoToStep3 },
+    { num: 3 as const, label: 'Comparar y Confirmar', icon: ShieldCheck, isDone: false },
+  ];
 
   return (
-    <div className="min-h-screen bg-[#F9FAFB] dark:bg-[#0B1120] font-sans text-[#111827] dark:text-slate-200 flex flex-col">
-      {/* HEADER WIZARD ESTILO */}
-      <div className="sticky top-0 z-30 bg-white/90 dark:bg-[#0B1120]/90 backdrop-blur-md border-b border-[#E5E7EB] dark:border-slate-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <button 
-              onClick={() => router.back()}
-              className="p-2 text-[#6B7280] dark:text-slate-400 hover:text-[#2563EB] dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-full transition-colors"
-            >
-              <ArrowLeft className="w-6 h-6" />
-            </button>
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full overflow-hidden relative bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shrink-0">
-                {doctor?.exp_foto_perfil ? (
-                  <Image src={doctor.exp_foto_perfil} alt={citaOriginal.medicoNombre} fill sizes="48px" className="object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-slate-400 font-bold text-lg">
-                    {citaOriginal.medicoNombre.charAt(0)}
+    <div className="min-h-screen bg-slate-50 dark:bg-[#0B1120] text-slate-900 dark:text-slate-200 pb-20 pt-4 sm:pt-6 transition-colors">
+      <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-6">
+
+        {/* ── HEADER WIZARD (Mismo diseño y experiencia que agendar) ── */}
+        <div className="sticky top-0 z-30 bg-slate-50/95 dark:bg-[#0B1120]/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 py-3.5 px-2 mb-6 transition-colors">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            
+            {/* Left: Back button & Doctor info */}
+            <div className="flex items-center gap-3 min-w-0">
+              <button 
+                type="button"
+                onClick={() => router.push('/dashboard/citas')}
+                className="flex items-center justify-center p-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded-full transition cursor-pointer shrink-0"
+                title="Volver a citas"
+              >
+                <ChevronLeft className="h-6 w-6 stroke-[2]" />
+              </button>
+              
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="h-11 w-11 rounded-full overflow-hidden border-2 border-white dark:border-slate-700 shadow-sm bg-slate-100 dark:bg-slate-800 shrink-0">
+                  {doctor?.exp_foto_perfil ? (
+                    <img 
+                      src={doctor.exp_foto_perfil} 
+                      alt={citaOriginal.medicoNombre}
+                      className="h-full w-full object-cover object-top"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center font-bold text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30">
+                      {citaOriginal.medicoNombre?.charAt(0) || 'M'}
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight leading-tight truncate">
+                      Modificar Cita · Dr(a). {citaOriginal.medicoNombre}
+                    </h1>
                   </div>
-                )}
-              </div>
-              <div>
-                <h1 className="text-xl font-black text-[#111827] dark:text-white leading-tight">Modificar cita</h1>
-                <p className="text-sm font-medium text-[#6B7280] dark:text-slate-400">Dr(a). {citaOriginal.medicoNombre}</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-blue-600 dark:text-blue-400 font-semibold truncate">
+                      {citaOriginal.medicoEspecialidad || 'Especialista'}
+                    </span>
+                    <span className="text-[10px] bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 font-bold px-2 py-0.5 rounded-full border border-purple-200 dark:border-purple-800/60">
+                      Reprogramación
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            {[1, 2, 3].map(i => (
-              <div key={i} className={`w-8 h-2 rounded-full transition-colors ${step >= i ? 'bg-[#2563EB]' : 'bg-[#E5E7EB] dark:bg-slate-700'}`} />
-            ))}
-          </div>
-        </div>
-      </div>
 
-      {/* CONTENIDO PRINCIPAL */}
-      <div className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 grid grid-cols-1 lg:grid-cols-[1fr_350px] gap-8 items-start">
-        
-        {/* WIZARD CONTENT */}
-        <div className="w-full relative overflow-hidden bg-white dark:bg-[#1E293B] rounded-3xl p-6 sm:p-10 shadow-sm border border-[#E5E7EB] dark:border-slate-700 min-h-[600px]">
-          <AnimatePresence mode="wait">
-            
-            {/* STEP 1: MODALIDAD */}
-            {step === 1 && (
-              <motion.div key="step1" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
-                <h2 className="text-2xl font-black text-[#111827] dark:text-white mb-2">Modalidad de Atención</h2>
-                <p className="text-[#6B7280] dark:text-slate-400 mb-8">Elige cómo deseas que se lleve a cabo la consulta.</p>
+            {/* Right: Stepper Navigation */}
+            <div className="flex items-center gap-1.5 sm:gap-2.5 bg-white dark:bg-[#1E293B] px-3.5 py-1.5 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xs shrink-0 self-end sm:self-auto">
+              {stepsList.map((s, idx) => {
+                const IconComponent = s.icon;
+                const isCurrent = step === s.num;
+                const isCompleted = s.isDone && !isCurrent;
+                const canClick = s.num === 1 || (s.num === 2 && canGoToStep2) || (s.num === 3 && canGoToStep3);
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
-                  {(['presencial', 'virtual', 'domicilio'] as ModalidadCita[]).map((mod) => (
+                return (
+                  <div key={s.num} className="flex items-center gap-1.5 sm:gap-2">
                     <button
-                      key={mod}
-                      onClick={() => handleSelectModalidad(mod)}
-                      className={`p-6 rounded-2xl border-2 transition-all flex flex-col items-center gap-4 text-center ${
-                        modalidad === mod ? 'border-[#2563EB] bg-[#EFF6FF] dark:bg-blue-900/30' : 'border-[#E5E7EB] dark:border-slate-700 bg-white dark:bg-[#0F172A] hover:border-[#BFDBFE] dark:hover:border-blue-900'
+                      type="button"
+                      onClick={() => canClick && setStep(s.num)}
+                      disabled={!canClick}
+                      className={`flex items-center gap-1.5 py-1 px-1.5 sm:px-2 rounded-xl transition-all duration-200 ${
+                        canClick ? 'cursor-pointer hover:opacity-80' : 'cursor-not-allowed opacity-60'
+                      } ${
+                        isCompleted
+                          ? 'text-emerald-700 dark:text-emerald-300'
+                          : isCurrent
+                          ? 'text-blue-700 dark:text-blue-300 font-extrabold'
+                          : 'text-slate-400 dark:text-slate-500'
                       }`}
+                      title={`Paso ${s.num}: ${s.label}`}
                     >
-                      <div className={`p-4 rounded-full ${modalidad === mod ? 'bg-[#2563EB] text-white' : 'bg-[#F3F4F6] dark:bg-slate-800 text-[#6B7280] dark:text-slate-400'}`}>
-                        {mod === 'virtual' ? <Monitor className="w-6 h-6"/> : mod === 'domicilio' ? <Home className="w-6 h-6"/> : <Building2 className="w-6 h-6"/>}
-                      </div>
-                      <span className="font-bold text-[#111827] dark:text-white capitalize">{mod}</span>
-                    </button>
-                  ))}
-                </div>
-
-                {modalidad === 'presencial' && (
-                  <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
-                    <h3 className="text-sm font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider">Selecciona la Clínica</h3>
-                    {clinicasList?.map(c => (
-                      <button
-                        key={c.mclCodigo}
-                        onClick={() => setClinicaSeleccionada(c)}
-                        className={`w-full p-4 flex items-center justify-between rounded-xl border-2 transition-all text-left ${
-                          clinicaSeleccionada?.mclCodigo === c.mclCodigo ? 'border-[#2563EB] bg-[#F8FAFC] dark:bg-blue-900/20' : 'border-[#E5E7EB] dark:border-slate-700 bg-white dark:bg-[#0F172A] hover:border-[#BFDBFE] dark:hover:border-blue-900'
+                      <div
+                        className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 ${
+                          isCompleted
+                            ? 'bg-emerald-500 text-white shadow-xs ring-2 ring-emerald-200 dark:ring-emerald-900/60'
+                            : isCurrent
+                            ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30 ring-2 ring-blue-300 dark:ring-blue-700'
+                            : 'bg-slate-100 dark:bg-slate-800/80 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700'
                         }`}
                       >
-                        <div className="flex items-center gap-4">
-                          <div className="bg-[#EFF6FF] dark:bg-blue-900/40 p-3 rounded-xl"><Building2 className="w-5 h-5 text-[#2563EB] dark:text-blue-400" /></div>
-                          <div>
-                            <p className="font-bold text-[#111827] dark:text-white">{c.cliDescripcion}</p>
-                            <p className="text-sm text-[#6B7280] dark:text-slate-400">{c.cliDireccionCompleta}</p>
-                          </div>
-                        </div>
-                        {clinicaSeleccionada?.mclCodigo === c.mclCodigo && <CheckCircle2 className="w-6 h-6 text-[#2563EB] dark:text-blue-400" />}
-                      </button>
-                    ))}
+                        {isCompleted ? (
+                          <Check className="w-3.5 h-3.5 stroke-[3.5]" />
+                        ) : (
+                          <IconComponent className="w-3.5 h-3.5" />
+                        )}
+                      </div>
+                      <span className={`text-[11px] font-bold tracking-tight hidden sm:inline ${
+                        isCurrent ? 'text-slate-900 dark:text-white font-extrabold' : ''
+                      }`}>
+                        {s.label}
+                      </span>
+                    </button>
+
+                    {idx < stepsList.length - 1 && (
+                      <div
+                        className={`w-2 sm:w-3.5 h-0.5 rounded-full transition-colors duration-300 ${
+                          s.isDone ? 'bg-emerald-400 dark:bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'
+                        }`}
+                      />
+                    )}
                   </div>
-                )}
+                );
+              })}
+            </div>
 
-                {modalidad === 'virtual' && (
-                  <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
-                     <h3 className="text-sm font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider">Enlace (Opcional)</h3>
-                     <div className="bg-[#F8FAFC] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-slate-700 rounded-xl p-6">
-                       <p className="text-sm text-[#6B7280] dark:text-slate-400 mb-4">La clínica te enviará el enlace de la teleconsulta. Si ya tienes un enlace pre-acordado, puedes ingresarlo aquí.</p>
-                       <input 
-                         type="url" 
-                         value={enlace} 
-                         onChange={e => setEnlace(e.target.value)} 
-                         placeholder="https://zoom.us/j/..." 
-                         className="w-full bg-white dark:bg-[#1E293B] border border-[#D1D5DB] dark:border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#2563EB] text-[#111827] dark:text-white placeholder:text-[#9CA3AF] dark:placeholder:text-slate-500"
-                       />
-                     </div>
+          </div>
+        </div>
+
+        {/* ── CONTENIDO POR PASOS ── */}
+        <AnimatePresence mode="wait">
+
+          {/* ══════════════════════════════════════════════════════
+              PASO 1: HORARIO Y MODALIDAD (Procedimiento idéntico a creación)
+              ══════════════════════════════════════════════════════ */}
+          {step === 1 && (
+            <motion.div
+              key="step1"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6"
+            >
+              {/* Banner informativo de reprogramación con highlight en morado */}
+              <div className="bg-purple-50/90 dark:bg-purple-950/40 border-2 border-purple-300 dark:border-purple-800/80 rounded-2xl p-4 sm:p-5 text-purple-900 dark:text-purple-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
+                    <CalendarClock className="w-5 h-5" />
                   </div>
-                )}
-
-                {modalidad === 'domicilio' && (
-                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-                    <div>
-                      <h3 className="text-sm font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider mb-2">Dirección Completa</h3>
-                      <input 
-                         type="text" 
-                         value={direccion} 
-                         onChange={e => setDireccion(e.target.value)} 
-                         placeholder="Calle principal #123, Colonia..." 
-                         className="w-full bg-white dark:bg-[#0F172A] border border-[#D1D5DB] dark:border-slate-700 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#2563EB] text-[#111827] dark:text-white placeholder:text-[#9CA3AF] dark:placeholder:text-slate-500"
-                       />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider mb-2">Referencias</h3>
-                      <input 
-                         type="text" 
-                         value={referencias} 
-                         onChange={e => setReferencias(e.target.value)} 
-                         placeholder="Casa portón blanco, frente al parque..." 
-                         className="w-full bg-white dark:bg-[#0F172A] border border-[#D1D5DB] dark:border-slate-700 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#2563EB] text-[#111827] dark:text-white placeholder:text-[#9CA3AF] dark:placeholder:text-slate-500"
-                       />
-                    </div>
-                  </div>
-                )}
-              </motion.div>
-            )}
-
-            {/* STEP 2: FECHA Y HORA */}
-            {step === 2 && (
-              <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                <h2 className="text-2xl font-black text-[#111827] dark:text-white mb-2">Fecha y Hora</h2>
-                <p className="text-[#6B7280] dark:text-slate-400 mb-8">Selecciona un nuevo horario disponible para tu consulta.</p>
-
-                <div className="grid grid-cols-1 md:grid-cols-[auto_1fr] gap-8">
-                  <div className="flex justify-center bg-[#F8FAFC] dark:bg-[#0F172A] p-4 sm:p-6 rounded-2xl border border-[#E5E7EB] dark:border-slate-700 self-start w-fit">
-                    <DayPicker
-                      mode="single"
-                      selected={fecha}
-                      onSelect={(day) => { setFecha(day); setHora(''); }}
-                      locale={es}
-                      disabled={disabledDays}
-                      className="neo-calendar font-sans"
-                      modifiersClassNames={{
-                        selected: "bg-[#2563EB] text-white hover:bg-blue-700 font-bold shadow-md",
-                        today: "font-black text-[#2563EB] underline decoration-2 underline-offset-4"
-                      }}
-                    />
-                  </div>
-
                   <div>
-                    {fecha ? (
-                      timeSlots.length > 0 ? (
-                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 animate-in fade-in">
-                          {timeSlots.map(({ time, disabled }) => (
+                    <h3 className="font-bold text-sm sm:text-base text-purple-950 dark:text-purple-100">
+                      Cita Agendada Actualmente (Resaltada en Morado)
+                    </h3>
+                    <p className="text-xs sm:text-sm text-purple-800 dark:text-purple-300 mt-0.5">
+                      Tu cita previa está programada para el{' '}
+                      <strong>{safeFormatDate(citaOriginal.ctaFecha, "EEEE, d 'de' MMMM 'de' yyyy")}</strong> a las{' '}
+                      <strong>{format12Hour(citaOriginal.ctaHora)}</strong> ({citaOriginal.ctaModalidad}).
+                    </p>
+                  </div>
+                </div>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-200/80 dark:bg-purple-900/60 border border-purple-300 dark:border-purple-700 text-purple-900 dark:text-purple-200 font-bold text-xs shrink-0 self-start sm:self-auto">
+                  <span className="w-2.5 h-2.5 rounded-full bg-purple-600 animate-pulse" />
+                  <span>Horario Actual en Morado</span>
+                </div>
+              </div>
+
+              {/* 1. SELECCIÓN DE TEMA DE SEGUIMIENTO (Si aplica) */}
+              {gruposList.length > 0 && (
+                <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-xs">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <FolderPlus className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                      Tema de Seguimiento Asociado
+                    </h3>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setGrupoId('')}
+                      className={`p-3 rounded-xl border text-left text-xs font-bold transition cursor-pointer ${
+                        !grupoId
+                          ? 'border-blue-600 bg-blue-50/70 text-blue-900 dark:bg-blue-900/30 dark:border-blue-500 dark:text-blue-200'
+                          : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      <span>Consulta Individual (Sin tema)</span>
+                    </button>
+                    {gruposList.map((g: GrupoCitaDto) => {
+                      const isSelected = grupoId === g.grupoId;
+                      return (
+                        <button
+                          key={g.grupoId}
+                          type="button"
+                          onClick={() => setGrupoId(g.grupoId)}
+                          className={`p-3 rounded-xl border text-left text-xs font-bold transition flex items-center justify-between cursor-pointer ${
+                            isSelected
+                              ? 'border-purple-600 bg-purple-50/80 text-purple-950 dark:bg-purple-950/60 dark:border-purple-500 dark:text-purple-200'
+                              : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          <span className="truncate">{g.titulo || g.descripcion || 'Tema de Seguimiento'}</span>
+                          {isSelected && <Check className="w-3.5 h-3.5 text-purple-600 shrink-0 ml-1" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* 2. SERVICIOS Y TARIFAS DEL ESPECIALISTA (Si tiene servicios configurados) */}
+              {serviciosMedico.length > 0 && (
+                <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-2">
+                    <div>
+                      <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <Stethoscope className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" />
+                        Servicios y Tarifas del Especialista
+                      </h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        Puedes mantener o cambiar el servicio solicitado para esta consulta.
+                      </p>
+                    </div>
+                    {servicioSeleccionado && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setServicioSeleccionado(null);
+                          setPrecio(citaOriginal.ctaPrecio || clinicaSeleccionada?.mclPrecioBase || 0);
+                        }}
+                        className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline self-start sm:self-auto cursor-pointer"
+                      >
+                        Restablecer precio base
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[220px] overflow-y-auto pr-1">
+                    {serviciosMedico.map((s: ServicioMedicoCitaDto) => {
+                      const isSelected = servicioSeleccionado?.sypCodigo === s.sypCodigo;
+                      return (
+                        <button
+                          key={s.sypCodigo}
+                          type="button"
+                          onClick={() => {
+                            setServicioSeleccionado(s);
+                            setMotivo(s.servicio);
+                            setPrecio(s.costoTotal);
+                          }}
+                          className={`text-left p-3.5 rounded-xl border-2 transition-all flex flex-col justify-between cursor-pointer ${
+                            isSelected
+                              ? 'border-blue-600 dark:border-blue-500 bg-blue-50/70 dark:bg-blue-900/30 shadow-xs'
+                              : 'border-slate-200 dark:border-slate-700/80 hover:border-blue-300 dark:hover:border-blue-600/50 bg-slate-50/50 dark:bg-[#0F172A]'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <h4 className={`font-bold text-xs sm:text-sm leading-tight ${isSelected ? 'text-blue-900 dark:text-blue-300' : 'text-slate-800 dark:text-slate-200'}`}>
+                              {s.servicio}
+                            </h4>
+                            <div className={`shrink-0 w-4.5 h-4.5 rounded-full flex items-center justify-center ${isSelected ? 'bg-blue-600 text-white' : 'border border-slate-300 dark:border-slate-600'}`}>
+                              {isSelected && <Check className="w-3 h-3" />}
+                            </div>
+                          </div>
+                          <div className="mt-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-baseline justify-between">
+                            <span className="text-[10px] text-slate-400">Sin IVA: Q{s.costoSinIva.toFixed(2)}</span>
+                            <span className="text-sm font-black text-blue-600 dark:text-blue-400">Q{s.costoTotal.toFixed(2)}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* 3. MODALITY TABS (Procedimiento idéntico con iconos y pestañas superiores) */}
+              <div className="border-b border-slate-200 dark:border-slate-800 flex gap-2 overflow-x-auto scrollbar-none pb-1">
+                {(modalidadesList.length > 0 ? modalidadesList : [
+                  { modCodigo: 1, modDescripcion: 'Presencial' },
+                  { modCodigo: 2, modDescripcion: 'Virtual' },
+                  { modCodigo: 3, modDescripcion: 'Domicilio' },
+                ]).map((mod: any) => {
+                  const desc = (mod.modDescripcion || '').toLowerCase();
+                  const normalized: ModalidadCita = desc.includes('domicilio') 
+                    ? 'domicilio' 
+                    : desc.includes('virtual') ? 'virtual' : 'presencial';
+                  const isSelected = modalidad === normalized;
+
+                  return (
+                    <button
+                      key={mod.modCodigo}
+                      type="button"
+                      onClick={() => handleSelectModalidad(normalized)}
+                      className={`flex items-center gap-2 px-6 py-3 transition-colors mb-[-1px] font-bold text-sm cursor-pointer ${
+                        isSelected
+                          ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-500 rounded-t-xl'
+                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/60 dark:hover:bg-slate-800/60 border-b-2 border-transparent'
+                      }`}
+                    >
+                      {normalized === 'presencial' ? (
+                        <Building2 className="w-4 h-4" />
+                      ) : normalized === 'virtual' ? (
+                        <Video className="w-4 h-4" />
+                      ) : (
+                        <Home className="w-4 h-4" />
+                      )}
+                      <span className="capitalize">{mod.modDescripcion || normalized}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* 4. COLUMNA DE UBICACIÓN + CALENDARIO Y HORARIOS (Layout idéntico a creación) */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 flex-grow">
+                
+                {/* Columna Ubicación (si presencial o domicilio) */}
+                {modalidad !== 'virtual' && (
+                  <div className="lg:col-span-4 flex flex-col space-y-3">
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-blue-600" />
+                      {modalidad === 'presencial' ? 'Seleccionar Clínica' : 'Zona de Cobertura'}
+                    </h3>
+
+                    {modalidad === 'presencial' && (
+                      <div className="flex flex-col gap-3 max-h-[380px] overflow-y-auto pr-1">
+                        {clinicasList.map((clinica) => {
+                          const isSelected = clinicaSeleccionada?.mclCodigo === clinica.mclCodigo;
+                          const isOriginalClinic = citaOriginal.ctaConsultorioId && (
+                            String(clinica.cliCodigo) === String(citaOriginal.ctaConsultorioId) || 
+                            String(clinica.mclCodigo) === String(citaOriginal.ctaConsultorioId)
+                          );
+
+                          return (
                             <button
-                              key={time}
-                              onClick={() => !disabled && setHora(time)}
-                              disabled={disabled}
-                              title={disabled ? "Horario no disponible" : ""}
-                              className={`py-3 px-1 rounded-xl text-sm font-bold transition-all border ${
-                                disabled
-                                ? 'bg-[#F3F4F6] dark:bg-slate-800 text-[#9CA3AF] dark:text-slate-600 border-[#E5E7EB] dark:border-slate-700 cursor-not-allowed opacity-60'
-                                : hora === time 
-                                ? 'bg-[#2563EB] text-white border-[#2563EB] shadow-md ring-2 ring-[#BFDBFE] dark:ring-blue-900' 
-                                : 'bg-white dark:bg-[#1E293B] text-[#111827] dark:text-white border-[#E5E7EB] dark:border-slate-700 hover:border-[#93C5FD] dark:hover:border-blue-900 hover:bg-[#EFF6FF] dark:hover:bg-blue-900/20'
+                              key={clinica.mclCodigo}
+                              type="button"
+                              onClick={() => setClinicaSeleccionada(clinica)}
+                              className={`text-left p-4 rounded-xl border-2 transition-all shrink-0 cursor-pointer ${
+                                isSelected
+                                  ? 'bg-blue-50/70 dark:bg-blue-900/30 border-blue-600 dark:border-blue-500 shadow-xs'
+                                  : 'bg-white dark:bg-[#1E293B] border-slate-200 dark:border-slate-700 hover:border-slate-300'
                               }`}
                             >
-                              {time.slice(0, 5)}
+                              <div className="flex items-start justify-between gap-2">
+                                <h4 className={`font-bold text-sm leading-tight ${isSelected ? 'text-blue-900 dark:text-blue-300' : 'text-slate-800 dark:text-slate-200'}`}>
+                                  {clinica.cliDescripcion}
+                                </h4>
+                                {isOriginalClinic && (
+                                  <span className="text-[10px] font-black uppercase tracking-wider bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 px-2 py-0.5 rounded-md shrink-0">
+                                    Actual
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
+                                {clinica.cliDireccionCompleta}
+                              </p>
+                              <div className="mt-2 text-[11px] font-bold text-blue-600 dark:text-blue-400">
+                                Tarifa: Q{(clinica.mclPrecioBase || 0).toFixed(2)}
+                              </div>
                             </button>
-                          ))}
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {modalidad === 'domicilio' && (
+                      <div className="flex flex-col gap-3">
+                        <div className="max-h-[220px] overflow-y-auto pr-1 space-y-2">
+                          {areasList.map((area) => {
+                            const isSelected = areaSeleccionada?.ladCodigo === area.ladCodigo;
+                            return (
+                              <button
+                                key={area.ladCodigo}
+                                type="button"
+                                onClick={() => setAreaSeleccionada(area)}
+                                className={`w-full text-left p-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-blue-50/70 dark:bg-blue-900/30 border-blue-600 dark:border-blue-500'
+                                    : 'bg-white dark:bg-[#1E293B] border-slate-200 dark:border-slate-700'
+                                }`}
+                              >
+                                <span className="font-semibold text-xs text-slate-800 dark:text-slate-200">{area.municipio}</span>
+                                {area.ladZonas && (
+                                  <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 px-2 py-0.5 rounded-full">
+                                    Zonas: {area.ladZonas}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
                         </div>
-                      ) : (
-                         <div className="bg-[#FEF2F2] dark:bg-red-900/10 border border-[#FCA5A5] dark:border-red-900/30 p-6 rounded-xl flex flex-col items-center text-center">
-                           <AlertCircle className="w-10 h-10 text-[#EF4444] dark:text-red-500 mb-2" />
-                           <p className="font-bold text-[#991B1B] dark:text-red-400">Sin disponibilidad</p>
-                           <p className="text-sm text-[#B91C1C] dark:text-red-500">El médico no atiende en la fecha seleccionada.</p>
-                         </div>
-                      )
-                    ) : (
-                      <div className="bg-[#F8FAFC] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-slate-700 p-8 rounded-2xl flex flex-col items-center justify-center text-center h-full min-h-[250px]">
-                        <CalendarClock className="w-12 h-12 text-[#9CA3AF] dark:text-slate-600 mb-4" />
-                        <p className="font-bold text-[#4B5563] dark:text-slate-300">Selecciona un día en el calendario</p>
-                        <p className="text-sm text-[#6B7280] dark:text-slate-500">Podrás ver y elegir las horas disponibles</p>
+                        <input
+                          type="text"
+                          value={direccion}
+                          onChange={(e) => setDireccion(e.target.value)}
+                          placeholder="Dirección exacta para visita a domicilio..."
+                          className="w-full bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
                       </div>
                     )}
                   </div>
-                </div>
-              </motion.div>
-            )}
+                )}
 
-            {/* STEP 3: CONFIRMACION */}
-            {step === 3 && (
-              <motion.div key="step3" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.05 }}>
-                <div className="text-center mb-10">
-                  <div className="w-16 h-16 bg-[#EFF6FF] dark:bg-blue-900/30 text-[#2563EB] dark:text-blue-400 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <CheckCircle2 className="w-8 h-8" />
-                  </div>
-                  <h2 className="text-3xl font-black text-[#111827] dark:text-white">Resumen de Modificación</h2>
-                  <p className="text-[#6B7280] dark:text-slate-400 mt-2 max-w-lg mx-auto">Revisa los cambios de tu cita antes de confirmar.</p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative">
-                  <div className="absolute inset-y-0 left-1/2 w-px bg-dashed border-l-2 border-dashed border-[#E5E7EB] dark:border-slate-700 hidden md:block" />
+                {/* Columna Calendario y Horarios Disponibles */}
+                <div className={`${modalidad === 'virtual' ? 'lg:col-span-12' : 'lg:col-span-8'} bg-slate-50/60 dark:bg-[#0F172A] rounded-2xl p-4 sm:p-6 flex flex-col md:flex-row gap-6 md:gap-8 border border-slate-200/80 dark:border-slate-800/80`}>
                   
-                  {/* CITA ANTERIOR */}
-                  <div className="bg-[#F9FAFB] dark:bg-[#0F172A] rounded-2xl p-6 border border-[#E5E7EB] dark:border-slate-700 relative">
-                    <span className="absolute -top-3 left-6 bg-[#6B7280] dark:bg-slate-600 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full shadow-sm">
-                      Antes (Programada)
-                    </span>
-                    <div className="space-y-4 mt-2">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden relative shrink-0">
-                          {doctor?.exp_foto_perfil ? (
-                            <Image src={doctor.exp_foto_perfil} alt={citaOriginal.medicoNombre} fill sizes="40px" className="object-cover" />
-                          ) : (
-                            <span className="flex items-center justify-center h-full font-bold text-xs text-slate-500">MD</span>
-                          )}
-                        </div>
-                        <div>
-                          <p className="font-black text-[#111827] dark:text-white text-sm">Dr. {citaOriginal.medicoNombre}</p>
-                          <p className="text-xs text-slate-500 font-medium">{citaOriginal.medicoEspecialidad}</p>
-                        </div>
+                  {/* Calendario con navegación directa de mes */}
+                  <div className="flex-1 flex flex-col space-y-3 min-w-0">
+                    <div className="flex items-center justify-between mb-1 px-1">
+                      <h3 className="text-base font-bold text-slate-900 dark:text-white capitalize">
+                        {format(currentMonth, 'MMMM yyyy', { locale: es })}
+                      </h3>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
+                          className="h-8 w-8 flex items-center justify-center bg-white dark:bg-[#1E293B] shadow-xs border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-600 dark:text-slate-400 cursor-pointer"
+                          title="Mes anterior"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
+                          className="h-8 w-8 flex items-center justify-center bg-white dark:bg-[#1E293B] shadow-xs border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-600 dark:text-slate-400 cursor-pointer"
+                          title="Siguiente mes"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
                       </div>
+                    </div>
 
-                      <div className="flex items-center gap-3">
-                        <CalendarDays className="w-5 h-5 text-[#6B7280] dark:text-slate-400" />
-                        <div>
-                          <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider">Fecha agendada</p>
-                          <p className="font-black text-[#111827] dark:text-white text-base">{safeFormatDate(citaOriginal.ctaFecha, "d 'de' MMMM, yyyy")}</p>
-                          <p className="text-xs font-semibold text-[#6B7280] dark:text-slate-400">{citaOriginal.ctaHora.slice(0, 5)} hrs</p>
-                        </div>
+                    <div className="flex justify-center sm:justify-start">
+                      <DayPicker
+                        mode="single"
+                        month={currentMonth}
+                        onMonthChange={setCurrentMonth}
+                        selected={fecha}
+                        onSelect={(d) => {
+                          if (!d) return;
+                          setFecha(d);
+                          // If selecting original date, auto-preserve original time
+                          if (fechaOriginalDate && format(d, 'yyyy-MM-dd') === format(fechaOriginalDate, 'yyyy-MM-dd')) {
+                            setHora(horaOriginalStr);
+                          } else {
+                            setHora('');
+                          }
+                        }}
+                        locale={es}
+                        disabled={disabledDays}
+                        modifiers={{
+                          fechaOriginal: fechaOriginalDate ? [fechaOriginalDate] : [],
+                        }}
+                        modifiersClassNames={{
+                          fechaOriginal: '!border-2 !border-purple-600 !bg-purple-100 dark:!bg-purple-950/80 !text-purple-900 dark:!text-purple-100 font-black rounded-xl hover:!bg-purple-200 dark:hover:!bg-purple-900 shadow-xs',
+                          selected: isCurrentSelectionOriginalDate
+                            ? '!bg-purple-600 dark:!bg-purple-600 !text-white !border-2 !border-purple-500 font-black rounded-xl shadow-md ring-2 ring-purple-300 dark:ring-purple-700'
+                            : '!bg-blue-600 dark:!bg-blue-500 !text-white hover:!bg-blue-700 font-bold shadow-md rounded-xl',
+                          today: 'font-bold text-blue-600 dark:text-blue-400',
+                        }}
+                        classNames={{
+                          day: 'p-0 text-[14px] sm:text-[15px] dark:text-slate-200',
+                          day_button: 'h-9 w-9 sm:h-11 sm:w-11 font-medium hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-xl transition-all mx-auto flex items-center justify-center cursor-pointer',
+                          month_caption: 'hidden',
+                          nav: 'hidden',
+                          button_previous: 'hidden',
+                          button_next: 'hidden',
+                          month_grid: 'w-full border-collapse',
+                          weekday: 'text-slate-400 dark:text-slate-500 font-medium text-xs sm:text-sm capitalize w-9 h-9 sm:w-11 sm:h-11',
+                        }}
+                      />
+                    </div>
+
+                    {/* Leyenda de Fecha Resaltada en Morado */}
+                    {fechaOriginalDate && (
+                      <div className="mt-3 flex items-center gap-2 text-xs font-bold text-purple-900 dark:text-purple-200 bg-purple-100/80 dark:bg-purple-950/60 border border-purple-300 dark:border-purple-800 px-3 py-2 rounded-xl shadow-2xs">
+                        <div className="w-2.5 h-2.5 rounded-full bg-purple-600 shrink-0" />
+                        <span>Día en morado: Fecha previamente programada ({format(fechaOriginalDate, "d 'de' MMMM", { locale: es })})</span>
                       </div>
+                    )}
+                  </div>
 
-                      <div className="flex items-center gap-3">
-                        <Monitor className="w-5 h-5 text-[#6B7280] dark:text-slate-400" />
-                        <div>
-                          <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider">Modalidad y Precio</p>
-                          <p className="font-black text-[#111827] dark:text-white capitalize">{citaOriginal.ctaModalidad}</p>
-                          <p className="text-xs font-bold text-blue-600 dark:text-blue-400">${citaOriginal.ctaPrecio}</p>
-                        </div>
-                      </div>
-
-                      {citaOriginal.ctaMotivo && (
-                        <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase">Motivo original:</p>
-                          <p className="text-xs text-slate-700 dark:text-slate-300 italic">{citaOriginal.ctaMotivo}</p>
-                        </div>
+                  {/* Horarios Disponibles con el horario actual resaltado en Morado */}
+                  <div className="flex-1 flex flex-col space-y-3 border-t md:border-t-0 md:border-l border-slate-200 dark:border-slate-800 pt-4 md:pt-0 md:pl-6">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-base font-bold text-slate-900 dark:text-white">Horarios Disponibles</h3>
+                      {fecha && (
+                        <span className="text-xs text-slate-500 dark:text-slate-400 font-medium capitalize">
+                          {format(fecha, 'EEEE d', { locale: es })}
+                        </span>
                       )}
                     </div>
+
+                    {fecha ? (
+                      availableTimeSlots.length > 0 ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[340px] overflow-y-auto pr-1 content-start">
+                          {availableTimeSlots.map(({ time: slot, disabled, isOriginalSlot }) => {
+                            const isSelected = hora === slot || hora.slice(0, 5) === slot.slice(0, 5);
+                            const displayTime = format12Hour(slot);
+
+                            // Resaltado especial en MORADO para el horario previamente agendado
+                            if (isOriginalSlot) {
+                              return (
+                                <button
+                                  key={slot}
+                                  type="button"
+                                  onClick={() => setHora(slot)}
+                                  className={`py-2.5 px-3 rounded-xl text-left text-xs sm:text-sm font-bold transition-all border-2 flex flex-col justify-between cursor-pointer ${
+                                    isSelected
+                                      ? 'border-purple-600 bg-purple-600 text-white shadow-md ring-2 ring-purple-300 dark:ring-purple-700'
+                                      : 'border-purple-500 bg-purple-50 dark:bg-purple-950/70 text-purple-950 dark:text-purple-200 hover:bg-purple-100'
+                                  }`}
+                                  title="Horario previamente agendado para esta cita"
+                                >
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="font-extrabold">{displayTime}</span>
+                                    <span className={`inline-flex items-center gap-0.5 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md ${
+                                      isSelected ? 'bg-white/25 text-white' : 'bg-purple-200 dark:bg-purple-900 text-purple-900 dark:text-purple-200'
+                                    }`}>
+                                      <Check className="w-2.5 h-2.5 stroke-[3]" /> Actual
+                                    </span>
+                                  </div>
+                                  <span className={`text-[10px] mt-0.5 ${isSelected ? 'text-purple-100' : 'text-purple-700 dark:text-purple-300'}`}>
+                                    Horario previo
+                                  </span>
+                                </button>
+                              );
+                            }
+
+                            return (
+                              <button
+                                key={slot}
+                                type="button"
+                                disabled={disabled}
+                                onClick={() => !disabled && setHora(slot)}
+                                className={`py-3 px-3 rounded-xl text-left text-xs sm:text-sm font-semibold transition-all border cursor-pointer ${
+                                  isSelected
+                                    ? 'border-blue-600 bg-blue-50/90 dark:bg-blue-900/40 text-blue-950 dark:text-white font-bold shadow-xs'
+                                    : disabled
+                                    ? 'border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-[#0B1120] text-slate-400 cursor-not-allowed opacity-50'
+                                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] text-slate-700 dark:text-slate-300 hover:border-blue-300 hover:bg-blue-50/50'
+                                }`}
+                              >
+                                {displayTime}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="p-8 text-center bg-white dark:bg-[#1E293B] rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 text-slate-500 text-xs">
+                          <Clock className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                          No hay turnos disponibles para este día. Elige otra fecha.
+                        </div>
+                      )
+                    ) : (
+                      <div className="p-8 text-center bg-white dark:bg-[#1E293B] rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 text-slate-500 text-xs">
+                        <CalendarDays className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                        Selecciona un día en el calendario para ver los horarios.
+                      </div>
+                    )}
                   </div>
 
-                  {/* NUEVA CITA */}
-                  <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-6 border-2 border-[#2563EB] shadow-lg relative">
-                    <span className="absolute -top-3 left-6 bg-[#2563EB] text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full shadow-md">
-                      Nueva Configuración
-                    </span>
-                    <div className="space-y-4 mt-2">
-                      <div className="flex items-center gap-3">
-                        <CalendarDays className="w-5 h-5 text-[#2563EB] dark:text-blue-400" />
-                        <div>
-                          <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider">Nueva Fecha</p>
-                          <p className="font-black text-[#111827] dark:text-white text-base">{fecha ? format(fecha, "d 'de' MMMM, yyyy", {locale:es}) : ''}</p>
-                          <p className="text-xs font-bold text-[#2563EB] dark:text-blue-400">{hora.slice(0, 5)} hrs</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        {modalidad === 'presencial' ? <Building2 className="w-5 h-5 text-[#2563EB] dark:text-blue-400" /> : <MapPin className="w-5 h-5 text-[#2563EB] dark:text-blue-400" />}
-                        <div>
-                          <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider">Nueva Modalidad</p>
-                          <p className="font-black text-[#111827] dark:text-white capitalize">{modalidad}</p>
-                          <p className="text-xs font-black text-[#111827] dark:text-white">${precio}</p>
-                        </div>
-                      </div>
+                </div>
+
+              </div>
+
+              {/* Botón Siguiente Paso */}
+              <div className="sticky bottom-0 z-30 bg-slate-50/95 dark:bg-[#0B1120]/95 backdrop-blur-md py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setIsCancelModalOpen(true)}
+                  className="px-4 py-2.5 rounded-xl font-bold text-xs text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition cursor-pointer"
+                >
+                  Cancelar cita definitivamente
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  disabled={!canGoToStep2}
+                  className={`font-bold py-3.5 px-8 rounded-2xl transition-all flex items-center gap-2 text-sm shadow-md ${
+                    canGoToStep2
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
+                      : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-70'
+                  }`}
+                >
+                  <span>Continuar a Detalles</span> <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ══════════════════════════════════════════════════════
+              PASO 2: DETALLES, MOTIVO Y DOCUMENTOS
+              ══════════════════════════════════════════════════════ */}
+          {step === 2 && (
+            <motion.div
+              key="step2"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6"
+            >
+              <div className="bg-white dark:bg-[#1E293B] rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-xs space-y-6">
+                
+                {/* Paciente Info Card */}
+                <div>
+                  <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
+                    Paciente de la Cita
+                  </h3>
+                  <div className="flex items-center gap-3 p-4 bg-slate-50 dark:bg-[#0F172A] rounded-2xl border border-slate-200 dark:border-slate-700">
+                    <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 flex items-center justify-center font-bold text-lg shrink-0">
+                      {citaOriginal.pacienteNombre?.charAt(0) || 'P'}
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-base text-slate-900 dark:text-white">
+                        {citaOriginal.pacienteNombre}
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {pacientes?.find(p => p.pacCodigo === codPaciente)?.pacTitular ? 'Titular' : 'Paciente Registrado'} · Cita #{citaId}
+                      </p>
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-8 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900/30 p-4 rounded-xl flex items-start gap-3">
-                  <CreditCard className="w-5 h-5 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
-                  <p className="text-sm text-amber-800 dark:text-amber-400 font-medium">
-                    <strong className="block mb-1">Aviso sobre Pagos</strong>
-                    Al cambiar la modalidad, el costo de la consulta puede variar. Pueden haber cobros o ajustes extras dependiendo de las políticas de la clínica y el costo final de los servicios prestados.
-                  </p>
+                {/* Motivo de Consulta */}
+                <div>
+                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300 block mb-2">
+                    Motivo o Síntomas de la Consulta *
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={motivo}
+                    onChange={(e) => setMotivo(e.target.value)}
+                    placeholder="Describe los síntomas, dudas o motivo de la reprogramación..."
+                    className="w-full bg-slate-50 dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 rounded-2xl p-4 text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 dark:text-slate-200"
+                  />
                 </div>
-              </motion.div>
-            )}
 
-          </AnimatePresence>
-        </div>
-
-        {/* SUMMARY SIDEBAR CON INFORMACIÓN DETALLADA DE LA CITA */}
-        <div className="hidden lg:block bg-white dark:bg-[#1E293B] rounded-3xl p-6 shadow-sm border border-[#E5E7EB] dark:border-slate-700 sticky top-32">
-           <div className="flex items-center justify-between pb-4 border-b border-[#E5E7EB] dark:border-slate-700 mb-6">
-             <h3 className="font-black text-lg text-[#111827] dark:text-white">Detalles de la Cita</h3>
-             <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/40">
-               {citaOriginal.ctaEstado || 'Programada'}
-             </span>
-           </div>
-
-           <div className="space-y-5">
-              {/* Información del Paciente */}
-              <div>
-                <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-widest mb-1.5">Paciente</p>
-                <div className="flex items-center gap-3 p-3 bg-[#F8FAFC] dark:bg-[#0F172A] rounded-xl border border-[#E5E7EB] dark:border-slate-700">
-                  <div className="w-10 h-10 bg-[#E0E7FF] dark:bg-blue-900/30 text-[#4F46E5] dark:text-blue-400 rounded-full flex items-center justify-center font-bold shrink-0">
-                    {citaOriginal.pacienteNombre.charAt(0)}
+                {/* Archivos y Exámenes Médicos */}
+                <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/80 space-y-4">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Paperclip className="w-4 h-4 text-blue-600" />
+                      Archivos y Exámenes Adjuntos
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Sube o administra los exámenes clínicos y antecedentes para el médico.
+                    </p>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-bold text-[#111827] dark:text-white leading-tight truncate">{citaOriginal.pacienteNombre}</p>
-                    <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5">Consulta Médica</p>
-                  </div>
+
+                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl p-4 bg-slate-50 dark:bg-[#0F172A] hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer text-center group">
+                    <Upload className="w-6 h-6 text-blue-600 mb-1 group-hover:scale-110 transition-transform" />
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                      Seleccionar o soltar nuevos archivos
+                    </span>
+                    <span className="text-[10px] text-slate-400 mt-0.5">Exámenes médicos, PDFs o imágenes</span>
+                    <input type="file" multiple className="hidden" onChange={handleNuevosArchivosChange} accept=".pdf,.png,.jpg,.jpeg" />
+                  </label>
+
+                  {/* Lista de nuevos archivos */}
+                  {nuevosArchivos.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">Nuevos para adjuntar:</p>
+                      {nuevosArchivos.map((file, idx) => (
+                        <div key={idx} className="flex items-center justify-between p-2.5 bg-blue-50 dark:bg-blue-950/30 text-blue-800 dark:text-blue-300 text-xs rounded-xl font-medium border border-blue-200 dark:border-blue-900">
+                          <div className="flex items-center gap-2 truncate">
+                            <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+                            <span className="truncate">{file.name}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveNuevoArchivo(idx)}
+                            className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/60 rounded-full text-rose-500 transition shrink-0 cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Archivos existentes */}
+                  {archivosExistentes.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Archivos ya cargados en la cita:</p>
+                      {archivosExistentes.map((archivo) => (
+                        <div key={archivo.arcCodigo} className="flex items-center justify-between p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs rounded-xl font-medium border border-slate-200 dark:border-slate-700">
+                          <div className="flex items-center gap-2 truncate">
+                            <FileCheck className="w-4 h-4 text-emerald-500 shrink-0" />
+                            <a href={archivo.arcUrl} target="_blank" rel="noopener noreferrer" className="truncate hover:underline text-blue-600 dark:text-blue-400">
+                              {archivo.arcNombre}
+                            </a>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveArchivoExistente(archivo.arcCodigo!)}
+                            className="p-1 hover:bg-rose-100 dark:hover:bg-rose-950/60 rounded-full text-rose-500 transition shrink-0 cursor-pointer"
+                            title="Eliminar archivo"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
+
               </div>
 
-              {/* Información del Médico Especialista */}
-              <div>
-                <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-widest mb-1.5">Médico Atendente</p>
-                <div className="flex items-center gap-3 p-3 bg-[#F8FAFC] dark:bg-[#0F172A] rounded-xl border border-[#E5E7EB] dark:border-slate-700">
-                  <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden relative shrink-0">
-                    {doctor?.exp_foto_perfil ? (
-                      <Image src={doctor.exp_foto_perfil} alt={citaOriginal.medicoNombre} fill sizes="40px" className="object-cover" />
-                    ) : (
-                      <span className="flex items-center justify-center h-full font-bold text-xs text-slate-500">MD</span>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-bold text-[#111827] dark:text-white leading-tight truncate">Dr. {citaOriginal.medicoNombre}</p>
-                    <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-0.5 truncate">{citaOriginal.medicoEspecialidad}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Tema de Seguimiento */}
-              <div>
-                <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-widest mb-1">Tema de Seguimiento</p>
-                <select
-                  value={grupoId}
-                  onChange={e => setGrupoId(e.target.value)}
-                  className="w-full bg-[#F8FAFC] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-slate-700 p-3 rounded-xl text-sm font-bold text-[#111827] dark:text-white focus:outline-none focus:ring-1 focus:ring-[#2563EB] dark:focus:ring-blue-500"
+              {/* Botones de Navegación */}
+              <div className="sticky bottom-0 z-30 bg-slate-50/95 dark:bg-[#0B1120]/95 backdrop-blur-md py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className="px-5 py-3 rounded-2xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition cursor-pointer"
                 >
-                  <option value="">(Sin tema asignado)</option>
-                  {gruposList?.map(g => (
-                    <option key={g.grupoId} value={g.grupoId}>{g.titulo}</option>
-                  ))}
-                </select>
+                  Volver al Horario
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setStep(3)}
+                  disabled={!canGoToStep3}
+                  className={`font-bold py-3.5 px-8 rounded-2xl transition-all flex items-center gap-2 text-sm shadow-md ${
+                    canGoToStep3
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
+                      : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-70'
+                  }`}
+                >
+                  <span>Revisar Comparación</span> <ArrowRight className="h-4 w-4" />
+                </button>
               </div>
-
-              {/* Motivo de la Consulta */}
-              <div>
-                <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-widest mb-1">Motivo Corto</p>
-                <input 
-                  type="text" 
-                  value={motivo} 
-                  onChange={e => setMotivo(e.target.value)}
-                  placeholder="Ej. Chequeo mensual..."
-                  className="w-full bg-[#F8FAFC] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-slate-700 p-3 rounded-xl text-sm font-medium text-[#111827] dark:text-white focus:outline-none focus:ring-1 focus:ring-[#2563EB] dark:focus:ring-blue-500 placeholder:text-[#9CA3AF] dark:placeholder:text-slate-500"
-                />
-              </div>
-
-              {/* Adjuntar Archivos y Exámenes */}
-              <div className="pt-4 border-t border-[#E5E7EB] dark:border-slate-700">
-                <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-widest mb-2 flex items-center justify-between">
-                  <span>Archivos y Exámenes Adjuntos</span>
-                  <Paperclip className="w-3.5 h-3.5 text-blue-600" />
-                </p>
-                
-                <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-3 bg-slate-50 dark:bg-[#0F172A] hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer text-center group">
-                  <Upload className="w-5 h-5 text-blue-600 mb-1 group-hover:scale-110 transition-transform" />
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                    Seleccionar o soltar archivos
-                  </span>
-                  <span className="text-[10px] text-slate-400 mt-0.5">Exámenes médicos, PDFs o imágenes</span>
-                  <input type="file" multiple className="hidden" onChange={handleNuevosArchivosChange} accept=".pdf,.png,.jpg,.jpeg" />
-                </label>
-
-                {/* Lista de Archivos Nuevos a Enviar */}
-                {nuevosArchivos.length > 0 && (
-                  <div className="mt-3 space-y-1.5">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">Archivos para adjuntar:</p>
-                    {nuevosArchivos.map((file, idx) => (
-                      <div key={idx} className="flex items-center justify-between p-2 bg-blue-50 dark:bg-blue-950/30 text-blue-800 dark:text-blue-300 text-xs rounded-xl font-medium border border-blue-200/80 dark:border-blue-900/60">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <FileText className="w-3.5 h-3.5 shrink-0 text-blue-600" />
-                          <span className="truncate">{file.name}</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveNuevoArchivo(idx)}
-                          className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/60 rounded-full text-rose-500 transition ml-1 shrink-0"
-                          title="Quitar archivo"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Archivos Existentes Guardados en BD */}
-                {archivosExistentes.length > 0 && (
-                  <div className="mt-3 space-y-1.5">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Archivos existentes en cita:</p>
-                    {archivosExistentes.map((archivo) => (
-                      <div key={archivo.arcCodigo} className="flex items-center justify-between p-2 bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 text-xs rounded-xl font-medium border border-slate-200 dark:border-slate-700">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <FileCheck className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
-                          <a href={archivo.arcUrl} target="_blank" rel="noopener noreferrer" className="truncate hover:underline text-blue-600 dark:text-blue-400">
-                            {archivo.arcNombre}
-                          </a>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveArchivoExistente(archivo.arcCodigo!)}
-                          className="p-1 hover:bg-rose-100 dark:hover:bg-rose-950/60 rounded-full text-rose-500 transition ml-1 shrink-0"
-                          title="Eliminar archivo guardado"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Información de Cobro en Quetzales Q */}
-              <div className="pt-4 border-t border-[#E5E7EB] dark:border-slate-700">
-                <p className="text-sm font-bold text-[#6B7280] dark:text-slate-400 mb-1 flex justify-between">
-                  Costo de la Consulta: <span className="font-black text-[#2563EB] dark:text-blue-400">Q{precio.toFixed(2)}</span>
-                </p>
-                <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
-                  Precios ajustados según modalidad en Quetzales (GT).
-                </p>
-              </div>
-           </div>
-        </div>
-
-      </div>
-
-      {/* FOOTER WIZARD */}
-      <div className="sticky bottom-0 z-40 bg-white dark:bg-[#0B1120] border-t border-[#E5E7EB] dark:border-slate-800 p-4 sm:p-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] dark:shadow-none">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <button
-            onClick={() => {
-              if (step === 1) handleCancel();
-              else setStep(s => s - 1);
-            }}
-            className={`font-bold transition-colors flex items-center px-4 py-2 ${step === 1 ? 'text-[#e11d48] dark:text-red-400 hover:bg-rose-50 dark:hover:bg-red-900/20 rounded-xl' : 'text-[#6B7280] dark:text-slate-400 hover:text-[#111827] dark:hover:text-white'}`}
-          >
-            {step === 1 ? 'Cancelar Cita' : 'Volver atrás'}
-          </button>
-
-          {step < 3 ? (
-            <button
-              onClick={() => setStep(s => s + 1)}
-              disabled={!canGoNext()}
-              className="bg-[#111827] dark:bg-blue-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-[#374151] dark:hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2"
-            >
-              Continuar
-            </button>
-          ) : (
-            <button
-              onClick={handleSave}
-              disabled={isUpdating}
-              className="bg-[#2563EB] dark:bg-blue-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-md shadow-blue-500/20 disabled:opacity-50 flex items-center gap-2"
-            >
-              {isUpdating ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Modificar Cita Definitivamente'}
-            </button>
+            </motion.div>
           )}
-        </div>
-      </div>
 
+          {/* ══════════════════════════════════════════════════════
+              PASO 3: CONFIRMAR Y COMPARACIÓN DE LA CITA
+              ══════════════════════════════════════════════════════ */}
+          {step === 3 && (
+            <motion.div
+              key="step3"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6"
+            >
+              {/* Encabezado de Confirmación */}
+              <div className="text-center max-w-2xl mx-auto space-y-2 pt-2">
+                <div className="w-14 h-14 rounded-2xl bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto shadow-inner">
+                  <ShieldCheck className="w-7 h-7" />
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+                  Comparación de Cita Médica
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+                  Compara los datos de tu cita agendada original frente a los nuevos cambios antes de confirmar.
+                </p>
+              </div>
+
+              {/* Grid de Comparación Frente a Frente */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                {/* ── TARJETA 1: CITA ORIGINAL PROGRAMADA (EN MORADO) ── */}
+                <div className="bg-white dark:bg-[#1E293B] rounded-3xl p-6 sm:p-7 border-2 border-purple-300 dark:border-purple-800/80 shadow-sm relative overflow-hidden">
+                  <div className="flex items-center justify-between pb-4 border-b border-purple-100 dark:border-purple-900/50 mb-5">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-purple-100 dark:bg-purple-950/80 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                      <span className="w-2 h-2 rounded-full bg-purple-600" />
+                      Cita Agendada Anteriormente
+                    </span>
+                    <span className="text-[11px] font-bold text-slate-400">Original</span>
+                  </div>
+
+                  <div className="space-y-4">
+                    {/* Fecha y Hora */}
+                    <div className="flex items-start gap-3.5">
+                      <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 flex items-center justify-center shrink-0 mt-0.5">
+                        <CalendarDays className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Fecha y Hora Programada</p>
+                        <p className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white capitalize">
+                          {safeFormatDate(citaOriginal.ctaFecha, "EEEE, d 'de' MMMM 'de' yyyy")}
+                        </p>
+                        <p className="text-xs font-black text-purple-700 dark:text-purple-400">
+                          {format12Hour(citaOriginal.ctaHora)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Modalidad y Ubicación */}
+                    <div className="flex items-start gap-3.5">
+                      <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 flex items-center justify-center shrink-0 mt-0.5">
+                        {citaOriginal.ctaModalidad === 'virtual' ? (
+                          <Video className="w-5 h-5" />
+                        ) : citaOriginal.ctaModalidad === 'domicilio' ? (
+                          <Home className="w-5 h-5" />
+                        ) : (
+                          <Building2 className="w-5 h-5" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Modalidad y Lugar</p>
+                        <p className="font-bold text-sm text-slate-900 dark:text-white capitalize">
+                          {citaOriginal.ctaModalidad}
+                        </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {citaOriginal.clinicaNombre || citaOriginal.direccionDomicilio || 'Consultorio del especialista'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Médico y Especialidad */}
+                    <div className="flex items-start gap-3.5">
+                      <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 flex items-center justify-center shrink-0 mt-0.5">
+                        <User className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Especialista</p>
+                        <p className="font-bold text-sm text-slate-900 dark:text-white">
+                          Dr(a). {citaOriginal.medicoNombre}
+                        </p>
+                        <p className="text-xs text-slate-500">{citaOriginal.medicoEspecialidad}</p>
+                      </div>
+                    </div>
+
+                    {/* Motivo */}
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Motivo Original</p>
+                      <p className="text-xs text-slate-700 dark:text-slate-300 italic mt-0.5">
+                        "{citaOriginal.ctaMotivo || 'Sin motivo especificado'}"
+                      </p>
+                    </div>
+
+                    {/* Costo */}
+                    <div className="pt-2 flex items-center justify-between text-xs">
+                      <span className="font-bold text-slate-500">Costo original:</span>
+                      <span className="font-black text-slate-900 dark:text-white text-sm">
+                        Q{(citaOriginal.ctaPrecio || 0).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── TARJETA 2: NUEVA CITA SELECCIONADA (EN AZUL) ── */}
+                <div className="bg-white dark:bg-[#1E293B] rounded-3xl p-6 sm:p-7 border-2 border-blue-600 dark:border-blue-500 shadow-md relative overflow-hidden">
+                  <div className="flex items-center justify-between pb-4 border-b border-blue-100 dark:border-blue-900/50 mb-5">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                      <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                      Nueva Cita Seleccionada
+                    </span>
+                    <span className="text-[11px] font-extrabold text-blue-600 dark:text-blue-400">Por Confirmar</span>
+                  </div>
+
+                  <div className="space-y-4">
+                    {/* Nueva Fecha y Hora */}
+                    <div className="flex items-start gap-3.5">
+                      <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
+                        <CalendarDays className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Nueva Fecha y Hora</p>
+                          {isDateChanged || isTimeChanged ? (
+                            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
+                              Reprogramada
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
+                              Mismo horario
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-extrabold text-sm sm:text-base text-blue-900 dark:text-blue-100 capitalize">
+                          {fecha ? format(fecha, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es }) : ''}
+                        </p>
+                        <p className="text-xs font-black text-blue-600 dark:text-blue-400">
+                          {format12Hour(hora)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Nueva Modalidad y Ubicación */}
+                    <div className="flex items-start gap-3.5">
+                      <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
+                        {modalidad === 'virtual' ? (
+                          <Video className="w-5 h-5" />
+                        ) : modalidad === 'domicilio' ? (
+                          <Home className="w-5 h-5" />
+                        ) : (
+                          <Building2 className="w-5 h-5" />
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Nueva Modalidad y Lugar</p>
+                          {isModalidadChanged && (
+                            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
+                              Modalidad cambiada
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-bold text-sm text-slate-900 dark:text-white capitalize">
+                          {modalidad}
+                        </p>
+                        <p className="text-xs text-slate-600 dark:text-slate-300">
+                          {modalidad === 'presencial' 
+                            ? (clinicaSeleccionada?.cliDescripcion || clinicaSeleccionada?.cliDireccionCompleta || 'Consultorio médico')
+                            : modalidad === 'domicilio'
+                            ? (direccion || 'Dirección a domicilio')
+                            : 'Teleconsulta en línea (Enlace proporcionado por clínica)'
+                          }
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Especialista & Servicio */}
+                    <div className="flex items-start gap-3.5">
+                      <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
+                        <Stethoscope className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Servicio Solicitado</p>
+                        <p className="font-bold text-sm text-slate-900 dark:text-white">
+                          {servicioSeleccionado?.servicio || 'Consulta Médica General'}
+                        </p>
+                        <p className="text-xs text-slate-500">Dr(a). {citaOriginal.medicoNombre}</p>
+                      </div>
+                    </div>
+
+                    {/* Nuevo Motivo */}
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Nuevo Motivo</p>
+                      <p className="text-xs text-slate-800 dark:text-slate-200 mt-0.5">
+                        "{motivo || 'Sin motivo especificado'}"
+                      </p>
+                    </div>
+
+                    {/* Costo Actualizado */}
+                    <div className="pt-2 flex items-center justify-between text-xs">
+                      <span className="font-bold text-slate-500">Costo modificado:</span>
+                      <span className="font-black text-blue-600 dark:text-blue-400 text-base">
+                        Q{precio.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Banner de Aviso Final */}
+              <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 p-4 rounded-2xl flex items-start gap-3 text-amber-900 dark:text-amber-200 text-xs sm:text-sm">
+                <Info className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <p>
+                  <strong>Confirmación de Reprogramación:</strong> Al hacer clic en "Confirmar Modificación", 
+                  tu cita anterior será actualizada automáticamente con el nuevo día y horario. Te enviaremos una notificación y la agenda del médico se actualizará al instante.
+                </p>
+              </div>
+
+              {/* Botones Finales */}
+              <div className="sticky bottom-0 z-30 bg-slate-50/95 dark:bg-[#0B1120]/95 backdrop-blur-md py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  className="px-5 py-3 rounded-2xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition cursor-pointer"
+                >
+                  Volver a Editar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={isUpdating}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-black py-3.5 px-8 rounded-2xl transition-all flex items-center gap-2 text-sm shadow-md shadow-blue-600/30 cursor-pointer disabled:opacity-50"
+                >
+                  {isUpdating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Actualizando Cita...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 stroke-[3]" />
+                      <span>Confirmar y Modificar Cita</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+        </AnimatePresence>
+
+      </main>
+
+      {/* Modal de Cancelación */}
       <ConfirmModal
         isOpen={isCancelModalOpen}
         onClose={() => setIsCancelModalOpen(false)}
@@ -861,14 +1427,14 @@ export default function EditWizardPage() {
         title="¿Cancelar Cita Definitivamente?"
         description={
           <>
-            Estás a punto de cancelar tu cita original con <strong>Dr(a). {citaOriginal?.medicoNombre}</strong>.
+            Estás a punto de cancelar tu cita programada con <strong>Dr(a). {citaOriginal?.medicoNombre}</strong>.
             <br />
             <br />
-            Esta acción no se puede deshacer.
+            Esta acción liberará el turno y no se puede revertir.
           </>
         }
         confirmText="Sí, Cancelar Cita"
-        cancelText="Mantener cita"
+        cancelText="Mantener Cita"
         isLoading={isCanceling}
       />
     </div>
