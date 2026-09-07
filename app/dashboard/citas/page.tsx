@@ -307,6 +307,7 @@ function CitasContent() {
 
   // UI State
   const [tabActual, setTabActual] = useState<'proximas' | 'historial'>('proximas');
+  const [selectedPacienteId, setSelectedPacienteId] = useState<string | null>(null);
   const [medicoSeleccionado, setMedicoSeleccionado] = useState<string>('');
   const [grupoSeleccionado, setGrupoSeleccionado] = useState<string>('');
   const [linkGroupCita, setLinkGroupCita] = useState<CitaListDto | null>(null);
@@ -530,7 +531,7 @@ function CitasContent() {
     }));
   }, [citasConTemas]);
 
-  // Citas categorizadas para el Tab actual (Próximas vs Historial) y Filtros activos
+  // Citas categorizadas para el Tab actual y Filtros activos
   const citasFiltradas = useMemo(() => {
     const now = new Date();
     const msIn24Hrs = 24 * 60 * 60 * 1000;
@@ -545,15 +546,16 @@ function CitasContent() {
 
       const isUpcoming = proximosEstados.includes(c.ctaEstado) && !isCitaPasada(c.ctaFecha, c.ctaHora);
 
-      if (tabActual === 'proximas' && !isUpcoming) return false;
-      if (tabActual === 'historial' && isUpcoming) return false;
+      const activeTab = selectedPacienteId ? tabActual : 'proximas';
+      if (activeTab === 'proximas' && !isUpcoming) return false;
+      if (activeTab === 'historial' && isUpcoming) return false;
 
       // Filtro de Vista (única vs serie)
       if (viewFilter === 'unicas' && c.ctaGrupoId) return false;
       if (viewFilter === 'series' && !c.ctaGrupoId) return false;
 
       // Filtro Rápido de Tiempo (en próximas)
-      if (tabActual === 'proximas' && quickFilter !== 'todas') {
+      if (activeTab === 'proximas' && quickFilter !== 'todas') {
         const citaDate = new Date(`${c.ctaFecha.split('T')[0]}T${c.ctaHora}`);
         const diff = citaDate.getTime() - now.getTime();
         if (quickFilter === '24hrs' && (diff < 0 || diff > msIn24Hrs)) return false;
@@ -562,7 +564,7 @@ function CitasContent() {
 
       return true;
     });
-  }, [citasConTemas, medicoSeleccionado, grupoSeleccionado, tabActual, quickFilter, viewFilter]);
+  }, [citasConTemas, medicoSeleccionado, grupoSeleccionado, tabActual, selectedPacienteId, quickFilter, viewFilter]);
 
   // Secciones de citas agrupadas por paciente (standalone + series)
   const seccionesPorPaciente = useMemo(() => {
@@ -614,265 +616,37 @@ function CitasContent() {
     });
   }, [pacientesTabsList, citasFiltradas, citasConTemas, tabActual]);
 
-  const proximosEstados = ['programada', 'confirmada', 'pospuesta'];
-  const totalProximas = citasConTemas.filter(
-    (c) => proximosEstados.includes(c.ctaEstado) && !isCitaPasada(c.ctaFecha, c.ctaHora)
-  ).length;
-  const totalHistorial = citasConTemas.filter(
-    (c) => !proximosEstados.includes(c.ctaEstado) || isCitaPasada(c.ctaFecha, c.ctaHora)
-  ).length;
-  const totalCitasFiltradas = citasFiltradas.length;
-
   // Estado para vista Master-Detail de pacientes
-  const [selectedPacienteId, setSelectedPacienteId] = useState<string | null>(null);
-
   const selectedSection = useMemo(() => {
     if (!selectedPacienteId) return null;
     return seccionesPorPaciente.find((s) => s.paciente.pacCodigo === selectedPacienteId) || null;
   }, [seccionesPorPaciente, selectedPacienteId]);
 
+  // Conteo específico para el paciente seleccionado (Próximas vs Historial)
+  const { pacienteProximasCount, pacienteHistorialCount } = useMemo(() => {
+    if (!selectedPacienteId) return { pacienteProximasCount: 0, pacienteHistorialCount: 0 };
+    const proximosEstados = ['programada', 'confirmada', 'pospuesta'];
+    const pacCitas = citasConTemas.filter((c) => c.ctaCodpac === selectedPacienteId);
+    const proximas = pacCitas.filter(
+      (c) => proximosEstados.includes(c.ctaEstado) && !isCitaPasada(c.ctaFecha, c.ctaHora)
+    ).length;
+    const historial = pacCitas.filter(
+      (c) => !proximosEstados.includes(c.ctaEstado) || isCitaPasada(c.ctaFecha, c.ctaHora)
+    ).length;
+    return { pacienteProximasCount: proximas, pacienteHistorialCount: historial };
+  }, [citasConTemas, selectedPacienteId]);
+
+  const totalCitasFiltradas = citasFiltradas.length;
+
   return (
     <div className="min-h-screen text-slate-900 pb-20 bg-slate-50/40 dark:bg-slate-950 transition-colors">
       <motion.main
-        className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 space-y-5"
+        className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 space-y-6"
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
-        {/* ── Fila Superior: Navegación Principal (Pestañas) & Acciones ── */}
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-slate-200/80 dark:border-slate-800 pb-0">
-          {/* Pestañas Tradicionales (Extremo Izquierdo) */}
-          <nav className="flex items-center gap-6 sm:gap-8 -mb-px overflow-x-auto scrollbar-none">
-            <button
-              type="button"
-              onClick={() => setTabActual('proximas')}
-              className={`group relative pb-3.5 flex items-center gap-2.5 text-base sm:text-lg font-bold transition-colors cursor-pointer shrink-0 ${
-                tabActual === 'proximas'
-                  ? 'text-blue-600 dark:text-blue-400 font-black'
-                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-semibold'
-              }`}
-            >
-              <CalendarDays className={`w-4 h-4 sm:w-5 sm:h-5 ${tabActual === 'proximas' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600'}`} />
-              <span>Próximas Citas</span>
-              <span
-                className={`text-xs px-2 py-0.5 rounded-full font-extrabold ${
-                  tabActual === 'proximas'
-                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
-                    : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
-                }`}
-              >
-                {totalProximas}
-              </span>
-              {/* Línea inferior gruesa indicadora */}
-              {tabActual === 'proximas' && (
-                <motion.div
-                  layoutId="activeTabIndicator"
-                  className="absolute bottom-0 left-0 right-0 h-[3px] bg-blue-600 dark:bg-blue-400 rounded-t-full"
-                  transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                />
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setTabActual('historial')}
-              className={`group relative pb-3.5 flex items-center gap-2.5 text-base sm:text-lg font-bold transition-colors cursor-pointer shrink-0 ${
-                tabActual === 'historial'
-                  ? 'text-blue-600 dark:text-blue-400 font-black'
-                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-semibold'
-              }`}
-            >
-              <Clock className={`w-4 h-4 sm:w-5 sm:h-5 ${tabActual === 'historial' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600'}`} />
-              <span>Historial</span>
-              <span
-                className={`text-xs px-2 py-0.5 rounded-full font-extrabold ${
-                  tabActual === 'historial'
-                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
-                    : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
-                }`}
-              >
-                {totalHistorial}
-              </span>
-              {/* Línea inferior gruesa indicadora */}
-              {tabActual === 'historial' && (
-                <motion.div
-                  layoutId="activeTabIndicator"
-                  className="absolute bottom-0 left-0 right-0 h-[3px] bg-blue-600 dark:bg-blue-400 rounded-t-full"
-                  transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                />
-              )}
-            </button>
-          </nav>
-
-          {/* Botones de Acción (Extremo Derecho) */}
-          <div className="flex items-center gap-2.5 pb-2.5 sm:pb-3 shrink-0">
-            {/* Botón Filtros (ubicado justo antes de Nueva Cita) */}
-            <button
-              type="button"
-              onClick={() => setIsFiltersOpen((prev) => !prev)}
-              className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl text-xs sm:text-sm font-bold border transition-all duration-200 cursor-pointer select-none active:scale-95 ${
-                isFiltersOpen
-                  ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 shadow-xs'
-                  : activeFiltersCount > 0
-                  ? 'bg-white dark:bg-slate-850 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 shadow-2xs'
-                  : 'bg-white dark:bg-slate-850 border-slate-200/90 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600 shadow-2xs'
-              }`}
-              aria-expanded={isFiltersOpen}
-              title={isFiltersOpen ? 'Ocultar filtros' : 'Mostrar filtros'}
-            >
-              <SlidersHorizontal
-                className={`w-3.5 h-3.5 ${
-                  isFiltersOpen || activeFiltersCount > 0
-                    ? 'text-blue-600 dark:text-blue-400'
-                    : 'text-slate-500 dark:text-slate-400'
-                }`}
-              />
-              <span>Filtros</span>
-              {activeFiltersCount > 0 && (
-                <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-blue-600 text-white text-[10px] font-black shadow-2xs">
-                  {activeFiltersCount}
-                </span>
-              )}
-            </button>
-
-            {/* Botón Nueva Cita (Primario) */}
-            <button
-              type="button"
-              onClick={() =>
-                router.push(
-                  selectedPacienteId
-                    ? `/dashboard/directorio?paciente=${selectedPacienteId}`
-                    : '/dashboard/directorio'
-                )
-              }
-              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm px-4 py-2 rounded-2xl shadow-sm hover:shadow transition active:scale-95 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" /> Nueva Cita
-            </button>
-          </div>
-        </div>
-
-        {/* ── Fila de Filtros: Desplegada abajo empujando el contenido ── */}
-        <AnimatePresence>
-          {(isFiltersOpen || activeFiltersCount > 0) && (
-            <motion.div
-              layout
-              initial={{ opacity: 0, height: 0, y: -6 }}
-              animate={{ opacity: 1, height: 'auto', y: 0 }}
-              exit={{ opacity: 0, height: 0, y: -6 }}
-              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              className="flex flex-wrap items-center gap-2.5 w-full pt-1 pb-1 relative z-20"
-            >
-              {/* 1. Tipo de Consulta */}
-              <AnimatePresence>
-                {(isFiltersOpen || viewFilter !== 'todas') && (
-                  <motion.div
-                    key="filter-view"
-                    layout
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ duration: 0.18 }}
-                  >
-                    <CustomDropdown
-                      className="w-44 sm:w-48"
-                      value={viewFilter}
-                      onChange={(val) => setViewFilter(val as 'todas' | 'unicas' | 'series')}
-                      onClear={() => setViewFilter('todas')}
-                      options={[
-                        { value: 'todas', label: 'Todas las Vistas' },
-                        { value: 'unicas', label: 'Citas Únicas' },
-                        { value: 'series', label: 'Tratamientos / Series' },
-                      ]}
-                      icon={<Layers className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
-                    />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* 2. Período de Tiempo (en próximas) */}
-              <AnimatePresence>
-                {tabActual === 'proximas' && (isFiltersOpen || quickFilter !== 'todas') && (
-                  <motion.div
-                    key="filter-quick"
-                    layout
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ duration: 0.18 }}
-                  >
-                    <CustomDropdown
-                      className="w-44 sm:w-48"
-                      value={quickFilter}
-                      onChange={(val) => setQuickFilter(val as 'todas' | '24hrs' | 'semana')}
-                      onClear={() => setQuickFilter('todas')}
-                      options={[
-                        { value: 'todas', label: 'Cualquier fecha' },
-                        { value: '24hrs', label: 'Próximas 24 horas' },
-                        { value: 'semana', label: 'Próxima semana' },
-                      ]}
-                      icon={<Clock className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
-                    />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* 3. Médico Especialista */}
-              <AnimatePresence>
-                {(isFiltersOpen || medicoSeleccionado !== '') && (
-                  <motion.div
-                    key="filter-medico"
-                    layout
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ duration: 0.18 }}
-                  >
-                    <CustomDropdown
-                      className="w-52 sm:w-56"
-                      value={medicoSeleccionado}
-                      onChange={setMedicoSeleccionado}
-                      onClear={() => setMedicoSeleccionado('')}
-                      options={[
-                        { value: '', label: 'Todos los Médicos' },
-                        ...medicosUnicos.map((m) => ({ value: m.id, label: m.nombre })),
-                      ]}
-                      icon={<User className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
-                    />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* 4. Tema de Seguimiento */}
-              <AnimatePresence>
-                {(isFiltersOpen || grupoSeleccionado !== '') && (
-                  <motion.div
-                    key="filter-grupo"
-                    layout
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ duration: 0.18 }}
-                  >
-                    <CustomDropdown
-                      className="w-52 sm:w-56"
-                      value={grupoSeleccionado}
-                      onChange={setGrupoSeleccionado}
-                      onClear={() => setGrupoSeleccionado('')}
-                      options={[
-                        { value: '', label: 'Temas de Seguimiento' },
-                        ...gruposUnicos.map((g) => ({ value: g.id, label: g.tema })),
-                      ]}
-                      icon={<RefreshCw className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
-                    />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* ── Contenido: Master-Detail por Paciente ── */}
+        {/* ── Contenido Principal: Master-Detail por Paciente ── */}
         {loadingCitas || loadingPacientes ? (
           <div className="py-20 flex flex-col items-center justify-center text-sky-600">
             <Loader2 className="w-10 h-10 animate-spin mb-4" />
@@ -888,9 +662,7 @@ function CitasContent() {
                 No se encontraron citas
               </h3>
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-                {`No tienes citas ${
-                  tabActual === 'proximas' ? 'próximas programadas' : 'registradas en el historial'
-                }.`}
+                No tienes citas médicas registradas en este momento.
               </p>
             </div>
             <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
@@ -913,29 +685,30 @@ function CitasContent() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.2 }}
-                className="space-y-4"
+                className="space-y-6"
               >
-                {/* Banner informativo si hay filtros activos pero ninguna cita en total */}
-                {activeFiltersCount > 0 && totalCitasFiltradas === 0 && (
-                  <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-                    <div className="flex items-center gap-2.5 text-xs text-amber-800 dark:text-amber-300">
-                      <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                      <span>No hay citas médicas que coincidan con los filtros seleccionados.</span>
-                    </div>
+                {/* Encabezado de la Vista Principal */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 dark:border-slate-800 pb-4">
+                  <div>
+                    <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
+                      <Users className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                      <span>Pacientes y Citas</span>
+                    </h1>
+                    <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                      Selecciona un paciente para ver sus citas programadas, historial y tratamientos
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2.5 shrink-0">
                     <button
                       type="button"
-                      onClick={() => {
-                        setViewFilter('todas');
-                        setQuickFilter('todas');
-                        setMedicoSeleccionado('');
-                        setGrupoSeleccionado('');
-                      }}
-                      className="text-xs font-bold text-amber-900 dark:text-amber-200 underline hover:no-underline cursor-pointer text-left sm:text-right"
+                      onClick={() => router.push('/dashboard/directorio')}
+                      className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm px-4 py-2.5 rounded-2xl shadow-sm hover:shadow transition active:scale-95 cursor-pointer"
                     >
-                      Restablecer filtros
+                      <Plus className="w-4 h-4" /> Nueva Cita
                     </button>
                   </div>
-                )}
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
                   {seccionesPorPaciente.map(({ paciente: pac, standalone, series, totalCitas }) => (
@@ -946,7 +719,10 @@ function CitasContent() {
                       standalone={standalone}
                       series={series}
                       tabActual={tabActual}
-                      onSelect={() => setSelectedPacienteId(pac.pacCodigo)}
+                      onSelect={() => {
+                        setSelectedPacienteId(pac.pacCodigo);
+                        setTabActual('proximas');
+                      }}
                       onAgendar={() => router.push(`/dashboard/directorio?paciente=${pac.pacCodigo}`)}
                     />
                   ))}
@@ -962,7 +738,7 @@ function CitasContent() {
                 transition={{ duration: 0.2 }}
                 className="space-y-6"
               >
-                {/* ── Encabezado: Volver (Izq) | Paciente y Relación (Centro) | Cantidad de Citas (Der) ── */}
+                {/* ── Encabezado: Volver (Izq) | Paciente y Relación (Centro) | Agrupar Citas (Der) ── */}
                 <div className="relative flex items-center justify-between gap-4 pb-1">
                   {/* Izquierda: Volver a pacientes (sin borde) */}
                   <div className="flex items-center justify-start shrink-0 z-10">
@@ -1005,7 +781,7 @@ function CitasContent() {
                     </span>
                   </div>
 
-                  {/* Derecha: Botón Crear Tema */}
+                  {/* Derecha: Botón Agrupar citas */}
                   <div className="flex items-center justify-end shrink-0 z-10">
                     <button
                       type="button"
@@ -1017,6 +793,247 @@ function CitasContent() {
                     </button>
                   </div>
                 </div>
+
+                {/* ── Barra de Navegación de Citas del Paciente (Pestañas Próximas / Historial + Filtros + Nueva Cita) ── */}
+                <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-slate-200/80 dark:border-slate-800 pb-0 pt-1">
+                  {/* Pestañas Tradicionales (Extremo Izquierdo) */}
+                  <nav className="flex items-center gap-6 sm:gap-8 -mb-px overflow-x-auto scrollbar-none">
+                    <button
+                      type="button"
+                      onClick={() => setTabActual('proximas')}
+                      className={`group relative pb-3.5 flex items-center gap-2.5 text-sm sm:text-base font-bold transition-colors cursor-pointer shrink-0 ${
+                        tabActual === 'proximas'
+                          ? 'text-blue-600 dark:text-blue-400 font-black'
+                          : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-semibold'
+                      }`}
+                    >
+                      <CalendarDays
+                        className={`w-4 h-4 sm:w-5 sm:h-5 ${
+                          tabActual === 'proximas'
+                            ? 'text-blue-600 dark:text-blue-400'
+                            : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600'
+                        }`}
+                      />
+                      <span>Próximas Citas</span>
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full font-extrabold ${
+                          tabActual === 'proximas'
+                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
+                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                        }`}
+                      >
+                        {pacienteProximasCount}
+                      </span>
+                      {/* Línea inferior gruesa indicadora */}
+                      {tabActual === 'proximas' && (
+                        <motion.div
+                          layoutId="activeTabIndicator"
+                          className="absolute bottom-0 left-0 right-0 h-[3px] bg-blue-600 dark:bg-blue-400 rounded-t-full"
+                          transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                        />
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setTabActual('historial')}
+                      className={`group relative pb-3.5 flex items-center gap-2.5 text-sm sm:text-base font-bold transition-colors cursor-pointer shrink-0 ${
+                        tabActual === 'historial'
+                          ? 'text-blue-600 dark:text-blue-400 font-black'
+                          : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-semibold'
+                      }`}
+                    >
+                      <Clock
+                        className={`w-4 h-4 sm:w-5 sm:h-5 ${
+                          tabActual === 'historial'
+                            ? 'text-blue-600 dark:text-blue-400'
+                            : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600'
+                        }`}
+                      />
+                      <span>Historial</span>
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full font-extrabold ${
+                          tabActual === 'historial'
+                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
+                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                        }`}
+                      >
+                        {pacienteHistorialCount}
+                      </span>
+                      {/* Línea inferior gruesa indicadora */}
+                      {tabActual === 'historial' && (
+                        <motion.div
+                          layoutId="activeTabIndicator"
+                          className="absolute bottom-0 left-0 right-0 h-[3px] bg-blue-600 dark:bg-blue-400 rounded-t-full"
+                          transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                        />
+                      )}
+                    </button>
+                  </nav>
+
+                  {/* Botones de Acción (Extremo Derecho) */}
+                  <div className="flex items-center gap-2.5 pb-2.5 sm:pb-3 shrink-0">
+                    {/* Botón Filtros */}
+                    <button
+                      type="button"
+                      onClick={() => setIsFiltersOpen((prev) => !prev)}
+                      className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl text-xs sm:text-sm font-bold border transition-all duration-200 cursor-pointer select-none active:scale-95 ${
+                        isFiltersOpen
+                          ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 shadow-xs'
+                          : activeFiltersCount > 0
+                          ? 'bg-white dark:bg-slate-850 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 shadow-2xs'
+                          : 'bg-white dark:bg-slate-850 border-slate-200/90 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600 shadow-2xs'
+                      }`}
+                      aria-expanded={isFiltersOpen}
+                      title={isFiltersOpen ? 'Ocultar filtros' : 'Mostrar filtros'}
+                    >
+                      <SlidersHorizontal
+                        className={`w-3.5 h-3.5 ${
+                          isFiltersOpen || activeFiltersCount > 0
+                            ? 'text-blue-600 dark:text-blue-400'
+                            : 'text-slate-500 dark:text-slate-400'
+                        }`}
+                      />
+                      <span>Filtros</span>
+                      {activeFiltersCount > 0 && (
+                        <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-blue-600 text-white text-[10px] font-black shadow-2xs">
+                          {activeFiltersCount}
+                        </span>
+                      )}
+                    </button>
+
+                    {/* Botón Nueva Cita (Preseleccionando al paciente actual) */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        router.push(`/dashboard/directorio?paciente=${selectedPacienteId}`)
+                      }
+                      className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm px-4 py-2 rounded-2xl shadow-sm hover:shadow transition active:scale-95 cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" /> Nueva Cita
+                    </button>
+                  </div>
+                </div>
+
+                {/* ── Fila de Filtros Desplegable (específica del paciente seleccionado) ── */}
+                <AnimatePresence>
+                  {(isFiltersOpen || activeFiltersCount > 0) && (
+                    <motion.div
+                      layout
+                      initial={{ opacity: 0, height: 0, y: -6 }}
+                      animate={{ opacity: 1, height: 'auto', y: 0 }}
+                      exit={{ opacity: 0, height: 0, y: -6 }}
+                      transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                      className="flex flex-wrap items-center gap-2.5 w-full pt-1 pb-1 relative z-20"
+                    >
+                      {/* 1. Tipo de Consulta */}
+                      <AnimatePresence>
+                        {(isFiltersOpen || viewFilter !== 'todas') && (
+                          <motion.div
+                            key="filter-view"
+                            layout
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            transition={{ duration: 0.18 }}
+                          >
+                            <CustomDropdown
+                              className="w-44 sm:w-48"
+                              value={viewFilter}
+                              onChange={(val) => setViewFilter(val as 'todas' | 'unicas' | 'series')}
+                              onClear={() => setViewFilter('todas')}
+                              options={[
+                                { value: 'todas', label: 'Todas las Vistas' },
+                                { value: 'unicas', label: 'Citas Únicas' },
+                                { value: 'series', label: 'Tratamientos / Series' },
+                              ]}
+                              icon={<Layers className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
+                            />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      {/* 2. Período de Tiempo (en próximas) */}
+                      <AnimatePresence>
+                        {tabActual === 'proximas' && (isFiltersOpen || quickFilter !== 'todas') && (
+                          <motion.div
+                            key="filter-quick"
+                            layout
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            transition={{ duration: 0.18 }}
+                          >
+                            <CustomDropdown
+                              className="w-44 sm:w-48"
+                              value={quickFilter}
+                              onChange={(val) => setQuickFilter(val as 'todas' | '24hrs' | 'semana')}
+                              onClear={() => setQuickFilter('todas')}
+                              options={[
+                                { value: 'todas', label: 'Cualquier fecha' },
+                                { value: '24hrs', label: 'Próximas 24 horas' },
+                                { value: 'semana', label: 'Próxima semana' },
+                              ]}
+                              icon={<Clock className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
+                            />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      {/* 3. Médico Especialista */}
+                      <AnimatePresence>
+                        {(isFiltersOpen || medicoSeleccionado !== '') && (
+                          <motion.div
+                            key="filter-medico"
+                            layout
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            transition={{ duration: 0.18 }}
+                          >
+                            <CustomDropdown
+                              className="w-52 sm:w-56"
+                              value={medicoSeleccionado}
+                              onChange={setMedicoSeleccionado}
+                              onClear={() => setMedicoSeleccionado('')}
+                              options={[
+                                { value: '', label: 'Todos los Médicos' },
+                                ...medicosUnicos.map((m) => ({ value: m.id, label: m.nombre })),
+                              ]}
+                              icon={<User className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
+                            />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      {/* 4. Tema de Seguimiento */}
+                      <AnimatePresence>
+                        {(isFiltersOpen || grupoSeleccionado !== '') && (
+                          <motion.div
+                            key="filter-grupo"
+                            layout
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            transition={{ duration: 0.18 }}
+                          >
+                            <CustomDropdown
+                              className="w-52 sm:w-56"
+                              value={grupoSeleccionado}
+                              onChange={setGrupoSeleccionado}
+                              onClear={() => setGrupoSeleccionado('')}
+                              options={[
+                                { value: '', label: 'Temas de Seguimiento' },
+                                ...gruposUnicos.map((g) => ({ value: g.id, label: g.tema })),
+                              ]}
+                              icon={<RefreshCw className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
+                            />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 {/* Contenido de Citas del Paciente */}
                 {selectedSection.totalCitas === 0 ? (
