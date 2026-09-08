@@ -24,7 +24,7 @@ import {
   FileText,
   ExternalLink,
   Eye,
-  MoreVertical,
+  Menu,
   ChevronDown,
   ChevronUp,
   UserCheck,
@@ -233,7 +233,7 @@ function PatientCard({
                   className="flex h-6 w-6 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 transition-colors"
                   title="Más opciones"
                 >
-                  <MoreVertical className="h-4 w-4" />
+                  <Menu className="h-4 w-4" />
                 </button>
 
                 {/* Dropdown Menu */}

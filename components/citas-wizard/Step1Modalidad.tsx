@@ -16,7 +16,7 @@ export function Step1Modalidad() {
   const {
     codMedico, modalidad, setModalidad,
     setClinica, setArea, clinicaSeleccionada, areaDomicilio,
-    servicioSeleccionado, setServicio, setMotivo,
+    servicioSeleccionado, setServicio, motivo, setMotivo,
     fecha, setFecha, hora, setHora, nextStep, step,
     pacienteSeleccionado, setPaciente,
     grupoId, grupoNombre, setTemaSeguimiento,
@@ -101,9 +101,9 @@ export function Step1Modalidad() {
       setModalidad(g.modalidad as any);
     }
 
-    // 2. Automatizar motivo
-    if (g.titulo || g.descripcion) {
-      setMotivo(g.titulo || g.descripcion || '');
+    // 2. No sobreescribir motivo con el tema de seguimiento
+    if (motivo === g.titulo || motivo === g.descripcion || motivo === topicTitle) {
+      setMotivo('');
     }
 
     // 3. Automatizar servicio médico

@@ -49,6 +49,7 @@ export function Step2PacienteMotivo() {
     fecha, hora, step,
     pacienteSeleccionado, setPaciente,
     motivo, setMotivo,
+    grupoNombre, grupoId,
     archivos, setArchivos,
     direccionDomicilio, setDireccionDomicilio,
     referenciasDomicilio, setReferenciasDomicilio,
@@ -95,7 +96,7 @@ export function Step2PacienteMotivo() {
     return name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase();
   };
 
-  const isComplete = pacienteSeleccionado !== null && motivo !== '' && 
+  const isComplete = pacienteSeleccionado !== null && (servicioSeleccionado !== null || motivo !== '') && 
     (modalidad !== 'domicilio' || (direccionDomicilio.trim() !== '' && referenciasDomicilio.trim() !== ''));
   const isSeguimientoVisible = pacienteSeleccionado !== null;
 
@@ -205,8 +206,14 @@ export function Step2PacienteMotivo() {
                 </label>
                 <textarea
                   rows={3}
-                  value={motivo && motivo !== servicioSeleccionado.servicio ? motivo : ''}
-                  onChange={(e) => setMotivo(e.target.value || servicioSeleccionado.servicio)}
+                  value={
+                    motivo && 
+                    motivo !== servicioSeleccionado.servicio && 
+                    motivo !== grupoNombre
+                      ? motivo 
+                      : ''
+                  }
+                  onChange={(e) => setMotivo(e.target.value)}
                   placeholder="Describe brevemente tus síntomas, dudas o detalles adicionales que el médico deba conocer..."
                   className="w-full bg-white dark:bg-[#1E293B] px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 resize-none transition-all"
                 />

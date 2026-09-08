@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSession } from 'next-auth/react';
@@ -8,24 +8,34 @@ import {
   ArrowLeft, Loader2, CalendarDays, Clock, MapPin, Monitor, CheckCircle2, AlertCircle, 
   Home, Building2, CalendarClock, CreditCard, Upload, FileText, Paperclip, FileCheck, 
   Check, X, ChevronLeft, ChevronRight, Stethoscope, Video, Sparkles, User, ShieldCheck, 
-  ArrowRight, Info, FolderPlus
+  ArrowRight, Info, FolderPlus, Banknote, Landmark, Wallet, Plus, Activity, BriefcaseMedical,
+  ClipboardList, UploadCloud
 } from 'lucide-react';
-import Image from 'next/image';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/style.css';
+import { useDropzone } from 'react-dropzone';
 
 import { 
   usePacientesSeleccion, useAllCitasPacientes, useCitaByCodigo, useUpdateCita, useCancelarCita, 
   useModalidades, useClinicas, useAreasDomicilio, useHorarios, useGruposCita, useHorasOcupadas,
-  useServiciosMedico
+  useServiciosMedico, useMetodosPago, useBilletera, useGuardarTarjeta, useGuardarSeguro, usePagarCita
 } from '@/hooks/use-flujo-citas';
-import { uploadDocumentoCita } from '@/services/flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
-import type { ModalidadCita, UpdateCitaRequest, ClinicaCitaDto, AreaDomicilioDto, HorarioCitaDto, CitaArchivoDto, ServicioMedicoCitaDto, GrupoCitaDto } from '@/types/citas';
+import type { 
+  ModalidadCita, UpdateCitaRequest, ClinicaCitaDto, AreaDomicilioDto, HorarioCitaDto, 
+  CitaArchivoDto, ServicioMedicoCitaDto, GrupoCitaDto 
+} from '@/types/citas';
+
+const MOTIVOS_DEFAULT = [
+  { id: 'Chequeo General', title: 'Chequeo General', badge: 'Preventivo', icon: BriefcaseMedical },
+  { id: 'Consulta de Seguimiento', title: 'Consulta de Seguimiento', badge: 'Control', icon: CalendarClock },
+  { id: 'Enfermedad o Molestia', title: 'Enfermedad o Molestia', badge: 'Diagnóstico', icon: Activity },
+  { id: 'Renovación de Receta', title: 'Renovación de Receta', badge: 'Medicamentos', icon: ClipboardList },
+];
 
 function safeFormatDate(dateStr: string | undefined, formatStr: string): string {
   if (!dateStr) return 'Fecha sin definir';
@@ -61,7 +71,8 @@ export default function EditWizardPage() {
 
   const updateCitaMutation = useUpdateCita();
   const cancelarCitaMutation = useCancelarCita();
-  const isUpdating = updateCitaMutation.isPending;
+  const pagarCitaMutation = usePagarCita();
+  const isUpdating = updateCitaMutation.isPending || pagarCitaMutation.isPending;
   const isCanceling = cancelarCitaMutation.isPending;
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
 
@@ -80,13 +91,18 @@ export default function EditWizardPage() {
 
   const codMedico = citaOriginal?.ctaCoddoc || '';
   const codPaciente = citaOriginal?.ctaCodpac || '';
+  const pacienteTitular = pacientes?.find(p => p.pacTitular) || pacientes?.find(p => p.pacCodigo === codPaciente);
   const { data: doctor, isLoading: loadingDoctor } = useDoctorByCode(codMedico);
 
   const { data: modalidadesList = [] } = useModalidades(codMedico || null);
   const { data: serviciosMedico = [] } = useServiciosMedico(codMedico || null);
-  
-  // -- 2. Wizard Step State (1: Horario & Modalidad, 2: Detalles & Motivo, 3: Confirmación & Comparación) --
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const { data: metodosTotales = [], isLoading: loadingMetodos } = useMetodosPago(codMedico || null);
+  const { data: billetera = [], isLoading: loadingBilletera } = useBilletera(pacienteTitular?.pacCodigo || null);
+  const { mutateAsync: saveSeguro } = useGuardarSeguro();
+  const { mutateAsync: saveTarjeta } = useGuardarTarjeta();
+
+  // Wizard Step State
+  const [currentStep, setCurrentStep] = useState<number>(1);
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Scheduling & Location State
@@ -100,12 +116,18 @@ export default function EditWizardPage() {
   
   // Details State
   const [servicioSeleccionado, setServicioSeleccionado] = useState<ServicioMedicoCitaDto | null>(null);
+  const [observacionesAdicionales, setObservacionesAdicionales] = useState<string>('');
+  const [motivoGenerico, setMotivoGenerico] = useState<string>('Chequeo General');
   const [direccion, setDireccion] = useState<string>('');
   const [referencias, setReferencias] = useState<string>('');
   const [enlace, setEnlace] = useState<string>('');
-  const [motivo, setMotivo] = useState<string>('');
   const [grupoId, setGrupoId] = useState<string>('');
-  const [precio, setPrecio] = useState<number>(0);
+
+  // Payment difference state
+  const [tipoPagoId, setTipoPagoId] = useState<number | null>(null);
+  const [billeteraItemId, setBilleteraItemId] = useState<string | null>(null);
+  const [newCardNum, setNewCardNum] = useState<string>('');
+  const [isSavingCard, setIsSavingCard] = useState<boolean>(false);
 
   // Files
   const [archivosExistentes, setArchivosExistentes] = useState<CitaArchivoDto[]>([]);
@@ -134,7 +156,47 @@ export default function EditWizardPage() {
     return citaOriginal.ctaHora;
   }, [citaOriginal?.ctaHora]);
 
-  // -- 3. Initialization from original appointment --
+  // -- Price & Difference Calculation --
+  const precioOriginal = useMemo(() => {
+    return Number(citaOriginal?.ctaPrecio || 0);
+  }, [citaOriginal?.ctaPrecio]);
+
+  const precioNuevo = useMemo(() => {
+    if (servicioSeleccionado) {
+      return servicioSeleccionado.costoTotal;
+    }
+    if (modalidad === 'presencial' && clinicaSeleccionada?.mclPrecioBase) {
+      return clinicaSeleccionada.mclPrecioBase;
+    }
+    return precioOriginal;
+  }, [servicioSeleccionado, modalidad, clinicaSeleccionada, precioOriginal]);
+
+  const diferenciaAPagar = useMemo(() => {
+    const diff = Number((precioNuevo - precioOriginal).toFixed(2));
+    return diff > 0.01 ? diff : 0;
+  }, [precioNuevo, precioOriginal]);
+
+  const requierePagoDiferencia = diferenciaAPagar > 0.01;
+
+  // Dynamic Steps definition
+  const stepsList = useMemo(() => {
+    const list = [
+      { id: 'horario', num: 1, label: 'Horario y Modalidad', icon: CalendarClock },
+      { id: 'detalles', num: 2, label: 'Detalles y Paciente', icon: FileText },
+    ];
+    if (requierePagoDiferencia) {
+      list.push({ id: 'pago', num: 3, label: 'Pago de Diferencia', icon: CreditCard });
+      list.push({ id: 'confirmar', num: 4, label: 'Comparar y Confirmar', icon: ShieldCheck });
+    } else {
+      list.push({ id: 'confirmar', num: 3, label: 'Comparar y Confirmar', icon: ShieldCheck });
+    }
+    return list;
+  }, [requierePagoDiferencia]);
+
+  // Total steps count
+  const totalSteps = stepsList.length;
+
+  // -- 2. Initialization from original appointment --
   useEffect(() => {
     if (citaOriginal && !isInitialized) {
       setModalidad(citaOriginal.ctaModalidad);
@@ -145,13 +207,17 @@ export default function EditWizardPage() {
         setFecha(new Date());
       }
       setHora(citaOriginal.ctaHora);
-      
-      setMotivo(citaOriginal.ctaMotivo || '');
       setGrupoId(citaOriginal.ctaGrupoId || '');
       setEnlace(citaOriginal.enlaceVideollamada || '');
       setDireccion(citaOriginal.direccionDomicilio || '');
       setReferencias(citaOriginal.referenciasDomicilio || '');
-      setPrecio(citaOriginal.ctaPrecio || 0);
+
+      // Check if citaOriginal.ctaMotivo matches a known service or if it's general comments
+      const rawMotivo = citaOriginal.ctaMotivo?.trim() || '';
+      if (rawMotivo) {
+        // We will match in another effect once serviciosMedico are loaded
+        setMotivoGenerico(rawMotivo);
+      }
 
       const rawDocs = citaOriginal.archivos || citaOriginal.documentos || [];
       const mappedDocs: CitaArchivoDto[] = rawDocs.map((a: any, idx: number) => ({
@@ -180,20 +246,41 @@ export default function EditWizardPage() {
   // Match initial service once serviciosMedico is loaded
   useEffect(() => {
     if (isInitialized && serviciosMedico.length > 0 && !servicioSeleccionado) {
-      if (citaOriginal?.ctaMotivo) {
-        const match = serviciosMedico.find(s => s.servicio?.toLowerCase() === citaOriginal.ctaMotivo?.toLowerCase());
-        if (match) setServicioSeleccionado(match);
+      const rawMotivo = citaOriginal?.ctaMotivo?.toLowerCase()?.trim();
+      if (rawMotivo) {
+        // Verificar si rawMotivo coincide con el título o descripción de un tema de seguimiento
+        const isFollowUpTopic = gruposList.some(g => 
+          g.titulo?.toLowerCase().trim() === rawMotivo ||
+          g.descripcion?.toLowerCase().trim() === rawMotivo
+        );
+
+        const match = serviciosMedico.find(s => 
+          s.servicio?.toLowerCase()?.trim() === rawMotivo ||
+          rawMotivo.includes(s.servicio?.toLowerCase()?.trim())
+        );
+
+        if (match) {
+          setServicioSeleccionado(match);
+          if (rawMotivo !== match.servicio?.toLowerCase()?.trim() && !isFollowUpTopic) {
+            setObservacionesAdicionales(citaOriginal?.ctaMotivo || '');
+          } else {
+            setObservacionesAdicionales('');
+          }
+        } else {
+          if (!isFollowUpTopic) {
+            setObservacionesAdicionales(citaOriginal?.ctaMotivo || '');
+          } else {
+            setObservacionesAdicionales('');
+          }
+        }
       }
     }
-  }, [isInitialized, serviciosMedico, servicioSeleccionado, citaOriginal]);
+  }, [isInitialized, serviciosMedico, servicioSeleccionado, citaOriginal, gruposList]);
 
   const handleSelectModalidad = (mod: ModalidadCita) => {
     setModalidad(mod);
     if (mod !== 'presencial') {
       setClinicaSeleccionada(null);
-      if (!precio || precio === 0) {
-        setPrecio(doctor?.clinicas?.[0]?.mcl_precio_base || citaOriginal?.ctaPrecio || 0);
-      }
     } else {
       if (!clinicaSeleccionada && clinicasList.length > 0) {
         const matchingClinica = clinicasList.find(c => 
@@ -201,21 +288,11 @@ export default function EditWizardPage() {
           String(c.mclCodigo) === String(citaOriginal?.ctaConsultorioId)
         ) || clinicasList[0];
         setClinicaSeleccionada(matchingClinica);
-        setPrecio(matchingClinica.mclPrecioBase || citaOriginal?.ctaPrecio || 0);
       }
     }
   };
 
-  // Adjust price on clinic selection change
-  useEffect(() => {
-    if (isInitialized && modalidad === 'presencial' && clinicaSeleccionada?.mclPrecioBase) {
-      if (!servicioSeleccionado) {
-        setPrecio(clinicaSeleccionada.mclPrecioBase);
-      }
-    }
-  }, [isInitialized, modalidad, clinicaSeleccionada, servicioSeleccionado]);
-
-  // -- 4. Computed Availability --
+  // -- 3. Computed Availability --
   const horarios = useMemo(() => {
     if (modalidad === 'presencial') {
       return horariosClinica;
@@ -239,7 +316,6 @@ export default function EditWizardPage() {
     today.setHours(0, 0, 0, 0);
 
     if (!horarios.length) {
-      // If no schedules loaded, allow original date if available
       return [
         (date: Date) => {
           if (fechaOriginalDate && format(date, 'yyyy-MM-dd') === format(fechaOriginalDate, 'yyyy-MM-dd')) return false;
@@ -280,7 +356,6 @@ export default function EditWizardPage() {
       }
     });
 
-    // Also include original time slot if we are on the original date, just in case
     if (isCurrentSelectionOriginalDate && horaOriginalStr) {
       const normalizedOriginal = horaOriginalStr.length === 5 ? `${horaOriginalStr}:00` : horaOriginalStr;
       if (!slots.includes(normalizedOriginal)) {
@@ -289,13 +364,11 @@ export default function EditWizardPage() {
     }
     
     const uniqueSlots = Array.from(new Set(slots)).sort();
-    
     const normOriginal = horaOriginalStr.slice(0, 5);
 
     return uniqueSlots.map(slot => {
       const isOriginalSlot = isCurrentSelectionOriginalDate && slot.slice(0, 5) === normOriginal;
       const slotShort = slot.slice(0, 5);
-      // If it's the original slot of this appointment, it's NEVER disabled!
       const disabled = isOriginalSlot 
         ? false 
         : horasOcupadas.includes(slot) || horasOcupadas.includes(slotShort);
@@ -308,11 +381,43 @@ export default function EditWizardPage() {
     });
   }, [fecha, horarios, horasOcupadas, isCurrentSelectionOriginalDate, horaOriginalStr]);
 
-  const handleNuevosArchivosChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setNuevosArchivos(prev => [...prev, ...Array.from(e.target.files!)]);
-    }
-  };
+  // -- 4. File Dropzone with Strict Deduplication --
+  const onDropFiles = useCallback((acceptedFiles: File[]) => {
+    setNuevosArchivos(prev => {
+      const existingKeys = new Set([
+        ...prev.map(f => `${f.name.toLowerCase()}_${f.size}`),
+        ...archivosExistentes.map(a => (a.arcNombre || '').toLowerCase()).filter(Boolean),
+      ]);
+
+      const nonDuplicates: File[] = [];
+      let duplicatesFound = 0;
+
+      for (const file of acceptedFiles) {
+        const fileKey = `${file.name.toLowerCase()}_${file.size}`;
+        if (existingKeys.has(fileKey) || existingKeys.has(file.name.toLowerCase())) {
+          duplicatesFound++;
+        } else {
+          existingKeys.add(fileKey);
+          nonDuplicates.push(file);
+        }
+      }
+
+      if (duplicatesFound > 0) {
+        toast.info('Se omitieron archivos duplicados o que ya se encontraban adjuntos.');
+      }
+
+      return [...prev, ...nonDuplicates];
+    });
+  }, [archivosExistentes]);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop: onDropFiles,
+    accept: {
+      'image/*': ['.jpeg', '.jpg', '.png'],
+      'application/pdf': ['.pdf'],
+    },
+    maxSize: 5 * 1024 * 1024,
+  });
 
   const handleRemoveNuevoArchivo = (index: number) => {
     setNuevosArchivos(prev => prev.filter((_, i) => i !== index));
@@ -322,19 +427,71 @@ export default function EditWizardPage() {
     setArchivosExistentes(prev => prev.filter(a => a.arcCodigo !== arcCodigo));
   };
 
-  // -- 5. Save & Cancel Handlers --
+  // Payment methods filtered for modality
+  const metodosPagoDisponibles = useMemo(() => {
+    return metodosTotales.filter(m => {
+      if (modalidad === 'virtual' && m.descripcion.toLowerCase().includes('efectivo')) {
+        return false;
+      }
+      return true;
+    });
+  }, [metodosTotales, modalidad]);
+
+  const isObservacionValida = useMemo(() => {
+    if (!observacionesAdicionales || !observacionesAdicionales.trim()) return false;
+    const clean = observacionesAdicionales.trim().toLowerCase();
+    if (servicioSeleccionado && clean === servicioSeleccionado.servicio.toLowerCase().trim()) return false;
+    if (gruposList.some(g => (g.titulo || '').toLowerCase().trim() === clean || (g.descripcion || '').toLowerCase().trim() === clean)) return false;
+    return true;
+  }, [observacionesAdicionales, servicioSeleccionado, gruposList]);
+
+  // -- 5. Validation Handlers --
+  const canGoToStep2 = Boolean(
+    fecha && hora && (modalidad !== 'presencial' || clinicaSeleccionada) && (modalidad !== 'domicilio' || direccion.trim())
+  );
+
+  const canGoToPaymentOrConfirm = Boolean(
+    canGoToStep2 && (servicioSeleccionado !== null || motivoGenerico.trim().length > 0)
+  );
+
+  const canConfirmCita = useMemo(() => {
+    if (!canGoToPaymentOrConfirm) return false;
+    if (requierePagoDiferencia) {
+      if (!tipoPagoId) return false;
+      const metodoSel = metodosPagoDisponibles.find(m => m.tipoPagoId === tipoPagoId);
+      const isTarjeta = metodoSel?.descripcion.toLowerCase().includes('tarjeta');
+      if (isTarjeta && !billeteraItemId) return false;
+    }
+    return true;
+  }, [canGoToPaymentOrConfirm, requierePagoDiferencia, tipoPagoId, billeteraItemId, metodosPagoDisponibles]);
+
+  // -- 6. Save & Payment Execution --
   const handleSave = async () => {
+    if (!canConfirmCita) {
+      toast.error('Por favor completa todos los campos requeridos antes de confirmar.');
+      return;
+    }
+
     try {
       const idsConservados = archivosExistentes
         .map(a => a.arcCodigo)
         .filter((id): id is string => Boolean(id));
 
+      // Construct final reason: if service is selected, use additional observations if entered, otherwise the service name
+      const cleanObs = isObservacionValida ? observacionesAdicionales.trim() : '';
+      let finalMotivo = '';
+      if (servicioSeleccionado) {
+        finalMotivo = cleanObs || servicioSeleccionado.servicio;
+      } else {
+        finalMotivo = cleanObs || motivoGenerico.trim() || 'Consulta General';
+      }
+
       const payload: UpdateCitaRequest = {
         fecha: fecha ? format(fecha, 'yyyy-MM-dd') : '',
         hora: hora ? (hora.length === 5 ? `${hora}:00` : hora) : '',
         modalidad,
-        precio: Number(precio) || 0,
-        motivo: motivo?.trim() || null,
+        precio: Number(precioNuevo) || 0,
+        motivo: finalMotivo,
         grupoId: grupoId || null,
         codServicio: servicioSeleccionado?.sypCodigo || null,
         consultorioId: modalidad === 'presencial' ? (clinicaSeleccionada?.cliCodigo ?? clinicaSeleccionada?.mclCodigo ?? null) : null,
@@ -345,11 +502,27 @@ export default function EditWizardPage() {
         archivosConservados: idsConservados,
       };
 
+      // 1. Modificar los datos de la cita
       await updateCitaMutation.mutateAsync({ citaId, payload, medicoNombre: citaOriginal?.medicoNombre });
+
+      // 2. Si hubo diferencia de precio a pagar, registrar el pago de la diferencia
+      if (requierePagoDiferencia && tipoPagoId) {
+        await pagarCitaMutation.mutateAsync({
+          citaId,
+          payload: {
+            codTpp: Number(tipoPagoId),
+            estadoPago: 'pendiente',
+            referenciaPago: billeteraItemId || `Diferencia de servicio: Q${diferenciaAPagar.toFixed(2)}`,
+          },
+        });
+      }
       
       toast.success('¡Cita modificada con éxito!', {
-        description: 'La cita ha sido actualizada y reprogramada correctamente.',
+        description: requierePagoDiferencia 
+          ? `La cita fue actualizada y se procesó el pago de diferencia de Q${diferenciaAPagar.toFixed(2)}.`
+          : 'La cita ha sido actualizada y reprogramada correctamente.',
       });
+
       router.push('/dashboard/citas');
 
     } catch (e: any) {
@@ -361,8 +534,6 @@ export default function EditWizardPage() {
         errorMessage = e.response.data.Detail;
       } else if (e?.response?.data?.detail) {
         errorMessage = e.response.data.detail;
-      } else if (e?.response?.data?.title) {
-        errorMessage = e.response.data.title;
       } else if (e?.message) {
         errorMessage = e.message;
       }
@@ -388,17 +559,32 @@ export default function EditWizardPage() {
     }
   };
 
-  const canGoToStep2 = Boolean(
-    fecha && hora && (modalidad !== 'presencial' || clinicaSeleccionada) && (modalidad !== 'domicilio' || direccion.trim())
-  );
-
-  const canGoToStep3 = Boolean(canGoToStep2 && motivo.trim());
+  const handleSaveQuickCard = async () => {
+    if (!pacienteTitular || !newCardNum.trim()) return;
+    setIsSavingCard(true);
+    try {
+      await saveTarjeta({
+        codPac: pacienteTitular.pacCodigo,
+        payload: {
+          tokenProcesador: 'tok_mod_' + Math.floor(Math.random() * 100000),
+          ultimos4: newCardNum.slice(-4) || '4242',
+          tipoTarjeta: 'visa',
+        },
+      });
+      setNewCardNum('');
+      toast.success('Tarjeta guardada en billetera exitosamente.');
+    } catch {
+      toast.error('Error al guardar tarjeta.');
+    } finally {
+      setIsSavingCard(false);
+    }
+  };
 
   // Comparison helpers
   const isDateChanged = Boolean(fecha && fechaOriginalStr && format(fecha, 'yyyy-MM-dd') !== fechaOriginalStr);
   const isTimeChanged = Boolean(hora && horaOriginalStr && hora.slice(0, 5) !== horaOriginalStr.slice(0, 5));
   const isModalidadChanged = Boolean(citaOriginal && modalidad !== citaOriginal.ctaModalidad);
-  const isPrecioChanged = Boolean(citaOriginal && Math.abs(precio - (citaOriginal.ctaPrecio || 0)) > 0.01);
+  const isPrecioChanged = Boolean(citaOriginal && Math.abs(precioNuevo - (citaOriginal.ctaPrecio || 0)) > 0.01);
 
   // Loading Screen
   const isStillLoading = loadingCitaDirecta || fetchingCitaDirecta || loadingPacientes || fetchingPacientes || (codigosPacientes.length > 0 && (loadingCitas || fetchingCitas)) || (!!codMedico && loadingDoctor);
@@ -431,18 +617,11 @@ export default function EditWizardPage() {
     );
   }
 
-  // Stepper Items
-  const stepsList = [
-    { num: 1 as const, label: 'Horario y Modalidad', icon: CalendarClock, isDone: canGoToStep2 },
-    { num: 2 as const, label: 'Detalles y Motivo', icon: FileText, isDone: canGoToStep3 },
-    { num: 3 as const, label: 'Comparar y Confirmar', icon: ShieldCheck, isDone: false },
-  ];
-
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#0B1120] text-slate-900 dark:text-slate-200 pb-20 pt-4 sm:pt-6 transition-colors">
       <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-6">
 
-        {/* ── HEADER WIZARD (Mismo diseño y experiencia que agendar) ── */}
+        {/* ── HEADER WIZARD (Idéntico a agendar cita) ── */}
         <div className="sticky top-0 z-30 bg-slate-50/95 dark:bg-[#0B1120]/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 py-3.5 px-2 mb-6 transition-colors">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             
@@ -493,15 +672,15 @@ export default function EditWizardPage() {
             <div className="flex items-center gap-1.5 sm:gap-2.5 bg-white dark:bg-[#1E293B] px-3.5 py-1.5 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xs shrink-0 self-end sm:self-auto">
               {stepsList.map((s, idx) => {
                 const IconComponent = s.icon;
-                const isCurrent = step === s.num;
-                const isCompleted = s.isDone && !isCurrent;
-                const canClick = s.num === 1 || (s.num === 2 && canGoToStep2) || (s.num === 3 && canGoToStep3);
+                const isCurrent = currentStep === s.num;
+                const isCompleted = currentStep > s.num;
+                const canClick = s.num === 1 || (s.num === 2 && canGoToStep2) || (s.num >= 3 && canGoToPaymentOrConfirm);
 
                 return (
-                  <div key={s.num} className="flex items-center gap-1.5 sm:gap-2">
+                  <div key={s.id} className="flex items-center gap-1.5 sm:gap-2">
                     <button
                       type="button"
-                      onClick={() => canClick && setStep(s.num)}
+                      onClick={() => canClick && setCurrentStep(s.num)}
                       disabled={!canClick}
                       className={`flex items-center gap-1.5 py-1 px-1.5 sm:px-2 rounded-xl transition-all duration-200 ${
                         canClick ? 'cursor-pointer hover:opacity-80' : 'cursor-not-allowed opacity-60'
@@ -539,7 +718,7 @@ export default function EditWizardPage() {
                     {idx < stepsList.length - 1 && (
                       <div
                         className={`w-2 sm:w-3.5 h-0.5 rounded-full transition-colors duration-300 ${
-                          s.isDone ? 'bg-emerald-400 dark:bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'
+                          isCompleted ? 'bg-emerald-400 dark:bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'
                         }`}
                       />
                     )}
@@ -555,9 +734,9 @@ export default function EditWizardPage() {
         <AnimatePresence mode="wait">
 
           {/* ══════════════════════════════════════════════════════
-              PASO 1: HORARIO Y MODALIDAD (Procedimiento idéntico a creación)
+              PASO 1: HORARIO Y MODALIDAD (Mismo flujo que agendar)
               ══════════════════════════════════════════════════════ */}
-          {step === 1 && (
+          {currentStep === 1 && (
             <motion.div
               key="step1"
               initial={{ opacity: 0, y: 12 }}
@@ -566,7 +745,7 @@ export default function EditWizardPage() {
               transition={{ duration: 0.2 }}
               className="space-y-6"
             >
-              {/* Banner informativo de reprogramación con highlight en morado */}
+              {/* Banner Informativo de Reprogramación: Resaltado en Morado */}
               <div className="bg-purple-50/90 dark:bg-purple-950/40 border-2 border-purple-300 dark:border-purple-800/80 rounded-2xl p-4 sm:p-5 text-purple-900 dark:text-purple-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs">
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
@@ -589,7 +768,7 @@ export default function EditWizardPage() {
                 </div>
               </div>
 
-              {/* 1. SELECCIÓN DE TEMA DE SEGUIMIENTO (Si aplica) */}
+              {/* 1. SELECCIÓN DE TEMA DE SEGUIMIENTO (Si existe) */}
               {gruposList.length > 0 && (
                 <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-xs">
                   <div className="flex items-center justify-between mb-3">
@@ -616,7 +795,15 @@ export default function EditWizardPage() {
                         <button
                           key={g.grupoId}
                           type="button"
-                          onClick={() => setGrupoId(g.grupoId)}
+                          onClick={() => {
+                            setGrupoId(g.grupoId);
+                            if (observacionesAdicionales && (
+                              observacionesAdicionales.toLowerCase().trim() === (g.titulo || '').toLowerCase().trim() ||
+                              observacionesAdicionales.toLowerCase().trim() === (g.descripcion || '').toLowerCase().trim()
+                            )) {
+                              setObservacionesAdicionales('');
+                            }
+                          }}
                           className={`p-3 rounded-xl border text-left text-xs font-bold transition flex items-center justify-between cursor-pointer ${
                             isSelected
                               ? 'border-purple-600 bg-purple-50/80 text-purple-950 dark:bg-purple-950/60 dark:border-purple-500 dark:text-purple-200'
@@ -632,7 +819,7 @@ export default function EditWizardPage() {
                 </div>
               )}
 
-              {/* 2. SERVICIOS Y TARIFAS DEL ESPECIALISTA (Si tiene servicios configurados) */}
+              {/* 2. SERVICIOS Y TARIFAS DEL ESPECIALISTA */}
               {serviciosMedico.length > 0 && (
                 <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-xs">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-2">
@@ -642,7 +829,7 @@ export default function EditWizardPage() {
                         Servicios y Tarifas del Especialista
                       </h3>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        Puedes mantener o cambiar el servicio solicitado para esta consulta.
+                        Selecciona el servicio médico solicitado. Si cambias a un servicio de mayor valor, podrás pagar la diferencia en el siguiente paso.
                       </p>
                     </div>
                     {servicioSeleccionado && (
@@ -650,26 +837,26 @@ export default function EditWizardPage() {
                         type="button"
                         onClick={() => {
                           setServicioSeleccionado(null);
-                          setPrecio(citaOriginal.ctaPrecio || clinicaSeleccionada?.mclPrecioBase || 0);
                         }}
                         className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline self-start sm:self-auto cursor-pointer"
                       >
-                        Restablecer precio base
+                        Restablecer servicio base
                       </button>
                     )}
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[220px] overflow-y-auto pr-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[240px] overflow-y-auto pr-1">
                     {serviciosMedico.map((s: ServicioMedicoCitaDto) => {
                       const isSelected = servicioSeleccionado?.sypCodigo === s.sypCodigo;
+                      const isMoreExpensive = s.costoTotal > precioOriginal;
+                      const diffAmount = s.costoTotal - precioOriginal;
+
                       return (
                         <button
                           key={s.sypCodigo}
                           type="button"
                           onClick={() => {
                             setServicioSeleccionado(s);
-                            setMotivo(s.servicio);
-                            setPrecio(s.costoTotal);
                           }}
                           className={`text-left p-3.5 rounded-xl border-2 transition-all flex flex-col justify-between cursor-pointer ${
                             isSelected
@@ -685,9 +872,24 @@ export default function EditWizardPage() {
                               {isSelected && <Check className="w-3 h-3" />}
                             </div>
                           </div>
+                          
+                          {s.observaciones && (
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-1">
+                              {s.observaciones}
+                            </p>
+                          )}
+
                           <div className="mt-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-baseline justify-between">
-                            <span className="text-[10px] text-slate-400">Sin IVA: Q{s.costoSinIva.toFixed(2)}</span>
-                            <span className="text-sm font-black text-blue-600 dark:text-blue-400">Q{s.costoTotal.toFixed(2)}</span>
+                            {isMoreExpensive ? (
+                              <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                                +Q{diffAmount.toFixed(2)} diferencia
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-400">Sin costo extra</span>
+                            )}
+                            <span className="text-sm font-black text-blue-600 dark:text-blue-400">
+                              Q{s.costoTotal.toFixed(2)}
+                            </span>
                           </div>
                         </button>
                       );
@@ -696,7 +898,7 @@ export default function EditWizardPage() {
                 </div>
               )}
 
-              {/* 3. MODALITY TABS (Procedimiento idéntico con iconos y pestañas superiores) */}
+              {/* 3. MODALITY TABS (Procedimiento idéntico al flujo de agendar) */}
               <div className="border-b border-slate-200 dark:border-slate-800 flex gap-2 overflow-x-auto scrollbar-none pb-1">
                 {(modalidadesList.length > 0 ? modalidadesList : [
                   { modCodigo: 1, modDescripcion: 'Presencial' },
@@ -733,7 +935,7 @@ export default function EditWizardPage() {
                 })}
               </div>
 
-              {/* 4. COLUMNA DE UBICACIÓN + CALENDARIO Y HORARIOS (Layout idéntico a creación) */}
+              {/* 4. COLUMNA DE UBICACIÓN + CALENDARIO Y HORARIOS */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 flex-grow">
                 
                 {/* Columna Ubicación (si presencial o domicilio) */}
@@ -778,7 +980,7 @@ export default function EditWizardPage() {
                                 {clinica.cliDireccionCompleta}
                               </p>
                               <div className="mt-2 text-[11px] font-bold text-blue-600 dark:text-blue-400">
-                                Tarifa: Q{(clinica.mclPrecioBase || 0).toFixed(2)}
+                                Tarifa base: Q{(clinica.mclPrecioBase || 0).toFixed(2)}
                               </div>
                             </button>
                           );
@@ -788,7 +990,7 @@ export default function EditWizardPage() {
 
                     {modalidad === 'domicilio' && (
                       <div className="flex flex-col gap-3">
-                        <div className="max-h-[220px] overflow-y-auto pr-1 space-y-2">
+                        <div className="max-h-[200px] overflow-y-auto pr-1 space-y-2">
                           {areasList.map((area) => {
                             const isSelected = areaSeleccionada?.ladCodigo === area.ladCodigo;
                             return (
@@ -827,7 +1029,7 @@ export default function EditWizardPage() {
                 {/* Columna Calendario y Horarios Disponibles */}
                 <div className={`${modalidad === 'virtual' ? 'lg:col-span-12' : 'lg:col-span-8'} bg-slate-50/60 dark:bg-[#0F172A] rounded-2xl p-4 sm:p-6 flex flex-col md:flex-row gap-6 md:gap-8 border border-slate-200/80 dark:border-slate-800/80`}>
                   
-                  {/* Calendario con navegación directa de mes */}
+                  {/* Calendario con navegación de mes */}
                   <div className="flex-1 flex flex-col space-y-3 min-w-0">
                     <div className="flex items-center justify-between mb-1 px-1">
                       <h3 className="text-base font-bold text-slate-900 dark:text-white capitalize">
@@ -862,7 +1064,6 @@ export default function EditWizardPage() {
                         onSelect={(d) => {
                           if (!d) return;
                           setFecha(d);
-                          // If selecting original date, auto-preserve original time
                           if (fechaOriginalDate && format(d, 'yyyy-MM-dd') === format(fechaOriginalDate, 'yyyy-MM-dd')) {
                             setHora(horaOriginalStr);
                           } else {
@@ -894,7 +1095,7 @@ export default function EditWizardPage() {
                       />
                     </div>
 
-                    {/* Leyenda de Fecha Resaltada en Morado */}
+                    {/* Leyenda en Morado para la fecha original */}
                     {fechaOriginalDate && (
                       <div className="mt-3 flex items-center gap-2 text-xs font-bold text-purple-900 dark:text-purple-200 bg-purple-100/80 dark:bg-purple-950/60 border border-purple-300 dark:border-purple-800 px-3 py-2 rounded-xl shadow-2xs">
                         <div className="w-2.5 h-2.5 rounded-full bg-purple-600 shrink-0" />
@@ -921,7 +1122,6 @@ export default function EditWizardPage() {
                             const isSelected = hora === slot || hora.slice(0, 5) === slot.slice(0, 5);
                             const displayTime = format12Hour(slot);
 
-                            // Resaltado especial en MORADO para el horario previamente agendado
                             if (isOriginalSlot) {
                               return (
                                 <button
@@ -999,7 +1199,7 @@ export default function EditWizardPage() {
 
                 <button
                   type="button"
-                  onClick={() => setStep(2)}
+                  onClick={() => setCurrentStep(2)}
                   disabled={!canGoToStep2}
                   className={`font-bold py-3.5 px-8 rounded-2xl transition-all flex items-center gap-2 text-sm shadow-md ${
                     canGoToStep2
@@ -1014,9 +1214,10 @@ export default function EditWizardPage() {
           )}
 
           {/* ══════════════════════════════════════════════════════
-              PASO 2: DETALLES, MOTIVO Y DOCUMENTOS
+              PASO 2: DETALLES, SERVICIO / MOTIVO Y DOCUMENTOS
+              (Idéntico a Step2PacienteMotivo y Captura 1)
               ══════════════════════════════════════════════════════ */}
-          {step === 2 && (
+          {currentStep === 2 && (
             <motion.div
               key="step2"
               initial={{ opacity: 0, y: 12 }}
@@ -1025,14 +1226,14 @@ export default function EditWizardPage() {
               transition={{ duration: 0.2 }}
               className="space-y-6"
             >
-              <div className="bg-white dark:bg-[#1E293B] rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-xs space-y-6">
+              <div className="bg-white dark:bg-[#1E293B] rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-xs space-y-8">
                 
-                {/* Paciente Info Card */}
+                {/* 1. Paciente de la Cita */}
                 <div>
                   <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
                     Paciente de la Cita
                   </h3>
-                  <div className="flex items-center gap-3 p-4 bg-slate-50 dark:bg-[#0F172A] rounded-2xl border border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center gap-3.5 p-4 bg-slate-50 dark:bg-[#0F172A] rounded-2xl border border-slate-200 dark:border-slate-700">
                     <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 flex items-center justify-center font-bold text-lg shrink-0">
                       {citaOriginal.pacienteNombre?.charAt(0) || 'P'}
                     </div>
@@ -1047,85 +1248,231 @@ export default function EditWizardPage() {
                   </div>
                 </div>
 
-                {/* Motivo de Consulta */}
-                <div>
-                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300 block mb-2">
-                    Motivo o Síntomas de la Consulta *
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={motivo}
-                    onChange={(e) => setMotivo(e.target.value)}
-                    placeholder="Describe los síntomas, dudas o motivo de la reprogramación..."
-                    className="w-full bg-slate-50 dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 rounded-2xl p-4 text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 dark:text-slate-200"
-                  />
-                </div>
+                {/* 2. SERVICIO SELECCIONADO (O MOTIVOS SI NO HAY SERVICIO) */}
+                {servicioSeleccionado ? (
+                  <div className="space-y-4">
+                    <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white mb-1 tracking-tight flex items-center gap-2">
+                      <Stethoscope className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                      Servicio Seleccionado
+                    </h2>
+                    <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mb-4">
+                      Has seleccionado el siguiente servicio en el paso anterior:
+                    </p>
 
-                {/* Archivos y Exámenes Médicos */}
-                <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/80 space-y-4">
+                    {/* Tarjeta del Servicio Médico (Idéntica a Captura 1) */}
+                    <div className="rounded-2xl border-2 border-blue-600/60 dark:border-blue-500/60 bg-blue-50/60 dark:bg-blue-950/40 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div className="w-12 h-12 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-blue-600/20">
+                          <CheckCircle2 className="w-6 h-6" />
+                        </div>
+                        <div className="min-w-0">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                            Servicio médico
+                          </span>
+                          <h3 className="text-lg font-bold text-slate-900 dark:text-white truncate">
+                            {servicioSeleccionado.servicio}
+                          </h3>
+                          {servicioSeleccionado.observaciones && (
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
+                              {servicioSeleccionado.observaciones}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="text-left sm:text-right shrink-0 border-t sm:border-t-0 pt-3 sm:pt-0 border-blue-200/60 dark:border-blue-800/40">
+                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 block">
+                          Costo total con IVA
+                        </span>
+                        <span className="text-xl font-black text-blue-600 dark:text-blue-400">
+                          Q{servicioSeleccionado.costoTotal.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Observaciones o síntomas adicionales (Opcional) */}
+                    <div className="mt-4">
+                      <label className="text-sm font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
+                        Observaciones o síntomas adicionales (Opcional)
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={isObservacionValida ? observacionesAdicionales : ''}
+                        onChange={(e) => setObservacionesAdicionales(e.target.value)}
+                        placeholder="Describe brevemente tus síntomas, dudas o detalles adicionales que el médico deba conocer..."
+                        className="w-full bg-white dark:bg-[#1E293B] px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 resize-none transition-all"
+                      />
+                    </div>
+                  </div>
+                ) : (
                   <div>
-                    <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                      <Paperclip className="w-4 h-4 text-blue-600" />
-                      Archivos y Exámenes Adjuntos
+                    <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white mb-1 tracking-tight">
+                      Motivo de la consulta
+                    </h2>
+                    <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mb-6">
+                      Selecciona la opción que mejor describa tu visita.
+                    </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                      {MOTIVOS_DEFAULT.map((m) => {
+                        const isSelected = motivoGenerico === m.id;
+                        const Icon = m.icon;
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setMotivoGenerico(m.id)}
+                            className={`relative flex flex-col items-start text-left p-5 rounded-3xl border-2 transition-all cursor-pointer ${
+                              isSelected
+                                ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-md'
+                                : 'border-slate-100 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-600/50 bg-slate-50/50 dark:bg-[#1E293B]'
+                            }`}
+                          >
+                            <div className={`shrink-0 p-3 rounded-full mb-4 transition-colors ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-[#0B1120] text-blue-600 dark:text-blue-400'}`}>
+                              <Icon className="w-6 h-6" />
+                            </div>
+                            <h3 className={`text-sm font-bold mb-1 leading-tight ${isSelected ? 'text-blue-900 dark:text-blue-400' : 'text-slate-900 dark:text-slate-100'}`}>
+                              {m.title}
+                            </h3>
+                            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${isSelected ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}>
+                              {m.badge}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-4">
+                      <label className="text-sm font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
+                        Observaciones o detalles adicionales (Opcional)
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={isObservacionValida ? observacionesAdicionales : ''}
+                        onChange={(e) => setObservacionesAdicionales(e.target.value)}
+                        placeholder="Describe brevemente tus síntomas, dudas o detalles adicionales que el médico deba conocer..."
+                        className="w-full bg-white dark:bg-[#1E293B] px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 resize-none transition-all"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. DIRECCIÓN EXACTA (Solo Domicilio) */}
+                {modalidad === 'domicilio' && (
+                  <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <h2 className="text-xl font-black text-slate-900 dark:text-white mb-1 tracking-tight">
+                      Dirección de visita
+                    </h2>
+                    <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mb-4">
+                      Proporciona la dirección exacta para que el médico pueda llegar sin problemas.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Dirección Exacta *</label>
+                        <input
+                          type="text"
+                          value={direccion}
+                          onChange={(e) => setDireccion(e.target.value)}
+                          placeholder="Calle, avenida, número de casa, etc..."
+                          className="w-full bg-slate-50 dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Referencias *</label>
+                        <input
+                          type="text"
+                          value={referencias}
+                          onChange={(e) => setReferencias(e.target.value)}
+                          placeholder="Frente al parque, portón blanco..."
+                          className="w-full bg-slate-50 dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 4. ARCHIVOS Y EXÁMENES MÉDICOS (Con Dropzone deduplicado) */}
+                <div className="pt-6 border-t border-slate-200/80 dark:border-slate-700/80 space-y-4">
+                  <div>
+                    <h4 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Paperclip className="w-4.5 h-4.5 text-blue-600" />
+                      Documentos y Exámenes Clínicos (Opcional)
                     </h4>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                      Sube o administra los exámenes clínicos y antecedentes para el médico.
+                      Adjunta fotos de recetas, órdenes o resultados clínicos. (Máx 5MB por archivo).
                     </p>
                   </div>
 
-                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl p-4 bg-slate-50 dark:bg-[#0F172A] hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer text-center group">
-                    <Upload className="w-6 h-6 text-blue-600 mb-1 group-hover:scale-110 transition-transform" />
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                      Seleccionar o soltar nuevos archivos
+                  {/* Dropzone */}
+                  <div
+                    {...getRootProps()}
+                    className={`flex flex-col items-center justify-center rounded-2xl border-2 border-dashed p-6 transition-colors cursor-pointer text-center ${
+                      isDragActive 
+                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/40' 
+                        : 'border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-[#0F172A] hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                    }`}
+                  >
+                    <input {...getInputProps()} />
+                    <UploadCloud className={`h-8 w-8 mb-2 ${isDragActive ? 'text-blue-600' : 'text-slate-400 dark:text-slate-500'}`} />
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                      {isDragActive ? 'Suelta los archivos aquí...' : 'Haz clic o arrastra archivos aquí'}
                     </span>
-                    <span className="text-[10px] text-slate-400 mt-0.5">Exámenes médicos, PDFs o imágenes</span>
-                    <input type="file" multiple className="hidden" onChange={handleNuevosArchivosChange} accept=".pdf,.png,.jpg,.jpeg" />
-                  </label>
+                    <span className="text-[11px] text-slate-400 mt-0.5">PDF, PNG o JPG (hasta 5MB)</span>
+                  </div>
 
                   {/* Lista de nuevos archivos */}
                   {nuevosArchivos.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">Nuevos para adjuntar:</p>
-                      {nuevosArchivos.map((file, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-2.5 bg-blue-50 dark:bg-blue-950/30 text-blue-800 dark:text-blue-300 text-xs rounded-xl font-medium border border-blue-200 dark:border-blue-900">
-                          <div className="flex items-center gap-2 truncate">
-                            <FileText className="w-4 h-4 text-blue-600 shrink-0" />
-                            <span className="truncate">{file.name}</span>
+                    <div className="space-y-2 pt-2">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                        Nuevos archivos para adjuntar ({nuevosArchivos.length}):
+                      </p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {nuevosArchivos.map((file, idx) => (
+                          <div key={idx} className="flex items-center justify-between p-2.5 bg-blue-50/80 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200 text-xs rounded-xl font-medium border border-blue-200 dark:border-blue-900">
+                            <div className="flex items-center gap-2 truncate">
+                              <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+                              <span className="truncate">{file.name}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveNuevoArchivo(idx)}
+                              className="p-1 hover:bg-blue-200 dark:hover:bg-blue-900/60 rounded-full text-rose-500 transition shrink-0 cursor-pointer"
+                              title="Quitar archivo"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveNuevoArchivo(idx)}
-                            className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/60 rounded-full text-rose-500 transition shrink-0 cursor-pointer"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
                   )}
 
-                  {/* Archivos existentes */}
+                  {/* Lista de archivos ya existentes en la cita */}
                   {archivosExistentes.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Archivos ya cargados en la cita:</p>
-                      {archivosExistentes.map((archivo) => (
-                        <div key={archivo.arcCodigo} className="flex items-center justify-between p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs rounded-xl font-medium border border-slate-200 dark:border-slate-700">
-                          <div className="flex items-center gap-2 truncate">
-                            <FileCheck className="w-4 h-4 text-emerald-500 shrink-0" />
-                            <a href={archivo.arcUrl} target="_blank" rel="noopener noreferrer" className="truncate hover:underline text-blue-600 dark:text-blue-400">
-                              {archivo.arcNombre}
-                            </a>
+                    <div className="space-y-2 pt-2">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                        Archivos ya guardados en esta cita ({archivosExistentes.length}):
+                      </p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {archivosExistentes.map((archivo) => (
+                          <div key={archivo.arcCodigo} className="flex items-center justify-between p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs rounded-xl font-medium border border-slate-200 dark:border-slate-700">
+                            <div className="flex items-center gap-2 truncate">
+                              <FileCheck className="w-4 h-4 text-emerald-500 shrink-0" />
+                              <a href={archivo.arcUrl} target="_blank" rel="noopener noreferrer" className="truncate hover:underline text-blue-600 dark:text-blue-400">
+                                {archivo.arcNombre}
+                              </a>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveArchivoExistente(archivo.arcCodigo!)}
+                              className="p-1 hover:bg-rose-100 dark:hover:bg-rose-950/60 rounded-full text-rose-500 transition shrink-0 cursor-pointer"
+                              title="Eliminar de la cita"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveArchivoExistente(archivo.arcCodigo!)}
-                            className="p-1 hover:bg-rose-100 dark:hover:bg-rose-950/60 rounded-full text-rose-500 transition shrink-0 cursor-pointer"
-                            title="Eliminar archivo"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1136,7 +1483,7 @@ export default function EditWizardPage() {
               <div className="sticky bottom-0 z-30 bg-slate-50/95 dark:bg-[#0B1120]/95 backdrop-blur-md py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
                 <button
                   type="button"
-                  onClick={() => setStep(1)}
+                  onClick={() => setCurrentStep(1)}
                   className="px-5 py-3 rounded-2xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition cursor-pointer"
                 >
                   Volver al Horario
@@ -1144,10 +1491,208 @@ export default function EditWizardPage() {
 
                 <button
                   type="button"
-                  onClick={() => setStep(3)}
-                  disabled={!canGoToStep3}
+                  onClick={() => setCurrentStep(3)}
+                  disabled={!canGoToPaymentOrConfirm}
                   className={`font-bold py-3.5 px-8 rounded-2xl transition-all flex items-center gap-2 text-sm shadow-md ${
-                    canGoToStep3
+                    canGoToPaymentOrConfirm
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
+                      : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-70'
+                  }`}
+                >
+                  <span>
+                    {requierePagoDiferencia ? 'Continuar a Pago de Diferencia' : 'Revisar Comparación'}
+                  </span> 
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ══════════════════════════════════════════════════════
+              PASO 3 CONDICIONAL: PAGO DE DIFERENCIA (Solo si precioNuevo > precioOriginal)
+              ══════════════════════════════════════════════════════ */}
+          {currentStep === 3 && requierePagoDiferencia && (
+            <motion.div
+              key="stepPago"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6"
+            >
+              <div className="bg-white dark:bg-[#1E293B] rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-xs space-y-6">
+                
+                {/* Banner de Diferencia Financiera */}
+                <div className="p-5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-start gap-3.5">
+                    <div className="w-11 h-11 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
+                      <CreditCard className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="font-extrabold text-base text-amber-950 dark:text-amber-100">
+                        Ajuste de Tarifa por Cambio de Servicio
+                      </h3>
+                      <p className="text-xs sm:text-sm text-amber-800 dark:text-amber-300 mt-0.5">
+                        El nuevo servicio ({servicioSeleccionado?.servicio}) tiene un costo superior al servicio previamente contratado.
+                      </p>
+                      <div className="mt-2 flex items-center gap-4 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                        <span>Costo anterior: Q{precioOriginal.toFixed(2)}</span>
+                        <span>•</span>
+                        <span>Nuevo costo: Q{precioNuevo.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-left sm:text-right shrink-0 bg-white dark:bg-[#0F172A] p-3.5 rounded-xl border border-amber-200 dark:border-amber-800">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Diferencia a Cobrar
+                    </span>
+                    <span className="text-2xl font-black text-amber-600 dark:text-amber-400">
+                      Q{diferenciaAPagar.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Selección de Método de Pago */}
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2 tracking-tight">
+                    ¿Cómo deseas pagar la diferencia?
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">
+                    Selecciona el método con el que deseas abonar la diferencia de Q{diferenciaAPagar.toFixed(2)}.
+                  </p>
+
+                  <div className="space-y-3">
+                    {metodosPagoDisponibles.map((metodo) => {
+                      const isSelected = tipoPagoId === metodo.tipoPagoId;
+                      const isTarjeta = metodo.descripcion.toLowerCase().includes('tarjeta');
+                      const isSeguro = metodo.descripcion.toLowerCase().includes('seguro');
+                      const isEfectivo = metodo.descripcion.toLowerCase().includes('efectivo');
+                      const isTransferencia = metodo.descripcion.toLowerCase().includes('transferencia');
+
+                      const tarjetasBilletera = billetera.filter(b => b.tipo === 'TARJETA');
+
+                      return (
+                        <div
+                          key={metodo.tipoPagoId}
+                          className={`rounded-2xl border-2 transition-all overflow-hidden ${
+                            isSelected
+                              ? 'border-blue-600 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/20 shadow-xs'
+                              : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0F172A] hover:border-blue-300'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTipoPagoId(metodo.tipoPagoId);
+                              if (isTarjeta && tarjetasBilletera.length > 0 && !billeteraItemId) {
+                                setBilleteraItemId(tarjetasBilletera[0].id_metodo);
+                              }
+                            }}
+                            className="w-full flex items-center p-4 text-left cursor-pointer"
+                          >
+                            <div className={`p-2.5 rounded-xl transition-colors ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
+                              {isTarjeta ? (
+                                <CreditCard className="w-5 h-5" />
+                              ) : isEfectivo ? (
+                                <Banknote className="w-5 h-5" />
+                              ) : isTransferencia ? (
+                                <Landmark className="w-5 h-5" />
+                              ) : (
+                                <Wallet className="w-5 h-5" />
+                              )}
+                            </div>
+                            <div className="flex-1 ml-3.5">
+                              <h4 className={`text-sm font-bold ${isSelected ? 'text-blue-950 dark:text-white' : 'text-slate-800 dark:text-slate-200'}`}>
+                                {metodo.descripcion}
+                              </h4>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                {metodo.observaciones || (isTarjeta ? 'Paga seguro y al instante' : 'Pago al momento de la cita')}
+                              </p>
+                            </div>
+                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-blue-600' : 'border-slate-300 dark:border-slate-600'}`}>
+                              {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />}
+                            </div>
+                          </button>
+
+                          {/* Opciones de Tarjeta / Billetera */}
+                          {isSelected && isTarjeta && (
+                            <div className="px-5 pb-5 pt-2 border-t border-blue-100 dark:border-blue-900/40 space-y-3">
+                              <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                                Selecciona una tarjeta guardada:
+                              </p>
+                              {tarjetasBilletera.length > 0 ? (
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                  {tarjetasBilletera.map((card) => {
+                                    const isCardSelected = billeteraItemId === card.id_metodo;
+                                    return (
+                                      <button
+                                        key={card.id_metodo}
+                                        type="button"
+                                        onClick={() => setBilleteraItemId(card.id_metodo)}
+                                        className={`p-3 rounded-xl border-2 text-left text-xs font-bold flex items-center justify-between cursor-pointer transition ${
+                                          isCardSelected
+                                            ? 'border-blue-600 bg-white dark:bg-[#1E293B] shadow-xs'
+                                            : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#0B1120]'
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2">
+                                          <CreditCard className="w-4 h-4 text-blue-600" />
+                                          <span>{card.descripcion || card.proveedor || 'Tarjeta'}</span>
+                                        </div>
+                                        {isCardSelected && <Check className="w-4 h-4 text-blue-600" />}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <p className="text-xs text-slate-500 italic">No tienes tarjetas registradas en tu billetera.</p>
+                              )}
+
+                              {/* Agregar tarjeta rápida */}
+                              <div className="pt-2 flex gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="Número de tarjeta (ej. 4242...)"
+                                  value={newCardNum}
+                                  onChange={(e) => setNewCardNum(e.target.value)}
+                                  className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#0F172A] outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleSaveQuickCard}
+                                  disabled={isSavingCard || !newCardNum.trim()}
+                                  className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition disabled:opacity-50 cursor-pointer"
+                                >
+                                  {isSavingCard ? 'Guardando...' : 'Guardar'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Botones de Navegación */}
+              <div className="sticky bottom-0 z-30 bg-slate-50/95 dark:bg-[#0B1120]/95 backdrop-blur-md py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(2)}
+                  className="px-5 py-3 rounded-2xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition cursor-pointer"
+                >
+                  Volver a Detalles
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(4)}
+                  disabled={!canConfirmCita}
+                  className={`font-bold py-3.5 px-8 rounded-2xl transition-all flex items-center gap-2 text-sm shadow-md ${
+                    canConfirmCita
                       ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
                       : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-70'
                   }`}
@@ -1159,18 +1704,19 @@ export default function EditWizardPage() {
           )}
 
           {/* ══════════════════════════════════════════════════════
-              PASO 3: CONFIRMAR Y COMPARACIÓN DE LA CITA
+              PASO FINAL: COMPARAR Y CONFIRMAR CITA
+              (Paso 4 si hubo diferencia de pago, o Paso 3 si no)
               ══════════════════════════════════════════════════════ */}
-          {step === 3 && (
+          {((currentStep === 4 && requierePagoDiferencia) || (currentStep === 3 && !requierePagoDiferencia)) && (
             <motion.div
-              key="step3"
+              key="stepFinal"
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.2 }}
               className="space-y-6"
             >
-              {/* Encabezado de Confirmación */}
+              {/* Encabezado */}
               <div className="text-center max-w-2xl mx-auto space-y-2 pt-2">
                 <div className="w-14 h-14 rounded-2xl bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto shadow-inner">
                   <ShieldCheck className="w-7 h-7" />
@@ -1183,213 +1729,240 @@ export default function EditWizardPage() {
                 </p>
               </div>
 
-              {/* Grid de Comparación Frente a Frente */}
+              {/* Grid Frente a Frente */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
                 {/* ── TARJETA 1: CITA ORIGINAL PROGRAMADA (EN MORADO) ── */}
-                <div className="bg-white dark:bg-[#1E293B] rounded-3xl p-6 sm:p-7 border-2 border-purple-300 dark:border-purple-800/80 shadow-sm relative overflow-hidden">
-                  <div className="flex items-center justify-between pb-4 border-b border-purple-100 dark:border-purple-900/50 mb-5">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-purple-100 dark:bg-purple-950/80 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                      <span className="w-2 h-2 rounded-full bg-purple-600" />
-                      Cita Agendada Anteriormente
-                    </span>
-                    <span className="text-[11px] font-bold text-slate-400">Original</span>
+                <div className="bg-white dark:bg-[#1E293B] rounded-3xl p-6 sm:p-7 border-2 border-purple-300 dark:border-purple-800/80 shadow-sm relative overflow-hidden flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between pb-4 border-b border-purple-100 dark:border-purple-900/50 mb-5">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-purple-100 dark:bg-purple-950/80 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                        <span className="w-2 h-2 rounded-full bg-purple-600" />
+                        Cita Agendada Anteriormente
+                      </span>
+                      <span className="text-[11px] font-bold text-slate-400">Original</span>
+                    </div>
+
+                    <div className="space-y-4">
+                      {/* Fecha y Hora Original */}
+                      <div className="flex items-start gap-3.5">
+                        <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 flex items-center justify-center shrink-0 mt-0.5">
+                          <CalendarDays className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Fecha y Hora Programada</p>
+                          <p className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white capitalize">
+                            {safeFormatDate(citaOriginal.ctaFecha, "EEEE, d 'de' MMMM 'de' yyyy")}
+                          </p>
+                          <p className="text-xs font-black text-purple-700 dark:text-purple-400">
+                            {format12Hour(citaOriginal.ctaHora)}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Modalidad y Lugar Original */}
+                      <div className="flex items-start gap-3.5">
+                        <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 flex items-center justify-center shrink-0 mt-0.5">
+                          {citaOriginal.ctaModalidad === 'virtual' ? (
+                            <Video className="w-5 h-5" />
+                          ) : citaOriginal.ctaModalidad === 'domicilio' ? (
+                            <Home className="w-5 h-5" />
+                          ) : (
+                            <Building2 className="w-5 h-5" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Modalidad y Lugar</p>
+                          <p className="font-bold text-sm text-slate-900 dark:text-white capitalize">
+                            {citaOriginal.ctaModalidad}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            {citaOriginal.clinicaNombre || citaOriginal.direccionDomicilio || 'Consultorio del especialista'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Especialista */}
+                      <div className="flex items-start gap-3.5">
+                        <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 flex items-center justify-center shrink-0 mt-0.5">
+                          <User className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Especialista</p>
+                          <p className="font-bold text-sm text-slate-900 dark:text-white">
+                            Dr(a). {citaOriginal.medicoNombre}
+                          </p>
+                          <p className="text-xs text-slate-500">{citaOriginal.medicoEspecialidad}</p>
+                        </div>
+                      </div>
+
+                      {/* Motivo Original */}
+                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Motivo / Servicio Original</p>
+                        <p className="text-xs text-slate-700 dark:text-slate-300 italic mt-0.5">
+                          "{citaOriginal.ctaMotivo || 'Sin motivo especificado'}"
+                        </p>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="space-y-4">
-                    {/* Fecha y Hora */}
-                    <div className="flex items-start gap-3.5">
-                      <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 flex items-center justify-center shrink-0 mt-0.5">
-                        <CalendarDays className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Fecha y Hora Programada</p>
-                        <p className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white capitalize">
-                          {safeFormatDate(citaOriginal.ctaFecha, "EEEE, d 'de' MMMM 'de' yyyy")}
-                        </p>
-                        <p className="text-xs font-black text-purple-700 dark:text-purple-400">
-                          {format12Hour(citaOriginal.ctaHora)}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Modalidad y Ubicación */}
-                    <div className="flex items-start gap-3.5">
-                      <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 flex items-center justify-center shrink-0 mt-0.5">
-                        {citaOriginal.ctaModalidad === 'virtual' ? (
-                          <Video className="w-5 h-5" />
-                        ) : citaOriginal.ctaModalidad === 'domicilio' ? (
-                          <Home className="w-5 h-5" />
-                        ) : (
-                          <Building2 className="w-5 h-5" />
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Modalidad y Lugar</p>
-                        <p className="font-bold text-sm text-slate-900 dark:text-white capitalize">
-                          {citaOriginal.ctaModalidad}
-                        </p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                          {citaOriginal.clinicaNombre || citaOriginal.direccionDomicilio || 'Consultorio del especialista'}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Médico y Especialidad */}
-                    <div className="flex items-start gap-3.5">
-                      <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 flex items-center justify-center shrink-0 mt-0.5">
-                        <User className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Especialista</p>
-                        <p className="font-bold text-sm text-slate-900 dark:text-white">
-                          Dr(a). {citaOriginal.medicoNombre}
-                        </p>
-                        <p className="text-xs text-slate-500">{citaOriginal.medicoEspecialidad}</p>
-                      </div>
-                    </div>
-
-                    {/* Motivo */}
-                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
-                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Motivo Original</p>
-                      <p className="text-xs text-slate-700 dark:text-slate-300 italic mt-0.5">
-                        "{citaOriginal.ctaMotivo || 'Sin motivo especificado'}"
-                      </p>
-                    </div>
-
-                    {/* Costo */}
-                    <div className="pt-2 flex items-center justify-between text-xs">
-                      <span className="font-bold text-slate-500">Costo original:</span>
-                      <span className="font-black text-slate-900 dark:text-white text-sm">
-                        Q{(citaOriginal.ctaPrecio || 0).toFixed(2)}
-                      </span>
-                    </div>
+                  {/* Costo Original */}
+                  <div className="mt-6 pt-4 border-t border-purple-100 dark:border-purple-900/60 flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-500">Costo original:</span>
+                    <span className="font-black text-slate-900 dark:text-white text-base">
+                      Q{precioOriginal.toFixed(2)}
+                    </span>
                   </div>
                 </div>
 
                 {/* ── TARJETA 2: NUEVA CITA SELECCIONADA (EN AZUL) ── */}
-                <div className="bg-white dark:bg-[#1E293B] rounded-3xl p-6 sm:p-7 border-2 border-blue-600 dark:border-blue-500 shadow-md relative overflow-hidden">
-                  <div className="flex items-center justify-between pb-4 border-b border-blue-100 dark:border-blue-900/50 mb-5">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                      <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                      Nueva Cita Seleccionada
-                    </span>
-                    <span className="text-[11px] font-extrabold text-blue-600 dark:text-blue-400">Por Confirmar</span>
+                <div className="bg-white dark:bg-[#1E293B] rounded-3xl p-6 sm:p-7 border-2 border-blue-600 dark:border-blue-500 shadow-md relative overflow-hidden flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between pb-4 border-b border-blue-100 dark:border-blue-900/50 mb-5">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                        <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                        Nueva Cita Seleccionada
+                      </span>
+                      <span className="text-[11px] font-extrabold text-blue-600 dark:text-blue-400">Por Confirmar</span>
+                    </div>
+
+                    <div className="space-y-4">
+                      {/* Nueva Fecha y Hora */}
+                      <div className="flex items-start gap-3.5">
+                        <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
+                          <CalendarDays className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Nueva Fecha y Hora</p>
+                            {isDateChanged || isTimeChanged ? (
+                              <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
+                                Reprogramada
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
+                                Mismo horario
+                              </span>
+                            )}
+                          </div>
+                          <p className="font-extrabold text-sm sm:text-base text-blue-900 dark:text-blue-100 capitalize">
+                            {fecha ? format(fecha, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es }) : ''}
+                          </p>
+                          <p className="text-xs font-black text-blue-600 dark:text-blue-400">
+                            {format12Hour(hora)}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Nueva Modalidad y Lugar */}
+                      <div className="flex items-start gap-3.5">
+                        <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
+                          {modalidad === 'virtual' ? (
+                            <Video className="w-5 h-5" />
+                          ) : modalidad === 'domicilio' ? (
+                            <Home className="w-5 h-5" />
+                          ) : (
+                            <Building2 className="w-5 h-5" />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Nueva Modalidad y Lugar</p>
+                            {isModalidadChanged && (
+                              <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
+                                Modalidad cambiada
+                              </span>
+                            )}
+                          </div>
+                          <p className="font-bold text-sm text-slate-900 dark:text-white capitalize">
+                            {modalidad}
+                          </p>
+                          <p className="text-xs text-slate-600 dark:text-slate-300">
+                            {modalidad === 'presencial' 
+                              ? (clinicaSeleccionada?.cliDescripcion || clinicaSeleccionada?.cliDireccionCompleta || 'Consultorio médico')
+                              : modalidad === 'domicilio'
+                              ? (direccion || 'Dirección a domicilio')
+                              : 'Teleconsulta en línea (Enlace proporcionado por clínica)'
+                            }
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Servicio Solicitado */}
+                      <div className="flex items-start gap-3.5">
+                        <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
+                          <Stethoscope className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Servicio Solicitado</p>
+                          <p className="font-bold text-sm text-slate-900 dark:text-white">
+                            {servicioSeleccionado?.servicio || motivoGenerico}
+                          </p>
+                          <p className="text-xs text-slate-500">Dr(a). {citaOriginal.medicoNombre}</p>
+                        </div>
+                      </div>
+
+                      {/* Observaciones */}
+                      {observacionesAdicionales && (
+                        <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Observaciones Registradas</p>
+                          <p className="text-xs text-slate-800 dark:text-slate-200 mt-0.5">
+                            "{observacionesAdicionales}"
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="space-y-4">
-                    {/* Nueva Fecha y Hora */}
-                    <div className="flex items-start gap-3.5">
-                      <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
-                        <CalendarDays className="w-5 h-5" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Nueva Fecha y Hora</p>
-                          {isDateChanged || isTimeChanged ? (
-                            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
-                              Reprogramada
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
-                              Mismo horario
-                            </span>
-                          )}
-                        </div>
-                        <p className="font-extrabold text-sm sm:text-base text-blue-900 dark:text-blue-100 capitalize">
-                          {fecha ? format(fecha, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es }) : ''}
-                        </p>
-                        <p className="text-xs font-black text-blue-600 dark:text-blue-400">
-                          {format12Hour(hora)}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Nueva Modalidad y Ubicación */}
-                    <div className="flex items-start gap-3.5">
-                      <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
-                        {modalidad === 'virtual' ? (
-                          <Video className="w-5 h-5" />
-                        ) : modalidad === 'domicilio' ? (
-                          <Home className="w-5 h-5" />
-                        ) : (
-                          <Building2 className="w-5 h-5" />
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Nueva Modalidad y Lugar</p>
-                          {isModalidadChanged && (
-                            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
-                              Modalidad cambiada
-                            </span>
-                          )}
-                        </div>
-                        <p className="font-bold text-sm text-slate-900 dark:text-white capitalize">
-                          {modalidad}
-                        </p>
-                        <p className="text-xs text-slate-600 dark:text-slate-300">
-                          {modalidad === 'presencial' 
-                            ? (clinicaSeleccionada?.cliDescripcion || clinicaSeleccionada?.cliDireccionCompleta || 'Consultorio médico')
-                            : modalidad === 'domicilio'
-                            ? (direccion || 'Dirección a domicilio')
-                            : 'Teleconsulta en línea (Enlace proporcionado por clínica)'
-                          }
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Especialista & Servicio */}
-                    <div className="flex items-start gap-3.5">
-                      <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
-                        <Stethoscope className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Servicio Solicitado</p>
-                        <p className="font-bold text-sm text-slate-900 dark:text-white">
-                          {servicioSeleccionado?.servicio || 'Consulta Médica General'}
-                        </p>
-                        <p className="text-xs text-slate-500">Dr(a). {citaOriginal.medicoNombre}</p>
-                      </div>
-                    </div>
-
-                    {/* Nuevo Motivo */}
-                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
-                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Nuevo Motivo</p>
-                      <p className="text-xs text-slate-800 dark:text-slate-200 mt-0.5">
-                        "{motivo || 'Sin motivo especificado'}"
-                      </p>
-                    </div>
-
-                    {/* Costo Actualizado */}
-                    <div className="pt-2 flex items-center justify-between text-xs">
-                      <span className="font-bold text-slate-500">Costo modificado:</span>
-                      <span className="font-black text-blue-600 dark:text-blue-400 text-base">
-                        Q{precio.toFixed(2)}
+                  {/* Desglose de Precios y Diferencia */}
+                  <div className="mt-6 pt-4 border-t border-blue-100 dark:border-blue-900/60 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-slate-500">Nuevo costo total:</span>
+                      <span className="font-black text-slate-900 dark:text-white text-base">
+                        Q{precioNuevo.toFixed(2)}
                       </span>
                     </div>
+
+                    {requierePagoDiferencia ? (
+                      <div className="flex items-center justify-between text-xs bg-amber-50 dark:bg-amber-950/40 p-2.5 rounded-xl border border-amber-200 dark:border-amber-800">
+                        <span className="font-bold text-amber-900 dark:text-amber-200">
+                          Diferencia a abonar:
+                        </span>
+                        <span className="font-black text-amber-600 dark:text-amber-400 text-sm">
+                          +Q{diferenciaAPagar.toFixed(2)}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between text-xs bg-emerald-50 dark:bg-emerald-950/40 p-2 rounded-xl border border-emerald-200 dark:border-emerald-800">
+                        <span className="font-bold text-emerald-800 dark:text-emerald-300">
+                          Ajuste de precio:
+                        </span>
+                        <span className="font-bold text-emerald-700 dark:text-emerald-400">
+                          Sin cobro adicional
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
               </div>
 
-              {/* Banner de Aviso Final */}
-              <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 p-4 rounded-2xl flex items-start gap-3 text-amber-900 dark:text-amber-200 text-xs sm:text-sm">
-                <Info className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              {/* Aviso Final */}
+              <div className="bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 p-4 rounded-2xl flex items-start gap-3 text-blue-950 dark:text-blue-200 text-xs sm:text-sm">
+                <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
                 <p>
-                  <strong>Confirmación de Reprogramación:</strong> Al hacer clic en "Confirmar Modificación", 
-                  tu cita anterior será actualizada automáticamente con el nuevo día y horario. Te enviaremos una notificación y la agenda del médico se actualizará al instante.
+                  <strong>Confirmación de Reprogramación:</strong> Al hacer clic en el botón inferior, tu cita anterior se actualizará automáticamente y se enviará la confirmación al especialista.
                 </p>
               </div>
 
-              {/* Botones Finales */}
+              {/* Botones de Acción */}
               <div className="sticky bottom-0 z-30 bg-slate-50/95 dark:bg-[#0B1120]/95 backdrop-blur-md py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
                 <button
                   type="button"
-                  onClick={() => setStep(2)}
+                  onClick={() => setCurrentStep(requierePagoDiferencia ? 3 : 2)}
                   className="px-5 py-3 rounded-2xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition cursor-pointer"
                 >
-                  Volver a Editar
+                  Volver al paso anterior
                 </button>
 
                 <button
@@ -1406,7 +1979,11 @@ export default function EditWizardPage() {
                   ) : (
                     <>
                       <Check className="w-4 h-4 stroke-[3]" />
-                      <span>Confirmar y Modificar Cita</span>
+                      <span>
+                        {requierePagoDiferencia 
+                          ? `Pagar Diferencia (Q${diferenciaAPagar.toFixed(2)}) y Modificar Cita`
+                          : 'Confirmar y Modificar Cita'}
+                      </span>
                     </>
                   )}
                 </button>

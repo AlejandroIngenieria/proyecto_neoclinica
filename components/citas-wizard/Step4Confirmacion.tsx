@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { toast } from 'sonner';
-import { useCreateCita, useUploadDocumentoCita, usePagarCita, useMetodosPago, useBilletera, useCreateGrupo } from '@/hooks/use-flujo-citas';
+import { useCreateCita, usePagarCita, useMetodosPago, useBilletera, useCreateGrupo } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { useCitaStore } from '@/store/use-cita-store';
 import { completarTareaLealtad } from '@/services/lealtad';
@@ -49,7 +49,6 @@ export function Step4Confirmacion() {
 
   const { mutateAsync: createCita } = useCreateCita();
   const { mutateAsync: createGrupo } = useCreateGrupo();
-  const { mutateAsync: uploadDocumento } = useUploadDocumentoCita();
   const { mutateAsync: pagarCita } = usePagarCita();
 
   const { data: doctor } = useDoctorByCode(codMedico || '');
@@ -153,7 +152,9 @@ export function Step4Confirmacion() {
         hora: hora.length === 5 ? hora + ':00' : hora,
         modalidad,
         precio: total,
-        motivo: motivo || servicioSeleccionado?.servicio || undefined,
+        motivo: (motivo && motivo !== grupoNombre && motivo !== servicioSeleccionado?.servicio)
+          ? motivo.trim()
+          : (servicioSeleccionado?.servicio || undefined),
         direccionDomicilio: dirDomicilio,
         referenciasDomicilio: refDomicilio,
         enlaceVideollamada: null,
@@ -192,19 +193,7 @@ export function Step4Confirmacion() {
         },
       });
 
-      // 4. Subir Documentos si hay
-      if (archivos.length > 0) {
-        setSubmitStatusText('Adjuntando documentos médicos...');
-        for (const file of archivos) {
-          await uploadDocumento({
-            codPaciente: pacienteSeleccionado.pacCodigo,
-            codCita: citaId,
-            file,
-          });
-        }
-      }
-
-      // 5. Marcar éxito
+      // 4. Marcar éxito
       setCitaConfirmada(true);
       setIsSuccess(true);
       window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
