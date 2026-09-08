@@ -311,6 +311,38 @@ export default function EditWizardPage() {
     return combined;
   }, [modalidad, horariosClinica, doctor]);
 
+  const isOriginalClinicSelected = useMemo(() => {
+    if (modalidad !== 'presencial') return true;
+    if (!clinicaSeleccionada || !citaOriginal) return false;
+    const origId = String(citaOriginal.ctaConsultorioId || '');
+    return (
+      String(clinicaSeleccionada.cliCodigo) === origId ||
+      String(clinicaSeleccionada.mclCodigo) === origId ||
+      (!!citaOriginal.clinicaNombre && clinicaSeleccionada.cliDescripcion?.toLowerCase().trim() === citaOriginal.clinicaNombre?.toLowerCase().trim())
+    );
+  }, [modalidad, clinicaSeleccionada, citaOriginal]);
+
+  const servicioOriginal = useMemo(() => {
+    if (!citaOriginal || !serviciosMedico.length) return null;
+    if (citaOriginal.ctaCodsyp) {
+      const found = serviciosMedico.find(s => s.sypCodigo === citaOriginal.ctaCodsyp);
+      if (found) return found;
+    }
+    if (citaOriginal.servicioNombre) {
+      const found = serviciosMedico.find(s => s.servicio?.toLowerCase().trim() === citaOriginal.servicioNombre?.toLowerCase().trim());
+      if (found) return found;
+    }
+    const rawMotivo = citaOriginal.ctaMotivo?.toLowerCase()?.trim();
+    if (rawMotivo) {
+      const found = serviciosMedico.find(s => 
+        s.servicio?.toLowerCase()?.trim() === rawMotivo ||
+        rawMotivo.includes(s.servicio?.toLowerCase()?.trim())
+      );
+      if (found) return found;
+    }
+    return null;
+  }, [citaOriginal, serviciosMedico]);
+
   const disabledDays = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -318,7 +350,7 @@ export default function EditWizardPage() {
     if (!horarios.length) {
       return [
         (date: Date) => {
-          if (fechaOriginalDate && format(date, 'yyyy-MM-dd') === format(fechaOriginalDate, 'yyyy-MM-dd')) return false;
+          if (isOriginalClinicSelected && fechaOriginalDate && format(date, 'yyyy-MM-dd') === format(fechaOriginalDate, 'yyyy-MM-dd')) return false;
           return date < today;
         }
       ];
@@ -326,12 +358,12 @@ export default function EditWizardPage() {
     const allowedDays = horarios.map(h => h.horDiaSemana);
     return [
       (date: Date) => {
-        if (fechaOriginalDate && format(date, 'yyyy-MM-dd') === format(fechaOriginalDate, 'yyyy-MM-dd')) return false;
+        if (isOriginalClinicSelected && fechaOriginalDate && format(date, 'yyyy-MM-dd') === format(fechaOriginalDate, 'yyyy-MM-dd')) return false;
         if (date < today) return true;
         return !allowedDays.includes(date.getDay());
       }
     ];
-  }, [horarios, fechaOriginalDate]);
+  }, [horarios, fechaOriginalDate, isOriginalClinicSelected]);
 
   const selectedFechaStr = fecha ? format(fecha, 'yyyy-MM-dd') : null;
   const { data: horasOcupadas = [] } = useHorasOcupadas(codMedico || null, selectedFechaStr);
@@ -356,7 +388,8 @@ export default function EditWizardPage() {
       }
     });
 
-    if (isCurrentSelectionOriginalDate && horaOriginalStr) {
+    // Solo inyectar la hora original si la clínica seleccionada es la clínica original de la cita
+    if (isCurrentSelectionOriginalDate && isOriginalClinicSelected && horaOriginalStr) {
       const normalizedOriginal = horaOriginalStr.length === 5 ? `${horaOriginalStr}:00` : horaOriginalStr;
       if (!slots.includes(normalizedOriginal)) {
         slots.push(normalizedOriginal);
@@ -367,7 +400,8 @@ export default function EditWizardPage() {
     const normOriginal = horaOriginalStr.slice(0, 5);
 
     return uniqueSlots.map(slot => {
-      const isOriginalSlot = isCurrentSelectionOriginalDate && slot.slice(0, 5) === normOriginal;
+      // El horario previo solo se resalta si estamos en la clínica original y fecha original
+      const isOriginalSlot = isCurrentSelectionOriginalDate && isOriginalClinicSelected && slot.slice(0, 5) === normOriginal;
       const slotShort = slot.slice(0, 5);
       const disabled = isOriginalSlot 
         ? false 
@@ -379,7 +413,7 @@ export default function EditWizardPage() {
         isOriginalSlot,
       };
     });
-  }, [fecha, horarios, horasOcupadas, isCurrentSelectionOriginalDate, horaOriginalStr]);
+  }, [fecha, horarios, horasOcupadas, isCurrentSelectionOriginalDate, isOriginalClinicSelected, horaOriginalStr]);
 
   // -- 4. File Dropzone with Strict Deduplication --
   const onDropFiles = useCallback((acceptedFiles: File[]) => {
@@ -848,6 +882,7 @@ export default function EditWizardPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[240px] overflow-y-auto pr-1">
                     {serviciosMedico.map((s: ServicioMedicoCitaDto) => {
                       const isSelected = servicioSeleccionado?.sypCodigo === s.sypCodigo;
+                      const isOriginalService = servicioOriginal?.sypCodigo === s.sypCodigo;
                       const isMoreExpensive = s.costoTotal > precioOriginal;
                       const diffAmount = s.costoTotal - precioOriginal;
 
@@ -859,17 +894,50 @@ export default function EditWizardPage() {
                             setServicioSeleccionado(s);
                           }}
                           className={`text-left p-3.5 rounded-xl border-2 transition-all flex flex-col justify-between cursor-pointer ${
-                            isSelected
-                              ? 'border-blue-600 dark:border-blue-500 bg-blue-50/70 dark:bg-blue-900/30 shadow-xs'
+                            isSelected && isOriginalService
+                              ? 'border-purple-600 dark:border-purple-500 bg-purple-50/80 dark:bg-purple-950/50 shadow-xs ring-2 ring-purple-300 dark:ring-purple-700'
+                              : isSelected
+                              ? 'border-blue-600 dark:border-blue-500 bg-blue-50/70 dark:bg-blue-900/30 shadow-xs ring-2 ring-blue-300 dark:ring-blue-800'
+                              : isOriginalService
+                              ? 'border-purple-300 dark:border-purple-800/80 bg-purple-50/40 dark:bg-purple-950/20 hover:border-purple-400'
                               : 'border-slate-200 dark:border-slate-700/80 hover:border-blue-300 dark:hover:border-blue-600/50 bg-slate-50/50 dark:bg-[#0F172A]'
                           }`}
                         >
                           <div className="flex items-start justify-between gap-2">
-                            <h4 className={`font-bold text-xs sm:text-sm leading-tight ${isSelected ? 'text-blue-900 dark:text-blue-300' : 'text-slate-800 dark:text-slate-200'}`}>
-                              {s.servicio}
-                            </h4>
-                            <div className={`shrink-0 w-4.5 h-4.5 rounded-full flex items-center justify-center ${isSelected ? 'bg-blue-600 text-white' : 'border border-slate-300 dark:border-slate-600'}`}>
-                              {isSelected && <Check className="w-3 h-3" />}
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <h4 className={`font-bold text-xs sm:text-sm leading-tight ${
+                                  isSelected && isOriginalService
+                                    ? 'text-purple-950 dark:text-purple-200'
+                                    : isSelected
+                                    ? 'text-blue-900 dark:text-blue-300'
+                                    : isOriginalService
+                                    ? 'text-purple-900 dark:text-purple-300'
+                                    : 'text-slate-800 dark:text-slate-200'
+                                }`}>
+                                  {s.servicio}
+                                </h4>
+                                {isOriginalService && (
+                                  <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md shrink-0 ${
+                                    isSelected
+                                      ? 'bg-purple-600 text-white dark:bg-purple-500'
+                                      : 'bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-200 border border-purple-200 dark:border-purple-800'
+                                  }`}>
+                                    Actual
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className={`shrink-0 w-4.5 h-4.5 rounded-full flex items-center justify-center ${
+                              isSelected && isOriginalService
+                                ? 'bg-purple-600 text-white'
+                                : isSelected
+                                ? 'bg-blue-600 text-white'
+                                : isOriginalService
+                                ? 'border-2 border-purple-400 dark:border-purple-600'
+                                : 'border border-slate-300 dark:border-slate-600'
+                            }`}>
+                              {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
                             </div>
                           </div>
                           
@@ -880,14 +948,22 @@ export default function EditWizardPage() {
                           )}
 
                           <div className="mt-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-baseline justify-between">
-                            {isMoreExpensive ? (
+                            {isOriginalService ? (
+                              <span className="text-[10px] font-bold text-purple-700 dark:text-purple-300">
+                                Tarifa actual de tu cita
+                              </span>
+                            ) : isMoreExpensive ? (
                               <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
                                 +Q{diffAmount.toFixed(2)} diferencia
                               </span>
                             ) : (
                               <span className="text-[10px] text-slate-400">Sin costo extra</span>
                             )}
-                            <span className="text-sm font-black text-blue-600 dark:text-blue-400">
+                            <span className={`text-sm font-black ${
+                              isOriginalService
+                                ? 'text-purple-700 dark:text-purple-300'
+                                : 'text-blue-600 dark:text-blue-400'
+                            }`}>
                               Q{s.costoTotal.toFixed(2)}
                             </span>
                           </div>
@@ -950,24 +1026,44 @@ export default function EditWizardPage() {
                       <div className="flex flex-col gap-3 max-h-[380px] overflow-y-auto pr-1">
                         {clinicasList.map((clinica) => {
                           const isSelected = clinicaSeleccionada?.mclCodigo === clinica.mclCodigo;
-                          const isOriginalClinic = citaOriginal.ctaConsultorioId && (
+                          const isOriginalClinic = Boolean(citaOriginal.ctaConsultorioId && (
                             String(clinica.cliCodigo) === String(citaOriginal.ctaConsultorioId) || 
                             String(clinica.mclCodigo) === String(citaOriginal.ctaConsultorioId)
-                          );
+                          ));
 
                           return (
                             <button
                               key={clinica.mclCodigo}
                               type="button"
-                              onClick={() => setClinicaSeleccionada(clinica)}
+                              onClick={() => {
+                                setClinicaSeleccionada(clinica);
+                                if (!isOriginalClinic) {
+                                  // Si cambiamos a una clínica que no es la original, resetear horario
+                                  setHora('');
+                                } else if (isCurrentSelectionOriginalDate) {
+                                  setHora(horaOriginalStr);
+                                }
+                              }}
                               className={`text-left p-4 rounded-xl border-2 transition-all shrink-0 cursor-pointer ${
-                                isSelected
+                                isSelected && isOriginalClinic
+                                  ? 'bg-purple-50/70 dark:bg-purple-950/40 border-purple-600 dark:border-purple-500 ring-2 ring-purple-300 dark:ring-purple-700 shadow-xs'
+                                  : isSelected
                                   ? 'bg-blue-50/70 dark:bg-blue-900/30 border-blue-600 dark:border-blue-500 shadow-xs'
+                                  : isOriginalClinic
+                                  ? 'bg-purple-50/20 dark:bg-purple-950/20 border-purple-200 dark:border-purple-900 hover:border-purple-300'
                                   : 'bg-white dark:bg-[#1E293B] border-slate-200 dark:border-slate-700 hover:border-slate-300'
                               }`}
                             >
                               <div className="flex items-start justify-between gap-2">
-                                <h4 className={`font-bold text-sm leading-tight ${isSelected ? 'text-blue-900 dark:text-blue-300' : 'text-slate-800 dark:text-slate-200'}`}>
+                                <h4 className={`font-bold text-sm leading-tight ${
+                                  isSelected && isOriginalClinic
+                                    ? 'text-purple-950 dark:text-purple-200'
+                                    : isSelected
+                                    ? 'text-blue-900 dark:text-blue-300'
+                                    : isOriginalClinic
+                                    ? 'text-purple-900 dark:text-purple-300'
+                                    : 'text-slate-800 dark:text-slate-200'
+                                }`}>
                                   {clinica.cliDescripcion}
                                 </h4>
                                 {isOriginalClinic && (
@@ -979,7 +1075,9 @@ export default function EditWizardPage() {
                               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
                                 {clinica.cliDireccionCompleta}
                               </p>
-                              <div className="mt-2 text-[11px] font-bold text-blue-600 dark:text-blue-400">
+                              <div className={`mt-2 text-[11px] font-bold ${
+                                isOriginalClinic ? 'text-purple-700 dark:text-purple-400' : 'text-blue-600 dark:text-blue-400'
+                              }`}>
                                 Tarifa base: Q{(clinica.mclPrecioBase || 0).toFixed(2)}
                               </div>
                             </button>
@@ -1064,7 +1162,7 @@ export default function EditWizardPage() {
                         onSelect={(d) => {
                           if (!d) return;
                           setFecha(d);
-                          if (fechaOriginalDate && format(d, 'yyyy-MM-dd') === format(fechaOriginalDate, 'yyyy-MM-dd')) {
+                          if (isOriginalClinicSelected && fechaOriginalDate && format(d, 'yyyy-MM-dd') === format(fechaOriginalDate, 'yyyy-MM-dd')) {
                             setHora(horaOriginalStr);
                           } else {
                             setHora('');
@@ -1073,11 +1171,11 @@ export default function EditWizardPage() {
                         locale={es}
                         disabled={disabledDays}
                         modifiers={{
-                          fechaOriginal: fechaOriginalDate ? [fechaOriginalDate] : [],
+                          fechaOriginal: (isOriginalClinicSelected && fechaOriginalDate) ? [fechaOriginalDate] : [],
                         }}
                         modifiersClassNames={{
                           fechaOriginal: '!border-2 !border-purple-600 !bg-purple-100 dark:!bg-purple-950/80 !text-purple-900 dark:!text-purple-100 font-black rounded-xl hover:!bg-purple-200 dark:hover:!bg-purple-900 shadow-xs',
-                          selected: isCurrentSelectionOriginalDate
+                          selected: (isCurrentSelectionOriginalDate && isOriginalClinicSelected)
                             ? '!bg-purple-600 dark:!bg-purple-600 !text-white !border-2 !border-purple-500 font-black rounded-xl shadow-md ring-2 ring-purple-300 dark:ring-purple-700'
                             : '!bg-blue-600 dark:!bg-blue-500 !text-white hover:!bg-blue-700 font-bold shadow-md rounded-xl',
                           today: 'font-bold text-blue-600 dark:text-blue-400',
@@ -1096,7 +1194,7 @@ export default function EditWizardPage() {
                     </div>
 
                     {/* Leyenda en Morado para la fecha original */}
-                    {fechaOriginalDate && (
+                    {isOriginalClinicSelected && fechaOriginalDate && (
                       <div className="mt-3 flex items-center gap-2 text-xs font-bold text-purple-900 dark:text-purple-200 bg-purple-100/80 dark:bg-purple-950/60 border border-purple-300 dark:border-purple-800 px-3 py-2 rounded-xl shadow-2xs">
                         <div className="w-2.5 h-2.5 rounded-full bg-purple-600 shrink-0" />
                         <span>Día en morado: Fecha previamente programada ({format(fechaOriginalDate, "d 'de' MMMM", { locale: es })})</span>

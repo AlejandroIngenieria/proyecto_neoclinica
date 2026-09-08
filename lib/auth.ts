@@ -316,7 +316,7 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       const nextToken = token as TokenWithAccess;
 
       if (user) {
@@ -326,6 +326,12 @@ export const authOptions: NextAuthOptions = {
         nextToken.email = typedUser.email ?? null;
         nextToken.role = typedUser.role ?? null;
         nextToken.debeCambiarPassword = typedUser.debeCambiarPassword ?? false;
+      }
+
+      if (trigger === 'update' && session) {
+        if (session.debeCambiarPassword !== undefined) {
+          nextToken.debeCambiarPassword = session.debeCambiarPassword;
+        }
       }
 
       return nextToken;

@@ -43,6 +43,7 @@ import { es } from 'date-fns/locale';
 import { Navbar } from '@/components/navbar';
 import { NeoLoader } from '@/components/neo-loader';
 import { useSession } from 'next-auth/react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useCitasPaciente,
   useAllCitasPacientes,
@@ -57,7 +58,7 @@ import {
 } from '@/hooks/use-flujo-citas';
 import { usePacientesByUsuario } from '@/hooks/use-pacientes';
 import { useDoctorByCode, useDoctors } from '@/hooks/use-doctors';
-import { fetchGruposCita, createGrupo } from '@/services/flujo-citas';
+import { fetchGruposCita, createGrupo, updateCita } from '@/services/flujo-citas';
 import type { CitaListDto, CitaEstado, GrupoCitaDto } from '@/types/citas';
 import { buildDoctorFullName } from '@/types/doctor';
 import { AnimatedModal } from '@/components/animated-modal';
@@ -507,6 +508,13 @@ function CitasContent() {
     return Array.from(map.values());
   }, [pacientesUsuario, pacientesSeleccion, citasConTemas]);
 
+  // Auto-seleccionar paciente si la cuenta solo tiene un paciente (ej. cuenta independizada o individual)
+  useEffect(() => {
+    if (pacientesTabsList.length === 1 && !selectedPacienteId) {
+      setSelectedPacienteId(pacientesTabsList[0].pacCodigo);
+    }
+  }, [pacientesTabsList, selectedPacienteId]);
+
   const medicosUnicos = useMemo(() => {
     const map = new Map<string, string>();
     citasConTemas.forEach((c) => map.set(c.ctaCoddoc, c.medicoNombre));
@@ -536,7 +544,7 @@ function CitasContent() {
     const now = new Date();
     const msIn24Hrs = 24 * 60 * 60 * 1000;
     const msInWeek = 7 * 24 * 60 * 60 * 1000;
-    const proximosEstados = ['programada', 'confirmada', 'pospuesta'];
+    const historialEstados = ['cancelada', 'no_asistio', 'completada', 'rechazada'];
 
     return citasConTemas.filter((c) => {
       // Filtro de Médico
@@ -544,11 +552,13 @@ function CitasContent() {
       // Filtro de Grupo
       if (grupoSeleccionado && c.ctaGrupoId !== grupoSeleccionado) return false;
 
-      const isUpcoming = proximosEstados.includes(c.ctaEstado) && !isCitaPasada(c.ctaFecha, c.ctaHora);
+      const estadoNorm = (c.ctaEstado || '').toLowerCase().trim();
+      const isHistorial = historialEstados.includes(estadoNorm);
+      const isUpcoming = !isHistorial;
 
       const activeTab = selectedPacienteId ? tabActual : 'proximas';
       if (activeTab === 'proximas' && !isUpcoming) return false;
-      if (activeTab === 'historial' && isUpcoming) return false;
+      if (activeTab === 'historial' && !isHistorial) return false;
 
       // Filtro de Vista (única vs serie)
       if (viewFilter === 'unicas' && c.ctaGrupoId) return false;
@@ -625,13 +635,13 @@ function CitasContent() {
   // Conteo específico para el paciente seleccionado (Próximas vs Historial)
   const { pacienteProximasCount, pacienteHistorialCount } = useMemo(() => {
     if (!selectedPacienteId) return { pacienteProximasCount: 0, pacienteHistorialCount: 0 };
-    const proximosEstados = ['programada', 'confirmada', 'pospuesta'];
+    const historialEstados = ['cancelada', 'no_asistio', 'completada', 'rechazada'];
     const pacCitas = citasConTemas.filter((c) => c.ctaCodpac === selectedPacienteId);
-    const proximas = pacCitas.filter(
-      (c) => proximosEstados.includes(c.ctaEstado) && !isCitaPasada(c.ctaFecha, c.ctaHora)
+    const historial = pacCitas.filter((c) =>
+      historialEstados.includes((c.ctaEstado || '').toLowerCase().trim())
     ).length;
-    const historial = pacCitas.filter(
-      (c) => !proximosEstados.includes(c.ctaEstado) || isCitaPasada(c.ctaFecha, c.ctaHora)
+    const proximas = pacCitas.filter((c) =>
+      !historialEstados.includes((c.ctaEstado || '').toLowerCase().trim())
     ).length;
     return { pacienteProximasCount: proximas, pacienteHistorialCount: historial };
   }, [citasConTemas, selectedPacienteId]);
@@ -740,16 +750,23 @@ function CitasContent() {
               >
                 {/* ── Encabezado: Volver (Izq) | Paciente y Relación (Centro) | Agrupar Citas (Der) ── */}
                 <div className="relative flex items-center justify-between gap-4 pb-1">
-                  {/* Izquierda: Volver a pacientes (sin borde) */}
+                  {/* Izquierda: Volver a pacientes (solo si hay más de 1 paciente registrado) */}
                   <div className="flex items-center justify-start shrink-0 z-10">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedPacienteId(null)}
-                      className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all active:scale-95 cursor-pointer"
-                    >
-                      <ArrowLeft className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                      <span>Volver a pacientes</span>
-                    </button>
+                    {pacientesTabsList.length > 1 ? (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPacienteId(null)}
+                        className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all active:scale-95 cursor-pointer"
+                      >
+                        <ArrowLeft className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                        <span>Volver a pacientes</span>
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 text-xs font-bold">
+                        <CalendarDays className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                        <span className="hidden sm:inline">Mis Citas Médicas</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Centro: Nombre del paciente y relación */}
@@ -1187,17 +1204,19 @@ function CitasContent() {
 
                     {/* Botón inferior de retorno */}
                     <div className="pt-4 flex items-center justify-between border-t border-slate-200/80 dark:border-slate-800">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedPacienteId(null);
-                          window.scrollTo({ top: 0, behavior: 'smooth' });
-                        }}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                      >
-                        <ArrowLeft className="w-3.5 h-3.5" />
-                        Volver a pacientes
-                      </button>
+                      {pacientesTabsList.length > 1 ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedPacienteId(null);
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                          }}
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                        >
+                          <ArrowLeft className="w-3.5 h-3.5" />
+                          Volver a pacientes
+                        </button>
+                      ) : <div />}
 
                       <button
                         type="button"
@@ -1712,6 +1731,7 @@ function LinkGroupModal({
 }) {
   const { data: session } = useSession();
   const token = (session as any)?.accessToken || '';
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [grupos, setGrupos] = useState<GrupoCitaDto[]>([]);
   const [selectedGrupoId, setSelectedGrupoId] = useState<string>('');
@@ -1720,29 +1740,33 @@ function LinkGroupModal({
   const [newTopic, setNewTopic] = useState('');
 
   useEffect(() => {
-    if (isOpen && cita && token) {
-      setLoading(true);
-      fetchGruposCita(token, cita.ctaCodpac, cita.ctaCoddoc)
-        .then((data) => {
-          // Deduplicar grupos por grupoId normalizado para evitar keys repetidas
-          const map = new Map<string, GrupoCitaDto>();
-          (data || []).forEach((item) => {
-            const normId = String(item.grupoId || (item as any).id || '').toLowerCase().trim();
-            if (normId && !map.has(normId)) {
-              map.set(normId, { ...item, grupoId: normId });
+    if (isOpen) {
+      setNewTitle('');
+      setNewTopic('');
+      if (cita && token) {
+        setLoading(true);
+        fetchGruposCita(token, cita.ctaCodpac, cita.ctaCoddoc)
+          .then((data) => {
+            // Deduplicar grupos por grupoId normalizado para evitar keys repetidas
+            const map = new Map<string, GrupoCitaDto>();
+            (data || []).forEach((item) => {
+              const normId = String(item.grupoId || (item as any).id || '').toLowerCase().trim();
+              if (normId && !map.has(normId)) {
+                map.set(normId, { ...item, grupoId: normId });
+              }
+            });
+            const unique = Array.from(map.values());
+            setGrupos(unique);
+            if (unique.length > 0) {
+              setSelectedGrupoId(unique[0].grupoId);
+              setMode('select');
+            } else {
+              setMode('create');
             }
-          });
-          const unique = Array.from(map.values());
-          setGrupos(unique);
-          if (unique.length > 0) {
-            setSelectedGrupoId(unique[0].grupoId);
-            setMode('select');
-          } else {
-            setMode('create');
-          }
-        })
-        .catch(() => setGrupos([]))
-        .finally(() => setLoading(false));
+          })
+          .catch(() => setGrupos([]))
+          .finally(() => setLoading(false));
+      }
     }
   }, [isOpen, cita, token]);
 
@@ -1752,27 +1776,52 @@ function LinkGroupModal({
 
     setLoading(true);
     try {
+      let targetGrupoId = selectedGrupoId;
       if (mode === 'create') {
         if (!newTitle.trim()) {
-          toast.error('El título es requerido');
+          toast.error('El nombre del tema es requerido');
           setLoading(false);
           return;
         }
-        const created = await createGrupo(token, cita.ctaCodpac, cita.ctaCoddoc, newTopic || newTitle, newTitle);
-        toast.success('Tema de seguimiento creado');
-        onLinked('Cita vinculada al nuevo tema');
-      } else {
-        if (!selectedGrupoId) {
-          toast.error('Selecciona un tema');
-          setLoading(false);
-          return;
-        }
-        toast.success('Cita vinculada');
-        onLinked('Cita vinculada al tema');
+        const created = await createGrupo(
+          token,
+          cita.ctaCodpac,
+          cita.ctaCoddoc,
+          newTopic.trim() || newTitle.trim(),
+          newTitle.trim()
+        );
+        targetGrupoId = created.grupoId;
       }
+
+      if (!targetGrupoId) {
+        toast.error('Selecciona o crea un tema para agrupar');
+        setLoading(false);
+        return;
+      }
+
+      // Persistir la asociación de la cita al grupo
+      await updateCita(token, cita.ctaCodigo, {
+        fecha: cita.ctaFecha ? cita.ctaFecha.split('T')[0] : '',
+        hora: cita.ctaHora || '',
+        modalidad: cita.ctaModalidad as any,
+        precio: cita.ctaPrecio,
+        grupoId: targetGrupoId,
+        consultorioId: cita.ctaConsultorioId,
+        codServicio: (cita as any).ctaCodsyp,
+        motivo: (cita as any).ctaMotivo,
+      });
+
+      queryClient.invalidateQueries({ queryKey: ['citasPaciente'] });
+      queryClient.invalidateQueries({ queryKey: ['citasTodosPacientes'] });
+      queryClient.invalidateQueries({ queryKey: ['gruposCita'] });
+      queryClient.invalidateQueries({ queryKey: ['gruposMap'] });
+
+      toast.success(mode === 'create' ? 'Tema creado y cita agrupada exitosamente' : 'Cita agrupada exitosamente');
+      onLinked(mode === 'create' ? 'Cita agrupada al nuevo tema' : 'Cita agrupada');
       onClose();
     } catch (err: any) {
-      toast.error('Error al vincular tema');
+      console.error('Error al agrupar la cita:', err);
+      toast.error('Error al agrupar la cita');
     } finally {
       setLoading(false);
     }
@@ -1794,7 +1843,9 @@ function LinkGroupModal({
           <div className="flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1">
             <button
               type="button"
-              onClick={() => setMode('select')}
+              onClick={() => {
+                setMode('select');
+              }}
               className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition ${
                 mode === 'select'
                   ? 'bg-white dark:bg-slate-700 shadow-xs text-blue-600 dark:text-blue-400'
@@ -1805,7 +1856,11 @@ function LinkGroupModal({
             </button>
             <button
               type="button"
-              onClick={() => setMode('create')}
+              onClick={() => {
+                setMode('create');
+                setNewTitle('');
+                setNewTopic('');
+              }}
               className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition ${
                 mode === 'create'
                   ? 'bg-white dark:bg-slate-700 shadow-xs text-blue-600 dark:text-blue-400'
@@ -1881,7 +1936,7 @@ function LinkGroupModal({
             disabled={loading}
             className="px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs transition disabled:opacity-50 cursor-pointer"
           >
-            {loading ? 'Guardando...' : 'Vincular'}
+            {loading ? 'Agrupando...' : 'Agrupar'}
           </button>
         </div>
       </form>

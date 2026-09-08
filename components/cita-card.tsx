@@ -290,56 +290,73 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
                   </p>
                 </div>
 
-                {/* 2. Diagnóstico Médico */}
-                <div className="p-4 rounded-2xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <Stethoscope className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                    <h4 className="text-xs font-black uppercase tracking-wider text-blue-700 dark:text-blue-300">Diagnóstico Clínico</h4>
-                  </div>
-                  <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
-                    {cita.ctaDiagnostico?.trim() 
-                      ? cita.ctaDiagnostico 
-                      : 'Evaluación completada. Diagnóstico y evolución clínica registrados en el expediente del paciente.'}
-                  </p>
-                </div>
-
-                {/* 3. Tratamiento Prescrito */}
-                <div className="p-4 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/50">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <Pill className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                    <h4 className="text-xs font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Tratamiento e Indicaciones</h4>
-                  </div>
-                  <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
-                    {cita.ctaTratamiento?.trim() 
-                      ? cita.ctaTratamiento 
-                      : 'Tratamiento sintomático y cuidados generales indicados durante la consulta.'}
-                  </p>
-                </div>
-
-                {/* 4. Exámenes Solicitados */}
-                <div className="p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/40 border border-amber-100 dark:border-amber-900/50">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <FlaskConical className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                    <h4 className="text-xs font-black uppercase tracking-wider text-amber-700 dark:text-amber-300">Exámenes y Pruebas Solicitadas</h4>
-                  </div>
-                  <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
-                    {cita.ctaExamenesSolicitados?.trim() 
-                      ? cita.ctaExamenesSolicitados 
-                      : 'No se solicitaron exámenes de laboratorio o estudios complementarios adicionales.'}
-                  </p>
-                </div>
-
-                {/* 5. Notas Médicas */}
-                {cita.ctaNotasMedicas && (
-                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <Info className="w-4 h-4 text-slate-500" />
-                      <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Observaciones</h4>
+                {/* Información Clínica: Solo para citas completadas */}
+                {cita.ctaEstado !== 'completada' ? (
+                  <div className="p-5 rounded-2xl bg-sky-50/70 dark:bg-sky-950/30 border border-sky-200/80 dark:border-sky-900/40 text-center space-y-2">
+                    <div className="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-900/50 text-sky-600 dark:text-sky-400 mx-auto flex items-center justify-center">
+                      <Clock className="w-5 h-5" />
                     </div>
-                    <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
-                      {cita.ctaNotasMedicas}
+                    <h4 className="text-sm font-black text-slate-900 dark:text-white">
+                      Consulta médica programada
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
+                      El diagnóstico clínico, tratamiento médico, recetas y notas de evolución estarán disponibles en esta sección una vez que el médico haya atendido y completado la consulta.
                     </p>
                   </div>
+                ) : (
+                  <>
+                    {/* Diagnóstico Médico */}
+                    <div className="p-4 rounded-2xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <Stethoscope className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                        <h4 className="text-xs font-black uppercase tracking-wider text-blue-700 dark:text-blue-300">Diagnóstico Clínico</h4>
+                      </div>
+                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+                        {cita.ctaDiagnostico?.trim() 
+                          ? cita.ctaDiagnostico 
+                          : 'Evaluación médica completada. Diagnóstico y evolución registrados en el expediente clínico.'}
+                      </p>
+                    </div>
+
+                    {/* Tratamiento Prescrito */}
+                    <div className="p-4 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/50">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <Pill className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                        <h4 className="text-xs font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Tratamiento e Indicaciones</h4>
+                      </div>
+                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+                        {cita.ctaTratamiento?.trim() 
+                          ? cita.ctaTratamiento 
+                          : 'Tratamiento e indicaciones médicas registradas en la consulta.'}
+                      </p>
+                    </div>
+
+                    {/* Exámenes Solicitados */}
+                    {cita.ctaExamenesSolicitados && (
+                      <div className="p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/40 border border-amber-100 dark:border-amber-900/50">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <FlaskConical className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                          <h4 className="text-xs font-black uppercase tracking-wider text-amber-700 dark:text-amber-300">Exámenes y Pruebas Solicitadas</h4>
+                        </div>
+                        <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+                          {cita.ctaExamenesSolicitados}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Notas Médicas */}
+                    {cita.ctaNotasMedicas && (
+                      <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <Info className="w-4 h-4 text-slate-500" />
+                          <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Observaciones</h4>
+                        </div>
+                        <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+                          {cita.ctaNotasMedicas}
+                        </p>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {/* Ubicación y Modalidad */}
