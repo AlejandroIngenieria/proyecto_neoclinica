@@ -198,6 +198,7 @@ export default function OlvidePasswordPage() {
                     height={80}
                     priority
                     className="h-full w-full object-contain"
+                    suppressHydrationWarning
                   />
                 </div>
               </div>

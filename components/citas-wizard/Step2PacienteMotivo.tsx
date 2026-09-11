@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useDropzone } from 'react-dropzone';
 import {
@@ -9,7 +9,8 @@ import {
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { useCitaStore } from '@/store/use-cita-store';
 import { ChevronLeft, MapPin, Video, Home, Stethoscope, ArrowRight, CalendarDays, Building2, BriefcaseMedical, CalendarClock, Activity, ClipboardList, Plus, Loader2, UploadCloud, FileText, X, CheckCircle2, Sparkles } from 'lucide-react';
-import { usePacienteTitular } from '@/hooks/use-pacientes';
+import { usePacienteTitular, usePacientesByUsuario } from '@/hooks/use-pacientes';
+import type { PacienteSeleccionDto } from '@/types/citas';
 import { PacienteFormModal } from '@/components/paciente-form-modal';
 import { NeoLoader } from '@/components/neo-loader';
 
@@ -58,9 +59,84 @@ export function Step2PacienteMotivo() {
 
   const [isAddPacienteOpen, setIsAddPacienteOpen] = useState(false);
 
-  const { titular } = usePacienteTitular();
-  const { data: pacientes = [], isLoading: loadingPacientes } = usePacientesSeleccion();
+  const { titular, isLoading: loadingTitular } = usePacienteTitular();
+  const { data: pacientesUsuario = [], isLoading: loadingPacientesUsuario } = usePacientesByUsuario();
+  const { data: pacientesSeleccion = [], isLoading: loadingPacientesSeleccion } = usePacientesSeleccion();
   const { data: doctor, isLoading: loadingDoctor } = useDoctorByCode(codMedico!);
+
+  // Consolidar pacientes disponibles (titular + familiares activos no independizados)
+  const pacientesDisponibles = useMemo(() => {
+    const list: PacienteSeleccionDto[] = [];
+    const seen = new Set<string>();
+
+    // 1. Prioridad: pacientesSeleccion (del flujo de citas)
+    if (Array.isArray(pacientesSeleccion)) {
+      pacientesSeleccion.forEach((p: any) => {
+        const codigo = p.pacCodigo || p.pac_codigo;
+        const estado = (p.pacEstado || p.pac_estado || '').toLowerCase();
+        if (codigo && estado !== 'independizado' && estado !== 'inactivo' && !seen.has(codigo)) {
+          seen.add(codigo);
+          list.push({
+            pacCodigo: codigo,
+            pacTitular: Boolean(p.pacTitular ?? p.pac_titular),
+            nombreCompleto: p.nombreCompleto || p.pac_nombre_completo || `${p.pacPrimerNombre || p.pac_primer_nombre || ''} ${p.pacPrimerApellido || p.pac_primer_apellido || ''}`.trim(),
+            pacFechaNacimiento: p.pacFechaNacimiento || p.pac_fecha_nacimiento || null,
+            pacFotoPerfilUrl: p.pacFotoPerfilUrl || p.pac_foto_perfil_url,
+          });
+        }
+      });
+    }
+
+    // 2. Complementar con pacientesUsuario (perfil del usuario)
+    if (Array.isArray(pacientesUsuario)) {
+      pacientesUsuario.forEach((p: any) => {
+        const codigo = p.pac_codigo || p.pacCodigo;
+        const estado = (p.pac_estado || p.pacEstado || '').toLowerCase();
+        if (codigo && estado !== 'independizado' && estado !== 'inactivo' && !seen.has(codigo)) {
+          seen.add(codigo);
+          list.push({
+            pacCodigo: codigo,
+            pacTitular: Boolean(p.pac_titular ?? p.pacTitular),
+            nombreCompleto: `${p.pac_primer_nombre || ''} ${p.pac_primer_apellido || ''}`.trim() || 'Paciente',
+            pacFechaNacimiento: p.pac_fecha_nacimiento || p.pacFechaNacimiento || null,
+            pacFotoPerfilUrl: p.pac_foto_perfil_url || p.pacFotoPerfilUrl,
+          });
+        }
+      });
+    }
+
+    // 3. Fallback directo al titular si la lista sigue vacía
+    if (list.length === 0 && titular) {
+      const codigo = titular.pac_codigo || (titular as any).pacCodigo;
+      if (codigo) {
+        list.push({
+          pacCodigo: codigo,
+          pacTitular: true,
+          nombreCompleto: `${titular.pac_primer_nombre || ''} ${titular.pac_primer_apellido || ''}`.trim() || 'Yo',
+          pacFechaNacimiento: titular.pac_fecha_nacimiento || null,
+          pacFotoPerfilUrl: titular.pac_foto_perfil_url || undefined,
+        });
+      }
+    }
+
+    // Ordenar: titular siempre de primero
+    return list.sort((a, b) => (b.pacTitular ? 1 : 0) - (a.pacTitular ? 1 : 0));
+  }, [pacientesSeleccion, pacientesUsuario, titular]);
+
+  // Auto-seleccionar al titular o al primer paciente si ninguno está seleccionado
+  useEffect(() => {
+    if (!pacienteSeleccionado && pacientesDisponibles.length > 0) {
+      const titularPac = pacientesDisponibles.find(p => p.pacTitular) || pacientesDisponibles[0];
+      setPaciente(titularPac);
+    } else if (pacienteSeleccionado) {
+      const estado = ((pacienteSeleccionado as any).pacEstado || (pacienteSeleccionado as any).pac_estado || '').toLowerCase();
+      const stillValid = pacientesDisponibles.find(p => p.pacCodigo === pacienteSeleccionado.pacCodigo);
+      if (estado === 'independizado' || (!stillValid && pacientesDisponibles.length > 0)) {
+        const titularPac = pacientesDisponibles.find(p => p.pacTitular) || pacientesDisponibles[0] || null;
+        setPaciente(titularPac);
+      }
+    }
+  }, [pacienteSeleccionado, pacientesDisponibles, setPaciente]);
 
   // Asegurar que la pantalla siempre se posicione hasta arriba al entrar al Paso 2
   useEffect(() => {
@@ -88,7 +164,9 @@ export function Step2PacienteMotivo() {
     setArchivos(newFiles);
   };
 
-  if (loadingPacientes || loadingDoctor) {
+  const isInitialLoading = loadingDoctor || (pacientesDisponibles.length === 0 && (loadingPacientesSeleccion || loadingPacientesUsuario || loadingTitular));
+
+  if (isInitialLoading) {
     return <div className="py-12"><NeoLoader fullScreenPortal={false} /></div>;
   }
 
@@ -112,7 +190,7 @@ export function Step2PacienteMotivo() {
         <div>
           <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-6 tracking-tight">¿Quién asistirá a la consulta?</h2>
           <div className="flex items-end gap-6 sm:gap-10 overflow-x-auto max-w-full pb-2 scrollbar-none">
-            {pacientes.map(pac => {
+            {pacientesDisponibles.map(pac => {
               const isSelected = pacienteSeleccionado?.pacCodigo === pac.pacCodigo;
               return (
                 <button key={pac.pacCodigo} onClick={() => setPaciente(pac)} className="flex flex-col items-center gap-3 group">

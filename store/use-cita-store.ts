@@ -34,10 +34,16 @@ interface CitaState {
   archivos: File[];
   tipoPagoId: number | null;
   billeteraItemId: string | null;
+  comprobanteTransferencia: File | null;
+  referenciaTransferencia: string;
   
   recompensaSeleccionada: RecompensaAdquirida | null;
   citaConfirmada: boolean;
   setCitaConfirmada: (val: boolean) => void;
+
+  // Solicitud de intercambio de horario deseado
+  solicitudIntercambio: { fecha: string; hora: string; mensaje?: string } | null;
+  setSolicitudIntercambio: (data: { fecha: string; hora: string; mensaje?: string } | null) => void;
 
   // Acciones
   setStep: (step: CitaStep) => void;
@@ -68,6 +74,8 @@ interface CitaState {
   setArchivos: (archivos: File[]) => void;
   setTipoPagoId: (id: number | null) => void;
   setBilleteraItemId: (id: string | null) => void;
+  setComprobanteTransferencia: (file: File | null) => void;
+  setReferenciaTransferencia: (ref: string) => void;
   setRecompensaSeleccionada: (rec: RecompensaAdquirida | null) => void;
   
   reset: () => void;
@@ -99,14 +107,18 @@ const initialState = {
   archivos: [],
   tipoPagoId: null,
   billeteraItemId: null,
+  comprobanteTransferencia: null,
+  referenciaTransferencia: '',
   recompensaSeleccionada: null,
   citaConfirmada: false,
+  solicitudIntercambio: null,
 };
 
 export const useCitaStore = create<CitaState>((set, get) => ({
   ...initialState,
   
   setCitaConfirmada: (val) => set({ citaConfirmada: val }),
+  setSolicitudIntercambio: (data) => set({ solicitudIntercambio: data }),
 
   setStep: (step) => {
     if (typeof window !== 'undefined') {
@@ -178,6 +190,8 @@ export const useCitaStore = create<CitaState>((set, get) => ({
   setArchivos: (archivos) => set({ archivos }),
   setTipoPagoId: (id) => set({ tipoPagoId: id, billeteraItemId: null }),
   setBilleteraItemId: (id) => set({ billeteraItemId: id }),
+  setComprobanteTransferencia: (file) => set({ comprobanteTransferencia: file }),
+  setReferenciaTransferencia: (ref) => set({ referenciaTransferencia: ref }),
   setRecompensaSeleccionada: (rec) => set({ recompensaSeleccionada: rec }),
   
   reset: () => set(initialState),

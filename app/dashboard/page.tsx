@@ -4,7 +4,6 @@ import { Suspense, useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { useSession } from 'next-auth/react';
 import {
   CalendarDays,
   Clock,
@@ -24,9 +23,12 @@ import {
   Monitor,
   Pill,
   Activity,
+  RefreshCw,
 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { format, parseISO, isAfter } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { toast } from 'sonner';
 
 import { NeoLoader } from '@/components/neo-loader';
 import { usePacienteTitular } from '@/hooks/use-pacientes';
@@ -35,7 +37,7 @@ import { useDoctors } from '@/hooks/use-doctors';
 import { useLealtadEstado, useLealtadNiveles } from '@/hooks/use-lealtad';
 import { useTotalPuntos } from '@/hooks/use-recompensas';
 import { readRecentDoctors, type RecentDoctorItem } from '@/lib/recent-doctors';
-import { buildPacienteFullName, getPacienteInitials } from '@/types';
+import { buildPacienteFullName } from '@/types';
 import type { CitaListDto } from '@/types/citas';
 import { ColaTurnosWidget } from '@/components/cola-turnos-widget';
 
@@ -48,13 +50,6 @@ function safeFormatDate(dateStr: string | undefined, formatStr: string): string 
   } catch {
     return 'Fecha inválida';
   }
-}
-
-function getGreeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Buenos días';
-  if (hour < 18) return 'Buenas tardes';
-  return 'Buenas noches';
 }
 
 function getModalityIcon(modalidad: string) {
@@ -161,6 +156,8 @@ function UpcomingCitaCard({
   
   // 1. Formato de fecha acortado (ej. "Jue 10 Sep") para evitar truncamientos
   const fechaFormateada = safeFormatDate(cita.ctaFecha, "EEE d MMM");
+  const fechaQuery = cita.ctaFecha ? cita.ctaFecha.split('T')[0] : '';
+  const colaUrl = `/dashboard/citas/sala-espera?citaId=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}&fecha=${fechaQuery}`;
   
   const horaFormateada = cita.ctaHora ? cita.ctaHora.slice(0, 5) : '--:--';
   const doctorInfo = doctorDataMap[cita.ctaCoddoc];
@@ -182,7 +179,7 @@ function UpcomingCitaCard({
     <motion.div
       variants={itemVariants}
       whileHover={{ scale: 1.015, y: -2 }}
-      onClick={() => router.push('/dashboard/citas')}
+      onClick={() => router.push(colaUrl)}
       className={`group relative flex flex-col h-full rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-xs hover:shadow-lg transition-all cursor-pointer ${
         isFirst
           ? 'border-2 border-blue-500 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-950/20 shadow-md'
@@ -249,7 +246,7 @@ function UpcomingCitaCard({
           </span>
 
           <Link
-            href={`/dashboard/citas/sala-espera?citaId=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}&fecha=${cita.ctaFecha?.split('T')[0]}`}
+            href={colaUrl}
             onClick={(e) => e.stopPropagation()}
             className="inline-flex items-center gap-1 rounded-md sm:rounded-lg bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-800/60 px-2.5 py-1 text-[11px] sm:text-xs font-bold text-blue-600 dark:text-blue-300 shadow-2xs transition active:scale-95 cursor-pointer"
           >
@@ -295,7 +292,6 @@ function RecentDoctorMini({ doctor }: { doctor: RecentDoctorItem }) {
 // ─── Main Content ────────────────────────────────────────────────────────────
 
 function HomeContent() {
-  const { data: session } = useSession();
   const { titular, isLoading: isLoadingTitular } = usePacienteTitular();
   const pacCodigo = titular?.pac_codigo || null;
 
@@ -326,7 +322,29 @@ function HomeContent() {
   }, [titular, pacientesList]);
 
   // Citas reales para todos los miembros de la cuenta
-  const { data: citas = [], isLoading: isLoadingCitas } = useAllCitasPacientes(codigosPacientes);
+  const {
+    data: citas = [],
+    isLoading: isLoadingCitas,
+    refetch: refetchCitas,
+    isFetching: isFetchingCitas,
+  } = useAllCitasPacientes(codigosPacientes);
+
+  const queryClient = useQueryClient();
+  const [isRefreshingCitas, setIsRefreshingCitas] = useState(false);
+
+  const handleRefreshCitas = async () => {
+    if (isRefreshingCitas || isFetchingCitas) return;
+    setIsRefreshingCitas(true);
+    try {
+      await queryClient.invalidateQueries({ queryKey: ['citasTodosPacientes'] });
+      await refetchCitas();
+      toast.success('Próximas citas actualizadas');
+    } catch {
+      toast.error('No se pudieron actualizar las citas');
+    } finally {
+      setIsRefreshingCitas(false);
+    }
+  };
 
   // Auto-completar citas pasadas de forma transparente
   useAutoCompletarCitasPasadas(citas);
@@ -338,12 +356,6 @@ function HomeContent() {
   const { data: lealtadEstado } = useLealtadEstado();
   const { data: puntosData } = useTotalPuntos(pacCodigo ?? undefined);
   const { data: niveles = [] } = useLealtadNiveles();
-
-  // Greeting con hidratación segura
-  const [greeting, setGreeting] = useState<string>('Bienvenido');
-  useEffect(() => {
-    setGreeting(getGreeting());
-  }, []);
 
   // Recent doctors
   const [recentDoctors, setRecentDoctors] = useState<RecentDoctorItem[]>([]);
@@ -415,10 +427,6 @@ function HomeContent() {
       .slice(0, 3);
   }, [citas]);
 
-  const fullName = titular ? buildPacienteFullName(titular) : session?.user?.name || 'Usuario';
-  const firstName = titular?.pac_primer_nombre || session?.user?.name?.split(' ')[0] || 'Usuario';
-  const initials = titular ? getPacienteInitials(titular) : '?';
-
   // Cita para la Sala de Espera / Cola de Turnos en Vivo
   const todayStr = useMemo(() => {
     const now = new Date();
@@ -458,45 +466,21 @@ function HomeContent() {
         initial="hidden"
         animate="visible"
       >
-        {/* ── Welcome Header (Responsive Layout & Padding) ── */}
-        <motion.div variants={itemVariants} className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3.5 sm:gap-4">
-            <div className="flex h-14 w-14 sm:h-18 sm:w-18 md:h-20 md:w-20 shrink-0 items-center justify-center rounded-2xl sm:rounded-3xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white text-lg sm:text-2xl font-black shadow-lg shadow-blue-600/20 overflow-hidden">
-              {titular?.pac_foto_perfil_url ? (
-                <img src={titular.pac_foto_perfil_url} alt={fullName} className="h-full w-full object-cover" />
-              ) : (
-                initials
-              )}
-            </div>
-            <div>
-              <p className="text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300" suppressHydrationWarning>{greeting}</p>
-              <h1 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-black tracking-tight text-slate-900 dark:text-white">
-                {firstName}
-              </h1>
-              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 font-semibold mt-0.5">
-                Tu salud, en un solo lugar.
-              </p>
-            </div>
-          </div>
-
-          <Link href="/dashboard/directorio" className="w-full sm:w-auto">
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className="w-full sm:w-auto justify-center inline-flex items-center gap-2 rounded-xl sm:rounded-2xl bg-blue-600 hover:bg-blue-700 px-5 py-3 text-xs sm:text-sm font-bold text-white shadow-lg shadow-blue-600/20 transition-all active:scale-95 cursor-pointer"
-            >
-              <Search className="h-4 w-4" />
-              Buscar Médico
-            </motion.button>
-          </Link>
-        </motion.div>
-
         {/* ── Upcoming Appointments (Responsive Grid: 1 col on mobile, 2 on tablet, 3 on desktop) ── */}
         <motion.section variants={itemVariants}>
           <div className="flex items-center justify-between mb-3 sm:mb-4">
             <div className="flex items-center gap-2">
               <CalendarDays className="h-5 w-5 text-blue-600 dark:text-blue-400" />
               <h2 className="text-base sm:text-lg md:text-xl font-black text-slate-900 dark:text-white">Próximas Citas</h2>
+              <button
+                type="button"
+                onClick={handleRefreshCitas}
+                disabled={isRefreshingCitas || isFetchingCitas}
+                title="Actualizar próximas citas"
+                className="p-1 sm:p-1.5 rounded-lg sm:rounded-xl text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition active:scale-90 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`h-4 w-4 ${isRefreshingCitas || isFetchingCitas ? 'animate-spin text-blue-600' : ''}`} />
+              </button>
             </div>
             <div className="flex items-center gap-3">
               <Link

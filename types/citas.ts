@@ -92,7 +92,7 @@ export interface CrearCitaRequest {
   archivos?: File[];
 }
 
-export type CitaEstado = 'programada' | 'confirmada' | 'pospuesta' | 'completada' | 'cancelada' | 'rechazada' | 'no_asistio';
+export type CitaEstado = 'programada' | 'confirmada' | 'pospuesta' | 'en_proceso' | 'completada' | 'cancelada' | 'rechazada' | 'no_asistio';
 
 export interface CitaEtapaDto {
   fecha: string;
@@ -132,7 +132,7 @@ export interface Cita {
   servicioNombre?: string;
   ctaFecha: string; // YYYY-MM-DD
   ctaHora: string;  // HH:mm:ss
-  ctaEstado: 'programada' | 'confirmada' | 'cancelada' | 'rechazada' | 'pospuesta' | 'completada' | 'no_asistio';
+  ctaEstado: 'programada' | 'confirmada' | 'cancelada' | 'rechazada' | 'pospuesta' | 'en_proceso' | 'completada' | 'no_asistio';
   ctaTipo: string;
   ctaModalidad: string;
   ctaPrecio: number;
@@ -149,13 +149,14 @@ export interface Cita {
 }
 
 export interface CambiarEstadoCitaPayload {
-  nuevoEstado: 'programada' | 'confirmada' | 'cancelada' | 'rechazada' | 'pospuesta' | 'completada' | 'no_asistio';
+  nuevoEstado: 'programada' | 'confirmada' | 'cancelada' | 'rechazada' | 'pospuesta' | 'en_proceso' | 'completada' | 'no_asistio';
 }
 
 export interface CitaListDto {
   ctaCodigo: string;
   ctaCodpac: string;
   pacienteNombre: string;
+  pacienteEstado?: string | null;
   ctaCoddoc: string;
   medicoNombre: string;
   medicoEspecialidad: string;
@@ -192,6 +193,10 @@ export interface CitaListDto {
   documentos?: CitaDocumentoDto[];
   archivos?: CitaArchivoDto[];
   ctaNotificacionResenaEnviada?: boolean;
+  // Estado de pago (para citas con transferencia sin comprobante)
+  estadoPago?: 'pendiente' | 'pagado' | 'fallido' | 'reembolsado' | null;
+  tipoPagoId?: number | null;
+  tipoPagoDescripcion?: string | null;
 }
 
 export interface UpdateCitaRequest {
@@ -210,10 +215,23 @@ export interface UpdateCitaRequest {
   archivosConservados?: string[];
 }
 
+export interface CuentaBancariaDto {
+  cuentaId?: number;
+  banco: string;
+  tipoCuenta?: string;
+  tipo_cuenta?: string;
+  numeroCuenta?: string;
+  numero_cuenta?: string;
+  nombreCuenta?: string;
+  nombre_cuenta?: string;
+}
+
 export interface MetodoPagoDto {
   tipoPagoId: number;
   descripcion: string;
   observaciones: string;
+  cuentasBancarias?: CuentaBancariaDto[];
+  cuentasBancariasJSON?: string;
 }
 
 export interface PagarCitaRequest {
@@ -253,5 +271,56 @@ export interface ColaTurnoDto {
   medicoEspecialidad: string;
   clinicaNombre?: string | null;
   servicioNombre?: string | null;
+}
+
+export interface SolicitudCambioDto {
+  solCodigo: string;
+  citaSolicitanteId: string;
+  citaObjetivoId: string;
+  codMedico: string;
+  fechaDeseada: string;
+  horaDeseada: string;
+  mensaje?: string | null;
+  estado: 'pendiente' | 'aceptada' | 'rechazada' | 'cancelada';
+  accionCedente?: 'reasignada' | 'cancelada' | null;
+  fechaNuevaCedente?: string | null;
+  horaNuevaCedente?: string | null;
+  motivoRechazo?: string | null;
+  fechaCreacion: string;
+  fechaRespuesta?: string | null;
+
+  solicitantePacCodigo: string;
+  solicitanteNombre: string;
+  solicitanteFechaActual: string;
+  solicitanteHoraActual: string;
+
+  objetivoPacCodigo: string;
+  objetivoNombre: string;
+  objetivoFechaActual: string;
+  objetivoHoraActual: string;
+
+  medicoNombre: string;
+  medicoEspecialidad?: string | null;
+  tipoRelacion: 'recibida' | 'enviada';
+}
+
+export interface CrearSolicitudCambioRequest {
+  citaSolicitanteId: string;
+  codMedico: string;
+  fechaDeseada: string;
+  horaDeseada: string;
+  mensaje?: string;
+}
+
+export interface ResponderSolicitudCambioRequest {
+  aceptada: boolean;
+  accion?: 'reasignar' | 'cancelar';
+  nuevaFecha?: string;
+  nuevaHora?: string;
+  motivoRechazo?: string;
+}
+
+export interface CancelarSolicitudCambioRequest {
+  motivo?: string;
 }
 

@@ -26,22 +26,36 @@ import {
   guardarTarjeta,
   cambiarEstadoCita,
   fetchAllCitas,
+  fetchSolicitudesCambioPendientes,
+  fetchTodasSolicitudesUsuario,
+  fetchSolicitudCambioPorId,
+  crearSolicitudCambio,
+  responderSolicitudCambio,
+  cancelarSolicitudCambio,
 } from '@/services/flujo-citas';
 import type {
   CrearCitaRequest, CitaListDto, UpdateCitaRequest,
   GrupoCitaDto, MetodoPagoDto, PagarCitaRequest,
   BilleteraMetodoDto, GuardarSeguroRequest, GuardarTarjetaRequest,
   CambiarEstadoCitaPayload, CitaEstado, ServicioMedicoCitaDto,
+  SolicitudCambioDto, CrearSolicitudCambioRequest, ResponderSolicitudCambioRequest,
+  CancelarSolicitudCambioRequest,
 } from '@/types/citas';
 
 import { toast } from 'sonner';
 import { crearNotificacion } from '@/services/notificaciones';
 
 function useAuthInfo() {
-  const { data: session } = useSession();
-  const token = (session as any)?.accessToken as string | undefined;
-  const userId = (session as any)?.user?.id || (session as any)?.user?.email;
-  return { token, userId, isAuthenticated: !!token };
+  const { data: session, status } = useSession();
+  const token =
+    (session as any)?.accessToken ||
+    (session as any)?.user?.token ||
+    (session as any)?.token;
+  const userId =
+    (session as any)?.userId ||
+    (session as any)?.user?.id ||
+    (session as any)?.user?.email;
+  return { token, userId, isAuthenticated: status === 'authenticated' && !!token };
 }
 
 export function useModalidades(codMedico: string | null) {
@@ -501,6 +515,9 @@ export function useCambiarEstadoCita() {
       queryClient.invalidateQueries({ queryKey: ['adminCitas'] });
       queryClient.invalidateQueries({ queryKey: ['citasPaciente'] });
       queryClient.invalidateQueries({ queryKey: ['citasTodosPacientes'] });
+      queryClient.invalidateQueries({ queryKey: ['colaDelDia'] });
+      queryClient.invalidateQueries({ queryKey: ['cola-dia'] });
+      queryClient.invalidateQueries({ queryKey: ['horasOcupadas'] });
       toast.success('Estado de cita actualizado exitosamente');
     },
     onError: (error: any) => {
@@ -509,3 +526,139 @@ export function useCambiarEstadoCita() {
     },
   });
 }
+
+/**
+ * Hook para consultar las solicitudes de cambio de horario pendientes
+ */
+export function useSolicitudesCambioPendientes() {
+  const { token, isAuthenticated } = useAuthInfo();
+  return useQuery<SolicitudCambioDto[]>({
+    queryKey: ['solicitudesCambioPendientes'],
+    queryFn: () => fetchSolicitudesCambioPendientes(token!),
+    enabled: isAuthenticated,
+    refetchInterval: 15000,
+  });
+}
+
+/**
+ * Hook para consultar todas las solicitudes de cambio del usuario (pendientes e histórico)
+ */
+export function useTodasSolicitudesUsuario() {
+  const { token, isAuthenticated } = useAuthInfo();
+  return useQuery<SolicitudCambioDto[]>({
+    queryKey: ['todasSolicitudesUsuario'],
+    queryFn: () => fetchTodasSolicitudesUsuario(token!),
+    enabled: isAuthenticated,
+    refetchInterval: 15000,
+  });
+}
+
+/**
+ * Hook para consultar el detalle de una solicitud de cambio por su ID
+ */
+export function useSolicitudCambioPorId(solCodigo: string | null) {
+  const { token, isAuthenticated } = useAuthInfo();
+  return useQuery<SolicitudCambioDto | null>({
+    queryKey: ['solicitudCambio', solCodigo],
+    queryFn: () => (solCodigo ? fetchSolicitudCambioPorId(token!, solCodigo) : null),
+    enabled: isAuthenticated && !!solCodigo,
+  });
+}
+
+/**
+ * Hook para crear una solicitud de cambio de horario
+ */
+export function useCrearSolicitudCambio() {
+  const { token } = useAuthInfo();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: CrearSolicitudCambioRequest) => crearSolicitudCambio(token!, request),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['solicitudesCambioPendientes'] });
+      queryClient.invalidateQueries({ queryKey: ['todasSolicitudesUsuario'] });
+      toast.success('Solicitud de cambio enviada', {
+        description: 'Se ha notificado al paciente. Si acepta, tus horarios se intercambiarán automáticamente.',
+      });
+    },
+    onError: (error: any) => {
+      const msg = error?.response?.data?.mensaje || error?.message || 'Error al enviar la solicitud de cambio';
+      toast.error(typeof msg === 'string' ? msg : 'Error al solicitar cambio');
+    },
+  });
+}
+
+/**
+ * Hook para responder a una solicitud de cambio (Aceptar reasignando/cancelando o Rechazar)
+ */
+export function useResponderSolicitudCambio() {
+  const { token } = useAuthInfo();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      solCodigo,
+      payload,
+    }: {
+      solCodigo: string;
+      payload: ResponderSolicitudCambioRequest;
+    }) => responderSolicitudCambio(token!, solCodigo, payload),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['solicitudesCambioPendientes'] });
+      queryClient.invalidateQueries({ queryKey: ['todasSolicitudesUsuario'] });
+      queryClient.invalidateQueries({ queryKey: ['citasPaciente'] });
+      queryClient.invalidateQueries({ queryKey: ['citasTodosPacientes'] });
+      queryClient.invalidateQueries({ queryKey: ['horasOcupadas'] });
+      queryClient.invalidateQueries({ queryKey: ['adminCitas'] });
+      queryClient.invalidateQueries({ queryKey: ['cola-turnos'] });
+
+      if (variables.payload.aceptada) {
+        toast.success('Intercambio confirmado', {
+          description: variables.payload.accion === 'cancelar'
+            ? 'Has cedido el horario y tu cita ha sido cancelada.'
+            : 'Has cedido el horario y tu cita ha sido reprogramada exitosamente.',
+        });
+      } else {
+        toast.info('Solicitud rechazada', {
+          description: 'Has conservado tu horario de cita actual.',
+        });
+      }
+    },
+    onError: (error: any) => {
+      const msg = error?.response?.data?.mensaje || error?.message || 'Error al procesar la respuesta';
+      toast.error(typeof msg === 'string' ? msg : 'Error al responder solicitud');
+    },
+  });
+}
+
+/**
+ * Hook para cancelar una solicitud de cambio de horario enviada previamente
+ */
+export function useCancelarSolicitudCambio() {
+  const { token } = useAuthInfo();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      solCodigo,
+      motivo,
+    }: {
+      solCodigo: string;
+      motivo?: string;
+    }) => cancelarSolicitudCambio(token!, solCodigo, motivo ? { motivo } : undefined),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['solicitudesCambioPendientes'] });
+      queryClient.invalidateQueries({ queryKey: ['todasSolicitudesUsuario'] });
+      queryClient.invalidateQueries({ queryKey: ['citasPaciente'] });
+      queryClient.invalidateQueries({ queryKey: ['citasTodosPacientes'] });
+      queryClient.invalidateQueries({ queryKey: ['cola-turnos'] });
+      queryClient.invalidateQueries({ queryKey: ['adminCitas'] });
+      toast.success('Solicitud de cambio cancelada', {
+        description: 'La propuesta ha sido retirada. Tu cita original continúa confirmada y sin cambios.',
+      });
+    },
+    onError: (error: any) => {
+      const msg = error?.response?.data?.mensaje || error?.message || 'Error al cancelar la solicitud';
+      toast.error(typeof msg === 'string' ? msg : 'Error al cancelar solicitud');
+    },
+  });
+}
+
+

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useCitaStore } from '@/store/use-cita-store';
 import { useMetodosPago, useBilletera, useGuardarSeguro, useGuardarTarjeta, usePacientesSeleccion } from '@/hooks/use-flujo-citas';
 import { useRecompensasDisponibles } from '@/hooks/use-recompensas';
-import { ChevronLeft, ArrowRight, CreditCard, Banknote, Landmark, Wallet, Plus, ShieldCheck, Loader2, Info, Tag, Gift, CheckCircle2 } from 'lucide-react';
+import { ChevronLeft, ArrowRight, CreditCard, Banknote, Landmark, Wallet, Plus, ShieldCheck, Loader2, Info, Tag, Gift, CheckCircle2, UploadCloud, X, FileCheck2, Copy, Check } from 'lucide-react';
 import { NeoLoader } from '@/components/neo-loader';
 
 export function Step3MetodoPago() {
@@ -12,6 +12,8 @@ export function Step3MetodoPago() {
         codMedico, pacienteSeleccionado,
         tipoPagoId, setTipoPagoId,
         billeteraItemId, setBilleteraItemId,
+        comprobanteTransferencia, setComprobanteTransferencia,
+        referenciaTransferencia, setReferenciaTransferencia,
         prevStep, nextStep, modalidad
     } = useCitaStore();
 
@@ -34,6 +36,7 @@ export function Step3MetodoPago() {
     const [newPoliza, setNewPoliza] = useState('');
     const [newCardNum, setNewCardNum] = useState('');
     const [isSaving, setIsSaving] = useState(false);
+    const [copiedField, setCopiedField] = useState<string | null>(null);
 
     const getIconForMethod = (descripcion: string) => {
         const desc = descripcion.toLowerCase();
@@ -47,11 +50,26 @@ export function Step3MetodoPago() {
     const metodoSeleccionado = metodosPago.find(m => m.tipoPagoId === tipoPagoId);
     const isTarjetaActiva = metodoSeleccionado?.descripcion.toLowerCase().includes('tarjeta');
     const isSeguroActivo = metodoSeleccionado?.descripcion.toLowerCase().includes('seguro');
+    const isTransferenciaActiva = metodoSeleccionado?.descripcion.toLowerCase().includes('transferencia') || metodoSeleccionado?.descripcion.toLowerCase().includes('banco');
 
     const handleSelectMetodo = (id: number) => {
         setTipoPagoId(id);
         setBilleteraItemId(null); // Reset sub-selection
         setIsAddingNew(false);
+        setComprobanteTransferencia(null);
+        setReferenciaTransferencia('');
+    };
+
+    const handleCopyToClipboard = (text: string, fieldKey: string) => {
+        navigator.clipboard.writeText(text).then(() => {
+            setCopiedField(fieldKey);
+            setTimeout(() => setCopiedField(null), 2000);
+        });
+    };
+
+    const handleComprobanteChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0] || null;
+        setComprobanteTransferencia(file);
     };
 
     const handleSaveNewItem = async (isTarjetaContext: boolean, isSeguroContext: boolean) => {
@@ -91,6 +109,10 @@ export function Step3MetodoPago() {
     if (isTarjetaActiva || isSeguroActivo) {
         isComplete = isComplete && billeteraItemId !== null;
     }
+    // Transferencia: comprobante is REQUIRED to enable Continue
+    if (isTransferenciaActiva) {
+        isComplete = isComplete && comprobanteTransferencia !== null;
+    }
 
     return (
         <div className="flex flex-col w-full font-sans pb-28">
@@ -118,161 +140,302 @@ export function Step3MetodoPago() {
                             });
 
                             return (
-                                    <div
-                                        key={metodo.tipoPagoId}
-                                        className={`rounded-2xl border-2 transition-all ${isSelected
-                                            ? 'border-blue-600 dark:border-blue-500 bg-blue-50/30 dark:bg-blue-900/20 shadow-sm ring-1 ring-blue-600/10'
-                                            : 'border-slate-100 dark:border-slate-800 bg-white dark:bg-[#1E293B] hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-sm'
-                                            }`}
+                                <div
+                                    key={metodo.tipoPagoId}
+                                    className={`rounded-2xl border-2 transition-all ${isSelected
+                                        ? 'border-blue-600 dark:border-blue-500 bg-blue-50/30 dark:bg-blue-900/20 shadow-sm ring-1 ring-blue-600/10'
+                                        : 'border-slate-100 dark:border-slate-800 bg-white dark:bg-[#1E293B] hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-sm'
+                                        }`}
+                                >
+                                    {/* Header (Boton de seleccion principal) */}
+                                    <button
+                                        onClick={() => handleSelectMetodo(metodo.tipoPagoId)}
+                                        className="w-full flex items-center py-3 px-4 text-left"
                                     >
-                                        {/* Header (Boton de seleccion principal) */}
-                                        <button
-                                            onClick={() => handleSelectMetodo(metodo.tipoPagoId)}
-                                            className="w-full flex items-center py-3 px-4 text-left"
-                                        >
-                                            <div className={`shrink-0 p-2.5 rounded-full transition-colors ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-50 dark:bg-[#0B1120] text-blue-600 dark:text-blue-400'}`}>
-                                                <Icon className="w-5 h-5" />
-                                            </div>
-                                            <div className="flex-1 ml-4">
-                                                <h3 className={`text-base font-bold leading-tight ${isSelected ? 'text-blue-900 dark:text-blue-300' : 'text-slate-900 dark:text-slate-100'}`}>
-                                                    {metodo.descripcion}
-                                                </h3>
-                                                <p className={`text-xs font-medium mt-0.5 ${isSelected ? 'text-blue-700/80 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'}`}>
-                                                    {metodo.observaciones}
-                                                </p>
-                                            </div>
-                                            <div className={`shrink-0 ml-4 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'border-blue-600 dark:border-blue-400' : 'border-slate-300 dark:border-slate-600'}`}>
-                                                {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-blue-600 dark:bg-blue-400" />}
-                                            </div>
-                                        </button>
+                                        <div className={`shrink-0 p-2.5 rounded-full transition-colors ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-50 dark:bg-[#0B1120] text-blue-600 dark:text-blue-400'}`}>
+                                            <Icon className="w-5 h-5" />
+                                        </div>
+                                        <div className="flex-1 ml-4">
+                                            <h3 className={`text-base font-bold leading-tight ${isSelected ? 'text-blue-900 dark:text-blue-300' : 'text-slate-900 dark:text-slate-100'}`}>
+                                                {metodo.descripcion}
+                                            </h3>
+                                            <p className={`text-xs font-medium mt-0.5 ${isSelected ? 'text-blue-700/80 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                                                {metodo.observaciones}
+                                            </p>
+                                        </div>
+                                        <div className={`shrink-0 ml-4 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'border-blue-600 dark:border-blue-400' : 'border-slate-300 dark:border-slate-600'}`}>
+                                            {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-blue-600 dark:bg-blue-400" />}
+                                        </div>
+                                    </button>
 
-                                        {/* Contenido Acordeon (Billetera / Info) */}
-                                        {isSelected && (isTarjeta || isSeguro) && (
-                                            <div className="px-5 pb-5 pt-2 border-t border-blue-600/10 dark:border-blue-900/30 animate-in slide-in-from-top-2 duration-200">
-                                                <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-4 mt-2 text-sm">
+                                    {/* Contenido Acordeon (Billetera / Info) */}
+                                    {isSelected && (isTarjeta || isSeguro) && (
+                                        <div className="px-5 pb-5 pt-2 border-t border-blue-600/10 dark:border-blue-900/30 animate-in slide-in-from-top-2 duration-200">
+                                            <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-4 mt-2 text-sm">
                                                 Selecciona {isTarjeta ? 'tu tarjeta' : 'tu seguro'} guardado:
                                             </h4>
 
-                                                {isLoadingBilletera ? (
-                                                    <div className="flex items-center gap-3 text-slate-400 dark:text-slate-500 text-sm">
-                                                        <Loader2 className="animate-spin h-4 w-4" /> Cargando...
-                                                    </div>
-                                                ) : (
-                                                    <div className="flex flex-col gap-3">
-                                                        {filteredBilletera.map((item) => {
-                                                            const isItemActivo = billeteraItemId === item.id_metodo;
-                                                            return (
-                                                                <button
-                                                                    key={item.id_metodo}
-                                                                    onClick={() => {
-                                                                        setBilleteraItemId(item.id_metodo);
-                                                                        setIsAddingNew(false);
-                                                                    }}
-                                                                    className={`flex items-center gap-3 p-3.5 rounded-xl border-2 text-left transition-all ${isItemActivo
-                                                                        ? 'border-blue-500 bg-white dark:bg-[#1E293B] ring-1 ring-blue-500 shadow-sm'
-                                                                        : 'border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-600/50 bg-white/50 dark:bg-[#1E293B]/50'
-                                                                        }`}
-                                                                >
-                                                                    <div className={`p-2 rounded-full ${isItemActivo ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : 'bg-slate-100 dark:bg-[#0F172A] text-slate-500 dark:text-slate-400'}`}>
-                                                                        {isTarjeta ? <CreditCard className="w-4 h-4" /> : <ShieldCheck className="w-4 h-4" />}
-                                                                    </div>
-                                                                    <div className="flex flex-col flex-1">
-                                                                        <span className="font-bold text-slate-800 dark:text-slate-200 text-sm">{item.proveedor}</span>
-                                                                        <span className="text-xs text-slate-500 dark:text-slate-400">{item.descripcion}</span>
-                                                                    </div>
-                                                                    <div className={`shrink-0 w-4 h-4 rounded-full border-2 flex items-center justify-center ${isItemActivo ? 'border-blue-500' : 'border-slate-300 dark:border-slate-600'}`}>
-                                                                        {isItemActivo && <div className="w-2 h-2 rounded-full bg-blue-500" />}
-                                                                    </div>
-                                                                </button>
-                                                            );
-                                                        })}
-
-                                                        {!isAddingNew ? (
+                                            {isLoadingBilletera ? (
+                                                <div className="flex items-center gap-3 text-slate-400 dark:text-slate-500 text-sm">
+                                                    <Loader2 className="animate-spin h-4 w-4" /> Cargando...
+                                                </div>
+                                            ) : (
+                                                <div className="flex flex-col gap-3">
+                                                    {filteredBilletera.map((item) => {
+                                                        const isItemActivo = billeteraItemId === item.id_metodo;
+                                                        return (
                                                             <button
+                                                                key={item.id_metodo}
                                                                 onClick={() => {
-                                                                    setIsAddingNew(true);
-                                                                    setBilleteraItemId(null);
+                                                                    setBilleteraItemId(item.id_metodo);
+                                                                    setIsAddingNew(false);
                                                                 }}
-                                                                className="flex items-center gap-3 p-3.5 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-blue-500 bg-white/50 dark:bg-[#1E293B]/50 hover:bg-slate-50 dark:hover:bg-[#0F172A] text-left transition-all mt-1"
+                                                                className={`flex items-center gap-3 p-3.5 rounded-xl border-2 text-left transition-all ${isItemActivo
+                                                                    ? 'border-blue-500 bg-white dark:bg-[#1E293B] ring-1 ring-blue-500 shadow-sm'
+                                                                    : 'border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-600/50 bg-white/50 dark:bg-[#1E293B]/50'
+                                                                    }`}
                                                             >
-                                                                <div className="p-2 rounded-full bg-slate-100 dark:bg-[#0B1120] text-slate-500 dark:text-slate-400">
-                                                                    <Plus className="w-4 h-4" />
+                                                                <div className={`p-2 rounded-full ${isItemActivo ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : 'bg-slate-100 dark:bg-[#0F172A] text-slate-500 dark:text-slate-400'}`}>
+                                                                    {isTarjeta ? <CreditCard className="w-4 h-4" /> : <ShieldCheck className="w-4 h-4" />}
                                                                 </div>
-                                                                <span className="font-bold text-slate-700 dark:text-slate-300 text-sm">
-                                                                    + Agregar nuev{isTarjeta ? 'a tarjeta' : 'o seguro'}
-                                                                </span>
+                                                                <div className="flex flex-col flex-1">
+                                                                    <span className="font-bold text-slate-800 dark:text-slate-200 text-sm">{item.proveedor}</span>
+                                                                    <span className="text-xs text-slate-500 dark:text-slate-400">{item.descripcion}</span>
+                                                                </div>
+                                                                <div className={`shrink-0 w-4 h-4 rounded-full border-2 flex items-center justify-center ${isItemActivo ? 'border-blue-500' : 'border-slate-300 dark:border-slate-600'}`}>
+                                                                    {isItemActivo && <div className="w-2 h-2 rounded-full bg-blue-500" />}
+                                                                </div>
                                                             </button>
-                                                        ) : (
-                                                            <div className="bg-white dark:bg-[#1E293B] border-2 border-slate-200 dark:border-slate-700 rounded-xl p-4 mt-2 shadow-sm animate-in fade-in zoom-in-95">
-                                                                <h5 className="font-bold text-slate-800 dark:text-white mb-3 text-sm">
-                                                                    Registrar nuev{isTarjeta ? 'a tarjeta' : 'o seguro'}
-                                                                </h5>
+                                                        );
+                                                    })}
 
-                                                                {isSeguro && (
-                                                                    <div className="flex flex-col gap-3">
+                                                    {!isAddingNew ? (
+                                                        <button
+                                                            onClick={() => {
+                                                                setIsAddingNew(true);
+                                                                setBilleteraItemId(null);
+                                                            }}
+                                                            className="flex items-center gap-3 p-3.5 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-blue-500 bg-white/50 dark:bg-[#1E293B]/50 hover:bg-slate-50 dark:hover:bg-[#0F172A] text-left transition-all mt-1"
+                                                        >
+                                                            <div className="p-2 rounded-full bg-slate-100 dark:bg-[#0B1120] text-slate-500 dark:text-slate-400">
+                                                                <Plus className="w-4 h-4" />
+                                                            </div>
+                                                            <span className="font-bold text-slate-700 dark:text-slate-300 text-sm">
+                                                                + Agregar nuev{isTarjeta ? 'a tarjeta' : 'o seguro'}
+                                                            </span>
+                                                        </button>
+                                                    ) : (
+                                                        <div className="bg-white dark:bg-[#1E293B] border-2 border-slate-200 dark:border-slate-700 rounded-xl p-4 mt-2 shadow-sm animate-in fade-in zoom-in-95">
+                                                            <h5 className="font-bold text-slate-800 dark:text-white mb-3 text-sm">
+                                                                Registrar nuev{isTarjeta ? 'a tarjeta' : 'o seguro'}
+                                                            </h5>
+
+                                                            {isSeguro && (
+                                                                <div className="flex flex-col gap-3">
+                                                                    <input
+                                                                        type="text"
+                                                                        placeholder="Número de póliza"
+                                                                        value={newPoliza}
+                                                                        onChange={(e) => setNewPoliza(e.target.value)}
+                                                                        className="w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent text-slate-800 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
+                                                                    />
+                                                                </div>
+                                                            )}
+
+                                                            {isTarjeta && (
+                                                                <div className="flex flex-col gap-3">
+                                                                    <div className="relative">
+                                                                        <CreditCard className="absolute left-3 top-3 h-4 w-4 text-slate-400 dark:text-slate-500" />
                                                                         <input
                                                                             type="text"
-                                                                            placeholder="Número de póliza"
-                                                                            value={newPoliza}
-                                                                            onChange={(e) => setNewPoliza(e.target.value)}
-                                                                            className="w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent text-slate-800 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
+                                                                            placeholder="Número de tarjeta (ej. 4242)"
+                                                                            value={newCardNum}
+                                                                            maxLength={16}
+                                                                            onChange={(e) => setNewCardNum(e.target.value)}
+                                                                            className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent text-slate-800 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
                                                                         />
                                                                     </div>
-                                                                )}
-
-                                                                {isTarjeta && (
-                                                                    <div className="flex flex-col gap-3">
-                                                                        <div className="relative">
-                                                                            <CreditCard className="absolute left-3 top-3 h-4 w-4 text-slate-400 dark:text-slate-500" />
-                                                                            <input
-                                                                                type="text"
-                                                                                placeholder="Número de tarjeta (ej. 4242)"
-                                                                                value={newCardNum}
-                                                                                maxLength={16}
-                                                                                onChange={(e) => setNewCardNum(e.target.value)}
-                                                                                className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent text-slate-800 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
-                                                                            />
-                                                                        </div>
-                                                                        <p className="text-xs text-slate-400 dark:text-slate-500">
-                                                                            Nota: Esta información se procesa de forma segura mediante un proveedor de pagos.
-                                                                        </p>
-                                                                    </div>
-                                                                )}
-
-                                                                <div className="flex justify-end gap-2 mt-4">
-                                                                    <button
-                                                                        onClick={() => setIsAddingNew(false)}
-                                                                        className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-[#0F172A]"
-                                                                    >
-                                                                        Cancelar
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => handleSaveNewItem(isTarjeta, isSeguro)}
-                                                                        disabled={isSaving || (isSeguro ? !newPoliza : !newCardNum)}
-                                                                        className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                                                                    >
-                                                                        {isSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                                                                        Guardar {isTarjeta ? 'Tarjeta' : 'Seguro'}
-                                                                    </button>
+                                                                    <p className="text-xs text-slate-400 dark:text-slate-500">
+                                                                        Nota: Esta información se procesa de forma segura mediante un proveedor de pagos.
+                                                                    </p>
                                                                 </div>
+                                                            )}
+
+                                                            <div className="flex justify-end gap-2 mt-4">
+                                                                <button
+                                                                    onClick={() => setIsAddingNew(false)}
+                                                                    className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-[#0F172A]"
+                                                                >
+                                                                    Cancelar
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleSaveNewItem(isTarjeta, isSeguro)}
+                                                                    disabled={isSaving || (isSeguro ? !newPoliza : !newCardNum)}
+                                                                    className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                                                >
+                                                                    {isSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                                                                    Guardar {isTarjeta ? 'Tarjeta' : 'Seguro'}
+                                                                </button>
                                                             </div>
-                                                        )}
-                                                    </div>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             )}
                                         </div>
                                     )}
 
-                                    {/* Transferencia Info */}
+                                    {/* Transferencia Info + Cuenta bancaria + Comprobante */}
                                     {isSelected && isTransferencia && (
-                                        <div className="px-5 pb-5 pt-2 border-t border-blue-600/10 animate-in slide-in-from-top-2 duration-200">
-                                            <div className="bg-sky-50 dark:bg-sky-900/30 text-sky-800 dark:text-sky-300 p-4 rounded-xl flex items-start gap-3">
-                                                <Info className="w-5 h-5 mt-0.5 shrink-0 text-sky-600 dark:text-sky-400" />
-                                                <p className="text-sm font-medium leading-relaxed">
-                                                    En el siguiente paso recibirás los datos bancarios para realizar tu transferencia y confirmar la cita.
-                                                </p>
+                                        <div className="px-5 pb-6 pt-4 border-t border-blue-600/10 dark:border-blue-900/30 animate-in slide-in-from-top-2 duration-200 space-y-5">
+
+                                            {/* Datos bancarios */}
+                                            {metodo.cuentasBancarias && metodo.cuentasBancarias.length > 0 ? (
+                                                <div className="space-y-3">
+                                                    <p className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Datos bancarios del médico</p>
+                                                    {metodo.cuentasBancarias.map((cuenta, idx) => (
+                                                        <div key={idx} className="rounded-2xl border border-slate-200 dark:border-slate-700/70 bg-white dark:bg-[#0B1120] overflow-hidden shadow-sm">
+
+                                                            {/* Cabecera del banco */}
+                                                            <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-[#0F172A]">
+                                                                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600/10 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400">
+                                                                    <Landmark className="w-4 h-4" />
+                                                                </div>
+                                                                <span className="text-sm font-bold text-slate-800 dark:text-slate-100 tracking-tight">{cuenta.banco}</span>
+                                                            </div>
+
+                                                            {/* Cuerpo en grid */}
+                                                            <div className="p-4 space-y-4">
+
+                                                                {/* Grid: Tipo + Nombre */}
+                                                                <div className="grid grid-cols-2 gap-4">
+                                                                    {(cuenta.tipoCuenta || cuenta.tipo_cuenta) && (
+                                                                        <div className="space-y-0.5">
+                                                                            <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Tipo de cuenta</p>
+                                                                            <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{cuenta.tipoCuenta || cuenta.tipo_cuenta}</p>
+                                                                        </div>
+                                                                    )}
+                                                                    {(cuenta.nombreCuenta || cuenta.nombre_cuenta) && (
+                                                                        <div className="space-y-0.5">
+                                                                            <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">A nombre de</p>
+                                                                            <div className="flex items-center gap-1.5">
+                                                                                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 leading-tight">{cuenta.nombreCuenta || cuenta.nombre_cuenta}</p>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleCopyToClipboard((cuenta.nombreCuenta || cuenta.nombre_cuenta)!, `nombre-${idx}`)}
+                                                                                    className="shrink-0 p-1 rounded-md text-slate-300 dark:text-slate-600 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors"
+                                                                                    title="Copiar nombre"
+                                                                                >
+                                                                                    {copiedField === `nombre-${idx}` ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+
+                                                                {/* Número de cuenta — protagonista */}
+                                                                {(cuenta.numeroCuenta || cuenta.numero_cuenta) && (
+                                                                    <div className="mt-4 bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 rounded-xl p-4 sm:p-5 flex flex-col items-center justify-center gap-2 shadow-sm text-center">
+                                                                        <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                                                                            Número de cuenta
+                                                                        </p>
+
+                                                                        <div className="flex items-center justify-center gap-3 sm:gap-4">
+                                                                            <p className="text-xl sm:text-2xl font-mono font-bold text-blue-700 dark:text-blue-400 tracking-widest">
+                                                                                {cuenta.numeroCuenta || cuenta.numero_cuenta}
+                                                                            </p>
+
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleCopyToClipboard((cuenta.numeroCuenta || cuenta.numero_cuenta)!, `num-${idx}`)}
+                                                                                className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${copiedField === `num-${idx}`
+                                                                                        ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700/50'
+                                                                                        : 'bg-slate-50 dark:bg-transparent text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                                                                    }`}
+                                                                                title="Copiar número de cuenta"
+                                                                            >
+                                                                                {copiedField === `num-${idx}` ? (
+                                                                                    <>
+                                                                                        <Check className="w-4 h-4" />
+                                                                                        <span className="hidden sm:inline">Copiado</span>
+                                                                                    </>
+                                                                                ) : (
+                                                                                    <>
+                                                                                        <Copy className="w-4 h-4" />
+                                                                                        <span className="hidden sm:inline">Copiar</span>
+                                                                                    </>
+                                                                                )}
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="bg-sky-50 dark:bg-sky-900/30 text-sky-800 dark:text-sky-300 p-4 rounded-xl flex items-start gap-3">
+                                                    <Info className="w-5 h-5 mt-0.5 shrink-0 text-sky-600 dark:text-sky-400" />
+                                                    <p className="text-sm font-medium leading-relaxed">
+                                                        El médico te compartirá los datos bancarios para realizar la transferencia.
+                                                    </p>
+                                                </div>
+                                            )}
+
+                                            {/* Subir comprobante — OBLIGATORIO */}
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Comprobante de pago</label>
+                                                    {!comprobanteTransferencia && (
+                                                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-700/40 px-2 py-0.5 rounded-full">
+                                                            Requerido
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                {comprobanteTransferencia ? (
+                                                    <div className="flex items-center gap-3 p-4 rounded-xl border border-emerald-400/60 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-700/50">
+                                                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400">
+                                                            <FileCheck2 className="w-5 h-5" />
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-sm font-bold text-emerald-800 dark:text-emerald-300 truncate">{comprobanteTransferencia.name}</p>
+                                                            <p className="text-xs text-emerald-600/70 dark:text-emerald-500 mt-0.5">{(comprobanteTransferencia.size / 1024).toFixed(1)} KB · Listo para enviar</p>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setComprobanteTransferencia(null)}
+                                                            className="shrink-0 p-1.5 rounded-lg hover:bg-emerald-200 dark:hover:bg-emerald-900/40 text-emerald-500 dark:text-emerald-400 transition-colors"
+                                                            title="Cambiar archivo"
+                                                        >
+                                                            <X className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <label className="flex flex-col items-center justify-center gap-2.5 p-6 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 bg-slate-50/50 dark:bg-[#0B1120]/50 hover:bg-white dark:hover:bg-[#0F172A] cursor-pointer transition-all group">
+                                                            <input
+                                                                type="file"
+                                                                accept="image/*,application/pdf"
+                                                                onChange={handleComprobanteChange}
+                                                                className="sr-only"
+                                                            />
+                                                            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800 group-hover:bg-blue-50 dark:group-hover:bg-blue-950/30 transition-colors">
+                                                                <UploadCloud className="w-6 h-6 text-slate-400 dark:text-slate-500 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors" />
+                                                            </div>
+                                                            <div className="text-center">
+                                                                <p className="text-sm font-bold text-slate-700 dark:text-slate-300 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">Sube tu comprobante de pago</p>
+                                                                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">PNG, JPG o PDF · Máx. 10 MB</p>
+                                                            </div>
+                                                        </label>
+                                                        <p className="text-sm text-amber-700 dark:text-amber-500 font-medium leading-relaxed px-0.5">
+                                                            El médico necesita ver el comprobante para confirmar tu cita. Sin él no podrás avanzar al siguiente paso.
+                                                        </p>
+                                                    </>
+                                                )}
                                             </div>
                                         </div>
                                     )}
+
                                 </div>
                             );
                         })}
@@ -311,7 +474,7 @@ export function Step3MetodoPago() {
                 >
                     <span>Continuar al Siguiente Paso</span> <ArrowRight className="h-5 w-5" />
                 </button>
-            </div>    
+            </div>
 
         </div>
     );
@@ -343,11 +506,10 @@ function CuponesSeccion({ pacCodigo }: { pacCodigo?: string }) {
                 <button
                     type="button"
                     onClick={() => setRecompensaSeleccionada(null)}
-                    className={`flex items-center gap-3 p-4 rounded-2xl border transition-all text-left ${
-                        !recompensaSeleccionada
-                            ? 'border-emerald-500 bg-emerald-500/10 text-emerald-900 dark:text-emerald-300 font-bold'
-                            : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] text-slate-700 dark:text-slate-300'
-                    }`}
+                    className={`flex items-center gap-3 p-4 rounded-2xl border transition-all text-left ${!recompensaSeleccionada
+                        ? 'border-emerald-500 bg-emerald-500/10 text-emerald-900 dark:text-emerald-300 font-bold'
+                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] text-slate-700 dark:text-slate-300'
+                        }`}
                 >
                     <Tag className="h-4 w-4 shrink-0 text-slate-400" />
                     <span className="text-xs font-semibold">Sin cupón</span>
@@ -360,11 +522,10 @@ function CuponesSeccion({ pacCodigo }: { pacCodigo?: string }) {
                             key={cupon.praCodigo}
                             type="button"
                             onClick={() => setRecompensaSeleccionada(cupon)}
-                            className={`flex items-center justify-between gap-3 p-4 rounded-2xl border transition-all text-left ${
-                                isSelected
-                                    ? 'border-emerald-500 bg-emerald-500/15 text-emerald-900 dark:text-emerald-300 shadow-md'
-                                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] hover:border-emerald-400 text-slate-700 dark:text-slate-300'
-                            }`}
+                            className={`flex items-center justify-between gap-3 p-4 rounded-2xl border transition-all text-left ${isSelected
+                                ? 'border-emerald-500 bg-emerald-500/15 text-emerald-900 dark:text-emerald-300 shadow-md'
+                                : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] hover:border-emerald-400 text-slate-700 dark:text-slate-300'
+                                }`}
                         >
                             <div className="flex items-center gap-3 min-w-0">
                                 <Gift className="h-5 w-5 shrink-0 text-emerald-500" />

@@ -37,6 +37,7 @@ import {
   Sparkles,
   UserCheck,
   SlidersHorizontal,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -55,14 +56,17 @@ import {
   useUpdateCita,
   useAutoCompletarCitasPasadas,
   isCitaPasada,
+  useSolicitudesCambioPendientes,
+  useCancelarSolicitudCambio,
 } from '@/hooks/use-flujo-citas';
 import { usePacientesByUsuario } from '@/hooks/use-pacientes';
 import { useDoctorByCode, useDoctors } from '@/hooks/use-doctors';
 import { fetchGruposCita, createGrupo, updateCita } from '@/services/flujo-citas';
-import type { CitaListDto, CitaEstado, GrupoCitaDto } from '@/types/citas';
+import type { CitaListDto, CitaEstado, GrupoCitaDto, SolicitudCambioDto } from '@/types/citas';
 import { buildDoctorFullName } from '@/types/doctor';
 import { AnimatedModal } from '@/components/animated-modal';
 import { CitaCard } from '@/components/cita-card';
+import { ModalResponderIntercambio } from '@/components/citas/ModalResponderIntercambio';
 import { Plus, FolderPlus, FolderMinus } from 'lucide-react';
 import { toast } from 'sonner';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
@@ -89,6 +93,17 @@ function safeSliceTime(timeStr: string | undefined): string {
   return timeStr.slice(0, 5);
 }
 
+function formatHora12h(timeStr: string | undefined | null): string {
+  if (!timeStr) return '--:--';
+  const parts = timeStr.split(':');
+  let h = parseInt(parts[0]);
+  if (isNaN(h)) return timeStr.slice(0, 5);
+  const m = parts[1] || '00';
+  const ap = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${m} ${ap}`;
+}
+
 function getStatusBadge(estado: CitaEstado) {
   switch (estado) {
     case 'confirmada':
@@ -97,6 +112,13 @@ function getStatusBadge(estado: CitaEstado) {
       return <span className="bg-sky-50 text-sky-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide border border-sky-200">Programada</span>;
     case 'pospuesta':
       return <span className="bg-amber-50 text-amber-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide border border-amber-200">Pospuesta</span>;
+    case 'en_proceso':
+      return (
+        <span className="inline-flex items-center gap-1.5 bg-blue-500/15 text-blue-700 dark:text-blue-300 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide border border-blue-500/30 animate-pulse">
+          <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+          En proceso
+        </span>
+      );
     case 'completada':
       return <span className="bg-slate-100 text-slate-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide border border-slate-300">Completada</span>;
     case 'cancelada':
@@ -319,6 +341,35 @@ function CitasContent() {
   const [isConsultasIndividualesOpen, setIsConsultasIndividualesOpen] = useState(true);
   const [isSeriesSectionOpen, setIsSeriesSectionOpen] = useState(true);
 
+  // Solicitudes de intercambio de horario pendientes
+  const { data: solicitudesPendientes = [], refetch: refetchSolicitudes } = useSolicitudesCambioPendientes();
+  const cancelarSolicitudMutation = useCancelarSolicitudCambio();
+  const [solicitudParaResponder, setSolicitudParaResponder] = useState<SolicitudCambioDto | null>(null);
+  const [solicitudACancelar, setSolicitudACancelar] = useState<SolicitudCambioDto | null>(null);
+
+  const solicitudesRecibidas = useMemo(() => {
+    return solicitudesPendientes.filter(
+      (s) => s.tipoRelacion === 'recibida' && s.estado === 'pendiente'
+    );
+  }, [solicitudesPendientes]);
+
+  const solicitudesEnviadas = useMemo(() => {
+    return solicitudesPendientes.filter(
+      (s) => s.tipoRelacion === 'enviada' && s.estado === 'pendiente'
+    );
+  }, [solicitudesPendientes]);
+
+  const mapaSolicitudesPorCita = useMemo(() => {
+    const map = new Map<string, SolicitudCambioDto>();
+    solicitudesEnviadas.forEach((s) => {
+      map.set(s.citaSolicitanteId, s);
+    });
+    solicitudesRecibidas.forEach((s) => {
+      map.set(s.citaObjetivoId, s);
+    });
+    return map;
+  }, [solicitudesRecibidas, solicitudesEnviadas]);
+
   const activeFiltersCount = useMemo(() => {
     let count = 0;
     if (viewFilter !== 'todas') count++;
@@ -452,6 +503,7 @@ function CitasContent() {
         nombreCorto: string;
         fotoPerfilUrl?: string;
         parentesco?: string;
+        pacEstado?: string;
       }
     >();
 
@@ -468,6 +520,7 @@ function CitasContent() {
         nombreCorto,
         fotoPerfilUrl: p.pac_foto_perfil_url || undefined,
         parentesco: p.pac_titular ? 'Titular' : p.parentesco_descripcion || 'Dependiente',
+        pacEstado: p.pac_estado,
       });
     });
 
@@ -501,6 +554,7 @@ function CitasContent() {
           nombreCorto,
           fotoPerfilUrl: undefined,
           parentesco: 'Paciente',
+          pacEstado: c.pacienteEstado || 'activo',
         });
       }
     });
@@ -623,6 +677,10 @@ function CitasContent() {
         seriesStats,
         totalCitas: citasPaciente.length,
       };
+    }).filter(({ paciente: pac, totalCitas }) => {
+      // Pacientes independizados solo se muestran si conservan citas en esta cuenta
+      if (pac.pacEstado === 'independizado' && totalCitas === 0) return false;
+      return true;
     });
   }, [pacientesTabsList, citasFiltradas, citasConTemas, tabActual]);
 
@@ -720,23 +778,232 @@ function CitasContent() {
                   </div>
                 </div>
 
+                {/* ── Banner de Solicitudes de Intercambio Pendientes ── */}
+                {solicitudesRecibidas.length > 0 && (
+                  <div className="rounded-3xl border-2 border-orange-300 dark:border-orange-700/80 bg-gradient-to-br from-orange-50/90 via-amber-50/40 to-white dark:from-orange-950/30 dark:via-slate-900 dark:to-slate-900 p-5 sm:p-6 shadow-md shadow-orange-500/5 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-orange-500 to-amber-600 text-white flex items-center justify-center shadow-md shadow-orange-500/25 shrink-0">
+                          <ArrowLeftRight className="w-5 h-5 animate-pulse" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">
+                              Solicitudes de Cambio de Horario
+                            </h2>
+                            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-orange-600 text-white font-black tracking-wide uppercase">
+                              {solicitudesRecibidas.length} {solicitudesRecibidas.length === 1 ? 'pendiente' : 'pendientes'}
+                            </span>
+                          </div>
+                          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 font-medium mt-0.5">
+                            Otro paciente solicita intercambiar turno con una de tus citas. Revisa y responde directamente sin entrar a cada paciente.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                      {solicitudesRecibidas.map((sol) => (
+                        <div
+                          key={sol.solCodigo}
+                          className="relative flex flex-col justify-between p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-800/90 border border-orange-200 dark:border-orange-800/60 shadow-sm hover:shadow-md transition-all space-y-3.5"
+                        >
+                          {/* Header de la tarjeta */}
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="space-y-1">
+                              {/* Paciente afectado claramente identificado */}
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[11px] font-black uppercase px-2.5 py-0.5 rounded-md bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60 inline-flex items-center gap-1">
+                                  <User className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                                  Cita de: {sol.objetivoNombre}
+                                </span>
+                                <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300">
+                                  Dr(a). {sol.medicoNombre}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                                <strong className="text-slate-700 dark:text-slate-200">{sol.solicitanteNombre}</strong> solicita este turno
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Comparación visual de turnos */}
+                          <div className="grid grid-cols-2 gap-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-700/60 text-xs">
+                            {/* Turno Actual del Paciente */}
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-400 block">
+                                Tu cita solicitada
+                              </span>
+                              <p className="font-extrabold text-slate-800 dark:text-slate-200 leading-tight">
+                                {safeFormatDate(sol.objetivoFechaActual || sol.fechaDeseada, "d 'de' MMM")}
+                              </p>
+                              <p className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                                {formatHora12h(sol.objetivoHoraActual || sol.horaDeseada)}
+                              </p>
+                            </div>
+
+                            {/* Turno que ofrece a cambio */}
+                            <div className="space-y-1 border-l border-slate-200 dark:border-slate-700 pl-2.5">
+                              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block">
+                                Te ofrece a cambio
+                              </span>
+                              <p className="font-extrabold text-emerald-700 dark:text-emerald-300 leading-tight">
+                                {safeFormatDate(sol.solicitanteFechaActual, "d 'de' MMM")}
+                              </p>
+                              <p className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                                {formatHora12h(sol.solicitanteHoraActual)}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Mensaje opcional si existe */}
+                          {sol.mensaje && (
+                            <p className="text-xs italic text-slate-600 dark:text-slate-400 bg-amber-50/80 dark:bg-amber-950/40 p-2.5 rounded-xl border border-amber-200/60 dark:border-amber-800/40">
+                              "{sol.mensaje}"
+                            </p>
+                          )}
+
+                          {/* Acciones */}
+                          <div className="flex items-center justify-between gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedPacienteId(sol.objetivoPacCodigo);
+                                setTabActual('proximas');
+                              }}
+                              className="text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition cursor-pointer"
+                            >
+                              Ver citas de {sol.objetivoNombre.split(' ')[0]} →
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setSolicitudParaResponder(sol)}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-black shadow-sm hover:shadow transition active:scale-95 cursor-pointer"
+                            >
+                              <ArrowLeftRight className="w-3.5 h-3.5" />
+                              <span>Responder Solicitud</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Banner de Solicitudes de Intercambio Enviadas (Pendientes) ── */}
+                {solicitudesEnviadas.length > 0 && (
+                  <div className="rounded-3xl border-2 border-amber-300 dark:border-amber-700/80 bg-gradient-to-br from-amber-50/90 via-orange-50/30 to-white dark:from-amber-950/30 dark:via-slate-900 dark:to-slate-900 p-5 sm:p-6 shadow-md shadow-amber-500/5 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white flex items-center justify-center shadow-md shadow-amber-500/25 shrink-0">
+                          <Clock className="w-5 h-5 animate-pulse" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">
+                              Solicitudes de Cambio Enviadas
+                            </h2>
+                            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-amber-600 text-white font-black tracking-wide uppercase">
+                              {solicitudesEnviadas.length} {solicitudesEnviadas.length === 1 ? 'en trámite' : 'en trámite'}
+                            </span>
+                          </div>
+                          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 font-medium mt-0.5">
+                            Has solicitado intercambiar horario con otros pacientes. Puedes revisar o cancelar tus solicitudes en cualquier momento.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                      {solicitudesEnviadas.map((sol) => (
+                        <div
+                          key={sol.solCodigo}
+                          className="relative flex flex-col justify-between p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-800/90 border border-amber-200 dark:border-amber-800/60 shadow-sm hover:shadow-md transition-all space-y-3.5"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[11px] font-black uppercase px-2.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/60 inline-flex items-center gap-1">
+                                  <Clock className="w-3 h-3 text-amber-600" />
+                                  Petición enviada
+                                </span>
+                                <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300">
+                                  Dr(a). {sol.medicoNombre}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                                Para la cita de: <strong className="text-slate-700 dark:text-slate-200">{sol.solicitanteNombre}</strong>
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-700/60 text-xs">
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-400 block">
+                                Turno deseado
+                              </span>
+                              <p className="font-extrabold text-slate-800 dark:text-slate-200 leading-tight">
+                                {safeFormatDate(sol.fechaDeseada, "d 'de' MMM")}
+                              </p>
+                              <p className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                                {formatHora12h(sol.horaDeseada)}
+                              </p>
+                            </div>
+
+                            <div className="space-y-1 border-l border-slate-200 dark:border-slate-700 pl-2.5">
+                              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
+                                Cita que ofreces
+                              </span>
+                              <p className="font-extrabold text-slate-800 dark:text-slate-200 leading-tight">
+                                {safeFormatDate(sol.solicitanteFechaActual, "d 'de' MMM")}
+                              </p>
+                              <p className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                                {formatHora12h(sol.solicitanteHoraActual)}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-end gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => setSolicitudACancelar(sol)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-bold transition active:scale-95 cursor-pointer"
+                            >
+                              <XCircle className="w-3.5 h-3.5" />
+                              <span>Cancelar solicitud</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
-                  {seccionesPorPaciente.map(({ paciente: pac, standalone, series, totalCitas }) => (
-                    <PatientCard
-                      key={pac.pacCodigo}
-                      paciente={pac}
-                      totalCitas={totalCitas}
-                      standalone={standalone}
-                      series={series}
-                      tabActual={tabActual}
-                      onSelect={() => {
-                        setSelectedPacienteId(pac.pacCodigo);
-                        setTabActual('proximas');
-                      }}
-                      onAgendar={() => router.push(`/dashboard/directorio?paciente=${pac.pacCodigo}`)}
-                    />
-                  ))}
+                  {seccionesPorPaciente.map(({ paciente: pac, standalone, series, totalCitas }) => {
+                    const solicitudesDelPaciente = solicitudesRecibidas.filter(
+                      (s) => s.objetivoPacCodigo === pac.pacCodigo
+                    );
+                    return (
+                      <PatientCard
+                        key={pac.pacCodigo}
+                        paciente={pac}
+                        totalCitas={totalCitas}
+                        standalone={standalone}
+                        series={series}
+                        tabActual={tabActual}
+                        solicitudesCount={solicitudesDelPaciente.length}
+                        onSelect={() => {
+                          setSelectedPacienteId(pac.pacCodigo);
+                          setTabActual('proximas');
+                        }}
+                        onAgendar={() => router.push(`/dashboard/directorio?paciente=${pac.pacCodigo}`)}
+                      />
+                    );
+                  })}
                 </div>
+
               </motion.div>
             ) : (
               /* ── VISTA DETALLE: Desglose de Citas del Paciente Seleccionado ── */
@@ -800,14 +1067,16 @@ function CitasContent() {
 
                   {/* Derecha: Botón Agrupar citas */}
                   <div className="flex items-center justify-end shrink-0 z-10">
-                    <button
-                      type="button"
-                      onClick={() => setIsCreateGroupOpen(true)}
-                      className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 px-3 py-1.5 rounded-xl transition cursor-pointer border border-indigo-200/60 dark:border-indigo-800/40 shadow-2xs active:scale-95"
-                    >
-                      <FolderPlus className="w-3.5 h-3.5" />
-                      <span>Agrupar citas</span>
-                    </button>
+                    {selectedSection.paciente.pacEstado !== 'independizado' && (
+                      <button
+                        type="button"
+                        onClick={() => setIsCreateGroupOpen(true)}
+                        className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 px-3 py-1.5 rounded-xl transition cursor-pointer border border-indigo-200/60 dark:border-indigo-800/40 shadow-2xs active:scale-95"
+                      >
+                        <FolderPlus className="w-3.5 h-3.5" />
+                        <span>Agrupar citas</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -920,15 +1189,17 @@ function CitasContent() {
                     </button>
 
                     {/* Botón Nueva Cita (Preseleccionando al paciente actual) */}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        router.push(`/dashboard/directorio?paciente=${selectedPacienteId}`)
-                      }
-                      className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm px-4 py-2 rounded-2xl shadow-sm hover:shadow transition active:scale-95 cursor-pointer"
-                    >
-                      <Plus className="w-4 h-4" /> Nueva Cita
-                    </button>
+                    {selectedSection.paciente.pacEstado !== 'independizado' && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          router.push(`/dashboard/directorio?paciente=${selectedPacienteId}`)
+                        }
+                        className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm px-4 py-2 rounded-2xl shadow-sm hover:shadow transition active:scale-95 cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" /> Nueva Cita
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1052,6 +1323,45 @@ function CitasContent() {
                   )}
                 </AnimatePresence>
 
+                {/* Banner de Solicitudes de Intercambio Recibidas */}
+                {solicitudesRecibidas.length > 0 && (
+                  <div className="mb-5 p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/10 border-2 border-orange-300 dark:border-orange-700/80 shadow-md shadow-orange-500/5">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-11 h-11 rounded-2xl bg-orange-500 text-white flex items-center justify-center shrink-0 shadow-md">
+                          <ArrowLeftRight className="w-5 h-5 animate-pulse" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-orange-200 dark:bg-orange-900/80 text-orange-900 dark:text-orange-200">
+                              Intercambio de horario
+                            </span>
+                            <span className="text-xs font-bold text-orange-600 dark:text-orange-400">
+                              {solicitudesRecibidas.length === 1 ? '1 solicitud pendiente' : `${solicitudesRecibidas.length} solicitudes pendientes`}
+                            </span>
+                          </div>
+                          <h4 className="text-sm font-black text-slate-900 dark:text-white mt-0.5">
+                            {solicitudesRecibidas.length === 1
+                              ? `${solicitudesRecibidas[0].solicitanteNombre} solicita intercambiar su turno por el tuyo`
+                              : 'Otros pacientes han solicitado intercambiar turnos con tus citas'}
+                          </h4>
+                          <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                            Puedes aceptar cediendo tu horario (y elegir un nuevo horario o cancelar tu cita) o rechazarla.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSolicitudParaResponder(solicitudesRecibidas[0])}
+                        className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-black text-xs shadow-md transition-all active:scale-95 cursor-pointer whitespace-nowrap inline-flex items-center justify-center gap-2 shrink-0"
+                      >
+                        <span>Revisar solicitud</span>
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Contenido de Citas del Paciente */}
                 {selectedSection.totalCitas === 0 ? (
                   <div className="p-8 sm:p-12 rounded-3xl bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-800 text-center space-y-3">
@@ -1064,16 +1374,25 @@ function CitasContent() {
                     <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
                       {selectedSection.paciente.primerNombre} no tiene citas {tabActual === 'proximas' ? 'programadas en este momento' : 'registradas en el historial'}.
                     </p>
-                    <div className="pt-2">
-                      <button
-                        type="button"
-                        onClick={() => router.push(`/dashboard/directorio?paciente=${selectedSection.paciente.pacCodigo}`)}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200/60 dark:border-blue-800/40 transition cursor-pointer"
-                      >
-                        <CalendarPlus className="w-4 h-4" />
-                        Agendar para {selectedSection.paciente.primerNombre}
-                      </button>
-                    </div>
+                    {selectedSection.paciente.pacEstado !== 'independizado' ? (
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/dashboard/directorio?paciente=${selectedSection.paciente.pacCodigo}`)}
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200/60 dark:border-blue-800/40 transition cursor-pointer"
+                        >
+                          <CalendarPlus className="w-4 h-4" />
+                          Agendar para {selectedSection.paciente.primerNombre}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="pt-2">
+                        <span className="inline-flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500 italic bg-slate-50 dark:bg-slate-800/50 px-3.5 py-2 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                          <UserCheck className="w-4 h-4 text-slate-400" />
+                          Paciente independizado (cuenta propia activa)
+                        </span>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-6">
@@ -1124,9 +1443,13 @@ function CitasContent() {
                                     <CitaCard
                                       cita={cita}
                                       layout="row"
+                                      solicitudCambio={mapaSolicitudesPorCita.get(cita.ctaCodigo)}
+                                      onResponderSolicitud={(s) => setSolicitudParaResponder(s)}
+                                      onCancelarSolicitud={(s) => setSolicitudACancelar(s)}
                                       isPast={
-                                        (cita as any).isPast ||
-                                        !['programada', 'confirmada', 'pospuesta'].includes(cita.ctaEstado)
+                                        cita.ctaEstado !== 'pospuesta' &&
+                                        ((cita as any).isPast ||
+                                          !['programada', 'confirmada', 'pospuesta', 'en_proceso'].includes(cita.ctaEstado))
                                       }
                                       onModify={(c) => router.push(`/dashboard/citas/${c.ctaCodigo}/editar`)}
                                       onCancel={(c) => handleConfirmCancel(c)}
@@ -1193,6 +1516,9 @@ function CitasContent() {
                                     handleConfirmCancel={handleConfirmCancel}
                                     onUnlinkGroup={handleConfirmUnlink}
                                     onDeleteGroup={handleConfirmEliminarGrupo}
+                                    mapaSolicitudesPorCita={mapaSolicitudesPorCita}
+                                    onResponderSolicitud={(s) => setSolicitudParaResponder(s)}
+                                    onCancelarSolicitud={(s) => setSolicitudACancelar(s)}
                                   />
                                 ))}
                               </div>
@@ -1218,14 +1544,21 @@ function CitasContent() {
                         </button>
                       ) : <div />}
 
-                      <button
-                        type="button"
-                        onClick={() => router.push(`/dashboard/directorio?paciente=${selectedSection.paciente.pacCodigo}`)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition cursor-pointer"
-                      >
-                        <CalendarPlus className="w-3.5 h-3.5" />
-                        Agendar nueva cita
-                      </button>
+                      {selectedSection.paciente.pacEstado !== 'independizado' ? (
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/dashboard/directorio?paciente=${selectedSection.paciente.pacCodigo}`)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition cursor-pointer"
+                        >
+                          <CalendarPlus className="w-3.5 h-3.5" />
+                          Agendar nueva cita
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-400 dark:text-slate-500 italic flex items-center gap-1.5 py-1">
+                          <UserCheck className="w-3.5 h-3.5 text-slate-400" />
+                          Paciente independizado (cuenta propia activa)
+                        </span>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1339,6 +1672,58 @@ function CitasContent() {
         variant="danger"
         isLoading={eliminarGrupoMutation.isPending}
       />
+
+      {/* Modal de confirmación para cancelar solicitud de cambio enviada */}
+      <ConfirmModal
+        isOpen={!!solicitudACancelar}
+        onClose={() => setSolicitudACancelar(null)}
+        onConfirm={() => {
+          if (!solicitudACancelar) return;
+          cancelarSolicitudMutation.mutate(
+            {
+              solCodigo: solicitudACancelar.solCodigo,
+              motivo: 'Cancelada voluntariamente por el paciente desde el listado de citas',
+            },
+            {
+              onSuccess: () => {
+                toast.success('Solicitud de cambio cancelada correctamente');
+                refetchSolicitudes();
+                setSolicitudACancelar(null);
+              },
+              onError: (err: any) => {
+                toast.error(err?.message || 'Error al cancelar la solicitud de cambio');
+              },
+            }
+          );
+        }}
+        title="¿Cancelar solicitud de cambio de horario?"
+        description={
+          <div className="space-y-2 text-xs text-slate-600 dark:text-slate-300">
+            <p>
+              Si cancelas esta solicitud, <strong>tu cita original se mantendrá intacta</strong> en su fecha y hora programadas.
+            </p>
+            <p className="text-amber-600 dark:text-amber-400 font-medium">
+              Nota: Se notificará al otro paciente por correo y ya no podrás volver a solicitar un cambio para este turno.
+            </p>
+          </div>
+        }
+        confirmText="Sí, cancelar solicitud"
+        cancelText="Mantener solicitud"
+        variant="danger"
+        isLoading={cancelarSolicitudMutation.isPending}
+      />
+
+      {/* Modal para Responder Solicitud de Intercambio de Horario */}
+      {solicitudParaResponder && (
+        <ModalResponderIntercambio
+          isOpen={!!solicitudParaResponder}
+          onClose={() => {
+            setSolicitudParaResponder(null);
+            refetchSolicitudes();
+          }}
+          solicitud={solicitudParaResponder}
+        />
+      )}
     </div>
   );
 }
@@ -1352,11 +1737,13 @@ interface PatientCardProps {
     nombreCorto: string;
     fotoPerfilUrl?: string;
     parentesco?: string;
+    pacEstado?: string;
   };
   totalCitas: number;
   standalone: CitaListDto[];
   series: Record<string, CitaListDto[]>;
   tabActual: 'proximas' | 'historial';
+  solicitudesCount?: number;
   onSelect: () => void;
   onAgendar: () => void;
 }
@@ -1367,6 +1754,7 @@ function PatientCard({
   standalone,
   series,
   tabActual,
+  solicitudesCount = 0,
   onSelect,
   onAgendar,
 }: PatientCardProps) {
@@ -1421,6 +1809,15 @@ function PatientCard({
                   {pac.pacTitular && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />}
                   {pac.parentesco}
                 </span>
+                {pac.pacEstado === 'independizado' && (
+                  <span
+                    data-cy="badge-paciente-card-independizado"
+                    className="text-[10px] sm:text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 inline-flex items-center gap-1"
+                  >
+                    <UserCheck className="w-3 h-3 text-slate-500" />
+                    Independizado
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -1470,6 +1867,17 @@ function PatientCard({
             </p>
           </div>
         )}
+        {solicitudesCount > 0 && (
+          <div className="mt-3.5 p-2.5 rounded-2xl bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-800/80 flex items-center justify-between text-xs animate-pulse">
+            <span className="font-extrabold text-orange-900 dark:text-orange-200 flex items-center gap-1.5">
+              <ArrowLeftRight className="w-3.5 h-3.5 text-orange-600 dark:text-orange-400 shrink-0" />
+              {solicitudesCount === 1 ? '1 solicitud de cambio' : `${solicitudesCount} solicitudes de cambio`}
+            </span>
+            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-orange-500 text-white shadow-2xs">
+              Atención
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Pie de Tarjeta */}
@@ -1486,17 +1894,19 @@ function PatientCard({
               {totalSeries} {totalSeries === 1 ? 'serie' : 'series'}
             </span>
           )}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onAgendar();
-            }}
-            title={`Agendar para ${pac.primerNombre}`}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition cursor-pointer"
-          >
-            <CalendarPlus className="w-3.5 h-3.5" />
-          </button>
+          {pac.pacEstado !== 'independizado' && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onAgendar();
+              }}
+              title={`Agendar para ${pac.primerNombre}`}
+              className="p-1.5 rounded-xl text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition cursor-pointer"
+            >
+              <CalendarPlus className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
     </motion.div>
@@ -1512,6 +1922,9 @@ function SerieCard({
   handleConfirmCancel,
   onUnlinkGroup,
   onDeleteGroup,
+  mapaSolicitudesPorCita,
+  onResponderSolicitud,
+  onCancelarSolicitud,
 }: {
   grupoId: string;
   citasGrupo: CitaListDto[];
@@ -1521,6 +1934,9 @@ function SerieCard({
   handleConfirmCancel: (c: CitaListDto) => void;
   onUnlinkGroup: (c: CitaListDto) => void;
   onDeleteGroup: (grupoId: string, temaNombre: string) => void;
+  mapaSolicitudesPorCita?: Map<string, SolicitudCambioDto>;
+  onResponderSolicitud?: (solicitud: SolicitudCambioDto) => void;
+  onCancelarSolicitud?: (solicitud: SolicitudCambioDto) => void;
 }) {
   const [isExpanded, setIsExpanded] = useState(true);
   const doctorCode = citasGrupo[0]?.ctaCoddoc;
@@ -1688,7 +2104,7 @@ function SerieCard({
                 <div key={`grupo-cita-${cita.ctaCodigo}`} className="relative z-10 pl-8 sm:pl-10">
                   <div
                     className={`absolute left-2.5 sm:left-[15px] top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full border-[3px] border-white dark:border-[#1E293B] shadow-sm ${
-                      ['programada', 'confirmada', 'pospuesta'].includes(cita.ctaEstado)
+                      ['programada', 'confirmada', 'pospuesta', 'en_proceso'].includes(cita.ctaEstado)
                         ? 'bg-sky-400 dark:bg-blue-400'
                         : 'bg-slate-300 dark:bg-slate-600'
                     }`}
@@ -1696,9 +2112,13 @@ function SerieCard({
                   <CitaCard
                     cita={cita}
                     layout="row"
+                    solicitudCambio={mapaSolicitudesPorCita?.get(cita.ctaCodigo)}
+                    onResponderSolicitud={onResponderSolicitud}
+                    onCancelarSolicitud={onCancelarSolicitud}
                     isPast={
-                      (cita as any).isPast ||
-                      !['programada', 'confirmada', 'pospuesta'].includes(cita.ctaEstado)
+                      cita.ctaEstado !== 'pospuesta' &&
+                      ((cita as any).isPast ||
+                        !['programada', 'confirmada', 'pospuesta', 'en_proceso'].includes(cita.ctaEstado))
                     }
                     onModify={(c) => {
                       router.push(`/dashboard/citas/${c.ctaCodigo}/editar`);

@@ -5,35 +5,11 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: '**.blob.core.windows.net',
+        hostname: '**',
       },
       {
-        protocol: 'https',
-        hostname: 'proyecto-neoclinica.vercel.app',
-      },
-      {
-        protocol: 'https',
-        hostname: '**.googleusercontent.com',
-      },
-      {
-        protocol: 'https',
-        hostname: 'images.unsplash.com',
-      },
-      {
-        protocol: 'https',
-        hostname: '**.pinimg.com',
-      },
-      {
-        protocol: 'https',
-        hostname: '**.pexels.com',
-      },
-      {
-        protocol: 'https',
-        hostname: '**.fbsbx.com',
-      },
-      {
-        protocol: 'https',
-        hostname: '**.facebook.com',
+        protocol: 'http',
+        hostname: '**',
       },
     ],
   },

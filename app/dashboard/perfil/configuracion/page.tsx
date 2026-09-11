@@ -19,9 +19,13 @@ import {
   Loader2,
   X,
   Check,
+  AlertTriangle,
+  Trash2,
 } from 'lucide-react';
+import { signOut } from 'next-auth/react';
 import { useUIStore } from '@/stores/ui-store';
 import { useCambiarPassword } from '@/hooks/use-auth';
+import { useEliminarCuentaPermanente } from '@/hooks/use-pacientes';
 import { toast } from 'sonner';
 
 function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -317,10 +321,160 @@ function CambiarPasswordModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
   );
 }
 
+function EliminarCuentaModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const [confirmText, setConfirmText] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+  const eliminarMutation = useEliminarCuentaPermanente();
+
+  const isConfirmed = confirmText.trim().toUpperCase() === 'ELIMINAR';
+
+  const handleClose = () => {
+    setConfirmText('');
+    setErrorMsg('');
+    onClose();
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!isConfirmed || eliminarMutation.isPending) return;
+    setErrorMsg('');
+
+    try {
+      await eliminarMutation.mutateAsync();
+      toast.success('Tu cuenta ha sido eliminada permanentemente');
+      signOut({ callbackUrl: '/login' });
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Error al eliminar la cuenta. Por favor intenta de nuevo.');
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <motion.div
+            className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+            onClick={handleClose}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          />
+
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-lg overflow-hidden rounded-3xl border border-rose-200 dark:border-rose-900/60 bg-white dark:bg-[#1E293B] shadow-2xl z-10"
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between p-6 border-b border-rose-100 dark:border-rose-900/40 bg-rose-50/50 dark:bg-rose-950/30">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-100 dark:bg-rose-900/60 text-rose-600 dark:text-rose-400 shrink-0 border border-rose-200 dark:border-rose-800/60">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-rose-950 dark:text-rose-200">
+                    Eliminar Cuenta Permanentemente
+                  </h3>
+                  <p className="text-xs text-rose-700/80 dark:text-rose-400/80 mt-0.5">
+                    Acción crítica, destructiva e irreversible.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleClose}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="rounded-2xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/70 dark:bg-rose-950/40 p-4 text-xs leading-relaxed text-rose-900 dark:text-rose-200 space-y-2">
+                <p className="font-bold flex items-center gap-1.5">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
+                  Ten en cuenta las consecuencias de esta acción:
+                </p>
+                <ul className="list-disc list-inside space-y-1 pl-1 text-slate-600 dark:text-slate-300">
+                  <li>Se eliminarán tus datos de acceso y perfil personal.</li>
+                  <li>Se borrará tu historial de citas, consultas médicas y recetas.</li>
+                  <li>Se eliminarán los pacientes dependientes registrados bajo tu tutela.</li>
+                  <li>Esta operación no se puede revertir bajo ninguna circunstancia.</li>
+                </ul>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Escribe <span className="text-rose-600 dark:text-rose-400 font-extrabold tracking-wide">ELIMINAR</span> para confirmar:
+                </label>
+                <input
+                  type="text"
+                  data-cy="input-confirmar-eliminar"
+                  value={confirmText}
+                  onChange={(e) => setConfirmText(e.target.value)}
+                  placeholder="ELIMINAR"
+                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-500"
+                />
+              </div>
+
+              {errorMsg && (
+                <p className="text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/50 p-3 rounded-xl border border-rose-200 dark:border-rose-900/50">
+                  {errorMsg}
+                </p>
+              )}
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleClose}
+                  disabled={eliminarMutation.isPending}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  data-cy="btn-confirmar-eliminar-cuenta"
+                  onClick={handleConfirmDelete}
+                  disabled={!isConfirmed || eliminarMutation.isPending}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-xs font-bold text-white shadow-md shadow-rose-600/20 transition active:scale-95 cursor-pointer"
+                >
+                  {eliminarMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Eliminando cuenta...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="h-4 w-4" />
+                      Eliminar definitivamente
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 export default function ConfiguracionPage() {
   const { isDarkMode, toggleDarkMode } = useUIStore();
   const [mounted, setMounted] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -402,6 +556,30 @@ export default function ConfiguracionPage() {
         },
       ],
     },
+    {
+      title: 'Zona de Peligro',
+      icon: AlertTriangle,
+      danger: true,
+      items: [
+        {
+          label: 'Eliminar Cuenta Permanentemente',
+          description:
+            'Elimina de forma definitiva e irreversible tu cuenta, citas, historial médico y pacientes dependientes afiliados.',
+          icon: Trash2,
+          action: (
+            <button
+              type="button"
+              data-cy="btn-abrir-eliminar-cuenta"
+              onClick={() => setIsDeleteModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200/80 dark:border-rose-800/60 px-4 py-2 text-xs font-bold text-rose-700 dark:text-rose-300 shadow-2xs transition-all active:scale-95 cursor-pointer"
+            >
+              <Trash2 className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
+              Eliminar cuenta permanentemente
+            </button>
+          ),
+        },
+      ],
+    },
   ];
 
   return (
@@ -424,27 +602,43 @@ export default function ConfiguracionPage() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: 0.1 + sectionIndex * 0.08, ease: [0.22, 1, 0.36, 1] }}
-            className="overflow-hidden rounded-3xl border border-slate-200/60 dark:border-slate-800 bg-white/60 dark:bg-[#1E293B]/60 backdrop-blur-xl shadow-xl shadow-slate-900/5 dark:shadow-slate-950/20"
+            className={`overflow-hidden rounded-3xl border backdrop-blur-xl shadow-xl ${
+              section.danger
+                ? 'border-rose-200/80 dark:border-rose-900/50 bg-rose-50/20 dark:bg-rose-950/20 shadow-rose-900/5'
+                : 'border-slate-200/60 dark:border-slate-800 bg-white/60 dark:bg-[#1E293B]/60 shadow-slate-900/5 dark:shadow-slate-950/20'
+            }`}
           >
             {/* Section header */}
-            <div className="flex items-center gap-3 px-4 sm:px-6 py-4 border-b border-slate-100/60 dark:border-slate-800/60 bg-transparent">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 shrink-0 border border-blue-100 dark:border-blue-900/30">
+            <div className={`flex items-center gap-3 px-4 sm:px-6 py-4 border-b ${
+              section.danger
+                ? 'border-rose-100/60 dark:border-rose-900/40 bg-rose-50/40 dark:bg-rose-950/30'
+                : 'border-slate-100/60 dark:border-slate-800/60 bg-transparent'
+            }`}>
+              <div className={`flex h-9 w-9 items-center justify-center rounded-2xl shrink-0 border ${
+                section.danger
+                  ? 'bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-800/60'
+                  : 'bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border-blue-100 dark:border-blue-900/30'
+              }`}>
                 <section.icon className="h-[18px] w-[18px]" />
               </div>
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white">{section.title}</h2>
+              <h2 className={`text-sm font-bold ${section.danger ? 'text-rose-950 dark:text-rose-200' : 'text-slate-900 dark:text-white'}`}>{section.title}</h2>
             </div>
 
             {/* Items */}
-            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            <div className={`divide-y ${section.danger ? 'divide-rose-100/60 dark:divide-rose-900/40' : 'divide-slate-100 dark:divide-slate-800'}`}>
               {section.items.map((item) => (
                 <div key={item.label} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-4">
                   <div className="flex items-center gap-3.5">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                      section.danger
+                        ? 'bg-rose-100/80 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                    }`}>
                       <item.icon className="h-[18px] w-[18px]" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-bold text-slate-900 dark:text-white">{item.label}</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{item.description}</p>
+                      <p className={`text-sm font-bold ${section.danger ? 'text-rose-950 dark:text-rose-200' : 'text-slate-900 dark:text-white'}`}>{item.label}</p>
+                      <p className={`text-xs mt-0.5 ${section.danger ? 'text-rose-700/80 dark:text-rose-300/70' : 'text-slate-500 dark:text-slate-400'}`}>{item.description}</p>
                     </div>
                   </div>
                   <div className="self-end sm:self-auto shrink-0">
@@ -470,6 +664,12 @@ export default function ConfiguracionPage() {
       <CambiarPasswordModal
         isOpen={isPasswordModalOpen}
         onClose={() => setIsPasswordModalOpen(false)}
+      />
+
+      {/* Modal para Eliminar Cuenta Permanentemente */}
+      <EliminarCuentaModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
       />
     </div>
   );

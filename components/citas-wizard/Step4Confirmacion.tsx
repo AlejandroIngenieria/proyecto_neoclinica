@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { toast } from 'sonner';
-import { useCreateCita, usePagarCita, useMetodosPago, useBilletera, useCreateGrupo } from '@/hooks/use-flujo-citas';
+import { useCreateCita, usePagarCita, useMetodosPago, useBilletera, useCreateGrupo, useCrearSolicitudCambio } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { useCitaStore } from '@/store/use-cita-store';
 import { completarTareaLealtad } from '@/services/lealtad';
@@ -30,6 +30,7 @@ import {
   Home,
   Video,
   Sparkles,
+  ArrowLeftRight,
 } from 'lucide-react';
 import type { CrearCitaRequest } from '@/types/citas';
 import { format } from 'date-fns';
@@ -43,13 +44,15 @@ export function Step4Confirmacion() {
     servicioSeleccionado,
     fecha, hora, pacienteSeleccionado, grupoId, grupoNombre, creandoNuevoGrupo, nuevoGrupoTema, motivo,
     archivos, prevStep, tipoPagoId, billeteraItemId,
+    comprobanteTransferencia, referenciaTransferencia,
     direccionDomicilio, referenciasDomicilio, recompensaSeleccionada, reset,
-    setCitaConfirmada
+    setCitaConfirmada, solicitudIntercambio
   } = useCitaStore();
 
   const { mutateAsync: createCita } = useCreateCita();
   const { mutateAsync: createGrupo } = useCreateGrupo();
   const { mutateAsync: pagarCita } = usePagarCita();
+  const { mutateAsync: crearSolicitudCambio } = useCrearSolicitudCambio();
 
   const { data: doctor } = useDoctorByCode(codMedico || '');
   const { data: metodosPago = [] } = useMetodosPago(codMedico || '');
@@ -79,6 +82,7 @@ export function Step4Confirmacion() {
 
   const metodoSeleccionado = metodosPago.find(m => m.tipoPagoId === tipoPagoId);
   const itemBilletera = billetera.find(b => b.id_metodo === billeteraItemId);
+  const isTransferenciaSeleccionada = metodoSeleccionado?.descripcion.toLowerCase().includes('transferencia') || metodoSeleccionado?.descripcion.toLowerCase().includes('banco');
 
   const formatHoraDisplay = (rawHora: string | null) => {
     if (!rawHora) return '';
@@ -167,6 +171,22 @@ export function Step4Confirmacion() {
       const citaId = await createCita(request);
       setCreatedCitaId(citaId);
 
+      // 2.1 Si el usuario solicitó un intercambio de horario ocupado, registrar la solicitud
+      if (solicitudIntercambio && codMedico) {
+        try {
+          setSubmitStatusText('Enviando solicitud de intercambio de horario...');
+          await crearSolicitudCambio({
+            citaSolicitanteId: citaId,
+            codMedico,
+            fechaDeseada: solicitudIntercambio.fecha,
+            horaDeseada: solicitudIntercambio.hora.length === 5 ? `${solicitudIntercambio.hora}:00` : solicitudIntercambio.hora,
+            mensaje: solicitudIntercambio.mensaje,
+          });
+        } catch (errSwap: any) {
+          console.error('Error al registrar solicitud de intercambio:', errSwap?.response?.data || errSwap);
+        }
+      }
+
       // Trigger automatic loyalty task and notification for creating appointment
       const sessionToken = (session as any)?.accessToken;
       if (sessionToken) {
@@ -182,16 +202,22 @@ export function Step4Confirmacion() {
         }).catch(() => {});
       }
 
-      // 3. Registrar Pago
-      setSubmitStatusText('Configurando método de pago y confirmación...');
-      await pagarCita({
-        citaId,
-        payload: {
-          codTpp: Number(tipoPagoId),
-          estadoPago: 'pendiente',
-          referenciaPago: billeteraItemId || null,
-        },
-      });
+      // 3. Registrar método de pago (no bloquea la asignación, el pago puede efectuarse en clínica o consultorio)
+      if (tipoPagoId) {
+        try {
+          setSubmitStatusText('Confirmando cita programada...');
+          await pagarCita({
+            citaId,
+            payload: {
+              codTpp: Number(tipoPagoId),
+              estadoPago: 'pagado',
+              referenciaPago: referenciaTransferencia?.trim() || billeteraItemId || null,
+            },
+          });
+        } catch (errPago) {
+          console.warn('Registro de pago no bloqueante:', errPago);
+        }
+      }
 
       // 4. Marcar éxito
       setCitaConfirmada(true);
@@ -324,6 +350,19 @@ export function Step4Confirmacion() {
                 </div>
               </div>
             )}
+
+            {/* Solicitud de Intercambio Activa */}
+            {solicitudIntercambio && (
+              <div className="p-4 rounded-xl bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-800 text-orange-950 dark:text-orange-200 flex items-start gap-3">
+                <ArrowLeftRight className="w-5 h-5 text-orange-600 dark:text-orange-400 mt-0.5 shrink-0" />
+                <div className="text-xs">
+                  <span className="font-bold text-slate-900 dark:text-white block">Solicitud de intercambio enviada:</span>
+                  <span className="text-orange-800 dark:text-orange-300 mt-0.5 block">
+                    Has solicitado el turno de las <strong>{formatHoraDisplay(solicitudIntercambio.hora)}</strong> al otro paciente. Si acepta ceder su horario, tu cita se moverá automáticamente.
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Action Navigation Buttons */}
@@ -408,6 +447,22 @@ export function Step4Confirmacion() {
       )}
 
       <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
+        {solicitudIntercambio && (
+          <div className="p-4 rounded-2xl bg-orange-50/90 dark:bg-orange-950/40 border-2 border-orange-300 dark:border-orange-800/80 mb-6 flex items-start gap-3 shadow-xs">
+            <div className="p-2 bg-orange-500 text-white rounded-xl shrink-0 mt-0.5">
+              <ArrowLeftRight className="w-4 h-4" />
+            </div>
+            <div className="text-xs">
+              <p className="font-bold text-orange-950 dark:text-orange-200">
+                Petición de intercambio incluida para las {formatHoraDisplay(solicitudIntercambio.hora)}
+              </p>
+              <p className="text-orange-800 dark:text-orange-300 mt-0.5 leading-relaxed">
+                Tu cita quedará reservada para las <strong>{formatHoraDisplay(hora)}</strong>. Simultáneamente, enviaremos tu solicitud al paciente que tiene las {formatHoraDisplay(solicitudIntercambio.hora)}. Si acepta ceder su horario, tu consulta se actualizará automáticamente.
+              </p>
+            </div>
+          </div>
+        )}
+
         <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
           <Info className="h-6 w-6 text-sky-500" />
           Resumen de tu cita
@@ -542,7 +597,7 @@ export function Step4Confirmacion() {
                  <Wallet className="w-6 h-6 text-blue-600 dark:text-blue-400" />
                )}
              </div>
-             <div>
+           <div>
                <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Pago Seleccionado</p>
                <p className="font-bold text-slate-700 dark:text-slate-200 text-sm mt-0.5">
                  {metodoSeleccionado?.descripcion || 'Pendiente'}
@@ -550,6 +605,11 @@ export function Step4Confirmacion() {
                {itemBilletera && (
                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                    {itemBilletera.proveedor} • {itemBilletera.descripcion}
+                 </p>
+               )}
+               {isTransferenciaSeleccionada && comprobanteTransferencia && (
+                 <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1.5 font-semibold flex items-center gap-1">
+                   ✓ Comprobante adjunto · {(comprobanteTransferencia.size / 1024).toFixed(1)} KB
                  </p>
                )}
              </div>

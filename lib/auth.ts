@@ -282,6 +282,10 @@ export const authOptions: NextAuthOptions = {
               const jsonPayload = Buffer.from(base64, 'base64').toString('utf-8');
               const decoded = JSON.parse(jsonPayload);
               
+              const rawDebeCambiar = data.debeCambiarPassword !== undefined
+                ? data.debeCambiarPassword
+                : (decoded.debe_cambiar_password ?? decoded.DebeCambiarPassword);
+
               resolvedUser = {
                 id: decoded.nameid || decoded.sub || '',
                 name: decoded.email || decoded.unique_name || '',
@@ -291,7 +295,7 @@ export const authOptions: NextAuthOptions = {
                 role: data.rol || decoded.role || decoded.rol || '',
                 active: true,
                 tipoTabla: data.tipo || decoded.TipoTabla || null,
-                debeCambiarPassword: Boolean(decoded.DebeCambiarPassword || decoded.debe_cambiar_password || data.debeCambiarPassword),
+                debeCambiarPassword: rawDebeCambiar === true || rawDebeCambiar === 'true',
               };
             } catch (e) {
               console.error('Error parsing JWT', e);

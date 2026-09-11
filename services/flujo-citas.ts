@@ -18,6 +18,10 @@ import type {
   Cita,
   CambiarEstadoCitaPayload,
   ColaTurnoDto,
+  SolicitudCambioDto,
+  CrearSolicitudCambioRequest,
+  ResponderSolicitudCambioRequest,
+  CancelarSolicitudCambioRequest,
 } from '@/types/citas';
 
 export async function fetchModalidades(token: string, codMedico: string): Promise<ModalidadDto[]> {
@@ -391,5 +395,67 @@ export async function fetchColaDelDia(
     `/api/flujo-citas/cola-dia?${params.toString()}`
   );
   return Array.isArray(data) ? data : [];
+}
+
+export async function fetchSolicitudesCambioPendientes(token: string): Promise<SolicitudCambioDto[]> {
+  const { data } = await expedientesApi.get<SolicitudCambioDto[]>(
+    `/api/flujo-citas/solicitudes-cambio/pendientes`,
+    getAuthHeaders(token)
+  );
+  return Array.isArray(data) ? data : [];
+}
+
+export async function fetchTodasSolicitudesUsuario(token: string): Promise<SolicitudCambioDto[]> {
+  const { data } = await expedientesApi.get<SolicitudCambioDto[]>(
+    `/api/flujo-citas/solicitudes-cambio`,
+    getAuthHeaders(token)
+  );
+  return Array.isArray(data) ? data : [];
+}
+
+export async function fetchSolicitudCambioPorId(token: string, solCodigo: string): Promise<SolicitudCambioDto | null> {
+  const { data } = await expedientesApi.get<SolicitudCambioDto>(
+    `/api/flujo-citas/solicitudes-cambio/${solCodigo}`,
+    getAuthHeaders(token)
+  );
+  return data || null;
+}
+
+export async function crearSolicitudCambio(
+  token: string,
+  request: CrearSolicitudCambioRequest
+): Promise<{ id: string; mensaje: string }> {
+  const { data } = await expedientesApi.post<{ id: string; mensaje: string }>(
+    `/api/flujo-citas/solicitudes-cambio`,
+    request,
+    getAuthHeaders(token)
+  );
+  return data;
+}
+
+export async function responderSolicitudCambio(
+  token: string,
+  solCodigo: string,
+  request: ResponderSolicitudCambioRequest
+): Promise<{ mensaje: string }> {
+  const { data } = await expedientesApi.put<{ mensaje: string }>(
+    `/api/flujo-citas/solicitudes-cambio/${solCodigo}/responder`,
+    request,
+    getAuthHeaders(token)
+  );
+  return data;
+}
+
+export async function cancelarSolicitudCambio(
+  token: string,
+  solCodigo: string,
+  request?: CancelarSolicitudCambioRequest
+): Promise<{ mensaje: string }> {
+  const { data } = await expedientesApi.put<{ mensaje: string }>(
+    `/api/flujo-citas/solicitudes-cambio/${solCodigo}/cancelar`,
+    request || {},
+    getAuthHeaders(token)
+  );
+  return data;
 }
 

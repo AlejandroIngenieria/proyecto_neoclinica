@@ -10,6 +10,7 @@ import {
   createDependiente,
   deletePaciente,
   independizarPaciente,
+  eliminarCuentaPermanente,
 } from '@/services/pacientes';
 import type { Paciente } from '@/types';
 import { toast } from 'sonner';
@@ -231,3 +232,19 @@ export function useIndependizarPaciente() {
     },
   });
 }
+
+/**
+ * Mutation para eliminar permanentemente la cuenta de usuario y todos sus datos.
+ */
+export function useEliminarCuentaPermanente() {
+  const { token } = useAuthInfo();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => eliminarCuentaPermanente(token!),
+    onSuccess: () => {
+      queryClient.clear();
+    },
+  });
+}
+

@@ -302,6 +302,7 @@ export default function RestablecerPasswordPage() {
                     height={80}
                     priority
                     className="h-full w-full object-contain"
+                    suppressHydrationWarning
                   />
                 </div>
               </div>

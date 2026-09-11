@@ -154,6 +154,14 @@ export type DoctorResponse = ExpedienteDoctor & {
   promedio_valoracion: number;
   total_resenas: number;
   resenas: ResenaDto[];
+  cuentas_bancarias?: DoctorCuentaBancaria[];
+};
+
+export type DoctorCuentaBancaria = {
+  banco: string;
+  tipo_cuenta: string;
+  numero_cuenta: string;
+  nombre_cuenta: string;
 };
 
 export type DoctorDetail = DoctorResponse;

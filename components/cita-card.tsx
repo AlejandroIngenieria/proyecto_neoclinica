@@ -1,15 +1,19 @@
 'use client';
 
 import Image from 'next/image';
+import Link from 'next/link';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
-import { CalendarDays, Clock, MapPin, Video, Home, Edit2, XCircle, Loader2, MoreVertical, FileText, Navigation, Paperclip, ExternalLink, X, Star, ChevronDown, CalendarPlus, FolderPlus, FolderMinus, ClipboardList, Stethoscope, Pill, FlaskConical, Activity, Info, Lock } from 'lucide-react';
-import type { CitaListDto } from '@/types/citas';
+import { CalendarDays, Clock, MapPin, Video, Home, Edit2, XCircle, Loader2, MoreVertical, FileText, Navigation, Paperclip, ExternalLink, X, Star, ChevronDown, CalendarPlus, FolderPlus, FolderMinus, ClipboardList, Stethoscope, Pill, FlaskConical, Activity, Info, Lock, Play, CheckCircle2, UserCheck, CreditCard, Upload, AlertCircle, ArrowLeftRight } from 'lucide-react';
+import type { CitaListDto, SolicitudCambioDto } from '@/types/citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
+import { useCambiarEstadoCita, usePagarCita } from '@/hooks/use-flujo-citas';
+import { useDropzone } from 'react-dropzone';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { createPortal } from 'react-dom';
+import { toast } from 'sonner';
 
 type CitaCardProps = {
   cita: CitaListDto;
@@ -21,15 +25,35 @@ type CitaCardProps = {
   bottomActions?: React.ReactNode;
   size?: 'normal' | 'small';
   layout?: 'card' | 'row' | 'series-child';
+  solicitudCambio?: SolicitudCambioDto;
+  onResponderSolicitud?: (solicitud: SolicitudCambioDto) => void;
+  onCancelarSolicitud?: (solicitud: SolicitudCambioDto) => void;
 };
 
-export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup, isPast = false, bottomActions, size = 'normal', layout = 'card' }: CitaCardProps) {
+export function CitaCard({
+  cita,
+  onModify,
+  onCancel,
+  onLinkGroup,
+  onUnlinkGroup,
+  isPast = false,
+  bottomActions,
+  size = 'normal',
+  layout = 'card',
+  solicitudCambio,
+  onResponderSolicitud,
+  onCancelarSolicitud,
+}: CitaCardProps) {
   const router = useRouter();
   const { data: doctor, isLoading } = useDoctorByCode(cita.ctaCoddoc);
+  const cambiarEstadoMutation = useCambiarEstadoCita();
+  const pagarCitaMutation = usePagarCita();
   const [isNavMenuOpen, setIsNavMenuOpen] = useState(false);
   const [mostrarModalArchivos, setMostrarModalArchivos] = useState(false);
   const [mostrarModalInfo, setMostrarModalInfo] = useState(false);
   const [mostrarModalResena, setMostrarModalResena] = useState(false);
+  const [mostrarModalPago, setMostrarModalPago] = useState(false);
+  const [archivoPago, setArchivoPago] = useState<File | null>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const navButtonRef = useRef<HTMLButtonElement | null>(null);
   const navMenuRef = useRef<HTMLDivElement | null>(null);
@@ -95,6 +119,7 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
       case 'programada': return 'bg-sky-500';
       case 'confirmada': return 'bg-emerald-500';
       case 'pospuesta': return 'bg-amber-500';
+      case 'en_proceso': return 'bg-blue-600 animate-pulse';
       case 'completada': return 'bg-slate-400';
       case 'cancelada':
       case 'rechazada':
@@ -108,6 +133,7 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
       case 'programada': return 'text-sky-600 dark:text-sky-400';
       case 'confirmada': return 'text-emerald-600 dark:text-emerald-400';
       case 'pospuesta': return 'text-amber-600 dark:text-amber-400';
+      case 'en_proceso': return 'text-blue-600 dark:text-blue-400 font-black';
       case 'completada': return 'text-slate-600 dark:text-slate-400';
       case 'cancelada':
       case 'rechazada':
@@ -121,6 +147,7 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
       case 'programada': return 'bg-sky-100 text-sky-700';
       case 'confirmada': return 'bg-emerald-100 text-emerald-700';
       case 'pospuesta': return 'bg-amber-100 text-amber-700';
+      case 'en_proceso': return 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-300 dark:border-blue-700';
       case 'completada': return 'bg-slate-100 text-slate-700';
       case 'cancelada':
       case 'rechazada':
@@ -146,19 +173,131 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
     .map((part) => part[0])
     .join('') || 'MD';
 
-  const canModify = !isPast && ['programada', 'confirmada', 'pospuesta'].includes((cita.ctaEstado || '').toLowerCase());
+  const estadoLower = (cita.ctaEstado || '').toLowerCase();
+  const isPospuesta = estadoLower === 'pospuesta';
+  const isIndependizado = (cita.pacienteEstado || '').toLowerCase() === 'independizado';
+  const canModify = !isIndependizado && (!isPast || isPospuesta) && ['programada', 'confirmada', 'pospuesta', 'en_proceso'].includes(estadoLower);
 
   const isCompletedState =
     (cita.ctaEstado || '').toLowerCase() === 'completada' ||
     (cita.ctaEstado || '').toLowerCase() === 'finalizada' ||
-    (isPast && !['programada', 'confirmada', 'pospuesta', 'cancelada', 'rechazada', 'no_asistio'].includes((cita.ctaEstado || '').toLowerCase()));
+    (isPast && !['programada', 'confirmada', 'pospuesta', 'en_proceso', 'cancelada', 'rechazada', 'no_asistio'].includes((cita.ctaEstado || '').toLowerCase()));
+
+  // Manejador para simulación de acciones del médico (iniciar / finalizar consulta)
+  const handleSimularEstado = (e: React.MouseEvent, nuevoEstado: 'en_proceso' | 'completada') => {
+    e.stopPropagation();
+    cambiarEstadoMutation.mutate(
+      { citaId: cita.ctaCodigo, nuevoEstado },
+      {
+        onSuccess: () => {
+          if (nuevoEstado === 'en_proceso') {
+            toast.success('Simulación Dr: Consulta iniciada (en_proceso). Base de datos actualizada.');
+          } else {
+            toast.success('Simulación Dr: Consulta finalizada (completada). Base de datos actualizada.');
+          }
+        },
+      }
+    );
+  };
+
+  const renderBotonesSimulacionDoctor = (compact: boolean = false) => {
+    const estadoActual = (cita.ctaEstado || '').toLowerCase();
+    const esCanceladaORechazada = ['cancelada', 'rechazada'].includes(estadoActual);
+    if (esCanceladaORechazada) return null;
+
+    const estaEnProceso = estadoActual === 'en_proceso';
+    const estaCompletada = estadoActual === 'completada';
+    const isPending = cambiarEstadoMutation.isPending;
+
+    return (
+      <div className={`inline-flex items-center gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 shadow-xs ${compact ? 'text-[11px]' : 'text-xs'}`}>
+        {/* Botón 1: Iniciar consulta */}
+        <button
+          type="button"
+          disabled={isPending}
+          onClick={(e) => handleSimularEstado(e, 'en_proceso')}
+          title="Simular que el médico inicia la consulta (actualiza estado a en_proceso en BD)"
+          className={`inline-flex items-center gap-1.5 font-bold rounded-lg px-2.5 py-1.5 transition-all cursor-pointer ${
+            estaEnProceso
+              ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-400/50'
+              : 'bg-white dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700 active:scale-95'
+          }`}
+        >
+          {isPending ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <Play className={`w-3.5 h-3.5 ${estaEnProceso ? 'fill-white text-white' : 'fill-emerald-600 dark:fill-emerald-400 text-emerald-600 dark:text-emerald-400'}`} />
+          )}
+          <span>{estaEnProceso ? 'En consulta' : 'Iniciar consulta'}</span>
+        </button>
+
+        {/* Botón 2: Finalizar consulta */}
+        <button
+          type="button"
+          disabled={isPending}
+          onClick={(e) => handleSimularEstado(e, 'completada')}
+          title="Simular que el médico finaliza la consulta (actualiza estado a completada en BD)"
+          className={`inline-flex items-center gap-1.5 font-bold rounded-lg px-2.5 py-1.5 transition-all cursor-pointer ${
+            estaCompletada
+              ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-400/50'
+              : 'bg-white dark:bg-slate-900 hover:bg-blue-50 dark:hover:bg-blue-950/40 text-blue-700 dark:text-blue-400 border border-blue-300 dark:border-blue-700 active:scale-95'
+          }`}
+        >
+          {isPending ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <CheckCircle2 className="w-3.5 h-3.5" />
+          )}
+          <span>{estaCompletada ? 'Completada' : 'Finalizar consulta'}</span>
+        </button>
+      </div>
+    );
+  };
 
   const yaTieneResena = typeof cita.ctaCalificacion === 'number' && cita.ctaCalificacion > 0;
   const canReview = isCompletedState && !yaTieneResena;
+  // Pago pendiente deshabilitado: el pago se puede realizar en el consultorio/clínica
+  const tienePagoPendiente = false;
 
   const mapQuery = [cita.medicoNombre, cita.clinicaNombre].filter(Boolean).join(', ');
   const gmapsUrl = cita.cliUrlGoogleMaps || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`;
   const wazeUrl = cita.cliUrlWaze || `https://waze.com/ul?q=${encodeURIComponent(cita.clinicaNombre || mapQuery)}`;
+
+  // Dropzone para comprobante de pago
+  const { getRootProps: getPagoRootProps, getInputProps: getPagoInputProps, isDragActive: isPagoDragActive } = useDropzone({
+    onDrop: (acceptedFiles) => { if (acceptedFiles[0]) setArchivoPago(acceptedFiles[0]); },
+    accept: { 'image/*': [], 'application/pdf': [] },
+    maxFiles: 1,
+    maxSize: 10 * 1024 * 1024,
+  });
+
+  const handleSubmitPago = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const formData = new FormData();
+    formData.append('CodTpp', String(cita.tipoPagoId ?? 0));
+    if (archivoPago) {
+      formData.append('Comprobante', archivoPago);
+      formData.append('EstadoPago', 'pagado');
+    } else {
+      formData.append('EstadoPago', 'pendiente');
+    }
+    pagarCitaMutation.mutate(
+      {
+        citaId: cita.ctaCodigo,
+        payload: {
+          codTpp: cita.tipoPagoId ?? 0,
+          estadoPago: 'pagado',
+          referenciaPago: archivoPago ? archivoPago.name : null,
+        },
+      },
+      {
+        onSuccess: () => {
+          setMostrarModalPago(false);
+          setArchivoPago(null);
+        },
+      }
+    );
+  };
 
   const renderModalPortal = () => {
     if (typeof window === 'undefined') return null;
@@ -243,6 +382,123 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
                 </div>
               )}
             </div>
+          </div>,
+          document.body
+        )}
+
+        {/* Modal de Pago: Subir comprobante de transferencia */}
+        {mostrarModalPago && createPortal(
+          <div
+            className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in"
+            onClick={(e) => { e.stopPropagation(); if (!pagarCitaMutation.isPending) { setMostrarModalPago(false); setArchivoPago(null); } }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              transition={{ duration: 0.2 }}
+              className="relative w-full max-w-lg bg-white dark:bg-[#0F172A] rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 dark:border-slate-800"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-2xl">
+                    <CreditCard className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-slate-900 dark:text-white leading-tight">Confirmar Pago</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {cita.tipoPagoDescripcion ?? 'Transferencia'} · Q{cita.ctaPrecio.toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={pagarCitaMutation.isPending}
+                  onClick={() => { setMostrarModalPago(false); setArchivoPago(null); }}
+                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition cursor-pointer disabled:opacity-50"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Info box */}
+              <div className="mb-5 p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60">
+                <div className="flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                  <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                    Sube el comprobante de transferencia para confirmar tu pago. Si aún no tienes el comprobante, puedes enviarlo después desde esta misma tarjeta.
+                  </p>
+                </div>
+              </div>
+
+              {/* Dropzone */}
+              <div
+                {...getPagoRootProps()}
+                className={`relative flex flex-col items-center justify-center w-full rounded-2xl border-2 border-dashed p-6 cursor-pointer transition-all ${
+                  isPagoDragActive
+                    ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/40'
+                    : archivoPago
+                    ? 'border-emerald-400 bg-emerald-50/60 dark:bg-emerald-950/30'
+                    : 'border-slate-300 dark:border-slate-700 hover:border-amber-400 hover:bg-amber-50/50 dark:hover:bg-amber-950/20'
+                }`}
+              >
+                <input {...getPagoInputProps()} />
+                {archivoPago ? (
+                  <>
+                    <div className="w-10 h-10 rounded-2xl bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 flex items-center justify-center mb-2">
+                      <CheckCircle2 className="w-5 h-5" />
+                    </div>
+                    <p className="text-sm font-bold text-emerald-700 dark:text-emerald-300 text-center break-all">{archivoPago.name}</p>
+                    <p className="text-xs text-slate-400 mt-1">({(archivoPago.size / 1024).toFixed(0)} KB)</p>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setArchivoPago(null); }}
+                      className="mt-3 text-xs font-bold text-rose-500 hover:text-rose-700 underline cursor-pointer"
+                    >
+                      Cambiar archivo
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mb-3">
+                      <Upload className="w-5 h-5" />
+                    </div>
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300 text-center">
+                      {isPagoDragActive ? 'Suelta el archivo aquí' : 'Arrastra tu comprobante o haz clic'}
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1 text-center">PNG, JPG o PDF · máx. 10 MB</p>
+                  </>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 mt-6">
+                <button
+                  type="button"
+                  disabled={pagarCitaMutation.isPending}
+                  onClick={() => { setMostrarModalPago(false); setArchivoPago(null); }}
+                  className="flex-1 h-11 rounded-2xl border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition disabled:opacity-50 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={pagarCitaMutation.isPending}
+                  onClick={handleSubmitPago}
+                  className="flex-1 h-11 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-black shadow-md transition active:scale-[.98] disabled:opacity-60 cursor-pointer inline-flex items-center justify-center gap-2"
+                >
+                  {pagarCitaMutation.isPending ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /><span>Enviando...</span></>
+                  ) : archivoPago ? (
+                    <><CheckCircle2 className="w-4 h-4" /><span>Confirmar pago</span></>
+                  ) : (
+                    <><CreditCard className="w-4 h-4" /><span>Marcar como pagado</span></>
+                  )}
+                </button>
+              </div>
+            </motion.div>
           </div>,
           document.body
         )}
@@ -449,13 +705,22 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
                   )}
                 </div>
 
-                <div className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs">
+                <div className="flex items-start gap-2.5 p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 text-xs border border-blue-200/80 dark:border-blue-900/50">
                   <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
-                  <span>Las reseñas registradas son inmutables para garantizar la transparencia y confiabilidad del directorio clínico.</span>
+                  <span>Puedes modificar tu calificación por estrellas y tus comentarios en cualquier momento.</span>
                 </div>
               </div>
 
-              <div className="pt-5 mt-5 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+              <div className="pt-5 mt-5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+                <Link
+                  href={`/paciente/resenas/nueva?cita=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}`}
+                  onClick={() => setMostrarModalResena(false)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-xs cursor-pointer"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  <span>Editar Reseña</span>
+                </Link>
+
                 <button
                   type="button"
                   onClick={() => setMostrarModalResena(false)}
@@ -582,23 +847,35 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
         )}
 
         {/* 4. Nueva Cita (Reagendar directo) */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            const doctorId = cita.ctaCoddoc || doctor?.exp_codigo;
-            if (doctorId) {
-              router.push(`/dashboard/agendar/${doctorId}`);
-            } else {
-              router.push('/dashboard/directorio');
-            }
-          }}
-          className={`${btnBaseClass} bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80`}
-          title="Agendar una nueva cita con este médico"
-        >
-          <CalendarPlus className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-          <span className="truncate">Nueva Cita</span>
-        </button>
+        {isIndependizado ? (
+          <button
+            type="button"
+            disabled
+            className={`${btnBaseClass} bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-60`}
+            title="Este paciente fue independizado y gestiona su propia cuenta"
+          >
+            <UserCheck className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span className="truncate">Independizado</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              const doctorId = cita.ctaCoddoc || doctor?.exp_codigo;
+              if (doctorId) {
+                router.push(`/dashboard/agendar/${doctorId}`);
+              } else {
+                router.push('/dashboard/directorio');
+              }
+            }}
+            className={`${btnBaseClass} bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80`}
+            title="Agendar una nueva cita con este médico"
+          >
+            <CalendarPlus className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span className="truncate">Nueva Cita</span>
+          </button>
+        )}
       </div>
     );
   };
@@ -607,10 +884,14 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
     return (
       <div
         onClick={() => setMostrarModalInfo(true)}
-        className="group relative flex flex-col bg-white dark:bg-[#0B1120] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md hover:border-sky-300 dark:hover:border-sky-600 transition-all overflow-visible cursor-pointer"
+        className={`group relative flex flex-col rounded-2xl border transition-all overflow-visible cursor-pointer ${
+          isIndependizado
+            ? 'bg-slate-50/80 dark:bg-slate-900/60 border-slate-300 dark:border-slate-700 opacity-90 shadow-none'
+            : 'bg-white dark:bg-[#0B1120] border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md hover:border-sky-300 dark:hover:border-sky-600'
+        }`}
       >
         {/* Franja lateral de estado reducida a 3px */}
-        <div className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-l-2xl ${getStatusDotColor(cita.ctaEstado)}`} />
+        <div className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-l-2xl ${isIndependizado ? 'bg-slate-400' : getStatusDotColor(cita.ctaEstado)}`} />
 
         <div className="flex flex-col p-4 sm:p-5 pl-5 sm:pl-6">
           
@@ -625,12 +906,14 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
                 <p className="text-sm font-black text-slate-900 dark:text-white capitalize leading-tight break-words">
                   {format(dateObj, "EEE d MMM", { locale: es })}
                 </p>
-                <p className="text-sm font-bold text-sky-600 dark:text-sky-400">
+                <p className={`text-sm font-bold ${isIndependizado ? 'text-slate-600 dark:text-slate-400' : 'text-sky-600 dark:text-sky-400'}`}>
                   {cita.ctaHora.slice(0, 5)}
                 </p>
-                <div className="mt-1.5 flex items-center">
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                   <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                    cita.ctaEstado?.toLowerCase() === 'programada'
+                    isIndependizado
+                      ? 'bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                      : cita.ctaEstado?.toLowerCase() === 'programada'
                       ? 'bg-sky-50 text-sky-700 border border-sky-200/80 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-800/60'
                       : cita.ctaEstado?.toLowerCase() === 'confirmada'
                       ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800/60'
@@ -640,9 +923,43 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
                       ? 'bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
                       : 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800/60'
                   }`}>
-                    <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotColor(cita.ctaEstado)}`} />
+                    <span className={`h-1.5 w-1.5 rounded-full ${isIndependizado ? 'bg-slate-400' : getStatusDotColor(cita.ctaEstado)}`} />
                     <span>{formatCitaEstado(cita.ctaEstado)}</span>
                   </span>
+
+                  {isIndependizado && (
+                    <span
+                      data-cy="badge-paciente-independizado"
+                      className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-200/90 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 shadow-2xs"
+                      title="Este paciente fue independizado y ahora gestiona su propia cuenta"
+                    >
+                      <UserCheck className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Paciente Independizado</span>
+                    </span>
+                  )}
+
+
+                  {solicitudCambio && solicitudCambio.estado === 'pendiente' && (
+                    solicitudCambio.tipoRelacion === 'enviada' ? (
+                      <span
+                        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-950 border border-amber-300 dark:bg-amber-950/70 dark:text-amber-200 dark:border-amber-700 shadow-2xs cursor-pointer hover:bg-amber-200 transition"
+                        onClick={(e) => { e.stopPropagation(); onCancelarSolicitud?.(solicitudCambio); }}
+                        title="Has solicitado intercambiar esta cita por otro turno. Haz clic si deseas cancelarlo."
+                      >
+                        <Clock className="w-3 h-3 text-amber-600 dark:text-amber-400 animate-pulse" />
+                        <span>Cambio Solicitado</span>
+                      </span>
+                    ) : (
+                      <span
+                        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-orange-100 text-orange-950 border border-orange-300 dark:bg-orange-950/70 dark:text-orange-200 dark:border-orange-700 shadow-2xs cursor-pointer hover:bg-orange-200 transition animate-pulse"
+                        onClick={(e) => { e.stopPropagation(); onResponderSolicitud?.(solicitudCambio); }}
+                        title="¡Otro paciente ha solicitado intercambiar turno contigo! Haz clic para responder"
+                      >
+                        <ArrowLeftRight className="w-3 h-3 text-orange-600 dark:text-orange-400" />
+                        <span>Intercambio Solicitado</span>
+                      </span>
+                    )
+                  )}
                 </div>
               </div>
 
@@ -765,10 +1082,28 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
               </div>
             </div>
 
-            {/* Acciones para citas activas / programadas en Grid de 2 columnas */}
+            {/* Acciones para citas activas / programadas */}
             {!isCompletedState && (
               <div className="flex flex-col items-start sm:items-end justify-center shrink-0 sm:ml-auto w-full sm:w-auto pt-3 sm:pt-0 border-t sm:border-0 border-slate-100 dark:border-slate-800">
-                <div className="grid grid-cols-2 gap-2 w-full sm:w-auto min-w-[220px]">
+                {isIndependizado ? (
+                  <div className="flex flex-col items-start sm:items-end gap-1.5">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-semibold border border-slate-200 dark:border-slate-700 shadow-2xs">
+                      <Lock className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Solo lectura</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setMostrarModalInfo(true); }}
+                      className="h-8 px-3.5 inline-flex items-center justify-center gap-1.5 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/80 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer whitespace-nowrap"
+                      title="Ver información y detalles de la cita"
+                    >
+                      <ClipboardList className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                      <span>Detalles</span>
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-2 w-full sm:w-auto min-w-[220px]">
                   {/* Fila 1, Col 1: Detalles */}
                   <button
                     type="button"
@@ -854,6 +1189,42 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
                   )}
                 </div>
 
+
+                {/* Botón Responder o Cancelar Solicitud de Intercambio */}
+                {solicitudCambio && solicitudCambio.estado === 'pendiente' && (
+                  solicitudCambio.tipoRelacion === 'enviada' ? (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onCancelarSolicitud?.(solicitudCambio); }}
+                      className="mt-2 w-full h-8.5 px-3 inline-flex items-center justify-between gap-2 bg-amber-50 dark:bg-amber-950/40 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-amber-800 dark:text-amber-200 hover:text-rose-600 dark:hover:text-rose-400 border border-amber-200 dark:border-amber-800/80 hover:border-rose-300 rounded-xl text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer whitespace-nowrap"
+                      title="Cancelar solicitud de intercambio de horario"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                        <span>Cambio en trámite</span>
+                      </div>
+                      <span className="text-[10px] text-rose-600 dark:text-rose-400 font-extrabold uppercase">
+                        Cancelar
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onResponderSolicitud?.(solicitudCambio); }}
+                      className="mt-2 w-full h-8.5 px-3 inline-flex items-center justify-between gap-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-xl text-xs font-black transition-all shadow-md active:scale-95 cursor-pointer whitespace-nowrap"
+                      title="Responder a solicitud de intercambio de horario"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <ArrowLeftRight className="w-3.5 h-3.5 shrink-0 animate-pulse" />
+                        <span>Solicitud de intercambio</span>
+                      </div>
+                      <span className="bg-white/25 px-2 py-0.5 rounded-md text-[10px] uppercase tracking-wider font-extrabold">
+                        Responder
+                      </span>
+                    </button>
+                  )
+                )}
+
                 {/* Botón Documentos adjuntos (si la cita los tiene) */}
                 {tieneArchivos && (
                   <button
@@ -891,6 +1262,8 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
                     <span>Calificada ({cita.ctaCalificacion}/5)</span>
                   </button>
                 )}
+                  </>
+                )}
               </div>
             )}
 
@@ -919,7 +1292,11 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
 
   if (layout === 'series-child') {
     return (
-      <div className="group relative flex flex-col bg-white dark:bg-[#0B1120] rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow hover:border-sky-200 transition-all overflow-visible py-3 px-4 w-full">
+      <div className={`group relative flex flex-col rounded-xl border shadow-sm transition-all overflow-visible py-3 px-4 w-full ${
+        isIndependizado
+          ? 'bg-slate-50/80 dark:bg-slate-900/60 border-slate-300 dark:border-slate-700 opacity-90'
+          : 'bg-white dark:bg-[#0B1120] border-slate-100 dark:border-slate-800 hover:shadow hover:border-sky-200'
+      }`}>
         {/* Botón de anclar en la esquina superior derecha con hover suave */}
         {renderPinButton()}
 
@@ -955,6 +1332,31 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
               <span className={`inline-flex px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-md ${getEstadoColor(cita.ctaEstado)}`}>
                 {formatCitaEstado(cita.ctaEstado)}
               </span>
+
+
+              {solicitudCambio && solicitudCambio.estado === 'pendiente' && (
+                solicitudCambio.tipoRelacion === 'enviada' ? (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onCancelarSolicitud?.(solicitudCambio); }}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-lg bg-amber-500 hover:bg-rose-600 text-white shadow-sm transition active:scale-95 cursor-pointer"
+                    title="Cancelar solicitud de intercambio de horario"
+                  >
+                    <Clock className="w-3 h-3 text-white" />
+                    <span>Cancelar cambio</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onResponderSolicitud?.(solicitudCambio); }}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-lg bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition active:scale-95 cursor-pointer animate-pulse"
+                    title="Responder solicitud de intercambio de horario"
+                  >
+                    <ArrowLeftRight className="w-3 h-3 text-white" />
+                    <span>Intercambio</span>
+                  </button>
+                )
+              )}
 
               {/* Botón Detalles */}
               <button
@@ -1017,6 +1419,7 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
                   </button>
                 </div>
               )}
+              {renderBotonesSimulacionDoctor(true)}
               {bottomActions && (
                 <div className="flex gap-2">
                   {bottomActions}
@@ -1038,7 +1441,11 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
 
   // === CARD LAYOUT (Original) ===
   return (
-    <div className={`group relative block overflow-hidden rounded-3xl bg-white shadow-xl shadow-slate-900/5 transition-all duration-300 hover:shadow-2xl border border-slate-100 ${
+    <div className={`group relative block overflow-hidden rounded-3xl transition-all duration-300 border ${
+      isIndependizado
+        ? 'bg-slate-50/80 dark:bg-slate-900/60 border-slate-300 dark:border-slate-700 opacity-90 shadow-md'
+        : 'bg-white shadow-xl shadow-slate-900/5 hover:shadow-2xl border-slate-100'
+    } ${
       size === 'small' ? 'opacity-95 hover:opacity-100' : ''
     }`}>
       {/* Botón de anclar en la esquina superior derecha con hover suave */}
@@ -1068,10 +1475,40 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
             </div>
           )}
           
-          <div className="absolute top-3 left-3 hidden sm:block">
+          <div className="absolute top-3 left-3 hidden sm:flex flex-col gap-1.5">
             <span className={`inline-flex px-2 py-0.5 sm:px-3 sm:py-1 text-[10px] sm:text-xs font-black uppercase tracking-wider rounded-full shadow-sm ${getEstadoColor(cita.ctaEstado)}`}>
               {formatCitaEstado(cita.ctaEstado)}
             </span>
+            {isIndependizado && (
+              <span
+                data-cy="badge-paciente-independizado"
+                className="inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] font-bold rounded-full bg-slate-200/95 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 shadow-sm"
+              >
+                <UserCheck className="w-3 h-3 text-slate-500" />
+                <span>Independizado</span>
+              </span>
+            )}
+            {solicitudCambio && solicitudCambio.estado === 'pendiente' && (
+              solicitudCambio.tipoRelacion === 'enviada' ? (
+                <span
+                  onClick={(e) => { e.stopPropagation(); onCancelarSolicitud?.(solicitudCambio); }}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] font-bold rounded-full bg-amber-500 hover:bg-rose-600 text-white shadow-sm cursor-pointer transition"
+                  title="Has solicitado cambiar esta consulta. Clic para cancelar"
+                >
+                  <Clock className="w-3 h-3 text-white" />
+                  <span>Cambio en trámite</span>
+                </span>
+              ) : (
+                <span
+                  onClick={(e) => { e.stopPropagation(); onResponderSolicitud?.(solicitudCambio); }}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] font-bold rounded-full bg-orange-500 text-white shadow-sm cursor-pointer hover:bg-orange-600 transition animate-pulse"
+                  title="¡Solicitud de cambio recibida! Haz clic para responder"
+                >
+                  <ArrowLeftRight className="w-3 h-3 text-white" />
+                  <span>Intercambio</span>
+                </span>
+              )
+            )}
           </div>
         </div>
 
@@ -1229,6 +1666,18 @@ export function CitaCard({ cita, onModify, onCancel, onLinkGroup, onUnlinkGroup,
                     <span>Documentos ({listaArchivos.length})</span>
                   </button>
                 )}
+                {tienePagoPendiente && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setMostrarModalPago(true); }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-md transition active:scale-95 cursor-pointer"
+                    title="Subir comprobante de pago"
+                  >
+                    <CreditCard className="w-3.5 h-3.5" />
+                    <span>Pagar</span>
+                  </button>
+                )}
+                {renderBotonesSimulacionDoctor(false)}
                 {bottomActions}
               </>
             )}

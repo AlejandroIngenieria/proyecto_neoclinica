@@ -307,20 +307,19 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={onClick}
-              className="relative flex h-[40px] w-[240px] max-w-full items-center justify-center rounded-full border border-[#dadce0] bg-white text-[14px] pl-[11px] transition hover:bg-[#f8fafd] hover:border-[#d2e3fc] cursor-pointer select-none antialiased"
+              className="relative flex h-[40px] w-[240px] max-w-full items-center justify-center rounded-full border border-[#dadce0] bg-white text-[14px] pl-[11px] font-medium text-[#3c4043] tracking-[0.25px] transition hover:bg-[#f8fafd] hover:border-[#d2e3fc] cursor-pointer select-none antialiased font-roboto"
               style={{
                 fontFamily: 'var(--font-roboto), Roboto, "Google Sans", Arial, sans-serif',
-                fontWeight: 500,
-                color: '#3c4043',
-                letterSpacing: '0.25px',
               }}
+              suppressHydrationWarning
             >
               <span className="absolute left-[12px] flex h-[18px] w-[18px] items-center justify-center">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <circle cx="12" cy="12" r="12" fill="#1877F2" />
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true" suppressHydrationWarning>
+                  <circle cx="12" cy="12" r="12" fill="#1877F2" suppressHydrationWarning />
                   <path
                     d="M15.5 12h-2.5v7h-3v-7h-1.5v-2.5h1.5v-1.8c0-2 1.2-3.2 3.2-3.2 1 0 1.8.1 2 .1v2.4h-1.3c-.9 0-1.1.4-1.1 1.1v1.4h2.5l-.3 2.5z"
                     fill="#ffffff"
+                    suppressHydrationWarning
                   />
                 </svg>
               </span>
@@ -533,6 +532,7 @@ export default function LoginPage() {
                     height={80}
                     priority
                     className="h-full w-full object-contain"
+                    suppressHydrationWarning
                   />
                 </div>
               </div>

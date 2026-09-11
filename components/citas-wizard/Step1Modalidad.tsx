@@ -1,16 +1,17 @@
 import { useRouter } from 'next/navigation';
 import { useState, useMemo, useEffect } from 'react';
-import { useModalidades, useClinicas, useAreasDomicilio, useHorarios, useHorasOcupadas, useServiciosMedico, useGruposCita, usePacientesSeleccion } from '@/hooks/use-flujo-citas';
+import { useModalidades, useClinicas, useAreasDomicilio, useHorarios, useHorasOcupadas, useServiciosMedico, useGruposCita, usePacientesSeleccion, useAllCitasPacientes } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { usePacienteTitular } from '@/hooks/use-pacientes';
 import { useCitaStore } from '@/store/use-cita-store';
-import { ChevronLeft, ChevronRight, Stethoscope, MapPin, Video, Home, ArrowRight, CalendarDays, Clock, Building2, CalendarClock, Check, Sparkles, FolderPlus, Plus, Layers, Info } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Stethoscope, MapPin, Video, Home, ArrowRight, CalendarDays, Clock, Building2, CalendarClock, Check, Sparkles, FolderPlus, Plus, Layers, Info, ArrowLeftRight } from 'lucide-react';
 import { DayPicker } from 'react-day-picker';
 import { es } from 'date-fns/locale';
 import { format } from 'date-fns';
 import type { HorarioCitaDto, ServicioMedicoCitaDto, GrupoCitaDto } from '@/types/citas';
 import 'react-day-picker/style.css';
 import { NeoLoader } from '@/components/neo-loader';
+import { ModalSolicitarCambio } from './ModalSolicitarCambio';
 
 export function Step1Modalidad() {
   const {
@@ -21,7 +22,8 @@ export function Step1Modalidad() {
     pacienteSeleccionado, setPaciente,
     grupoId, grupoNombre, setTemaSeguimiento,
     tipoPagoId, setTipoPagoId,
-    creandoNuevoGrupo, nuevoGrupoTema, setCreandoNuevoGrupo, setNuevoGrupoTema
+    creandoNuevoGrupo, nuevoGrupoTema, setCreandoNuevoGrupo, setNuevoGrupoTema,
+    solicitudIntercambio, setSolicitudIntercambio
   } = useCitaStore();
   const router = useRouter();
 
@@ -34,6 +36,8 @@ export function Step1Modalidad() {
 
   const { titular } = usePacienteTitular();
   const { data: pacientes = [] } = usePacientesSeleccion();
+  const codigosPacientes = useMemo(() => pacientes.map(p => p.pacCodigo), [pacientes]);
+  const { data: misCitas = [] } = useAllCitasPacientes(codigosPacientes);
 
   // Inicializar paciente por defecto si aún no está en el store
   useEffect(() => {
@@ -75,7 +79,10 @@ export function Step1Modalidad() {
     return new Date(today.getFullYear(), today.getMonth(), 1);
   });
 
-  // Si la fecha seleccionada cambia y es en el pasado, limpiar cualquier hora de agendamiento
+  const [modalCambioOpen, setModalCambioOpen] = useState(false);
+  const [slotParaCambio, setSlotParaCambio] = useState<{ raw: string; display: string } | null>(null);
+
+  // Si la fecha seleccionada cambia y es en el pasado o hoy con hora pasada, limpiar cualquier hora de agendamiento
   useEffect(() => {
     if (fecha) {
       const today = new Date();
@@ -84,9 +91,22 @@ export function Step1Modalidad() {
       f.setHours(0, 0, 0, 0);
       if (f < today) {
         setHora(null);
+      } else if (
+        f.getFullYear() === today.getFullYear() &&
+        f.getMonth() === today.getMonth() &&
+        f.getDate() === today.getDate() &&
+        hora
+      ) {
+        const now = new Date();
+        const currentHour = now.getHours();
+        const currentMinute = now.getMinutes();
+        const currentTimeString = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+        if (hora <= currentTimeString) {
+          setHora(null);
+        }
       }
     }
-  }, [fecha, setHora]);
+  }, [fecha, hora, setHora]);
 
   const handleSelectTema = (g: GrupoCitaDto) => {
     const topicTitle = g.titulo || g.descripcion || 'Tema de Seguimiento';
@@ -229,6 +249,33 @@ export function Step1Modalidad() {
     return citasTemaEnFecha.map(c => c.horaStr);
   }, [citasTemaEnFecha]);
 
+  // Citas activas de la cuenta del usuario en la fecha seleccionada
+  const misCitasActivasEnFecha = useMemo(() => {
+    if (!fechaSelectedStr || !misCitas.length) return [];
+    return misCitas.filter(c => {
+      if (!c.ctaFecha) return false;
+      const cFecha = c.ctaFecha.split('T')[0];
+      if (cFecha !== fechaSelectedStr) return false;
+      const estado = (c.ctaEstado || '').toLowerCase();
+      return !['cancelada', 'rechazada'].includes(estado);
+    });
+  }, [fechaSelectedStr, misCitas]);
+
+  const misHorasEnFecha = useMemo(() => {
+    return misCitasActivasEnFecha
+      .map(c => (c.ctaHora ? String(c.ctaHora).slice(0, 5) : ''))
+      .filter(Boolean);
+  }, [misCitasActivasEnFecha]);
+
+  // Si el usuario tenía seleccionada una solicitud de intercambio sobre un horario que es de su propia cuenta, limpiarla
+  useEffect(() => {
+    if (solicitudIntercambio && fecha && solicitudIntercambio.fecha === format(fecha, 'yyyy-MM-dd')) {
+      if (misHorasEnFecha.includes(solicitudIntercambio.hora) || horasTemaEnFecha.includes(solicitudIntercambio.hora)) {
+        setSolicitudIntercambio(null);
+      }
+    }
+  }, [solicitudIntercambio, fecha, misHorasEnFecha, horasTemaEnFecha, setSolicitudIntercambio]);
+
   const isCitaTemaDate = (date: Date) => {
     return fechasTemaSeguimiento.some(d =>
       d.getFullYear() === date.getFullYear() &&
@@ -313,29 +360,48 @@ export function Step1Modalidad() {
       slots.add(h);
     });
 
+    // Añadir las horas de citas del propio usuario para esta fecha
+    misHorasEnFecha.forEach(h => {
+      slots.add(h);
+    });
+
     if (slots.size === 0) return [];
 
     const uniqueSlots = Array.from(slots).sort();
 
     const now = new Date();
-    let validSlots = uniqueSlots;
-    if (fecha.toDateString() === now.toDateString()) {
-      const currentTimeString = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
-      validSlots = uniqueSlots.filter(s => s > currentTimeString || horasTemaEnFecha.includes(s));
-    }
+    const isToday =
+      selectedDate.getFullYear() === today.getFullYear() &&
+      selectedDate.getMonth() === today.getMonth() &&
+      selectedDate.getDate() === today.getDate();
 
-    return validSlots.map(slot => {
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    const currentTimeString = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+
+    return uniqueSlots.map(slot => {
       const slotWithSeconds = `${slot}:00`;
       const isTemaSlot = horasTemaEnFecha.includes(slot);
-      const isBusy = horasOcupadas.includes(slotWithSeconds) || isTemaSlot;
+      const isMiCita = misHorasEnFecha.includes(slot);
+      const isOwnSlot = isTemaSlot || isMiCita;
+      const isPastHour = isToday && slot <= currentTimeString;
+
+      // Ocupado por OTRO paciente: está en horasOcupadas del médico pero NO es cita propia del usuario ni de su tema
+      const isOccupiedByOther = (horasOcupadas.includes(slotWithSeconds) || horasOcupadas.includes(slot)) && !isOwnSlot;
+      const isBusy = isOccupiedByOther || isOwnSlot;
+      const disabled = isBusy || (isPastHour && !isOwnSlot);
 
       return {
         time: slot,
-        disabled: isBusy,
+        disabled,
         isTemaSlot,
+        isMiCita,
+        isOwnSlot,
+        isPastHour,
+        isOccupiedByOther,
       };
     });
-  }, [fecha, isPastDateSelected, horarios, horasOcupadas, horasTemaEnFecha]);
+  }, [fecha, isPastDateSelected, horarios, horasOcupadas, horasTemaEnFecha, misHorasEnFecha]);
 
   useEffect(() => {
     if (!modalidad && modalidades.length > 0) {
@@ -343,6 +409,23 @@ export function Step1Modalidad() {
       setModalidad(hasPresencial ? 'presencial' : modalidades[0].modDescripcion.toLowerCase() as any);
     }
   }, [modalidad, setModalidad, modalidades]);
+
+  const isHoraValid = useMemo(() => {
+    if (!hora || !fecha) return false;
+    const today = new Date();
+    const isToday =
+      fecha.getFullYear() === today.getFullYear() &&
+      fecha.getMonth() === today.getMonth() &&
+      fecha.getDate() === today.getDate();
+    if (isToday) {
+      const now = new Date();
+      const currentHour = now.getHours();
+      const currentMinute = now.getMinutes();
+      const currentTimeString = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+      return hora > currentTimeString;
+    }
+    return true;
+  }, [fecha, hora]);
 
   if (isLoading) {
     return (
@@ -366,7 +449,7 @@ export function Step1Modalidad() {
     (modalidad === 'domicilio' && areaDomicilio);
 
   const isDateValidForBooking = !!(fecha && !isPastDateSelected);
-  const isComplete = isScheduleEnabled && isDateValidForBooking && !!hora;
+  const isComplete = isScheduleEnabled && isDateValidForBooking && !!hora && isHoraValid;
 
   return (
     <div className="flex flex-col w-full font-sans pb-4">
@@ -899,9 +982,40 @@ export function Step1Modalidad() {
                         </div>
                       )}
 
+                      {/* Banner de Solicitud de Intercambio Activa */}
+                      {solicitudIntercambio && fecha && solicitudIntercambio.fecha === format(fecha, 'yyyy-MM-dd') && (
+                        <div className="p-3.5 rounded-2xl bg-orange-50 dark:bg-orange-950/40 border-2 border-orange-400 dark:border-orange-600/70 text-orange-950 dark:text-orange-200 flex items-start gap-3 shadow-xs animate-in fade-in">
+                          <div className="p-2 bg-orange-500 text-white rounded-xl shrink-0 mt-0.5 shadow-sm">
+                            <ArrowLeftRight className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-black text-slate-900 dark:text-white">
+                              🎯 Has solicitado el horario de las {(() => {
+                                const [h, m] = solicitudIntercambio.hora.split(':');
+                                let hn = parseInt(h);
+                                const ap = hn >= 12 ? 'PM' : 'AM';
+                                hn = hn % 12 || 12;
+                                return `${hn}:${m} ${ap}`;
+                              })()} para intercambio
+                            </p>
+                            <p className="text-[11px] text-orange-800 dark:text-orange-300 mt-0.5 leading-relaxed">
+                              Ahora selecciona un <strong>horario disponible</strong> de la lista abajo para asegurar tu cita temporal mientras el otro paciente responde.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSolicitudIntercambio(null)}
+                            className="text-orange-600 dark:text-orange-400 hover:text-orange-800 text-xs font-bold underline shrink-0 cursor-pointer"
+                            title="Descartar solicitud de intercambio"
+                          >
+                            Quitar
+                          </button>
+                        </div>
+                      )}
+
                       {availableTimeSlots.length > 0 ? (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 h-[320px] overflow-y-auto pr-2 custom-scrollbar content-start">
-                          {availableTimeSlots.map(({ time: slot, disabled, isTemaSlot }) => {
+                          {availableTimeSlots.map(({ time: slot, disabled, isTemaSlot, isMiCita, isPastHour, isOccupiedByOther }) => {
                             const isSelected = hora === slot;
 
                             // Format to 12h AM/PM
@@ -932,8 +1046,76 @@ export function Step1Modalidad() {
                               );
                             }
 
+                            // CASO: CITA DEL MISMO USUARIO/CUENTA (ya programada por el usuario o su familia)
+                            if (isMiCita) {
+                              return (
+                                <div
+                                  key={slot}
+                                  className="py-2.5 px-3 sm:px-4 border-2 border-sky-400/80 bg-sky-50/90 dark:bg-sky-950/60 dark:border-sky-700 rounded-xl text-left text-xs sm:text-sm font-bold text-sky-950 dark:text-sky-200 opacity-90 cursor-not-allowed shadow-xs flex flex-col justify-between"
+                                  title="Ya tienes una cita programada en este horario. Para cambiarla, modifícala desde tu panel de citas."
+                                >
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span>{displayTime}</span>
+                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase tracking-wider bg-sky-600 text-white px-1.5 py-0.5 rounded-md">
+                                      <Check className="w-2.5 h-2.5 stroke-[3]" /> Tu Cita
+                                    </span>
+                                  </div>
+                                  <span className="text-[10px] font-medium text-sky-700 dark:text-sky-400 mt-0.5">
+                                    Ya programada por ti (modificable)
+                                  </span>
+                                </div>
+                              );
+                            }
+
+                            const isSolicitadoActualmente =
+                              solicitudIntercambio?.hora === slot &&
+                              fecha &&
+                              solicitudIntercambio.fecha === format(fecha, 'yyyy-MM-dd');
+
+                            // CASO: HORARIO OCUPADO POR OTRO PACIENTE (solo para citas de terceros, aparece en NARANJA)
+                            if (isOccupiedByOther && !isPastHour) {
+                              return (
+                                <button
+                                  key={slot}
+                                  type="button"
+                                  onClick={() => {
+                                    setSlotParaCambio({ raw: slot, display: displayTime });
+                                    setModalCambioOpen(true);
+                                  }}
+                                  className={`py-3 px-3 sm:px-4 border-2 rounded-xl text-left text-xs sm:text-sm font-semibold transition-all cursor-pointer flex flex-col justify-between ${
+                                    isSolicitadoActualmente
+                                      ? 'border-orange-500 bg-orange-500 text-white shadow-md ring-2 ring-orange-400/50'
+                                      : 'border-orange-300 dark:border-orange-800/80 bg-orange-50/90 dark:bg-orange-950/40 text-orange-950 dark:text-orange-200 hover:bg-orange-100 dark:hover:bg-orange-900/60 hover:border-orange-400 active:scale-[0.98]'
+                                  }`}
+                                  title="Horario ocupado - Haz clic para solicitar un cambio de horario con el paciente"
+                                >
+                                  <div className="flex items-center justify-between w-full">
+                                    <span className="font-black">{displayTime}</span>
+                                    <span className={`inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md ${
+                                      isSolicitadoActualmente
+                                        ? 'bg-white text-orange-700'
+                                        : 'bg-orange-200 dark:bg-orange-900/90 text-orange-800 dark:text-orange-200'
+                                    }`}>
+                                      <ArrowLeftRight className="w-2.5 h-2.5" />
+                                      {isSolicitadoActualmente ? 'Solicitado' : 'Ocupado · Solicitar'}
+                                    </span>
+                                  </div>
+                                  <span className={`text-[10px] font-medium mt-1 ${
+                                    isSolicitadoActualmente ? 'text-orange-100' : 'text-orange-700 dark:text-orange-400'
+                                  }`}>
+                                    {isSolicitadoActualmente ? 'Petición activa · Elige tu turno abajo' : 'Clic para solicitar intercambio'}
+                                  </span>
+                                </button>
+                              );
+                            }
+
+                            // CASO REGULAR DISPONIBLE O PASADO
                             return (
-                              <label key={slot} className={`block shrink-0 ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`} title={disabled ? "Horario no disponible" : ""}>
+                              <label
+                                key={slot}
+                                className={`block shrink-0 ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                                title={isPastHour ? 'Esta hora ya transcurrió hoy' : disabled ? 'Horario no disponible' : ''}
+                              >
                                 <input
                                   type="radio"
                                   name="time"
@@ -949,7 +1131,14 @@ export function Step1Modalidad() {
                                     ? 'border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-[#0B1120] text-slate-400 dark:text-slate-600'
                                     : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800/50'
                                   }`}>
-                                  {displayTime}
+                                  <div className="flex items-center justify-between">
+                                    <span>{displayTime}</span>
+                                    {isPastHour && (
+                                      <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-200/60 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                                        Pasada
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </label>
                             );
@@ -993,6 +1182,24 @@ export function Step1Modalidad() {
           <span>Continuar al Siguiente Paso</span> <ArrowRight className="h-5 w-5" />
         </button>
       </div>
+
+      {modalCambioOpen && slotParaCambio && fecha && (
+        <ModalSolicitarCambio
+          isOpen={modalCambioOpen}
+          onClose={() => setModalCambioOpen(false)}
+          fechaTexto={format(fecha, "EEEE d 'de' MMMM, yyyy", { locale: es })}
+          horaDisplay={slotParaCambio.display}
+          slotRaw={slotParaCambio.raw}
+          medicoNombre={doctor ? `${doctor.exp_primer_nom || ''} ${doctor.exp_primer_ape || ''}`.trim() : ''}
+          onConfirmar={(slot, mensaje) => {
+            setSolicitudIntercambio({
+              fecha: format(fecha, 'yyyy-MM-dd'),
+              hora: slot,
+              mensaje: mensaje || undefined,
+            });
+          }}
+        />
+      )}
 
     </div>
   );

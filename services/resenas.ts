@@ -20,6 +20,37 @@ export interface CrearResenaResponse {
   [key: string]: any;
 }
 
+export interface ResenaDetalleDto {
+  resCodigo: string;
+  codDoc: string;
+  codPac: string;
+  codCta: string;
+  valoracion: number;
+  texto?: string | null;
+  fechaGrabacion?: string;
+  fechaModificacion?: string | null;
+  esAutor: boolean;
+}
+
+/** GET /api/expedientes/cita/{citaId}/resena - Obtener la reseña de una cita específica */
+export async function obtenerResenaPorCita(
+  token: string,
+  citaId: string
+): Promise<ResenaDetalleDto | null> {
+  try {
+    const { data } = await expedientesApi.get<ResenaDetalleDto>(
+      `/api/expedientes/cita/${citaId}/resena`,
+      getAuthHeaders(token)
+    );
+    return data;
+  } catch (error: any) {
+    if (error?.response?.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 /** POST /api/expedientes - Crear una nueva reseña */
 export async function crearResena(token: string, payload: CrearResenaRequest): Promise<CrearResenaResponse> {
   // Envía las propiedades limpias sin duplicados para evitar colisiones en System.Text.Json

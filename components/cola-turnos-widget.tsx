@@ -14,8 +14,12 @@ import {
   ChevronRight,
   ShieldCheck,
   Calendar,
+  Volume2,
+  VolumeX,
+  Megaphone,
 } from 'lucide-react';
 import { useColaDelDia } from '@/hooks/use-cola-dia';
+import { useTurnVoice } from '@/hooks/use-turn-voice';
 import type { CitaListDto } from '@/types/citas';
 
 interface ColaTurnosWidgetProps {
@@ -39,6 +43,14 @@ export function ColaTurnosWidget({ citaHoy, pacienteActualId }: { citaHoy: CitaL
   const turnoEnConsulta = useMemo(() => {
     return turnos.find((t) => (t.ctaEstado || '').toLowerCase() === 'en_proceso');
   }, [turnos]);
+
+  const { audioEnabled, isPlaying, toggleAudio, llamarTurno } = useTurnVoice({
+    turnoActual: turnoEnConsulta?.turnoNumero ?? null,
+    doctorNombre: citaHoy.medicoNombre,
+    pacienteNombre: turnoEnConsulta?.pacienteNombre,
+    consultorioNombre: citaHoy.clinicaNombre,
+    autoAnnounce: true,
+  });
 
   const turnosAtendidos = useMemo(() => {
     return turnos.filter((t) => (t.ctaEstado || '').toLowerCase() === 'completada').length;
@@ -102,8 +114,39 @@ export function ColaTurnosWidget({ citaHoy, pacienteActualId }: { citaHoy: CitaL
           </div>
         </div>
 
-        {/* Live Refresh Button & Summary Badge */}
+        {/* Live Refresh Button & Audio Announcement */}
         <div className="flex items-center gap-2 self-end sm:self-center">
+          {turnoEnConsulta && (
+            <button
+              type="button"
+              onClick={() => llamarTurno()}
+              disabled={isPlaying}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 px-3 py-1.5 text-xs font-black text-blue-700 dark:text-blue-300 shadow-xs transition active:scale-95 cursor-pointer animate-pulse"
+              title={`Anunciar por voz el Turno #${turnoEnConsulta.turnoNumero}`}
+            >
+              <Megaphone className={`h-3.5 w-3.5 ${isPlaying ? 'animate-bounce text-blue-600' : 'text-blue-600'}`} />
+              <span>Llamar Turno #{turnoEnConsulta.turnoNumero}</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={toggleAudio}
+            className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition active:scale-95 cursor-pointer ${
+              audioEnabled
+                ? 'border-emerald-200 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300'
+                : 'border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 text-slate-500'
+            }`}
+            title={audioEnabled ? 'Voz activada (clic para silenciar)' : 'Voz silenciada (clic para activar)'}
+          >
+            {audioEnabled ? (
+              <Volume2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+            ) : (
+              <VolumeX className="h-3.5 w-3.5 text-slate-400" />
+            )}
+            <span className="hidden sm:inline">{audioEnabled ? 'Voz On' : 'Voz Off'}</span>
+          </button>
+
           <button
             type="button"
             onClick={() => refetch()}
@@ -233,10 +276,27 @@ export function ColaTurnosWidget({ citaHoy, pacienteActualId }: { citaHoy: CitaL
                       Turno #{t.turnoNumero}
                     </span>
 
-                    <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-slate-500 dark:text-slate-400">
-                      <Clock className="h-3 w-3" />
-                      {horaTurno}
-                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          llamarTurno({
+                            turnoNumero: t.turnoNumero,
+                            pacienteNombre: isMine ? (miTurno?.pacienteNombre || null) : null,
+                          });
+                        }}
+                        className="p-1 rounded text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition active:scale-95 cursor-pointer"
+                        title={`Anunciar Turno #${t.turnoNumero}`}
+                      >
+                        <Volume2 className="h-3 w-3" />
+                      </button>
+
+                      <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                        <Clock className="h-3 w-3" />
+                        {horaTurno}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Estado Visual */}

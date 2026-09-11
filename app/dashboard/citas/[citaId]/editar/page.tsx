@@ -399,18 +399,29 @@ export default function EditWizardPage() {
     const uniqueSlots = Array.from(new Set(slots)).sort();
     const normOriginal = horaOriginalStr.slice(0, 5);
 
+    const now = new Date();
+    const isToday = !!(fecha &&
+      fecha.getFullYear() === now.getFullYear() &&
+      fecha.getMonth() === now.getMonth() &&
+      fecha.getDate() === now.getDate());
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    const currentTimeString = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+
     return uniqueSlots.map(slot => {
       // El horario previo solo se resalta si estamos en la clínica original y fecha original
       const isOriginalSlot = isCurrentSelectionOriginalDate && isOriginalClinicSelected && slot.slice(0, 5) === normOriginal;
       const slotShort = slot.slice(0, 5);
-      const disabled = isOriginalSlot 
+      const isPastHour = isToday && slotShort <= currentTimeString;
+      const disabled = (isOriginalSlot && !isPastHour) 
         ? false 
-        : horasOcupadas.includes(slot) || horasOcupadas.includes(slotShort);
+        : horasOcupadas.includes(slot) || horasOcupadas.includes(slotShort) || isPastHour;
 
       return {
         time: slot,
         disabled,
         isOriginalSlot,
+        isPastHour,
       };
     });
   }, [fecha, horarios, horasOcupadas, isCurrentSelectionOriginalDate, isOriginalClinicSelected, horaOriginalStr]);
@@ -545,7 +556,7 @@ export default function EditWizardPage() {
           citaId,
           payload: {
             codTpp: Number(tipoPagoId),
-            estadoPago: 'pendiente',
+            estadoPago: 'pagado',
             referenciaPago: billeteraItemId || `Diferencia de servicio: Q${diferenciaAPagar.toFixed(2)}`,
           },
         });

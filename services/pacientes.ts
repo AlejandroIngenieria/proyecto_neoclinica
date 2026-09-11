@@ -229,3 +229,18 @@ export async function independizarPaciente(
 
   return data;
 }
+
+/**
+ * Elimina la cuenta y todos sus registros médicos permanentemente.
+ *
+ * Proxy: DELETE /api/pacientes/cuenta/permanente
+ */
+export async function eliminarCuentaPermanente(token: string): Promise<{ mensaje: string }> {
+  const { data } = await expedientesApi.delete<{ mensaje: string }>(
+    '/api/pacientes/cuenta/permanente',
+    getAuthHeaders(token),
+  );
+
+  return data;
+}
+

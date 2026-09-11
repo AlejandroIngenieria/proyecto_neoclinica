@@ -229,6 +229,7 @@ function PatientCard({
               <div className="relative shrink-0">
                 <button
                   type="button"
+                  data-cy="btn-kebab-paciente"
                   onClick={() => setMenuOpen(!menuOpen)}
                   className="flex h-6 w-6 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 transition-colors"
                   title="Más opciones"
@@ -244,6 +245,7 @@ function PatientCard({
                       {!isMinor && !isIndependiente && (
                         <button
                           type="button"
+                          data-cy="btn-independizar-paciente"
                           onClick={() => {
                             setMenuOpen(false);
                             onIndependizar(paciente);

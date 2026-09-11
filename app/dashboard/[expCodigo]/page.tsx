@@ -532,7 +532,7 @@ function DoctorProfileContent() {
                     <div key={idx} className="flex flex-col items-center justify-center p-4 rounded-[16px] border border-slate-200 bg-white hover:bg-slate-50 transition-colors text-center">
                       {asg.imagen ? (
                         <div className="relative w-full h-12 mb-3">
-                          <Image src={asg.imagen} alt={asg.aseguradora} fill sizes="(max-width: 768px) 50vw, 25vw" className="object-contain" />
+                          <Image src={asg.imagen} alt={asg.aseguradora} fill sizes="(max-width: 768px) 50vw, 25vw" className="object-contain" unoptimized />
                         </div>
                       ) : (
                         <ShieldCheck className="w-8 h-8 text-[#2563EB] mb-3" />
