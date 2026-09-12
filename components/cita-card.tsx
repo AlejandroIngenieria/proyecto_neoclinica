@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 import { CalendarDays, Clock, MapPin, Video, Home, Edit2, XCircle, Loader2, MoreVertical, FileText, Navigation, Paperclip, ExternalLink, X, Star, ChevronDown, CalendarPlus, FolderPlus, FolderMinus, ClipboardList, Stethoscope, Pill, FlaskConical, Activity, Info, Lock, Play, CheckCircle2, UserCheck, CreditCard, Upload, AlertCircle, ArrowLeftRight } from 'lucide-react';
 import type { CitaListDto, SolicitudCambioDto } from '@/types/citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
-import { useCambiarEstadoCita, usePagarCita } from '@/hooks/use-flujo-citas';
+import { useCambiarEstadoCita, usePagarCita, isCitaPasada } from '@/hooks/use-flujo-citas';
 import { useDropzone } from 'react-dropzone';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -176,12 +176,13 @@ export function CitaCard({
   const estadoLower = (cita.ctaEstado || '').toLowerCase();
   const isPospuesta = estadoLower === 'pospuesta';
   const isIndependizado = (cita.pacienteEstado || '').toLowerCase() === 'independizado';
-  const canModify = !isIndependizado && (!isPast || isPospuesta) && ['programada', 'confirmada', 'pospuesta', 'en_proceso'].includes(estadoLower);
+  const isPastCita = isPast || isCitaPasada(cita.ctaFecha, cita.ctaHora);
+  const canModify = !isIndependizado && !isPastCita && ['programada', 'confirmada', 'pospuesta', 'en_proceso'].includes(estadoLower);
 
   const isCompletedState =
     (cita.ctaEstado || '').toLowerCase() === 'completada' ||
     (cita.ctaEstado || '').toLowerCase() === 'finalizada' ||
-    (isPast && !['programada', 'confirmada', 'pospuesta', 'en_proceso', 'cancelada', 'rechazada', 'no_asistio'].includes((cita.ctaEstado || '').toLowerCase()));
+    (isPastCita && !['programada', 'confirmada', 'pospuesta', 'en_proceso', 'cancelada', 'rechazada', 'no_asistio'].includes((cita.ctaEstado || '').toLowerCase()));
 
   // Manejador para simulación de acciones del médico (iniciar / finalizar consulta)
   const handleSimularEstado = (e: React.MouseEvent, nuevoEstado: 'en_proceso' | 'completada') => {

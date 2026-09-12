@@ -775,8 +775,8 @@ function PerfilContent() {
     >
         <div className="max-w-5xl mx-auto space-y-8">
           
-          {/* Profile Header Card (Sticky) */}
-          <div className="sticky top-0 z-30 py-4 mb-6 backdrop-blur-md">
+          {/* Profile Header Card */}
+          <div className="py-4 mb-6">
             <div className="flex flex-col items-center text-center sm:items-start sm:text-left md:flex-row md:items-end gap-4 sm:gap-6 max-w-5xl mx-auto">
             <div className="relative shrink-0">
               <div className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold text-3xl md:text-5xl shadow-lg overflow-hidden">

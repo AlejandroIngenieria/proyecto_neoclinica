@@ -854,9 +854,9 @@ function PacientesContent() {
         onClose={closeDetails}
       />
 
-      {/* Sticky Header Container (solo visible cuando el formulario NO está abierto) */}
+      {/* Header Container (solo visible cuando el formulario NO está abierto) */}
       {!modalState.open && (
-        <div className="sticky top-0 z-30 py-4 mb-6 backdrop-blur-md">
+        <div className="py-4 mb-6">
           {/* Header Title */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>

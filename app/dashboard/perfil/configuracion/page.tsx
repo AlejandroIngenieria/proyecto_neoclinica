@@ -584,8 +584,8 @@ export default function ConfiguracionPage() {
 
   return (
     <div className="min-h-screen px-4 py-6 sm:px-8 lg:px-10 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-5xl mx-auto space-y-8">
-      {/* Sticky Header */}
-      <div className="sticky top-0 z-30 py-4 mb-6 backdrop-blur-md">
+      {/* Header */}
+      <div className="py-4 mb-6">
         <h1 className="text-3xl md:text-5xl font-black tracking-tight text-slate-900 dark:text-white">
           Configuración
         </h1>

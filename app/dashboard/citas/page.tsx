@@ -607,7 +607,8 @@ function CitasContent() {
       if (grupoSeleccionado && c.ctaGrupoId !== grupoSeleccionado) return false;
 
       const estadoNorm = (c.ctaEstado || '').toLowerCase().trim();
-      const isHistorial = historialEstados.includes(estadoNorm);
+      const isPast = isCitaPasada(c.ctaFecha, c.ctaHora);
+      const isHistorial = historialEstados.includes(estadoNorm) || isPast;
       const isUpcoming = !isHistorial;
 
       const activeTab = selectedPacienteId ? tabActual : 'proximas';
@@ -696,10 +697,10 @@ function CitasContent() {
     const historialEstados = ['cancelada', 'no_asistio', 'completada', 'rechazada'];
     const pacCitas = citasConTemas.filter((c) => c.ctaCodpac === selectedPacienteId);
     const historial = pacCitas.filter((c) =>
-      historialEstados.includes((c.ctaEstado || '').toLowerCase().trim())
+      historialEstados.includes((c.ctaEstado || '').toLowerCase().trim()) || isCitaPasada(c.ctaFecha, c.ctaHora)
     ).length;
     const proximas = pacCitas.filter((c) =>
-      !historialEstados.includes((c.ctaEstado || '').toLowerCase().trim())
+      !historialEstados.includes((c.ctaEstado || '').toLowerCase().trim()) && !isCitaPasada(c.ctaFecha, c.ctaHora)
     ).length;
     return { pacienteProximasCount: proximas, pacienteHistorialCount: historial };
   }, [citasConTemas, selectedPacienteId]);
@@ -1447,9 +1448,8 @@ function CitasContent() {
                                       onResponderSolicitud={(s) => setSolicitudParaResponder(s)}
                                       onCancelarSolicitud={(s) => setSolicitudACancelar(s)}
                                       isPast={
-                                        cita.ctaEstado !== 'pospuesta' &&
-                                        ((cita as any).isPast ||
-                                          !['programada', 'confirmada', 'pospuesta', 'en_proceso'].includes(cita.ctaEstado))
+                                        isCitaPasada(cita.ctaFecha, cita.ctaHora) ||
+                                        ['cancelada', 'rechazada', 'completada', 'no_asistio'].includes(cita.ctaEstado)
                                       }
                                       onModify={(c) => router.push(`/dashboard/citas/${c.ctaCodigo}/editar`)}
                                       onCancel={(c) => handleConfirmCancel(c)}
@@ -2116,9 +2116,8 @@ function SerieCard({
                     onResponderSolicitud={onResponderSolicitud}
                     onCancelarSolicitud={onCancelarSolicitud}
                     isPast={
-                      cita.ctaEstado !== 'pospuesta' &&
-                      ((cita as any).isPast ||
-                        !['programada', 'confirmada', 'pospuesta', 'en_proceso'].includes(cita.ctaEstado))
+                      isCitaPasada(cita.ctaFecha, cita.ctaHora) ||
+                      ['cancelada', 'rechazada', 'completada', 'no_asistio'].includes(cita.ctaEstado)
                     }
                     onModify={(c) => {
                       router.push(`/dashboard/citas/${c.ctaCodigo}/editar`);

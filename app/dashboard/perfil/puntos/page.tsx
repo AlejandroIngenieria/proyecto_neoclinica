@@ -16,6 +16,10 @@ import {
   Zap,
   X,
   Check,
+  UserCheck,
+  Calendar,
+  MessageSquare,
+  Users,
 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { toast } from 'sonner';
@@ -74,6 +78,119 @@ function PuntosContent() {
 
     return result;
   }, [tareas]);
+
+  // Verificar si una misión específica ya fue cumplida (especialmente las de 1 sola vez como Completar Perfil)
+  const isMisionCompletada = (tarea: LealtadTarea) => {
+    // Si la API del backend ya la reporta completada
+    if (tarea.completada) return true;
+
+    const action = (tarea.codigoAccion || '').toUpperCase();
+    const tituloLower = (tarea.titulo || '').toLowerCase();
+
+    // Misión específica: COMPLETAR_PERFIL (solo se cumple 1 vez)
+    const esCompletarPerfil = action === 'COMPLETAR_PERFIL' || tituloLower.includes('perfil');
+    if (esCompletarPerfil) {
+      const enHistorial = (historial || []).some((h) => {
+        const mot = (h.trpMotivo || (h as any).motivo || '').toLowerCase();
+        return mot.includes('perfil');
+      });
+      if (enHistorial) return true;
+    }
+
+    // Para cualquier misión no repetible, verificar si ya se encuentra en el historial
+    if (!tarea.repetible) {
+      const enHistorial = (historial || []).some((h) => {
+        const mot = (h.trpMotivo || (h as any).motivo || '').toLowerCase();
+        return mot.includes(tituloLower) || (action && mot.includes(action.toLowerCase()));
+      });
+      if (enHistorial) return true;
+    }
+
+    return false;
+  };
+
+  // Misiones disponibles para ganar puntos (filtrando aquellas que son de 1 sola vez y ya se cumplieron)
+  const misionesDisponibles = useMemo<LealtadTarea[]>(() => {
+    return uniqueTareas.filter((tarea) => {
+      // Si la misión es repetible, siempre está disponible para realizar
+      if (tarea.repetible) return true;
+      // Si no es repetible y ya fue cumplida, NO debe aparecer
+      return !isMisionCompletada(tarea);
+    });
+  }, [uniqueTareas, historial]);
+
+  // Obtener detalle explicativo y contexto de qué se hizo en cada movimiento del historial
+  const getDetalleMovimiento = (item: any) => {
+    const rawMotivo = item.trpMotivo || item.TrpMotivo || item.motivo || item.hisMotivo || item.hisDescripcion || item.descripcion || item.concepto || '';
+    const motivoLower = rawMotivo.toLowerCase();
+
+    const tareaMatch = uniqueTareas.find(
+      (t) => (t.titulo || '').toLowerCase() === motivoLower || (t.codigoAccion || '').toLowerCase() === motivoLower
+    );
+
+    if (motivoLower.includes('perfil')) {
+      return {
+        tipoEtiqueta: 'Misión Única Cumplida',
+        categoria: 'Perfil de Paciente',
+        detalle: 'Completaste con éxito todos tus datos personales, de contacto, residencia e información de emergencia en tu expediente.',
+        icono: 'perfil',
+      };
+    }
+
+    if (motivoLower.includes('primera cita')) {
+      return {
+        tipoEtiqueta: 'Misión de Bienvenida',
+        categoria: 'Primera Consulta Médica',
+        detalle: 'Asististe y concluiste satisfactoriamente tu primera consulta médica con especialista en la plataforma.',
+        icono: 'cita',
+      };
+    }
+
+    if (motivoLower.includes('cita') || motivoLower.includes('consulta')) {
+      return {
+        tipoEtiqueta: 'Misión Recurrente',
+        categoria: 'Consulta Médica Concluida',
+        detalle: 'Asistencia y finalización confirmada de consulta médica con tu doctor especialista.',
+        icono: 'cita',
+      };
+    }
+
+    if (motivoLower.includes('reseña') || motivoLower.includes('resena') || motivoLower.includes('opin')) {
+      return {
+        tipoEtiqueta: 'Misión Recurrente',
+        categoria: 'Reseña de Especialista',
+        detalle: 'Publicación de calificación y opinión clínica sobre la atención recibida por tu médico.',
+        icono: 'resena',
+      };
+    }
+
+    if (motivoLower.includes('refer') || motivoLower.includes('invit')) {
+      return {
+        tipoEtiqueta: 'Misión de Referidos',
+        categoria: 'Recomendación Exitosa',
+        detalle: 'Recomendaste la plataforma a un nuevo paciente y este agendó y completó su cita.',
+        icono: 'referido',
+      };
+    }
+
+    if (motivoLower.includes('canje') || motivoLower.includes('cupon') || motivoLower.includes('cupón')) {
+      return {
+        tipoEtiqueta: 'Canje de Recompensa',
+        categoria: 'Tienda de Beneficios',
+        detalle: rawMotivo.includes(':') 
+          ? `Canjeaste tus puntos acumulados por el beneficio: ${rawMotivo.split(':')[1]?.trim() || rawMotivo}.`
+          : 'Canjeaste tus puntos acumulados por un cupón activo disponible en tu inventario.',
+        icono: 'canje',
+      };
+    }
+
+    return {
+      tipoEtiqueta: 'Actividad Completada',
+      categoria: 'Programa de Lealtad',
+      detalle: tareaMatch?.descripcion || 'Acción completada con éxito y registrada en tu saldo de fidelidad.',
+      icono: 'estrella',
+    };
+  };
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
@@ -471,19 +588,24 @@ function PuntosContent() {
 
             {/* Columna Derecha (1 Col): Misiones Disponibles para Ganar Puntos */}
             <div className="space-y-4 bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm">
-              <div>
-                <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-                  <Zap className="h-5 w-5 text-amber-500" />
-                  Misiones Disponibles
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Completa estas actividades para acumular puntos automáticamente.
-                </p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <Zap className="h-5 w-5 text-amber-500" />
+                    Misiones Disponibles
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Completa estas actividades para acumular puntos automáticamente.
+                  </p>
+                </div>
+                <span className="text-xs font-black bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 px-2.5 py-1 rounded-xl border border-amber-200/80 dark:border-amber-900/40 shrink-0">
+                  {misionesDisponibles.length} activas
+                </span>
               </div>
 
               <div className="space-y-3 pt-2">
-                {uniqueTareas.length > 0 ? (
-                  uniqueTareas.map((tarea: LealtadTarea) => (
+                {misionesDisponibles.length > 0 ? (
+                  misionesDisponibles.map((tarea: LealtadTarea) => (
                     <div
                       key={tarea.tareaId || tarea.codigoAccion}
                       className="flex items-center justify-between p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all gap-3"
@@ -493,7 +615,14 @@ function PuntosContent() {
                           <Star className="h-4 w-4 fill-amber-400" />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{tarea.titulo}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{tarea.titulo}</p>
+                            {!tarea.repetible && (
+                              <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 bg-slate-200/60 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                                1 vez
+                              </span>
+                            )}
+                          </div>
                           <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{tarea.descripcion}</p>
                         </div>
                       </div>
@@ -504,7 +633,15 @@ function PuntosContent() {
                     </div>
                   ))
                 ) : (
-                  <p className="text-xs text-slate-400 p-4 text-center">No hay misiones adicionales configuradas.</p>
+                  <div className="text-center p-6 bg-slate-50/60 dark:bg-slate-900/40 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-2">
+                    <CheckCircle2 className="h-9 w-9 text-emerald-500 mx-auto" />
+                    <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                      ¡Todas las misiones disponibles completadas!
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Has completado todas tus misiones únicas pendientes. Consulta el detalle en la pestaña de Misiones Completadas.
+                    </p>
+                  </div>
                 )}
               </div>
             </div>
@@ -514,16 +651,46 @@ function PuntosContent() {
         {/* ─── CONTENIDO DEL FILTRO 3: Misiones Completadas ─── */}
         {selectedTab === 'historial' && (
           <div className="space-y-6">
-            <div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Misiones Completadas e Historial</h2>
-              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-                Registro histórico de todas las misiones realizadas, puntos acreditados y canjes procesados.
-              </p>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <CheckCircle2 className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                  Misiones Completadas e Historial
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+                  Detalle descriptivo de misiones realizadas, requisitos cumplidos y puntos acreditados a tu cuenta.
+                </p>
+              </div>
+
+              {historial.length > 0 && (
+                <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800/80 px-3.5 py-1.5 rounded-2xl border border-slate-200 dark:border-slate-700 w-fit">
+                  <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                    Total registros:
+                  </span>
+                  <span className="text-xs font-black text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-lg">
+                    {historial.length}
+                  </span>
+                </div>
+              )}
             </div>
 
-            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] overflow-hidden shadow-sm">
+            {/* Bloque de tamaño fijo con overflow-y */}
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] shadow-sm flex flex-col overflow-hidden">
+              {/* Encabezado del bloque de historial */}
+              <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-xs font-black uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                    Registro de Actividades y Puntos
+                  </span>
+                </div>
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  Mostrando <strong className="text-slate-800 dark:text-white font-bold">{historial.length}</strong> {historial.length === 1 ? 'actividad' : 'actividades'}
+                </span>
+              </div>
+
               {historial.length > 0 ? (
-                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                <div className="h-[490px] max-h-[490px] overflow-y-auto p-3 sm:p-5 space-y-3.5 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-700">
                   {historial.map((item, idx) => {
                     const ptsRaw = item.trpPuntos ?? item.TrpPuntos ?? item.puntos ?? item.hisPuntos ?? item.hspPuntos ?? item.montoPuntos ?? item.cantidadPuntos ?? 0;
                     const pts = Math.abs(ptsRaw);
@@ -531,46 +698,129 @@ function PuntosContent() {
                     const esGanancia = rawTipo === 'ganancia' || rawTipo === 'g' || rawTipo === 'abono' || rawTipo === 'ingreso' || rawTipo === 'entrada' || (pts > 0 && rawTipo !== 'canje' && rawTipo !== 'c' && rawTipo !== 'salida' && rawTipo !== 'egreso');
                     const motivoStr = item.trpMotivo || item.TrpMotivo || item.motivo || item.hisMotivo || item.hisDescripcion || item.descripcion || item.concepto || (esGanancia ? 'Abono de puntos' : 'Canje de recompensa');
                     const rawFecha = item.fechaGrabacion || item.FechaGrabacion || item.fecha || item.hisFecha || item.hspFecha || item.fechaMovimiento;
-                    const fechaStr = rawFecha && !isNaN(new Date(rawFecha).getTime()) ? new Date(rawFecha).toLocaleString() : 'Fecha no especificada';
+                    const fechaObj = rawFecha ? new Date(rawFecha) : null;
+                    const fechaValida = fechaObj && !isNaN(fechaObj.getTime());
+                    const fechaFormateada = fechaValida
+                      ? fechaObj.toLocaleDateString('es-ES', {
+                          weekday: 'long',
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                        })
+                      : 'Fecha no especificada';
+                    const horaFormateada = fechaValida
+                      ? fechaObj.toLocaleTimeString('es-ES', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: true,
+                        })
+                      : '';
+
+                    const detalleInfo = getDetalleMovimiento(item);
+
+                    const renderIcon = () => {
+                      if (detalleInfo.icono === 'perfil') {
+                        return <UserCheck className="h-5 w-5" />;
+                      }
+                      if (detalleInfo.icono === 'cita') {
+                        return <Calendar className="h-5 w-5" />;
+                      }
+                      if (detalleInfo.icono === 'resena') {
+                        return <MessageSquare className="h-5 w-5" />;
+                      }
+                      if (detalleInfo.icono === 'referido') {
+                        return <Users className="h-5 w-5" />;
+                      }
+                      if (detalleInfo.icono === 'canje') {
+                        return <Tag className="h-5 w-5" />;
+                      }
+                      return esGanancia ? <CheckCircle2 className="h-5 w-5" /> : <ArrowDownRight className="h-5 w-5" />;
+                    };
 
                     return (
-                      <div key={item.trpCodigo || item.TrpCodigo || item.id || item.hisCodigo || idx} className="p-4 sm:p-5 flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-3">
+                      <div
+                        key={item.trpCodigo || item.TrpCodigo || item.id || item.hisCodigo || idx}
+                        className="p-4 sm:p-5 rounded-2xl bg-slate-50/60 dark:bg-slate-900/40 hover:bg-slate-100/70 dark:hover:bg-slate-900/80 border border-slate-100/80 dark:border-slate-800 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xs"
+                      >
+                        {/* Izquierda: Icono contextual + Detalles de lo que se hizo */}
+                        <div className="flex items-start gap-3.5 min-w-0 flex-1">
                           <div
-                            className={`h-10 w-10 rounded-2xl flex items-center justify-center shrink-0 ${
+                            className={`h-11 w-11 rounded-2xl flex items-center justify-center shrink-0 mt-0.5 ${
                               esGanancia
-                                ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400'
-                                : 'bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400'
+                                ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-800/40'
+                                : 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200/50 dark:border-rose-800/40'
                             }`}
                           >
-                            {esGanancia ? (
-                              <ArrowUpRight className="h-5 w-5" />
-                            ) : (
-                              <ArrowDownRight className="h-5 w-5" />
-                            )}
+                            {renderIcon()}
                           </div>
-                          <div>
-                            <p className="text-sm font-bold text-slate-900 dark:text-white">{motivoStr}</p>
-                            <p className="text-xs text-slate-400">{fechaStr}</p>
+
+                          <div className="space-y-1.5 min-w-0 flex-1">
+                            {/* Badges de Categoría y Tipo */}
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span
+                                className={`text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-md ${
+                                  esGanancia
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50'
+                                    : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/50'
+                                }`}
+                              >
+                                {detalleInfo.tipoEtiqueta}
+                              </span>
+                              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                                {detalleInfo.categoria}
+                              </span>
+                            </div>
+
+                            {/* Título de la acción */}
+                            <h4 className="text-sm sm:text-base font-black text-slate-900 dark:text-white leading-snug">
+                              {motivoStr}
+                            </h4>
+
+                            {/* Más detalle de qué se hizo */}
+                            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-normal">
+                              {detalleInfo.detalle}
+                            </p>
+
+                            {/* Fecha y Hora formateadas */}
+                            <div className="flex items-center gap-1.5 text-[11px] text-slate-400 dark:text-slate-500 pt-0.5 font-medium capitalize">
+                              <Clock className="h-3.5 w-3.5" />
+                              <span>
+                                {fechaFormateada} {horaFormateada ? `• ${horaFormateada}` : ''}
+                              </span>
+                            </div>
                           </div>
                         </div>
 
-                        <span
-                          className={`text-base font-black ${
-                            esGanancia
-                              ? 'text-emerald-600 dark:text-emerald-400'
-                              : 'text-rose-600 dark:text-rose-400'
-                          }`}
-                        >
-                          {esGanancia ? `+${pts}` : `-${pts}`} pts
-                        </span>
+                        {/* Derecha: Puntos y Estado */}
+                        <div className="flex md:flex-col items-center md:items-end justify-between md:justify-center gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-slate-800">
+                          <span
+                            className={`text-lg sm:text-xl font-black px-3.5 py-1 rounded-xl flex items-center gap-1 ${
+                              esGanancia
+                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                            }`}
+                          >
+                            {esGanancia ? `+${pts}` : `-${pts}`} <span className="text-xs font-bold uppercase">pts</span>
+                          </span>
+
+                          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 flex items-center gap-1">
+                            <Check className="h-3 w-3 text-emerald-500" />
+                            {esGanancia ? 'Acreditado a tu saldo' : 'Descontado de tu saldo'}
+                          </span>
+                        </div>
                       </div>
                     );
                   })}
                 </div>
               ) : (
-                <div className="p-12 text-center text-slate-400 text-sm">
-                  No hay movimientos registrados en el historial de misiones completadas aún.
+                <div className="h-[380px] flex flex-col items-center justify-center p-8 text-center bg-white dark:bg-[#1E293B]">
+                  <Award className="h-12 w-12 text-slate-300 dark:text-slate-600 mb-3" />
+                  <h3 className="text-base font-bold text-slate-700 dark:text-slate-300">
+                    No hay misiones completadas aún
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-400 max-w-sm mx-auto">
+                    A medida que completes tu perfil, asistas a consultas y compartas reseñas, aparecerá aquí el historial detallado de tus logros.
+                  </p>
                 </div>
               )}
             </div>
