@@ -686,6 +686,7 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
                         el GoogleLogin original invisible y superponemos nuestro botón visualmente encima. */}
                     <div className="relative w-full h-11">
                       {/* Botón visual unificado Google */}
+                      
                       <button
                         type="button"
                         id="google-social-btn"
