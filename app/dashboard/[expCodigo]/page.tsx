@@ -442,12 +442,6 @@ function DoctorProfileContent() {
                           {doctor.exp_anios_experiencia} Años Exp.
                         </span>
                       ) : null}
-                      {(cleanZonaText(primaryClinic?.cli_zona) || doctor.nacionalidad) && (
-                        <span className="bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-full text-[11px] font-semibold text-slate-600 dark:text-slate-300 inline-flex items-center gap-1.5">
-                          <MapPin className="w-3.5 h-3.5 text-blue-600" />
-                          {cleanZonaText(primaryClinic?.cli_zona) || doctor.nacionalidad}
-                        </span>
-                      )}
                     </div>
 
                     {/* Botones Compartir y Favoritos */}
@@ -479,23 +473,6 @@ function DoctorProfileContent() {
                   <h1 className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-tight line-clamp-2">
                     {fullName}
                   </h1>
-
-                  {/* Especialidades Médicas */}
-                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                    {realSpecialties.map((esp, idx) => (
-                      <span
-                        key={idx}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold transition-all shadow-2xs ${
-                          idx === 0
-                            ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60'
-                            : 'bg-slate-100/90 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/60'
-                        }`}
-                      >
-                        <Stethoscope className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                        <span>{esp}</span>
-                      </span>
-                    ))}
-                  </div>
 
                   {/* Bio Presentación con clamp inteligente */}
                   {doctor.exp_presentacion && (

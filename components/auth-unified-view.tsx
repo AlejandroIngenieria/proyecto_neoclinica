@@ -679,25 +679,21 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
 
                   {/* Botones Sociales UntitledUI (Solo Google y Facebook) */}
                   <div className="flex w-full flex-col gap-2 mb-3">
-                    {/* Botón de Google UntitledUI con trigger nativo */}
-                    <div className="relative w-full h-11 overflow-hidden rounded-xl">
-                      <SocialButton social="google" theme="brand" size="md" className="w-full justify-center text-sm font-semibold">
-                        Iniciar sesión con Google
-                      </SocialButton>
-                      <div className="absolute inset-0 max-h-11 opacity-0 overflow-hidden cursor-pointer pointer-events-auto [&>div]:!w-full [&>div]:!h-full [&_iframe]:!w-full [&_iframe]:!h-full">
-                        <GoogleLogin
-                          onSuccess={handleGoogleSuccess}
-                          onError={() => {
-                            setLoginAuthError(
-                              'No se pudo conectar con Google. Verifica que el origen actual esté registrado en los "Orígenes de JavaScript autorizados" de Google Cloud Console.'
-                            );
-                          }}
-                          shape="rectangular"
-                          theme="outline"
-                          text="signin_with"
-                          width="400"
-                        />
-                      </div>
+                    {/* Botón oficial de Google Identity Services */}
+                    <div className="w-full min-h-[44px] flex items-center justify-center rounded-xl overflow-hidden [&>div]:!w-full [&>div]:!flex [&>div]:!justify-center [&_iframe]:!w-full">
+                      <GoogleLogin
+                        onSuccess={handleGoogleSuccess}
+                        onError={() => {
+                          setLoginAuthError(
+                            'No se pudo conectar con Google. Verifica que el dominio de producción esté registrado en los "Orígenes de JavaScript autorizados" de Google Cloud Console.'
+                          );
+                        }}
+                        shape="rectangular"
+                        theme="outline"
+                        size="large"
+                        text="signin_with"
+                        width="380"
+                      />
                     </div>
 
                     {/* Botón de Facebook UntitledUI */}

@@ -42,9 +42,13 @@ export function AnimatedList({ children, className, style, staggerDelay = 0.06 }
       }}
     >
       {children.map((child, index) => {
-        const isElement = isValidElement<{ variant?: string; isSelected?: boolean }>(child);
+        const isElement = isValidElement<{ variant?: string; isSelected?: boolean; className?: string }>(child);
         const key = isElement ? child.key || index : index;
-        const isExpanded = isElement && (child.props.variant === 'expanded' || Boolean(child.props.isSelected));
+        const isExpanded = isElement && (
+          child.props.variant === 'expanded' ||
+          Boolean(child.props.isSelected) ||
+          child.props.className?.includes('col-span-full')
+        );
 
         return (
           <motion.div
@@ -52,7 +56,8 @@ export function AnimatedList({ children, className, style, staggerDelay = 0.06 }
             layout
             variants={itemVariants}
             transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-            className={isExpanded ? 'col-span-1 md:col-span-2 w-full h-full' : 'w-full h-full'}
+            className={isExpanded ? 'col-span-full w-full h-full' : 'w-full h-full'}
+            style={isExpanded ? { gridColumn: '1 / -1' } : undefined}
           >
             {child}
           </motion.div>

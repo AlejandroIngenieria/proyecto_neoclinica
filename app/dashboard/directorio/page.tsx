@@ -1077,6 +1077,17 @@ function DashboardContent() {
         [currentPageForView, visibleDoctors, itemsPerPage],
     );
 
+    // Si hay un médico seleccionado, se separa para mostrarse al inicio en su propia fila completa
+    const selectedDoctorCard = useMemo(() => {
+        if (!selectedDoctorId) return null;
+        return resolvedDoctors.find((d) => d.doctor.exp_codigo === selectedDoctorId) || null;
+    }, [selectedDoctorId, resolvedDoctors]);
+
+    const doctorsForGrid = useMemo(() => {
+        if (!selectedDoctorId) return paginatedDoctors;
+        return paginatedDoctors.filter((d) => d.doctor.exp_codigo !== selectedDoctorId);
+    }, [selectedDoctorId, paginatedDoctors]);
+
     const totalSpecialties = useMemo(
         () => new Set(resolvedDoctors.flatMap((doctor) => doctor.specialtyPreview)).size,
         [resolvedDoctors],
@@ -2080,49 +2091,87 @@ function DashboardContent() {
                                     <div className="flex h-[400px] flex-col items-center justify-center">
                                         <div className="h-20 w-20 animate-spin rounded-full border-8 border-slate-200 border-t-sky-600" />
                                     </div>
-                                ) : paginatedDoctors.length ? (
-                                    <AnimatedList
-                                        className={
-                                            (isMapVisible || selectedDoctorId)
-                                                ? "grid gap-4 w-full"
-                                                : "grid gap-6 w-full"
-                                        }
-                                        style={{
-                                            gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))`,
-                                        }}
-                                    >
-                                        {paginatedDoctors.map((doctor) => (
-                                            <div key={doctor.doctor.exp_codigo} className="w-full h-full flex justify-center">
-                                                {/* Vista Móvil: Tarjeta horizontal de 3 zonas (Foto | Información | Botones) */}
+                                ) : (selectedDoctorCard || doctorsForGrid.length) ? (
+                                    <div className="space-y-4 w-full">
+                                        {/* 1. Tarjeta del médico seleccionado ocupando todo el ancho de su fila al inicio */}
+                                        {selectedDoctorCard && (
+                                            <div className="w-full">
+                                                {/* Vista Móvil: Tarjeta horizontal de 3 zonas */}
                                                 <div className="block md:hidden w-full">
                                                     <DoctorCardMobile
-                                                        data={doctor}
+                                                        data={selectedDoctorCard}
                                                         onVisit={handleDoctorVisit}
-                                                        isSelected={selectedDoctorId === doctor.doctor.exp_codigo}
+                                                        isSelected={true}
                                                     />
                                                 </div>
 
-                                                {/* Vista Escritorio / Tablet: Tarjeta original Airbnb y Expandida (100% intacta) */}
-                                                <div className="hidden md:block w-full h-full">
+                                                {/* Vista Escritorio / Tablet: Tarjeta Expandida ocupando todo el ancho */}
+                                                <div className="hidden md:block w-full">
                                                     <DoctorCard
-                                                        data={doctor}
+                                                        data={selectedDoctorCard}
                                                         onVisit={handleDoctorVisit}
                                                         onSelect={handleDoctorCardSelect}
                                                         onClose={handleCloseSelectedDoctor}
                                                         onSelectClinic={(idx) => setSelectedClinicIndex(idx)}
                                                         selectedClinicIndex={selectedClinicIndex}
-                                                        variant={selectedDoctorId === doctor.doctor.exp_codigo ? 'expanded' : 'compact'}
-                                                        isHovered={hoveredDoctorId === doctor.doctor.exp_codigo}
-                                                        isSelected={selectedDoctorId === doctor.doctor.exp_codigo}
-                                                        isHighlightedByLocation={selectedBuildingDoctorCodes.has(doctor.doctor.exp_codigo)}
+                                                        variant="expanded"
+                                                        isHovered={hoveredDoctorId === selectedDoctorCard.doctor.exp_codigo}
+                                                        isSelected={true}
+                                                        isHighlightedByLocation={selectedBuildingDoctorCodes.has(selectedDoctorCard.doctor.exp_codigo)}
                                                         highlightedLocationName={selectedBuilding?.name}
-                                                        onMouseEnter={() => setHoveredDoctorId(doctor.doctor.exp_codigo)}
+                                                        onMouseEnter={() => setHoveredDoctorId(selectedDoctorCard.doctor.exp_codigo)}
                                                         onMouseLeave={() => setHoveredDoctorId(null)}
                                                     />
                                                 </div>
                                             </div>
-                                        ))}
-                                    </AnimatedList>
+                                        )}
+
+                                        {/* 2. Abajo de la card seleccionada se muestran los demás médicos con el grid correspondiente */}
+                                        {doctorsForGrid.length > 0 && (
+                                            <AnimatedList
+                                                className={
+                                                    (isMapVisible || selectedDoctorId)
+                                                        ? "grid gap-4 w-full"
+                                                        : "grid gap-6 w-full"
+                                                }
+                                                style={{
+                                                    gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))`,
+                                                }}
+                                            >
+                                                {doctorsForGrid.map((doctor) => (
+                                                    <div key={doctor.doctor.exp_codigo} className="w-full h-full flex justify-center">
+                                                        {/* Vista Móvil: Tarjeta horizontal de 3 zonas */}
+                                                        <div className="block md:hidden w-full">
+                                                            <DoctorCardMobile
+                                                                data={doctor}
+                                                                onVisit={handleDoctorVisit}
+                                                                isSelected={false}
+                                                            />
+                                                        </div>
+
+                                                        {/* Vista Escritorio / Tablet: Tarjeta compacta */}
+                                                        <div className="hidden md:block w-full h-full">
+                                                            <DoctorCard
+                                                                data={doctor}
+                                                                onVisit={handleDoctorVisit}
+                                                                onSelect={handleDoctorCardSelect}
+                                                                onClose={handleCloseSelectedDoctor}
+                                                                onSelectClinic={(idx) => setSelectedClinicIndex(idx)}
+                                                                selectedClinicIndex={selectedClinicIndex}
+                                                                variant="compact"
+                                                                isHovered={hoveredDoctorId === doctor.doctor.exp_codigo}
+                                                                isSelected={false}
+                                                                isHighlightedByLocation={selectedBuildingDoctorCodes.has(doctor.doctor.exp_codigo)}
+                                                                highlightedLocationName={selectedBuilding?.name}
+                                                                onMouseEnter={() => setHoveredDoctorId(doctor.doctor.exp_codigo)}
+                                                                onMouseLeave={() => setHoveredDoctorId(null)}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </AnimatedList>
+                                        )}
+                                    </div>
                                 ) : (
                                     <section className="rounded-4xl border border-slate-200 bg-white p-8 text-center shadow-sm">
                                         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-sky-50 text-sky-700">

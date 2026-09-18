@@ -5,7 +5,9 @@ import { SessionProvider } from 'next-auth/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 
-const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
+const googleClientId =
+  process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
+  '368837690557-95svhq9f1fql5dgu1633979fevv97l3f.apps.googleusercontent.com';
 
 export default function Providers({ children }: Readonly<{ children: React.ReactNode }>) {
   const [queryClient] = useState(

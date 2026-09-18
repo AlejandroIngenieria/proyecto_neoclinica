@@ -8,7 +8,9 @@ import {
 } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { useCitaStore } from '@/store/use-cita-store';
-import { ChevronLeft, MapPin, Video, Home, Stethoscope, ArrowRight, CalendarDays, Building2, BriefcaseMedical, CalendarClock, Activity, ClipboardList, Plus, Loader2, UploadCloud, FileText, X, CheckCircle2, Sparkles, AlertCircle } from 'lucide-react';
+import { ChevronLeft, MapPin, Video, Home, Stethoscope, ArrowRight, CalendarDays, Building2, BriefcaseMedical, CalendarClock, Activity, ClipboardList, Plus, Loader2, UploadCloud, FileText, X, CheckCircle2, Sparkles, AlertCircle, Users, User } from 'lucide-react';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 import { usePacienteTitular, usePacientesByUsuario } from '@/hooks/use-pacientes';
 import type { PacienteSeleccionDto } from '@/types/citas';
 import { PacienteFormModal } from '@/components/paciente-form-modal';
@@ -44,7 +46,8 @@ export function Step2PacienteMotivo() {
     fecha, hora, step,
     pacienteSeleccionado, setPaciente,
     motivo, setMotivo,
-    grupoNombre, grupoId,
+    grupoNombre, grupoId, creandoNuevoGrupo,
+    citasMultiples, pacienteModoCita, setPacienteModoCita, setPacienteCitaMultiple,
     archivos, setArchivos,
     direccionDomicilio, setDireccionDomicilio,
     referenciasDomicilio, setReferenciasDomicilio,
@@ -177,6 +180,31 @@ export function Step2PacienteMotivo() {
     setArchivos(newFiles);
   };
 
+  const isMultiMode = !!(grupoId || creandoNuevoGrupo) && citasMultiples.length > 0;
+
+  const handleModoChange = (modo: 'mismo' | 'variado') => {
+    setPacienteModoCita(modo);
+    if (modo === 'variado') {
+      const defaultPac = pacienteSeleccionado || pacientesFiltrados[0] || null;
+      citasMultiples.forEach(c => {
+        if (!c.paciente && defaultPac) {
+          setPacienteCitaMultiple(c.id, defaultPac);
+        }
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (isMultiMode && pacienteModoCita === 'variado') {
+      const defaultPac = pacienteSeleccionado || pacientesFiltrados[0] || null;
+      citasMultiples.forEach(c => {
+        if (!c.paciente && defaultPac) {
+          setPacienteCitaMultiple(c.id, defaultPac);
+        }
+      });
+    }
+  }, [isMultiMode, pacienteModoCita, citasMultiples, pacienteSeleccionado, pacientesFiltrados, setPacienteCitaMultiple]);
+
   const isInitialLoading = loadingDoctor || (pacientesDisponibles.length === 0 && (loadingPacientesSeleccion || loadingPacientesUsuario || loadingTitular));
 
   if (isInitialLoading) {
@@ -187,9 +215,13 @@ export function Step2PacienteMotivo() {
     return name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase();
   };
 
-  const isComplete = pacienteSeleccionado !== null && (servicioSeleccionado !== null || motivo !== '') && 
+  const isPacienteValid = isMultiMode && pacienteModoCita === 'variado'
+    ? citasMultiples.length > 0 && citasMultiples.every(c => Boolean(c.paciente || pacienteSeleccionado))
+    : pacienteSeleccionado !== null;
+
+  const isComplete = isPacienteValid && (servicioSeleccionado !== null || motivo !== '') && 
     (modalidad !== 'domicilio' || (direccionDomicilio.trim() !== '' && referenciasDomicilio.trim() !== ''));
-  const isSeguimientoVisible = pacienteSeleccionado !== null;
+  const isSeguimientoVisible = isPacienteValid;
 
   return (
     <div className="flex flex-col w-full font-sans pb-4">
@@ -201,50 +233,175 @@ export function Step2PacienteMotivo() {
 
         {/* SECTION 1: PACIENTE */}
         <div>
-          <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-6 tracking-tight">¿Quién asistirá a la consulta?</h2>
-          <div className="flex items-end gap-6 sm:gap-10 overflow-x-auto max-w-full pb-2 scrollbar-none">
-            {pacientesFiltrados.map(pac => {
-              const isSelected = pacienteSeleccionado?.pacCodigo === pac.pacCodigo;
-              return (
-                <button key={pac.pacCodigo} onClick={() => setPaciente(pac)} className="flex flex-col items-center gap-3 group">
-                  <div className={`h-[88px] w-[88px] rounded-full border-[3px] p-1 transition-all ${isSelected ? 'border-blue-600 dark:border-blue-500 shadow-md shadow-blue-600/20' : 'border-transparent'}`}>
-                    <div className={`w-full h-full rounded-full overflow-hidden flex items-center justify-center transition-all ${isSelected ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 group-hover:bg-slate-200 dark:group-hover:bg-slate-700'}`}>
-                      {pac.pacFotoPerfilUrl || pac.pacTitular ? (
-                        <img
-                          src={pac.pacFotoPerfilUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(pac.nombreCompleto)}&background=0D8ABC&color=fff`}
-                          alt={pac.nombreCompleto}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <span className="text-xl font-bold">{getInitials(pac.nombreCompleto)}</span>
-                      )}
-                    </div>
-                  </div>
-                  <span className={`font-bold transition-colors text-[15px] ${isSelected ? 'text-blue-700 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-slate-200'}`}>
-                    {pac.pacTitular ? 'Yo' : pac.nombreCompleto}
-                  </span>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+            <div>
+              <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">¿Quién asistirá a la consulta?</h2>
+              {isMultiMode && (
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Estás agendando un grupo de <strong>{citasMultiples.length} {citasMultiples.length === 1 ? 'cita' : 'citas'}</strong>. Puedes mantener el mismo paciente o asignar uno por cada cita.
+                </p>
+              )}
+            </div>
+
+            {/* Toggle Minimalista Mismo vs Variado (Solo en Grupo de Citas) */}
+            {isMultiMode && (
+              <div className="inline-flex p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700/60 self-start sm:self-auto shrink-0 shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => handleModoChange('mismo')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    pacienteModoCita === 'mismo'
+                      ? 'bg-white dark:bg-[#1E293B] text-slate-900 dark:text-white shadow-xs'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <User className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  <span>Mismo paciente ({citasMultiples.length})</span>
                 </button>
-              )
-            })}
-            <button
-              type="button"
-              onClick={() => setIsAddPacienteOpen(true)}
-              className="flex flex-col items-center gap-3 group pb-0.5"
-            >
-              <div className="h-[80px] w-[80px] rounded-full border-[2px] border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center text-slate-400 dark:text-slate-500 group-hover:border-slate-400 dark:group-hover:border-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors mb-2">
-                <Plus className="h-6 w-6" strokeWidth={2} />
+                <button
+                  type="button"
+                  onClick={() => handleModoChange('variado')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    pacienteModoCita === 'variado'
+                      ? 'bg-white dark:bg-[#1E293B] text-slate-900 dark:text-white shadow-xs'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                  <span>Paciente por cita</span>
+                </button>
               </div>
-              <span className="font-bold text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors text-[13px]">Añadir Familiar</span>
-            </button>
+            )}
           </div>
 
-          {pacientesExcluidosDetalle.length > 0 && (
-            <div className="mt-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/50 flex items-center gap-2.5 text-xs text-amber-800 dark:text-amber-300">
-              <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
-              <span>
-                <strong>{pacientesExcluidosDetalle.map(p => p.pacTitular ? 'Tú (titular)' : p.nombreCompleto).join(', ')}</strong>{' '}
-                no {pacientesExcluidosDetalle.length > 1 ? 'están disponibles' : 'está disponible'} para este turno porque ya tiene una cita agendada a esta hora.
-              </span>
+          {/* MODO MISMO PACIENTE (O CITA INDIVIDUAL) */}
+          {(!isMultiMode || pacienteModoCita === 'mismo') && (
+            <div>
+              <div className="flex items-end gap-6 sm:gap-10 overflow-x-auto max-w-full pb-2 scrollbar-none">
+                {pacientesFiltrados.map(pac => {
+                  const isSelected = pacienteSeleccionado?.pacCodigo === pac.pacCodigo;
+                  return (
+                    <button key={pac.pacCodigo} onClick={() => setPaciente(pac)} className="flex flex-col items-center gap-3 group">
+                      <div className={`h-[88px] w-[88px] rounded-full border-[3px] p-1 transition-all ${isSelected ? 'border-blue-600 dark:border-blue-500 shadow-md shadow-blue-600/20' : 'border-transparent'}`}>
+                        <div className={`w-full h-full rounded-full overflow-hidden flex items-center justify-center transition-all ${isSelected ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 group-hover:bg-slate-200 dark:group-hover:bg-slate-700'}`}>
+                          {pac.pacFotoPerfilUrl || pac.pacTitular ? (
+                            <img
+                              src={pac.pacFotoPerfilUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(pac.nombreCompleto)}&background=0D8ABC&color=fff`}
+                              alt={pac.nombreCompleto}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <span className="text-xl font-bold">{getInitials(pac.nombreCompleto)}</span>
+                          )}
+                        </div>
+                      </div>
+                      <span className={`font-bold transition-colors text-[15px] ${isSelected ? 'text-blue-700 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-slate-200'}`}>
+                        {pac.pacTitular ? 'Yo' : pac.nombreCompleto}
+                      </span>
+                    </button>
+                  )
+                })}
+                <button
+                  type="button"
+                  onClick={() => setIsAddPacienteOpen(true)}
+                  className="flex flex-col items-center gap-3 group pb-0.5"
+                >
+                  <div className="h-[80px] w-[80px] rounded-full border-[2px] border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center text-slate-400 dark:text-slate-500 group-hover:border-slate-400 dark:group-hover:border-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors mb-2">
+                    <Plus className="h-6 w-6" strokeWidth={2} />
+                  </div>
+                  <span className="font-bold text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors text-[13px]">Añadir Familiar</span>
+                </button>
+              </div>
+
+              {pacientesExcluidosDetalle.length > 0 && (
+                <div className="mt-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/50 flex items-center gap-2.5 text-xs text-amber-800 dark:text-amber-300">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span>
+                    <strong>{pacientesExcluidosDetalle.map(p => p.pacTitular ? 'Tú (titular)' : p.nombreCompleto).join(', ')}</strong>{' '}
+                    no {pacientesExcluidosDetalle.length > 1 ? 'están disponibles' : 'está disponible'} para este turno porque ya tiene una cita agendada a esta hora.
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* MODO PACIENTE POR CITA (VARIADOS) */}
+          {isMultiMode && pacienteModoCita === 'variado' && (
+            <div className="space-y-3 pt-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                {citasMultiples.map((cita, idx) => {
+                  const [h, m] = cita.hora.split(':');
+                  let hourNum = parseInt(h);
+                  const ampm = hourNum >= 12 ? 'PM' : 'AM';
+                  hourNum = hourNum % 12 || 12;
+                  const displayTime = `${hourNum}:${m} ${ampm}`;
+                  const displayDate = format(cita.fecha, "EEEE d 'de' MMMM", { locale: es });
+                  const assignedPac = cita.paciente || pacienteSeleccionado;
+
+                  return (
+                    <div
+                      key={cita.id}
+                      className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] shadow-2xs space-y-3"
+                    >
+                      <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-2.5">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-6 h-6 rounded-lg bg-indigo-600 text-white text-[11px] font-black flex items-center justify-center shrink-0">
+                            {idx + 1}
+                          </span>
+                          <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white capitalize truncate">
+                            {displayDate}
+                          </span>
+                        </div>
+                        <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md shrink-0">
+                          {displayTime}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-xs font-bold text-slate-600 dark:text-slate-300">
+                          {assignedPac?.pacFotoPerfilUrl ? (
+                            <img src={assignedPac.pacFotoPerfilUrl} alt={assignedPac.nombreCompleto} className="w-full h-full object-cover" />
+                          ) : assignedPac?.nombreCompleto ? (
+                            <span>{getInitials(assignedPac.nombreCompleto)}</span>
+                          ) : (
+                            <span>?</span>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">
+                            Paciente para esta consulta:
+                          </label>
+                          <select
+                            value={assignedPac?.pacCodigo || ''}
+                            onChange={(e) => {
+                              const chosen = pacientesDisponibles.find(p => p.pacCodigo === e.target.value) || null;
+                              setPacienteCitaMultiple(cita.id, chosen);
+                            }}
+                            className="w-full bg-slate-50 dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500/20 cursor-pointer"
+                          >
+                            <option value="" disabled>Selecciona un paciente</option>
+                            {pacientesDisponibles.map((p) => (
+                              <option key={p.pacCodigo} value={p.pacCodigo}>
+                                {p.pacTitular ? `Yo (${p.nombreCompleto})` : p.nombreCompleto}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddPacienteOpen(true)}
+                  className="inline-flex items-center gap-2 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:underline cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Añadir otro familiar a la cuenta
+                </button>
+              </div>
             </div>
           )}
 
@@ -441,14 +598,24 @@ export function Step2PacienteMotivo() {
       {/* Footer Next Button ALWAYS VISIBLE BUT BLOCKED IF NOT COMPLETE */}
       <div className="sticky bottom-0 z-30 bg-transparent flex flex-col-reverse sm:flex-row justify-between items-center gap-3 py-4 border-t border-slate-200/60 dark:border-slate-800/40 mt-8">
         <button
-          onClick={prevStep}
-          className="w-full sm:w-auto font-bold py-3.5 px-6 rounded-xl transition-all flex items-center justify-center gap-2 bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm text-sm sm:text-base"
+          onClick={() => {
+            window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
+            prevStep();
+          }}
+          className="w-full sm:w-auto font-bold py-3.5 px-6 rounded-xl transition-all flex items-center justify-center gap-2 bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm text-sm sm:text-base cursor-pointer"
         >
           <ChevronLeft className="h-5 w-5" /> Regresar al paso anterior
         </button>
 
         <button
-          onClick={nextStep}
+          onClick={() => {
+            window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
+            nextStep();
+          }}
           disabled={!isComplete}
           className={`w-full sm:w-auto font-bold py-3.5 px-8 sm:px-10 rounded-xl transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${isComplete
             ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-md cursor-pointer'

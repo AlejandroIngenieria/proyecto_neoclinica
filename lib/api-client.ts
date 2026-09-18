@@ -5,7 +5,11 @@ import type { Pais, Departamento, Municipio } from '@/types';
 
 /** Cliente para el backend de autenticación y servicios geográficos. */
 export const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5010',
+  baseURL:
+    process.env.NEXT_PUBLIC_API_URL ||
+    (process.env.NODE_ENV === 'production'
+      ? 'https://salud-ya-api-eqcvg0eggvg6axed.canadacentral-01.azurewebsites.net'
+      : 'http://localhost:5010'),
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
 });

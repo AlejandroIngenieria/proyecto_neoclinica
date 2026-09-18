@@ -91,7 +91,11 @@ function resolveAuthUser(user: AuthUserType) {
   };
 }
 
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? '';
+const apiBaseUrl =
+  process.env.NEXT_PUBLIC_API_URL ||
+  (process.env.NODE_ENV === 'production'
+    ? 'https://salud-ya-api-eqcvg0eggvg6axed.canadacentral-01.azurewebsites.net'
+    : 'http://localhost:5010');
 
 async function postLoginWithRetries(
   correo: string,

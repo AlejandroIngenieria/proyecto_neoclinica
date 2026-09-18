@@ -20,7 +20,8 @@ export function WizardHeader() {
     fecha, hora, step, setStep,
     pacienteSeleccionado, motivo,
     tipoPagoId, billeteraItemId,
-    citaConfirmada
+    citaConfirmada,
+    grupoId, creandoNuevoGrupo, citasMultiples, omitirPago, pacienteModoCita
   } = useCitaStore();
 
   const { data: doctor } = useDoctorByCode(codMedico || "");
@@ -29,9 +30,19 @@ export function WizardHeader() {
     return null;
   }
 
-  const isStep1Done = step > 1 || !!(modalidad && servicioSeleccionado && fecha && hora);
-  const isStep2Done = step > 2 || (isStep1Done && !!(pacienteSeleccionado && motivo));
-  const isStep3Done = step > 3 || (isStep2Done && !!(tipoPagoId || billeteraItemId));
+  const isMultiMode = !!(grupoId || creandoNuevoGrupo) && citasMultiples.length > 0;
+
+  const isStep1Done = step > 1 || (isMultiMode ? citasMultiples.length > 0 : !!(modalidad && fecha && hora));
+  const isStep2Done = step > 2 || (isStep1Done && (
+    isMultiMode && pacienteModoCita === 'variado'
+      ? citasMultiples.length > 0 && citasMultiples.every(c => !!(c.paciente || pacienteSeleccionado))
+      : !!pacienteSeleccionado
+  ));
+  const isStep3Done = step > 3 || (isStep2Done && (
+    isMultiMode && omitirPago
+      ? true
+      : !!(tipoPagoId || billeteraItemId)
+  ));
   const isStep4Done = step === 4;
 
   const stepsList: { num: CitaStep; label: string; icon: any; isDone: boolean; isCurrent: boolean; canNavigate: boolean }[] = [

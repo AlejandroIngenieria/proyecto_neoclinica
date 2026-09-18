@@ -465,7 +465,8 @@ function CitasContent() {
     return Array.from(ids);
   }, [citas]);
 
-  const { data: gruposMap } = useGruposMap(pacientePrincipal?.pacCodigo || null, medicosUnicosIds);
+  const activePacCodigo = selectedPacienteId || pacientePrincipal?.pacCodigo || null;
+  const { data: gruposMap } = useGruposMap(activePacCodigo, medicosUnicosIds);
 
   const citasConTemas = useMemo(() => {
     const now = new Date();
@@ -578,6 +579,8 @@ function CitasContent() {
   const gruposUnicos = useMemo(() => {
     const map = new Map<string, { id: string; tema: string; medicoNombre?: string }>();
     citasConTemas.forEach((c) => {
+      // Filtrar únicamente los grupos del paciente actual si hay paciente seleccionado
+      if (selectedPacienteId && c.ctaCodpac !== selectedPacienteId) return;
       const normId = (c.ctaGrupoId || '').toLowerCase().trim();
       if (normId && c.grupoTema && !map.has(normId)) {
         map.set(normId, {
@@ -591,7 +594,12 @@ function CitasContent() {
       id: g.id,
       tema: g.medicoNombre ? `${g.tema} - ${g.medicoNombre}` : g.tema,
     }));
-  }, [citasConTemas]);
+  }, [citasConTemas, selectedPacienteId]);
+
+  // Limpiar grupo seleccionado al cambiar de paciente
+  useEffect(() => {
+    setGrupoSeleccionado('');
+  }, [selectedPacienteId]);
 
   // Citas categorizadas para el Tab actual y Filtros activos
   const citasFiltradas = useMemo(() => {
@@ -1295,7 +1303,7 @@ function CitasContent() {
                         )}
                       </AnimatePresence>
 
-                      {/* 4. Tema de Seguimiento */}
+                      {/* 4. Grupos de Citas */}
                       <AnimatePresence>
                         {(isFiltersOpen || grupoSeleccionado !== '') && (
                           <motion.div
@@ -1312,10 +1320,10 @@ function CitasContent() {
                               onChange={setGrupoSeleccionado}
                               onClear={() => setGrupoSeleccionado('')}
                               options={[
-                                { value: '', label: 'Temas de Seguimiento' },
+                                { value: '', label: 'Grupos de citas' },
                                 ...gruposUnicos.map((g) => ({ value: g.id, label: g.tema })),
                               ]}
-                              icon={<RefreshCw className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
+                              icon={<FolderPlus className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
                             />
                           </motion.div>
                         )}

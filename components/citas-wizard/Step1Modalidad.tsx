@@ -1,5 +1,6 @@
 import { useRouter } from 'next/navigation';
 import { useState, useMemo, useEffect } from 'react';
+import { toast } from 'sonner';
 import { useModalidades, useClinicas, useAreasDomicilio, useHorarios, useHorasOcupadas, useServiciosMedico, useGruposCita, usePacientesSeleccion, useAllCitasPacientes } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { usePacienteTitular } from '@/hooks/use-pacientes';
@@ -25,7 +26,8 @@ export function Step1Modalidad() {
     tipoPagoId, setTipoPagoId,
     creandoNuevoGrupo, nuevoGrupoTema, setCreandoNuevoGrupo, setNuevoGrupoTema,
     solicitudIntercambio, setSolicitudIntercambio,
-    pacientesExcluidos, setPacientesExcluidos, addPacienteExcluido
+    pacientesExcluidos, setPacientesExcluidos, addPacienteExcluido,
+    citasMultiples, addCitaMultiple, removeCitaMultiple, clearCitasMultiples
   } = useCitaStore();
   const router = useRouter();
 
@@ -442,6 +444,19 @@ export function Step1Modalidad() {
     return true;
   }, [fecha, hora]);
 
+  const isScheduleEnabled =
+    (modalidad === 'virtual') ||
+    (modalidad === 'presencial' && clinicaSeleccionada) ||
+    (modalidad === 'domicilio' && areaDomicilio);
+
+  const isMultiMode = !!(grupoId || creandoNuevoGrupo);
+  const fechasCitasMultiples = useMemo(() => citasMultiples.map(c => c.fecha), [citasMultiples]);
+
+  const isDateValidForBooking = !!(fecha && !isPastDateSelected);
+  const isComplete = isMultiMode
+    ? isScheduleEnabled && citasMultiples.length > 0 && (!creandoNuevoGrupo || nuevoGrupoTema.trim().length > 0)
+    : isScheduleEnabled && isDateValidForBooking && !!hora && isHoraValid;
+
   if (isLoading) {
     return (
       <div className="py-12"><NeoLoader fullScreenPortal={false} /></div>
@@ -458,27 +473,19 @@ export function Step1Modalidad() {
     }
   };
 
-  const isScheduleEnabled =
-    (modalidad === 'virtual') ||
-    (modalidad === 'presencial' && clinicaSeleccionada) ||
-    (modalidad === 'domicilio' && areaDomicilio);
-
-  const isDateValidForBooking = !!(fecha && !isPastDateSelected);
-  const isComplete = isScheduleEnabled && isDateValidForBooking && !!hora && isHoraValid;
-
   return (
     <div className="flex flex-col w-full font-sans pb-4">
 
-      {/* 1. TEMA O GRUPO DE SEGUIMIENTO MÉDICO */}
+      {/* 1. AGRUPAR CITA */}
       <div className="mb-6 bg-white dark:bg-[#1E293B] rounded-2xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-2">
           <div>
             <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <FolderPlus className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-              Tema o Grupo de Seguimiento Médico
+              Agrupar cita
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Asocia esta cita a un tratamiento continuo o crea un nuevo tema de seguimiento con este especialista.
+              Asocia esta cita a un tratamiento continuo o crea un nuevo grupo de citas con este especialista.
             </p>
           </div>
           {(grupoId || creandoNuevoGrupo) && (
@@ -491,15 +498,33 @@ export function Step1Modalidad() {
               }}
               className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline self-start sm:self-auto cursor-pointer"
             >
-              Desvincular tema (Cita individual)
+              Desvincular (Cita individual)
             </button>
           )}
         </div>
 
         {gruposUnicos.length > 0 ? (
           <div className="space-y-4">
-            {/* Opciones con temas existentes */}
+            {/* Opciones con grupos existentes */}
             <div className="flex flex-wrap gap-2">
+              {/* Primero: Cita individual */}
+              <button
+                type="button"
+                onClick={() => {
+                  setTemaSeguimiento(null, null);
+                  setCreandoNuevoGrupo(false);
+                  setNuevoGrupoTema('');
+                }}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
+                  !grupoId && !creandoNuevoGrupo
+                    ? 'bg-slate-800 text-white dark:bg-slate-700 border-slate-800 dark:border-slate-700 shadow-sm'
+                    : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                }`}
+              >
+                <span>Cita individual</span>
+              </button>
+
+              {/* Segundo: Agrupar cita */}
               <button
                 type="button"
                 onClick={() => {
@@ -515,9 +540,10 @@ export function Step1Modalidad() {
                 }`}
               >
                 <FolderPlus className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                <span>Continuar tema existente ({gruposUnicos.length})</span>
+                <span>Agrupar cita ({gruposUnicos.length})</span>
               </button>
 
+              {/* Tercero: Crear grupo de citas */}
               <button
                 type="button"
                 onClick={() => {
@@ -530,40 +556,24 @@ export function Step1Modalidad() {
                 }`}
               >
                 <Plus className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                <span>Iniciar nuevo tema de seguimiento</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setTemaSeguimiento(null, null);
-                  setCreandoNuevoGrupo(false);
-                  setNuevoGrupoTema('');
-                }}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
-                  !grupoId && !creandoNuevoGrupo
-                    ? 'bg-slate-800 text-white dark:bg-slate-700 border-slate-800 dark:border-slate-700 shadow-sm'
-                    : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                }`}
-              >
-                <span>Cita individual (Sin tema)</span>
+                <span>Crear grupo de citas</span>
               </button>
             </div>
 
-            {/* Lista de temas existentes para seleccionar */}
+            {/* Lista de grupos existentes para seleccionar */}
             {!creandoNuevoGrupo && (
               <div className="space-y-3 pt-1">
                 {grupoId && (
                   <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-purple-50/80 dark:bg-purple-950/40 border border-purple-200/80 dark:border-purple-800/50 text-xs font-bold text-purple-800 dark:text-purple-300">
                     <Check className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                    <span>Tema vinculado: <strong>{grupoNombre || 'Seleccionado'}</strong>. Modalidad, servicio y método de pago preconfigurados automáticamente.</span>
+                    <span>Grupo seleccionado: <strong>{grupoNombre || 'Seleccionado'}</strong>. Modalidad, servicio y método de pago preconfigurados automáticamente.</span>
                   </div>
                 )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {gruposUnicos.map((g) => {
                     const isSelected = grupoId === g.grupoId;
-                    const topicTitle = g.titulo || g.descripcion || 'Tema de Seguimiento';
+                    const topicTitle = g.titulo || g.descripcion || 'Grupo de Citas';
                     return (
                       <button
                         key={g.grupoId}
@@ -578,7 +588,7 @@ export function Step1Modalidad() {
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5 text-purple-600 dark:text-purple-400 mb-1">
                             <FolderPlus className="w-4 h-4 shrink-0" />
-                            <span className="text-[10px] font-black uppercase tracking-wider">Tema de Seguimiento</span>
+                            <span className="text-[10px] font-black uppercase tracking-wider">Grupo de Citas</span>
                           </div>
                           <h4 className="font-bold text-sm truncate text-slate-900 dark:text-white">
                             {topicTitle}
@@ -590,7 +600,7 @@ export function Step1Modalidad() {
                               </span>
                             )}
                             <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                              {g.citaId ? 'Continuidad de citas' : 'Tema activo'}
+                              {g.citaId ? 'Continuidad de citas' : 'Grupo activo'}
                             </span>
                           </div>
                         </div>
@@ -606,11 +616,11 @@ export function Step1Modalidad() {
               </div>
             )}
 
-            {/* Formulario para ingresar nuevo tema */}
+            {/* Formulario para ingresar nuevo grupo */}
             {creandoNuevoGrupo && (
               <div className="pt-2">
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
-                  Nombre del nuevo tema o tratamiento:
+                  Nombre del nuevo grupo de citas o tratamiento:
                 </label>
                 <div className="flex gap-2 max-w-lg">
                   <input
@@ -626,9 +636,10 @@ export function Step1Modalidad() {
             )}
           </div>
         ) : (
-          /* Si el paciente no tiene temas previos con este médico */
+          /* Si el paciente no tiene grupos previos con este médico */
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-3">
+              {/* Primero: Cita individual */}
               <button
                 type="button"
                 onClick={() => {
@@ -642,9 +653,21 @@ export function Step1Modalidad() {
                     : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
                 }`}
               >
-                <span>Cita individual estándar</span>
+                <span>Cita individual</span>
               </button>
 
+              {/* Segundo: Agrupar cita (deshabilitado sin grupos previos) */}
+              <button
+                type="button"
+                disabled
+                className="px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-600 opacity-60 cursor-not-allowed"
+                title="No tienes grupos de citas previos con este especialista"
+              >
+                <FolderPlus className="w-3.5 h-3.5" />
+                <span>Agrupar cita (Sin grupos previos)</span>
+              </button>
+
+              {/* Tercero: Crear grupo de citas */}
               <button
                 type="button"
                 onClick={() => {
@@ -656,15 +679,15 @@ export function Step1Modalidad() {
                     : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
                 }`}
               >
-                <FolderPlus className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                <span>Asociar a un nuevo tema de seguimiento</span>
+                <Plus className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                <span>Crear grupo de citas</span>
               </button>
             </div>
 
             {creandoNuevoGrupo && (
               <div className="pt-2">
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
-                  Nombre del nuevo tema o tratamiento:
+                  Nombre del nuevo grupo de citas o tratamiento:
                 </label>
                 <div className="flex gap-2 max-w-lg">
                   <input
@@ -926,11 +949,13 @@ export function Step1Modalidad() {
                     disabled={disabledDays}
                     modifiers={{
                       citaTema: fechasTemaSeguimiento,
+                      citaProgramada: fechasCitasMultiples,
                     }}
                     modifiersClassNames={{
                       selected: 'bg-blue-600 dark:bg-blue-500 text-white hover:bg-blue-700 dark:hover:bg-blue-600 font-bold shadow-md rounded-xl',
                       today: 'font-bold text-blue-600 dark:text-blue-400',
                       citaTema: '!bg-emerald-100 dark:!bg-emerald-950/80 !text-emerald-800 dark:!text-emerald-200 !border-2 !border-emerald-500 font-black rounded-xl hover:!bg-emerald-200 dark:hover:!bg-emerald-900',
+                      citaProgramada: '!bg-indigo-100 dark:!bg-indigo-950/80 !text-indigo-800 dark:!text-indigo-200 !border-2 !border-indigo-500 font-black rounded-xl hover:!bg-indigo-200 dark:hover:!bg-indigo-900',
                     }}
                     classNames={{
                       day: 'p-0 text-[14px] sm:text-[15px] dark:text-slate-200',
@@ -947,7 +972,14 @@ export function Step1Modalidad() {
                   {fechasTemaSeguimiento.length > 0 && (
                     <div className="mt-3 flex items-center gap-2 text-xs font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-50/90 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/70 px-3 py-2 rounded-xl max-w-xs shadow-2xs">
                       <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
-                      <span>Días en verde: Citas del tema de seguimiento</span>
+                      <span>Días en verde: Citas del grupo de citas</span>
+                    </div>
+                  )}
+
+                  {isMultiMode && fechasCitasMultiples.length > 0 && (
+                    <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-indigo-800 dark:text-indigo-300 bg-indigo-50/90 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/70 px-3 py-2 rounded-xl max-w-xs shadow-2xs">
+                      <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 shrink-0" />
+                      <span>Días en índigo: Citas seleccionadas ({citasMultiples.length}/5)</span>
                     </div>
                   )}
                 </div>
@@ -964,10 +996,10 @@ export function Step1Modalidad() {
                     <div className="flex flex-col gap-3 p-4 rounded-2xl bg-amber-50/80 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-800/80 text-amber-900 dark:text-amber-200 shadow-2xs">
                       <div className="flex items-center gap-2 font-bold text-sm text-amber-900 dark:text-amber-200">
                         <FolderPlus className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
-                        <span>Historial: Cita previa del tema de seguimiento</span>
+                        <span>Historial: Cita previa de este grupo</span>
                       </div>
                       <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
-                        Esta fecha ({format(fecha, "dd 'de' MMMM, yyyy", { locale: es })}) corresponde a una cita previa del tema <strong>{grupoNombre || 'Tema de Seguimiento'}</strong>.
+                        Esta fecha ({format(fecha, "dd 'de' MMMM, yyyy", { locale: es })}) corresponde a una cita previa del grupo <strong>{grupoNombre || 'Grupo de Citas'}</strong>.
                       </p>
                       {horasTemaEnFecha.length > 0 && (
                         <div className="p-3 bg-white dark:bg-[#0F172A] rounded-xl border border-amber-200 dark:border-amber-800 flex items-center justify-between text-xs">
@@ -984,12 +1016,12 @@ export function Step1Modalidad() {
                     </div>
                   ) : (
                     <>
-                      {/* Banner si la fecha futura tiene una cita agendada de este tema */}
+                      {/* Banner si la fecha futura tiene una cita agendada de este grupo */}
                       {horasTemaEnFecha.length > 0 && (
                         <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-900 dark:text-emerald-200 flex items-start gap-2.5 shadow-2xs">
                           <FolderPlus className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
                           <div>
-                            <p className="font-bold">Cita de este tema ya agendada en esta fecha:</p>
+                            <p className="font-bold">Cita de este grupo ya agendada en esta fecha:</p>
                             <p className="text-[11px] text-emerald-700 dark:text-emerald-300 mt-0.5">
                               Horario reservado: <strong>{horasTemaEnFecha.join(', ')}</strong>. Este horario se encuentra bloqueado para evitar duplicados.
                             </p>
@@ -1031,7 +1063,9 @@ export function Step1Modalidad() {
                       {availableTimeSlots.length > 0 ? (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 h-[320px] overflow-y-auto pr-2 pt-7 pb-2 px-1 custom-scrollbar content-start">
                           {availableTimeSlots.map(({ time: slot, disabled, isTemaSlot, isMiCita, isPastHour, isOccupiedByOther }) => {
-                            const isSelected = hora === slot;
+                            const isSelected = isMultiMode
+                              ? fecha && citasMultiples.some(c => c.fecha.toDateString() === fecha.toDateString() && c.hora.substring(0, 5) === slot.substring(0, 5))
+                              : hora === slot;
 
                             // Format to 12h AM/PM
                             const [h, m] = slot.split(':');
@@ -1046,7 +1080,7 @@ export function Step1Modalidad() {
                                 <div
                                   key={slot}
                                   className="py-2.5 px-3 sm:px-4 border-2 border-emerald-500/80 bg-emerald-50/90 dark:bg-emerald-950/60 dark:border-emerald-600 rounded-xl text-left text-xs sm:text-sm font-bold text-emerald-900 dark:text-emerald-200 opacity-90 cursor-not-allowed shadow-xs flex flex-col justify-between"
-                                  title="Este horario ya está agendado para este tema de seguimiento"
+                                  title="Este horario ya está agendado para este grupo de citas"
                                 >
                                   <div className="flex items-center justify-between gap-1">
                                     <span>{displayTime}</span>
@@ -1135,41 +1169,63 @@ export function Step1Modalidad() {
 
                             // CASO REGULAR DISPONIBLE O PASADO
                             return (
-                              <label
+                              <button
                                 key={slot}
-                                className={`block shrink-0 ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                                type="button"
+                                disabled={disabled}
                                 title={isPastHour ? 'Esta hora ya transcurrió hoy' : disabled ? 'Horario no disponible' : ''}
-                              >
-                                <input
-                                  type="radio"
-                                  name="time"
-                                  value={slot}
-                                  checked={isSelected}
-                                  onChange={() => {
-                                    if (!disabled) {
-                                      setHora(slot);
-                                      setPacientesExcluidos([]);
+                                onClick={() => {
+                                  if (disabled) return;
+                                  if (isMultiMode) {
+                                    if (!fecha) return;
+                                    const existing = citasMultiples.find(
+                                      c => c.fecha.toDateString() === fecha.toDateString() && c.hora.substring(0, 5) === slot.substring(0, 5)
+                                    );
+                                    if (existing) {
+                                      removeCitaMultiple(existing.id);
+                                      toast.info('Cita removida del grupo');
+                                    } else {
+                                      if (citasMultiples.length >= 5) {
+                                        toast.warning('Máximo 5 citas por grupo');
+                                        return;
+                                      }
+                                      const ok = addCitaMultiple(fecha, slot);
+                                      if (ok) {
+                                        toast.success(`Cita agregada (${citasMultiples.length + 1}/5)`);
+                                      }
                                     }
-                                  }}
-                                  disabled={disabled}
-                                  className="peer sr-only"
-                                />
-                                <div className={`py-3 px-3 sm:px-4 border rounded-xl text-left text-xs sm:text-sm font-semibold transition-all ${isSelected
-                                  ? 'border-blue-600/50 bg-blue-50/70 dark:bg-blue-900/30 dark:border-blue-500/50 text-slate-900 dark:text-white shadow-sm'
+                                  } else {
+                                    setHora(slot);
+                                    setPacientesExcluidos([]);
+                                  }
+                                }}
+                                className={`w-full py-3 px-3 sm:px-4 border rounded-xl text-left text-xs sm:text-sm font-semibold transition-all ${
+                                  disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer active:scale-[0.98]'
+                                } ${isSelected
+                                  ? isMultiMode
+                                    ? 'border-indigo-600 bg-indigo-50/90 dark:bg-indigo-900/40 dark:border-indigo-500 text-indigo-950 dark:text-white shadow-sm ring-2 ring-indigo-500/30'
+                                    : 'border-blue-600/50 bg-blue-50/70 dark:bg-blue-900/30 dark:border-blue-500/50 text-slate-900 dark:text-white shadow-sm'
                                   : disabled
                                     ? 'border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-[#0B1120] text-slate-400 dark:text-slate-600'
                                     : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                                  }`}>
-                                  <div className="flex items-center justify-between">
-                                    <span>{displayTime}</span>
-                                    {isPastHour && (
-                                      <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-200/60 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-                                        Pasada
-                                      </span>
-                                    )}
-                                  </div>
+                                }`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className={isSelected && isMultiMode ? 'font-bold text-indigo-700 dark:text-indigo-300' : ''}>
+                                    {displayTime}
+                                  </span>
+                                  {isSelected && isMultiMode && (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white px-2 py-0.5 rounded-md shadow-2xs">
+                                      <Check className="w-3 h-3 stroke-[3]" /> Seleccionada
+                                    </span>
+                                  )}
+                                  {isPastHour && (
+                                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-200/60 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                                      Pasada
+                                    </span>
+                                  )}
                                 </div>
-                              </label>
+                              </button>
                             );
                           })}
                         </div>
@@ -1192,6 +1248,96 @@ export function Step1Modalidad() {
           )}
         </div>
       </div>
+
+      {/* Panel de Citas del Grupo (Modo Multi-Cita) */}
+      {isMultiMode && (
+        <div className="mt-6 bg-white dark:bg-[#1E293B] rounded-2xl p-5 sm:p-6 border border-indigo-200/80 dark:border-indigo-900/50 shadow-sm animate-in fade-in duration-200">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-2">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800/60 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
+                <Layers className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  Citas seleccionadas en este grupo
+                  <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
+                    citasMultiples.length >= 5
+                      ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
+                      : 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300'
+                  }`}>
+                    {citasMultiples.length}/5 citas
+                  </span>
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  {citasMultiples.length === 0
+                    ? 'Elige fechas en el calendario y horarios disponibles para apartar varias citas a la vez.'
+                    : citasMultiples.length >= 5
+                      ? 'Has alcanzado el límite máximo de 5 citas por grupo.'
+                      : `Puedes agregar hasta ${5 - citasMultiples.length} ${5 - citasMultiples.length === 1 ? 'cita adicional' : 'citas adicionales'} seleccionando otra fecha u horario.`}
+                </p>
+              </div>
+            </div>
+            {citasMultiples.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  clearCitasMultiples();
+                  toast.info('Se han limpiado las citas seleccionadas');
+                }}
+                className="text-xs font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 hover:underline self-start sm:self-auto cursor-pointer"
+              >
+                Limpiar todas ({citasMultiples.length})
+              </button>
+            )}
+          </div>
+
+          {citasMultiples.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+              {citasMultiples.map((c, idx) => {
+                const [h, m] = c.hora.split(':');
+                let hourNum = parseInt(h);
+                const ampm = hourNum >= 12 ? 'PM' : 'AM';
+                hourNum = hourNum % 12 || 12;
+                const displayTime = `${hourNum}:${m} ${ampm}`;
+                const displayDate = format(c.fecha, "EEEE d 'de' MMMM", { locale: es });
+
+                return (
+                  <div
+                    key={c.id}
+                    className="flex items-center justify-between gap-3 p-3 rounded-xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/40 dark:bg-indigo-950/20 text-xs font-medium text-slate-800 dark:text-slate-200 transition-all hover:border-indigo-300 dark:hover:border-indigo-700 shadow-2xs"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="w-6 h-6 rounded-lg bg-indigo-600 text-white text-[11px] font-black flex items-center justify-center shrink-0 shadow-2xs">
+                        {idx + 1}
+                      </span>
+                      <div className="truncate">
+                        <p className="font-bold text-slate-900 dark:text-white capitalize truncate">{displayDate}</p>
+                        <p className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 mt-0.5">{displayTime}</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        removeCitaMultiple(c.id);
+                        toast.info('Cita removida del grupo');
+                      }}
+                      className="w-7 h-7 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                      title="Quitar esta cita"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-6 text-xs text-slate-500 dark:text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-900/30">
+              <CalendarClock className="w-6 h-6 mx-auto mb-1.5 text-slate-400 dark:text-slate-500 opacity-80" />
+              Selecciona una fecha y luego un horario arriba para agregar la primera cita del grupo.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Footer Next Button ALWAYS VISIBLE BUT BLOCKED IF NOT COMPLETE */}
       <div className="sticky bottom-0 z-30 bg-transparent flex justify-end items-center py-4 border-t border-slate-200/60 dark:border-slate-800/40 mt-8">
@@ -1241,9 +1387,19 @@ export function Step1Modalidad() {
           horaDisplay={citaConflictoSeleccionada.horaDisplay}
           slotRaw={citaConflictoSeleccionada.slotRaw}
           codMedicoActual={codMedico || ''}
-          medicoNombreActual={doctor ? `${doctor.exp_primer_nom || ''} ${doctor.exp_primer_ape || ''}`.trim() : ''}
           onAgendarDeTodosModos={(slotRaw, pacCodExcluido) => {
-            setHora(slotRaw);
+            if (isMultiMode && fecha) {
+              if (citasMultiples.length >= 5) {
+                toast.warning('Máximo 5 citas por grupo');
+                return;
+              }
+              const ok = addCitaMultiple(fecha, slotRaw);
+              if (ok) {
+                toast.success(`Cita agregada (${citasMultiples.length + 1}/5)`);
+              }
+            } else {
+              setHora(slotRaw);
+            }
             if (pacCodExcluido) {
               setPacientesExcluidos([pacCodExcluido]);
             }

@@ -31,6 +31,8 @@ import {
   Video,
   Sparkles,
   ArrowLeftRight,
+  User,
+  CheckCircle2,
 } from 'lucide-react';
 import type { CrearCitaRequest } from '@/types/citas';
 import { format } from 'date-fns';
@@ -46,7 +48,8 @@ export function Step4Confirmacion() {
     archivos, prevStep, tipoPagoId, billeteraItemId,
     comprobanteTransferencia, referenciaTransferencia,
     direccionDomicilio, referenciasDomicilio, recompensaSeleccionada, reset,
-    setCitaConfirmada, solicitudIntercambio
+    setCitaConfirmada, solicitudIntercambio,
+    citasMultiples, pacienteModoCita, omitirPago
   } = useCitaStore();
 
   const { mutateAsync: createCita } = useCreateCita();
@@ -64,6 +67,9 @@ export function Step4Confirmacion() {
   const [createdCitaId, setCreatedCitaId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const isMultiMode = !!(grupoId || creandoNuevoGrupo) && citasMultiples.length > 0;
+  const countCitas = isMultiMode ? citasMultiples.length : 1;
+
   // Pricing calculations reales basados en el servicio o la clínica
   const precioBase = servicioSeleccionado
     ? servicioSeleccionado.costoSinIva
@@ -74,6 +80,10 @@ export function Step4Confirmacion() {
   const total = servicioSeleccionado
     ? servicioSeleccionado.costoTotal
     : (precioBase + iva);
+
+  const subtotalGeneral = precioBase * countCitas;
+  const ivaGeneral = iva * countCitas;
+  const totalGeneral = total * countCitas;
 
   const getInitials = (name: string) => {
     if (!name) return '';
@@ -96,6 +106,138 @@ export function Step4Confirmacion() {
   };
 
   const handleConfirm = async () => {
+    if (isMultiMode) {
+      if (!codMedico || citasMultiples.length === 0 || !modalidad) return;
+      if (!omitirPago && !tipoPagoId) return;
+      if (pacienteModoCita === 'mismo' && !pacienteSeleccionado) return;
+      if (pacienteModoCita === 'variado' && !citasMultiples.every(c => Boolean(c.paciente || pacienteSeleccionado))) return;
+
+      setIsSubmitting(true);
+      setError(null);
+      setSubmitStatusText('Preparando grupo de citas...');
+
+      try {
+        // 0. Crear grupo si es nuevo
+        let finalGrupoId = grupoId || undefined;
+        if (creandoNuevoGrupo && nuevoGrupoTema.trim() && codMedico) {
+          try {
+            setSubmitStatusText('Creando nuevo grupo de citas...');
+            const pacParaGrupo = pacienteSeleccionado || citasMultiples[0]?.paciente;
+            const resGrupo = await createGrupo({
+              codPaciente: pacParaGrupo!.pacCodigo,
+              codMedico,
+              tema: nuevoGrupoTema.trim(),
+              tituloTema: nuevoGrupoTema.trim(),
+            });
+            const createdId = (resGrupo as any)?.id || (resGrupo as any)?.grupoId;
+            if (createdId) finalGrupoId = createdId;
+          } catch (err) {
+            console.error('No se pudo pre-crear el grupo:', err);
+          }
+        }
+
+        let consultorioId = undefined;
+        let dirDomicilio = null;
+        let refDomicilio = null;
+
+        if (modalidad === 'presencial' && clinicaSeleccionada) {
+          consultorioId = clinicaSeleccionada.cliCodigo;
+        } else if (modalidad === 'domicilio' && areaDomicilio) {
+          dirDomicilio = direccionDomicilio;
+          refDomicilio = referenciasDomicilio;
+        }
+
+        const rcpCod = recompensaSeleccionada
+          ? recompensaSeleccionada.praCodrcp ||
+            (recompensaSeleccionada as any).rcpCodigo ||
+            (recompensaSeleccionada as any).rcp_codigo
+          : undefined;
+
+        const createdIds: string[] = [];
+
+        // Loop secuencial sobre las citas del grupo
+        for (let i = 0; i < citasMultiples.length; i++) {
+          const item = citasMultiples[i];
+          setSubmitStatusText(`Agendando cita ${i + 1} de ${citasMultiples.length}...`);
+
+          const pacDeCita = (pacienteModoCita === 'variado' && item.paciente)
+            ? item.paciente
+            : pacienteSeleccionado;
+
+          const fechaStr = format(item.fecha, 'yyyy-MM-dd');
+          const horaStr = item.hora.length === 5 ? `${item.hora}:00` : item.hora;
+
+          const request: CrearCitaRequest = {
+            codPaciente: pacDeCita!.pacCodigo,
+            codMedico,
+            grupoId: finalGrupoId,
+            consultorioId,
+            codServicio: servicioSeleccionado?.sypCodigo || undefined,
+            fecha: fechaStr,
+            hora: horaStr,
+            modalidad,
+            precio: total,
+            motivo: (motivo && motivo !== grupoNombre && motivo !== servicioSeleccionado?.servicio)
+              ? motivo.trim()
+              : (servicioSeleccionado?.servicio || undefined),
+            direccionDomicilio: dirDomicilio,
+            referenciasDomicilio: refDomicilio,
+            enlaceVideollamada: null,
+            recompensaCodigo: i === 0 ? rcpCod : undefined,
+            rcpCodigo: i === 0 ? rcpCod : undefined,
+            archivos: archivos.length > 0 ? archivos : undefined,
+          };
+
+          const idCitaCreada = await createCita(request);
+          createdIds.push(idCitaCreada);
+
+          const sessionToken = (session as any)?.accessToken;
+          if (sessionToken && pacDeCita) {
+            completarTareaLealtad(sessionToken, 'CREAR_CITA').catch(() => {});
+            completarTareaLealtad(sessionToken, 'CITA_PROGRAMADA').catch(() => {});
+            crearNotificacion(sessionToken, {
+              usuarioId: pacDeCita.pacCodigo,
+              usuarioTipo: 'paciente',
+              tipo: 'cita',
+              titulo: 'Cita Agendada en Grupo',
+              mensaje: `Cita con ${medicoName} para el ${format(item.fecha, 'dd/MM/yyyy')} a las ${item.hora} confirmada.`,
+              accionUrl: `/dashboard/citas/${idCitaCreada}/exito`,
+            }).catch(() => {});
+          }
+        }
+
+        // Registrar pago para cada cita si se asignó un método
+        if (!omitirPago && tipoPagoId && createdIds.length > 0) {
+          setSubmitStatusText('Registrando método de pago...');
+          for (const cId of createdIds) {
+            try {
+              await pagarCita({
+                citaId: cId,
+                payload: {
+                  codTpp: Number(tipoPagoId),
+                  estadoPago: 'pagado',
+                  referenciaPago: referenciaTransferencia?.trim() || billeteraItemId || null,
+                },
+              });
+            } catch (errPago) {
+              console.warn('Registro de pago no bloqueante:', errPago);
+            }
+          }
+        }
+
+        setCreatedCitaId(createdIds[0]);
+        setCitaConfirmada(true);
+        setIsSuccess(true);
+        window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+      } catch (e: any) {
+        console.error('Error al agendar citas del grupo', e);
+        setError('Ocurrió un error al agendar las citas del grupo. Por favor intenta de nuevo.');
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    // Modo Cita Individual
     if (!codMedico || !pacienteSeleccionado || !fecha || !hora || !modalidad || !tipoPagoId) return;
 
     setIsSubmitting(true);
@@ -103,12 +245,12 @@ export function Step4Confirmacion() {
     setSubmitStatusText('Verificando turno y registrando consulta...');
 
     try {
-      // 0. Si se solicitó crear un nuevo tema de seguimiento, crearlo primero
+      // 0. Si se solicitó crear un nuevo grupo de citas, crearlo primero
       let finalGrupoId = grupoId || undefined;
 
       if (creandoNuevoGrupo && nuevoGrupoTema.trim() && pacienteSeleccionado && codMedico) {
         try {
-          setSubmitStatusText('Iniciando nuevo tema de seguimiento...');
+          setSubmitStatusText('Creando nuevo grupo de citas...');
           const resGrupo = await createGrupo({
             codPaciente: pacienteSeleccionado.pacCodigo,
             codMedico,
@@ -152,7 +294,7 @@ export function Step4Confirmacion() {
         grupoId: finalGrupoId,
         consultorioId,
         codServicio: servicioSeleccionado?.sypCodigo || undefined,
-        fecha: fecha.toISOString().split('T')[0],
+        fecha: format(fecha, 'yyyy-MM-dd'),
         hora: hora.length === 5 ? hora + ':00' : hora,
         modalidad,
         precio: total,
@@ -202,7 +344,7 @@ export function Step4Confirmacion() {
         }).catch(() => {});
       }
 
-      // 3. Registrar método de pago (no bloquea la asignación, el pago puede efectuarse en clínica o consultorio)
+      // 3. Registrar método de pago
       if (tipoPagoId) {
         try {
           setSubmitStatusText('Confirmando cita programada...');
@@ -245,10 +387,12 @@ export function Step4Confirmacion() {
           </div>
 
           <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-            ¡Cita Programada con Éxito!
+            {isMultiMode ? `¡${citasMultiples.length} Citas Programadas con Éxito!` : '¡Cita Programada con Éxito!'}
           </h2>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
-            Tu consulta médica ha sido reservada y registrada en el sistema de SaludYa.
+            {isMultiMode
+              ? `Tus ${citasMultiples.length} consultas médicas han sido reservadas y registradas en el grupo de citas.`
+              : 'Tu consulta médica ha sido reservada y registrada en el sistema de SaludYa.'}
           </p>
 
           {/* Doctor Info with Circular Photo */}
@@ -276,22 +420,55 @@ export function Step4Confirmacion() {
           {/* Appointment Details Card */}
           <div className="rounded-2xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-[#0F172A]/80 p-5 text-left space-y-3.5 mb-8">
             <div className="flex items-center justify-between text-xs pb-3 border-b border-slate-200/70 dark:border-slate-800">
-              <span className="font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Detalles de la Cita</span>
+              <span className="font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                {isMultiMode ? `Detalles del Grupo (${citasMultiples.length} Citas)` : 'Detalles de la Cita'}
+              </span>
               <span className="inline-flex items-center gap-1 font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100/80 dark:bg-emerald-950 px-2 py-0.5 rounded-md text-[11px]">
-                <ShieldCheck className="w-3.5 h-3.5" /> Confirmada
+                <ShieldCheck className="w-3.5 h-3.5" /> Confirmadas
               </span>
             </div>
 
-            {/* Fecha y Hora */}
-            <div className="flex items-start gap-3">
-              <CalendarDays className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Fecha y Horario</p>
-                <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                  {fecha ? format(fecha, "EEEE dd 'de' MMMM, yyyy", { locale: es }) : ''} · {formatHoraDisplay(hora)}
+            {/* Si es multi-citas, mostramos la lista de todas las citas confirmadas */}
+            {isMultiMode ? (
+              <div className="space-y-2 pt-1">
+                <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                  Citas Agendadas:
                 </p>
+                <div className="divide-y divide-slate-200/60 dark:divide-slate-800">
+                  {citasMultiples.map((c, idx) => {
+                    const pacItem = (pacienteModoCita === 'variado' && c.paciente) ? c.paciente : pacienteSeleccionado;
+                    return (
+                      <div key={c.id} className="py-2 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-md bg-emerald-600 text-white font-bold flex items-center justify-center text-[10px]">
+                            {idx + 1}
+                          </span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200 capitalize">
+                            {format(c.fecha, "EEE d 'de' MMMM", { locale: es })}
+                          </span>
+                          <span className="text-sky-600 dark:text-sky-400 font-bold">
+                            · {formatHoraDisplay(c.hora)}
+                          </span>
+                        </div>
+                        <span className="text-slate-600 dark:text-slate-300 font-medium">
+                          👤 {pacItem?.nombreCompleto || 'Yo'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="flex items-start gap-3">
+                <CalendarDays className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Fecha y Horario</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                    {fecha ? format(fecha, "EEEE dd 'de' MMMM, yyyy", { locale: es }) : ''} · {formatHoraDisplay(hora)}
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Servicio Médico */}
             {servicioSeleccionado && (
@@ -300,7 +477,7 @@ export function Step4Confirmacion() {
                 <div>
                   <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Servicio</p>
                   <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                    {servicioSeleccionado.servicio} <span className="text-sky-600 dark:text-sky-400 font-extrabold">(Q{total.toFixed(2)})</span>
+                    {servicioSeleccionado.servicio} <span className="text-sky-600 dark:text-sky-400 font-extrabold">(Q{totalGeneral.toFixed(2)})</span>
                   </p>
                 </div>
               </div>
@@ -327,25 +504,27 @@ export function Step4Confirmacion() {
               </div>
             </div>
 
-            {/* Paciente */}
-            <div className="flex items-start gap-3">
-              <Activity className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Paciente</p>
-                <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                  {pacienteSeleccionado?.nombreCompleto || 'Paciente titular'}
-                </p>
+            {/* Paciente (si no es variado) */}
+            {(!isMultiMode || pacienteModoCita === 'mismo') && (
+              <div className="flex items-start gap-3">
+                <Activity className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Paciente</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                    {pacienteSeleccionado?.nombreCompleto || 'Paciente titular'}
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Tema de Seguimiento (si aplica) */}
+            {/* Grupo de Citas (si aplica) */}
             {(grupoId || creandoNuevoGrupo) && (
               <div className="flex items-start gap-3">
                 <FolderPlus className="w-5 h-5 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-xs font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider">Tema de Seguimiento</p>
+                  <p className="text-xs font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider">Grupo de Citas</p>
                   <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                    {creandoNuevoGrupo ? nuevoGrupoTema : (grupoNombre || 'Tema vinculado')}
+                    {creandoNuevoGrupo ? nuevoGrupoTema : (grupoNombre || 'Grupo vinculado')}
                   </p>
                 </div>
               </div>
@@ -471,46 +650,98 @@ export function Step4Confirmacion() {
         {/* Grilla de Resumen */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           
-          {/* Paciente y Motivo */}
-          <div className="flex gap-4">
-            <div className="w-12 h-12 rounded-full border-[2px] border-transparent p-0.5 shrink-0 overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-blue-700 dark:text-blue-400">
-              {pacienteSeleccionado?.pacFotoPerfilUrl || pacienteSeleccionado?.pacTitular ? (
-                <img
-                  src={pacienteSeleccionado?.pacFotoPerfilUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(pacienteSeleccionado?.nombreCompleto || 'Paciente')}&background=0D8ABC&color=fff`}
-                  alt={pacienteSeleccionado?.nombreCompleto}
-                  className="w-full h-full rounded-full object-cover"
-                />
-              ) : (
-                <span className="text-sm font-bold">{getInitials(pacienteSeleccionado?.nombreCompleto || '')}</span>
-              )}
-            </div>
-            <div>
-              <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Paciente</p>
-              <p className="font-bold text-slate-900 dark:text-slate-100 leading-tight">
-                {pacienteSeleccionado?.pacTitular ? 'Yo' : pacienteSeleccionado?.nombreCompleto}
-              </p>
-              <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-1">
-                <Activity className="w-3.5 h-3.5" />
-                {motivo}
-              </p>
-            </div>
-          </div>
+          {isMultiMode ? (
+            /* Resumen Multi-Citas de Grupo */
+            <div className="md:col-span-2 bg-slate-50 dark:bg-slate-900/40 rounded-2xl p-5 border border-slate-200/80 dark:border-slate-800">
+              <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200/70 dark:border-slate-800">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                    <CalendarDays className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                      {citasMultiples.length} Citas del Grupo Programadas
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Fechas y horarios seleccionados para este seguimiento
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-100/80 dark:bg-indigo-950 px-2.5 py-1 rounded-lg border border-indigo-200/60 dark:border-indigo-800/80">
+                  {pacienteModoCita === 'mismo' ? 'Mismo paciente' : 'Pacientes variados'}
+                </span>
+              </div>
 
-          {/* Fecha y Hora */}
-          <div className="flex gap-4">
-            <div className="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
-              <Calendar className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+              <div className="divide-y divide-slate-200/60 dark:divide-slate-800/70">
+                {citasMultiples.map((c, idx) => {
+                  const pacItem = (pacienteModoCita === 'variado' && c.paciente) ? c.paciente : pacienteSeleccionado;
+                  return (
+                    <div key={c.id} className="py-2.5 flex items-center justify-between text-xs gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="w-5 h-5 rounded-md bg-indigo-600 text-white font-black flex items-center justify-center text-[10px] shrink-0">
+                          {idx + 1}
+                        </span>
+                        <span className="font-bold text-slate-800 dark:text-slate-200 capitalize truncate">
+                          {format(c.fecha, "EEEE d 'de' MMMM", { locale: es })}
+                        </span>
+                        <span className="font-bold text-sky-600 dark:text-sky-400 shrink-0">
+                          · {formatHoraDisplay(c.hora)}
+                        </span>
+                      </div>
+                      <span className="text-slate-600 dark:text-slate-300 font-semibold flex items-center gap-1.5 shrink-0 bg-white dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-200/60 dark:border-slate-700">
+                        <User className="w-3 h-3 text-slate-400" />
+                        {pacItem?.pacTitular ? 'Yo' : (pacItem?.nombreCompleto || 'Paciente')}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Fecha y Hora</p>
-              <p className="font-bold text-slate-900 dark:text-slate-100 leading-tight">
-                {fecha ? `${fecha.getDate()} ${fecha.toLocaleString('es', { month: 'short', year: 'numeric' })}` : 'Pendiente'}
-              </p>
-              <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-1">
-                A las {formatHoraDisplay(hora)}
-              </p>
-            </div>
-          </div>
+          ) : (
+            /* Resumen Cita Individual */
+            <>
+              {/* Paciente y Motivo */}
+              <div className="flex gap-4">
+                <div className="w-12 h-12 rounded-full border-[2px] border-transparent p-0.5 shrink-0 overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-blue-700 dark:text-blue-400">
+                  {pacienteSeleccionado?.pacFotoPerfilUrl || pacienteSeleccionado?.pacTitular ? (
+                    <img
+                      src={pacienteSeleccionado?.pacFotoPerfilUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(pacienteSeleccionado?.nombreCompleto || 'Paciente')}&background=0D8ABC&color=fff`}
+                      alt={pacienteSeleccionado?.nombreCompleto}
+                      className="w-full h-full rounded-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-sm font-bold">{getInitials(pacienteSeleccionado?.nombreCompleto || '')}</span>
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Paciente</p>
+                  <p className="font-bold text-slate-900 dark:text-slate-100 leading-tight">
+                    {pacienteSeleccionado?.pacTitular ? 'Yo' : pacienteSeleccionado?.nombreCompleto}
+                  </p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-1">
+                    <Activity className="w-3.5 h-3.5" />
+                    {motivo}
+                  </p>
+                </div>
+              </div>
+
+              {/* Fecha y Hora */}
+              <div className="flex gap-4">
+                <div className="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
+                  <Calendar className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Fecha y Hora</p>
+                  <p className="font-bold text-slate-900 dark:text-slate-100 leading-tight">
+                    {fecha ? `${fecha.getDate()} ${fecha.toLocaleString('es', { month: 'short', year: 'numeric' })}` : 'Pendiente'}
+                  </p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-1">
+                    A las {formatHoraDisplay(hora)}
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Modalidad y Ubicación */}
           <div className="flex gap-4">
@@ -567,19 +798,19 @@ export function Step4Confirmacion() {
             </div>
           )}
 
-          {/* Tema de Seguimiento */}
+          {/* Grupo de Citas */}
           {(grupoId || creandoNuevoGrupo) && (
             <div className="flex gap-4">
               <div className="w-12 h-12 rounded-full bg-purple-50 dark:bg-purple-900/30 flex items-center justify-center shrink-0">
                 <FolderPlus className="h-6 w-6 text-purple-600 dark:text-purple-400" />
               </div>
               <div>
-                <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Tema de Seguimiento</p>
+                <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Grupo de Citas</p>
                 <p className="font-bold text-slate-900 dark:text-slate-100 leading-tight">
-                  {creandoNuevoGrupo ? (nuevoGrupoTema || 'Nuevo tema') : (grupoNombre || 'Tema activo')}
+                  {creandoNuevoGrupo ? (nuevoGrupoTema || 'Nuevo grupo') : (grupoNombre || 'Grupo activo')}
                 </p>
                 <p className="text-xs text-purple-600 dark:text-purple-400 font-semibold mt-1">
-                  {creandoNuevoGrupo ? 'Se creará e iniciará una nueva serie' : 'Continuidad con tema asignado'}
+                  {creandoNuevoGrupo ? 'Se creará e iniciará una nueva serie' : 'Continuidad con grupo asignado'}
                 </p>
               </div>
             </div>
@@ -590,43 +821,47 @@ export function Step4Confirmacion() {
         {/* Info Pago & Desglose */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start mt-6 pt-6 border-t border-slate-100 dark:border-slate-700">
           <div className="bg-slate-50 dark:bg-[#0B1120] rounded-xl p-4 border border-slate-100 dark:border-slate-700 flex items-center gap-4 h-full">
-             <div className="p-3 bg-white dark:bg-[#0F172A] rounded-lg shadow-sm">
-               {itemBilletera?.tipo === 'TARJETA' ? (
-                 <CreditCard className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-               ) : (
-                 <Wallet className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-               )}
-             </div>
-           <div>
-               <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Pago Seleccionado</p>
-               <p className="font-bold text-slate-700 dark:text-slate-200 text-sm mt-0.5">
-                 {metodoSeleccionado?.descripcion || 'Pendiente'}
-               </p>
-               {itemBilletera && (
-                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                   {itemBilletera.proveedor} • {itemBilletera.descripcion}
-                 </p>
-               )}
-               {isTransferenciaSeleccionada && comprobanteTransferencia && (
-                 <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1.5 font-semibold flex items-center gap-1">
-                   ✓ Comprobante adjunto · {(comprobanteTransferencia.size / 1024).toFixed(1)} KB
-                 </p>
-               )}
-             </div>
+            <div className="p-3 bg-white dark:bg-[#0F172A] rounded-lg shadow-sm">
+              {omitirPago ? (
+                <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+              ) : itemBilletera?.tipo === 'TARJETA' ? (
+                <CreditCard className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+              ) : (
+                <Wallet className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+              )}
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Pago Seleccionado</p>
+              <p className="font-bold text-slate-700 dark:text-slate-200 text-sm mt-0.5">
+                {omitirPago ? 'Pago directo en clínica / Pendiente de asignación' : (metodoSeleccionado?.descripcion || 'Pendiente')}
+              </p>
+              {!omitirPago && itemBilletera && (
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  {itemBilletera.proveedor} • {itemBilletera.descripcion}
+                </p>
+              )}
+              {!omitirPago && isTransferenciaSeleccionada && comprobanteTransferencia && (
+                <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1.5 font-semibold flex items-center gap-1">
+                  ✓ Comprobante adjunto · {(comprobanteTransferencia.size / 1024).toFixed(1)} KB
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="bg-white dark:bg-[#0F172A] rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col gap-2">
             <div className="flex justify-between items-center text-sm">
-              <span className="text-slate-500 dark:text-slate-400 font-medium">Subtotal de la consulta</span>
-              <span className="font-semibold text-slate-700 dark:text-slate-200">Q{precioBase.toFixed(2)}</span>
+              <span className="text-slate-500 dark:text-slate-400 font-medium">
+                {isMultiMode ? `Subtotal (${countCitas} citas)` : 'Subtotal de la consulta'}
+              </span>
+              <span className="font-semibold text-slate-700 dark:text-slate-200">Q{subtotalGeneral.toFixed(2)}</span>
             </div>
             <div className="flex justify-between items-center text-sm">
               <span className="text-slate-500 dark:text-slate-400 font-medium">Impuestos (12% IVA)</span>
-              <span className="font-semibold text-slate-700 dark:text-slate-200">Q{iva.toFixed(2)}</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-200">Q{ivaGeneral.toFixed(2)}</span>
             </div>
             <div className="border-t border-slate-100 dark:border-slate-800 my-1 pt-2 flex justify-between items-center">
               <span className="font-bold text-slate-900 dark:text-white">Total a Pagar</span>
-              <span className="font-black text-lg text-blue-600 dark:text-blue-400">Q{total.toFixed(2)}</span>
+              <span className="font-black text-lg text-blue-600 dark:text-blue-400">Q{totalGeneral.toFixed(2)}</span>
             </div>
           </div>
         </div>
@@ -661,7 +896,7 @@ export function Step4Confirmacion() {
           <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-700/80 flex items-start gap-3">
             <Info className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
             <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-              Al hacer clic en <strong>Confirmar Cita</strong>, aceptas los <strong>Términos y Condiciones</strong>, el consentimiento informado y las políticas de cancelación y reembolso de <strong>SaludYa</strong>. Las cancelaciones con menos de 24 horas de anticipación pueden estar sujetas a cargos según las políticas del especialista.
+              Al hacer clic en <strong>{isMultiMode ? `Confirmar ${countCitas} Citas` : 'Confirmar Cita'}</strong>, aceptas los <strong>Términos y Condiciones</strong>, el consentimiento informado y las políticas de cancelación y reembolso de <strong>SaludYa</strong>. Las cancelaciones con menos de 24 horas de anticipación pueden estar sujetas a cargos según las políticas del especialista.
             </p>
           </div>
         </div>
@@ -670,7 +905,10 @@ export function Step4Confirmacion() {
       {/* Botones de Navegación */}
       <div className="sticky bottom-0 z-30 bg-transparent flex flex-col-reverse sm:flex-row justify-between items-center gap-3 py-4 border-t border-slate-200/60 dark:border-slate-800/40 mt-8">
         <button
-          onClick={prevStep}
+          onClick={() => {
+            prevStep();
+            window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+          }}
           disabled={isSubmitting}
           className="w-full sm:w-auto font-bold py-3.5 px-8 rounded-xl transition-all flex items-center justify-center gap-2 bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#0F172A] shadow-sm cursor-pointer"
         >
@@ -682,7 +920,7 @@ export function Step4Confirmacion() {
           disabled={isSubmitting}
           className="w-full sm:w-auto font-bold py-3.5 px-10 rounded-xl transition-all flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-600/25 cursor-pointer"
         >
-          Confirmar Cita
+          {isMultiMode ? `Confirmar ${countCitas} Citas` : 'Confirmar Cita'}
           <Check className="h-5 w-5 stroke-[2.5]" />
         </button>
       </div>

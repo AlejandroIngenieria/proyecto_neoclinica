@@ -14,7 +14,9 @@ export function Step3MetodoPago() {
         billeteraItemId, setBilleteraItemId,
         comprobanteTransferencia, setComprobanteTransferencia,
         referenciaTransferencia, setReferenciaTransferencia,
-        prevStep, nextStep, modalidad
+        prevStep, nextStep, modalidad,
+        grupoId, creandoNuevoGrupo, citasMultiples,
+        omitirPago, setOmitirPago, servicioSeleccionado
     } = useCitaStore();
 
     const { data: metodosTotales = [], isLoading } = useMetodosPago(codMedico);
@@ -105,13 +107,20 @@ export function Step3MetodoPago() {
         return <div className="py-12"><NeoLoader fullScreenPortal={false} /></div>;
     }
 
-    let isComplete = tipoPagoId !== null;
-    if (isTarjetaActiva || isSeguroActivo) {
-        isComplete = isComplete && billeteraItemId !== null;
-    }
-    // Transferencia: comprobante is REQUIRED to enable Continue
-    if (isTransferenciaActiva) {
-        isComplete = isComplete && comprobanteTransferencia !== null;
+    const isMultiMode = !!(grupoId || creandoNuevoGrupo) && citasMultiples.length > 0;
+
+    let isComplete = false;
+    if (isMultiMode && omitirPago) {
+        isComplete = true;
+    } else {
+        isComplete = tipoPagoId !== null;
+        if (isTarjetaActiva || isSeguroActivo) {
+            isComplete = isComplete && billeteraItemId !== null;
+        }
+        // Transferencia: comprobante is REQUIRED to enable Continue
+        if (isTransferenciaActiva) {
+            isComplete = isComplete && comprobanteTransferencia !== null;
+        }
     }
 
     return (
@@ -121,10 +130,109 @@ export function Step3MetodoPago() {
 
                 <div>
                     <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-2 tracking-tight">¿Cómo prefieres pagar?</h2>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mb-8">
-                        Selecciona el método de pago que utilizarás para esta consulta.
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
+                        {isMultiMode
+                            ? 'Puedes omitir el pago o asignar un único método de pago para todas las citas del grupo.'
+                            : 'Selecciona el método de pago que utilizarás para esta consulta.'}
                     </p>
 
+                    {/* Banner de Precio Acumulado para Grupo de Citas */}
+                    {isMultiMode && (
+                        <div className="mb-6 rounded-2xl border border-indigo-200/80 dark:border-indigo-900/50 bg-indigo-50/60 dark:bg-indigo-950/30 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                            <div>
+                                <span className="text-[11px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                                    Grupo de Citas ({citasMultiples.length} citas programadas)
+                                </span>
+                                <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                                    {servicioSeleccionado ? servicioSeleccionado.servicio : 'Consulta médica'} · {citasMultiples.length} consultas × Q{(servicioSeleccionado?.costoTotal || 0).toFixed(2)}
+                                </p>
+                            </div>
+                            <div className="text-left sm:text-right border-t sm:border-t-0 pt-2 sm:pt-0 border-indigo-200/60 dark:border-indigo-800/40">
+                                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block">
+                                    Total del grupo con IVA
+                                </span>
+                                <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400">
+                                    Q{((servicioSeleccionado?.costoTotal || 0) * citasMultiples.length).toFixed(2)}
+                                </span>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Selector Minimalista: Omitir Pago vs Asignar Método */}
+                    {isMultiMode && (
+                        <div className="mb-8 p-4 rounded-2xl bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-800 shadow-2xs">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-2.5">
+                                Modalidad de Pago del Grupo:
+                            </label>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setOmitirPago(true)}
+                                    className={`p-3.5 rounded-xl border-2 text-left transition-all flex items-start gap-3 cursor-pointer ${
+                                        omitirPago
+                                            ? 'border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-950 dark:text-white shadow-xs'
+                                            : 'border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-[#0F172A] text-slate-600 dark:text-slate-400 hover:border-slate-300'
+                                    }`}
+                                >
+                                    <div className={`w-5 h-5 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 ${
+                                        omitirPago ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-400'
+                                    }`}>
+                                        {omitirPago && <Check className="w-3 h-3 stroke-[3]" />}
+                                    </div>
+                                    <div>
+                                        <h4 className="text-xs font-bold text-slate-900 dark:text-white">Omitir método de pago</h4>
+                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                                            Se gestionará directamente en la clínica o consultorio en cada consulta.
+                                        </p>
+                                    </div>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => setOmitirPago(false)}
+                                    className={`p-3.5 rounded-xl border-2 text-left transition-all flex items-start gap-3 cursor-pointer ${
+                                        !omitirPago
+                                            ? 'border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-950 dark:text-white shadow-xs'
+                                            : 'border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-[#0F172A] text-slate-600 dark:text-slate-400 hover:border-slate-300'
+                                    }`}
+                                >
+                                    <div className={`w-5 h-5 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 ${
+                                        !omitirPago ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-400'
+                                    }`}>
+                                        {!omitirPago && <Check className="w-3 h-3 stroke-[3]" />}
+                                    </div>
+                                    <div>
+                                        <h4 className="text-xs font-bold text-slate-900 dark:text-white">Asignar método de pago</h4>
+                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                                            El método que selecciones aplicará a las {citasMultiples.length} citas.
+                                        </p>
+                                    </div>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {isMultiMode && omitirPago ? (
+                        <div className="p-6 rounded-2xl bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-800 text-center space-y-2">
+                            <div className="w-12 h-12 rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto mb-2">
+                                <Check className="w-6 h-6 stroke-[2.5]" />
+                            </div>
+                            <h3 className="text-base font-bold text-slate-900 dark:text-white">Método de pago omitido</h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
+                                Has elegido omitir el registro de pago para este grupo de citas. Puedes continuar al paso de confirmación y gestionar los pagos directamente con el especialista o clínica.
+                            </p>
+                            <div className="pt-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setOmitirPago(false)}
+                                    className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                                >
+                                    Deseo asignar un método de pago
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                    <>
                     <div className="flex flex-col gap-2">
                         {metodosPago.map((metodo) => {
                             const isSelected = tipoPagoId === metodo.tipoPagoId;
@@ -449,23 +557,37 @@ export function Step3MetodoPago() {
                             </p>
                         </div>
                     )}
+                    </>
+                    )}
                 </div>
 
                 {/* Sección de Recompensas y Cupones Activos */}
-                <CuponesSeccion pacCodigo={pacienteSeleccionado?.pacCodigo || pacienteTitular?.pacCodigo} />
+                {(!isMultiMode || !omitirPago) && (
+                    <CuponesSeccion pacCodigo={pacienteSeleccionado?.pacCodigo || pacienteTitular?.pacCodigo} />
+                )}
             </div>
 
             {/* Footer Next Button */}
             <div className="sticky bottom-0 z-30 bg-transparent flex flex-col-reverse sm:flex-row justify-between items-center gap-3 py-4 border-t border-slate-200/60 dark:border-slate-800/40 mt-12 px-4 md:px-0">
                 <button
-                    onClick={prevStep}
-                    className="w-full sm:w-auto font-bold py-3.5 px-6 rounded-xl transition-all flex items-center justify-center gap-2 bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#0F172A] shadow-sm text-sm sm:text-base"
+                    onClick={() => {
+                        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+                        document.documentElement.scrollTop = 0;
+                        document.body.scrollTop = 0;
+                        prevStep();
+                    }}
+                    className="w-full sm:w-auto font-bold py-3.5 px-6 rounded-xl transition-all flex items-center justify-center gap-2 bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#0F172A] shadow-sm text-sm sm:text-base cursor-pointer"
                 >
                     <ChevronLeft className="h-5 w-5" /> Regresar
                 </button>
 
                 <button
-                    onClick={nextStep}
+                    onClick={() => {
+                        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+                        document.documentElement.scrollTop = 0;
+                        document.body.scrollTop = 0;
+                        nextStep();
+                    }}
                     disabled={!isComplete}
                     className={`w-full sm:w-auto font-bold py-3.5 px-8 sm:px-10 rounded-xl transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${isComplete
                         ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-md cursor-pointer'

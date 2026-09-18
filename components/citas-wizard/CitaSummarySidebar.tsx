@@ -21,7 +21,12 @@ export function CitaSummarySidebar() {
     creandoNuevoGrupo,
     nuevoGrupoTema,
     recompensaSeleccionada,
+    citasMultiples,
+    pacienteModoCita,
   } = useCitaStore();
+
+  const isMultiMode = !!(grupoId || creandoNuevoGrupo) && citasMultiples.length > 0;
+  const countCitas = isMultiMode ? citasMultiples.length : 1;
 
   let precioBase = 0;
   let iva = 0;
@@ -44,7 +49,8 @@ export function CitaSummarySidebar() {
     ubicacionStr = 'Videollamada';
   }
 
-  const subtotal = servicioSeleccionado ? servicioSeleccionado.costoTotal : (precioBase + iva + recargo);
+  const baseUnitario = servicioSeleccionado ? servicioSeleccionado.costoTotal : (precioBase + iva + recargo);
+  const subtotal = baseUnitario * countCitas;
 
   // Cálculo de Descuento por Recompensa / Cupón
   let descuento = 0;
@@ -52,7 +58,7 @@ export function CitaSummarySidebar() {
     const tipo = (recompensaSeleccionada.tipoRecompensa || (recompensaSeleccionada as any).rcpTipo || '').toLowerCase();
     const valDesc = (recompensaSeleccionada as any).rcpValorDescuento ?? (recompensaSeleccionada as any).valorDescuento;
     if (tipo.includes('gratis') || tipo.includes('cita')) {
-      descuento = subtotal;
+      descuento = baseUnitario; // Cubre 1 cita
     } else if (typeof valDesc === 'number' && valDesc > 0) {
       descuento = valDesc <= 1 ? subtotal * valDesc : valDesc;
     } else {
@@ -105,46 +111,80 @@ export function CitaSummarySidebar() {
         </div>
 
         {/* Fecha y Hora */}
-        <div className={`flex gap-4 transition-opacity duration-300 ${!fecha ? 'opacity-30' : ''}`}>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
-            <CalendarDays className="h-5 w-5" />
+        {isMultiMode ? (
+          <div className="flex gap-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">
+              <CalendarDays className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                Citas del Grupo ({citasMultiples.length})
+              </p>
+              <div className="mt-1 space-y-1">
+                {citasMultiples.slice(0, 3).map((c) => {
+                  const [h, m] = c.hora.split(':');
+                  let hourNum = parseInt(h);
+                  const ampm = hourNum >= 12 ? 'PM' : 'AM';
+                  hourNum = hourNum % 12 || 12;
+                  const displayTime = `${hourNum}:${m} ${ampm}`;
+                  return (
+                    <p key={c.id} className="text-xs font-bold text-slate-800 dark:text-slate-200 capitalize truncate">
+                      • {format(c.fecha, "dd 'de' MMM", { locale: es })} · <span className="text-indigo-600 dark:text-indigo-400">{displayTime}</span>
+                    </p>
+                  );
+                })}
+                {citasMultiples.length > 3 && (
+                  <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+                    +{citasMultiples.length - 3} citas más
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
-          <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Fecha y Hora</p>
-            <p className="text-sm font-bold text-slate-900 dark:text-white">
-              {fecha ? format(fecha, "dd 'de' MMMM, yyyy", { locale: es }) : 'Por seleccionar'}
-            </p>
-            <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 mt-0.5">
-              {hora ? hora : 'Hora no seleccionada'}
-            </p>
+        ) : (
+          <div className={`flex gap-4 transition-opacity duration-300 ${!fecha ? 'opacity-30' : ''}`}>
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+              <CalendarDays className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Fecha y Hora</p>
+              <p className="text-sm font-bold text-slate-900 dark:text-white">
+                {fecha ? format(fecha, "dd 'de' MMMM, yyyy", { locale: es }) : 'Por seleccionar'}
+              </p>
+              <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 mt-0.5">
+                {hora ? hora : 'Hora no seleccionada'}
+              </p>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Paciente */}
-        <div className={`flex gap-4 transition-opacity duration-300 ${!pacienteSeleccionado ? 'opacity-30' : ''}`}>
+        <div className={`flex gap-4 transition-opacity duration-300 ${!pacienteSeleccionado && (!isMultiMode || pacienteModoCita !== 'variado') ? 'opacity-30' : ''}`}>
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">
             <User className="h-5 w-5" />
           </div>
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Paciente</p>
             <p className="truncate text-sm font-bold text-slate-900 dark:text-white">
-              {pacienteSeleccionado 
-                ? pacienteSeleccionado.nombreCompleto 
-                : 'Por seleccionar'}
+              {isMultiMode && pacienteModoCita === 'variado'
+                ? 'Pacientes por cita'
+                : pacienteSeleccionado 
+                  ? pacienteSeleccionado.nombreCompleto 
+                  : 'Por seleccionar'}
             </p>
           </div>
         </div>
 
-        {/* Tema de Seguimiento (si aplica) */}
+        {/* Grupo de Citas (si aplica) */}
         {(grupoId || creandoNuevoGrupo) && (
           <div className="flex gap-4">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">
               <FileText className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">Seguimiento</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">Grupo de Citas</p>
               <p className="truncate text-sm font-bold text-slate-900 dark:text-white">
-                {creandoNuevoGrupo ? (nuevoGrupoTema || 'Nuevo tema') : (grupoNombre || 'Tema activo')}
+                {creandoNuevoGrupo ? (nuevoGrupoTema || 'Nuevo grupo') : (grupoNombre || 'Grupo activo')}
               </p>
             </div>
           </div>
@@ -162,7 +202,7 @@ export function CitaSummarySidebar() {
                 {servicioSeleccionado.servicio}
               </p>
               <p className="text-xs font-semibold text-teal-600 dark:text-teal-400 mt-0.5">
-                Q{servicioSeleccionado.costoTotal.toFixed(2)}
+                Q{servicioSeleccionado.costoTotal.toFixed(2)} {countCitas > 1 ? `× ${countCitas} citas` : ''}
               </p>
             </div>
           </div>
@@ -172,22 +212,22 @@ export function CitaSummarySidebar() {
 
       {/* Footer / Precio */}
       <div className="bg-slate-50 dark:bg-[#0F172A] p-6 border-t border-slate-100 dark:border-slate-800 space-y-2">
-        {servicioSeleccionado && (
-          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-            <span>Costo base (sin IVA):</span>
-            <span>Q{servicioSeleccionado.costoSinIva.toFixed(2)}</span>
+        {isMultiMode && (
+          <div className="flex items-center justify-between text-xs text-indigo-600 dark:text-indigo-400 font-bold">
+            <span>Citas en este grupo:</span>
+            <span>{countCitas} consultas</span>
           </div>
         )}
-        {servicioSeleccionado && servicioSeleccionado.costoIva > 0 && (
+        {servicioSeleccionado && (
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-            <span>IVA:</span>
-            <span>Q{servicioSeleccionado.costoIva.toFixed(2)}</span>
+            <span>Costo unitario con IVA:</span>
+            <span>Q{baseUnitario.toFixed(2)}</span>
           </div>
         )}
         {recompensaSeleccionada ? (
           <>
             <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-              <span>Subtotal:</span>
+              <span>Subtotal ({countCitas} {countCitas === 1 ? 'cita' : 'citas'}):</span>
               <span>Q{subtotal.toFixed(2)}</span>
             </div>
             <div className="flex items-center justify-between text-xs font-bold text-emerald-600 dark:text-emerald-400">
@@ -195,6 +235,11 @@ export function CitaSummarySidebar() {
               <span>-Q{descuento.toFixed(2)}</span>
             </div>
           </>
+        ) : countCitas > 1 ? (
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+            <span>Subtotal ({countCitas} citas):</span>
+            <span>Q{subtotal.toFixed(2)}</span>
+          </div>
         ) : null}
 
         <div className="flex items-center justify-between pt-1">
