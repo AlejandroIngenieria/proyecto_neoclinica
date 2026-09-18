@@ -7,10 +7,9 @@ import React, {
   useImperativeHandle,
   forwardRef,
   useCallback,
-  useId,
+  useMemo,
 } from 'react';
-import { AtSign, Clock, X, Mail } from 'lucide-react';
-import { getEmailHistory, removeEmailFromHistory } from '@/lib/email-history';
+import { getEmailHistory } from '@/lib/email-history';
 
 export const POPULAR_EMAIL_DOMAINS = [
   'gmail.com',
@@ -26,8 +25,8 @@ export const POPULAR_EMAIL_DOMAINS = [
 export interface EmailAutocompleteInputProps
   extends React.InputHTMLAttributes<HTMLInputElement> {
   /**
-   * Si es true, muestra los correos guardados previamente al enfocar el campo
-   * cuando no se ha escrito '@'. Por defecto: false.
+   * Si es true, permite sugerencias desde el historial guardado localmente
+   * al comenzar a escribir. Por defecto: false.
    */
   showHistory?: boolean;
   /**
@@ -35,15 +34,20 @@ export interface EmailAutocompleteInputProps
    */
   domains?: string[];
   /**
-   * Callback cuando se selecciona una sugerencia
+   * Callback cuando se completa una sugerencia con TAB
    */
   onSelectSuggestion?: (email: string) => void;
   /**
-   * Clases adicionales para el contenedor wrapper relativo
+   * Clases adicionales para el contenedor relativo
    */
   wrapperClassName?: string;
 }
 
+/**
+ * Componente de entrada de correo electrónico con sugerencias "Ghost Text" en línea (texto gris).
+ * Evita colisiones visuales con los autocompletados y gestores de contraseñas nativos del navegador.
+ * Al presionar TAB o flecha derecha al final del texto, completa la sugerencia inmediatamente.
+ */
 export const EmailAutocompleteInput = forwardRef<HTMLInputElement, EmailAutocompleteInputProps>(
   (
     {
@@ -64,6 +68,7 @@ export const EmailAutocompleteInput = forwardRef<HTMLInputElement, EmailAutocomp
     forwardedRef
   ) => {
     const internalInputRef = useRef<HTMLInputElement | null>(null);
+    const ghostRef = useRef<HTMLDivElement | null>(null);
     useImperativeHandle(forwardedRef, () => internalInputRef.current as HTMLInputElement);
 
     const [inputValue, setInputValue] = useState<string>(() => {
@@ -72,136 +77,127 @@ export const EmailAutocompleteInput = forwardRef<HTMLInputElement, EmailAutocomp
       return '';
     });
 
-    const [isOpen, setIsOpen] = useState(false);
-    const [highlightedIndex, setHighlightedIndex] = useState(0);
+    const [isDismissed, setIsDismissed] = useState(false);
     const [historyList, setHistoryList] = useState<string[]>([]);
-    const containerRef = useRef<HTMLDivElement | null>(null);
-    const listboxId = useId();
 
-    // Sincronizar con valor controlado si cambia desde afuera
+    // Sincronizar con valor controlado de formularios (e.g. react-hook-form)
     useEffect(() => {
       if (controlledValue !== undefined) {
         setInputValue(String(controlledValue));
       }
     }, [controlledValue]);
 
-    // Cargar historial en el cliente si está habilitado
+    // Cargar historial en cliente si está habilitado
     useEffect(() => {
       if (showHistory) {
         setHistoryList(getEmailHistory());
       }
     }, [showHistory]);
 
-    // Analizar el texto actual para determinar modo: sugerencias de dominio vs historial
-    const atIndex = inputValue.indexOf('@');
-    const hasAt = atIndex !== -1;
-    const prefix = hasAt ? inputValue.slice(0, atIndex) : inputValue;
-    const domainQuery = hasAt ? inputValue.slice(atIndex + 1).toLowerCase() : '';
+    // Calcular el sufijo de sugerencia en gris (Ghost text)
+    const ghostSuffix = useMemo(() => {
+      if (!inputValue || inputValue.length === 0) return '';
 
-    // Si tiene '@' y hay un prefijo de usuario, filtrar los dominios
-    const domainSuggestions: string[] = React.useMemo(() => {
-      if (!hasAt || !prefix.trim()) return [];
-      
-      // Si el dominio ya coincide exactamente con uno, no saturar si ya está terminado
-      const exactMatch = domains.some((d) => d.toLowerCase() === domainQuery);
-      if (exactMatch) return [];
+      const atIndex = inputValue.indexOf('@');
+      const hasAt = atIndex !== -1;
 
-      return domains.filter((d) => d.toLowerCase().startsWith(domainQuery));
-    }, [hasAt, prefix, domainQuery, domains]);
+      if (hasAt) {
+        const prefix = inputValue.slice(0, atIndex);
+        const domainQuery = inputValue.slice(atIndex + 1).toLowerCase();
 
-    // Modo activo de sugerencias
-    const isDomainMode = hasAt && domainSuggestions.length > 0;
-    const isHistoryMode = showHistory && !hasAt && historyList.length > 0 && inputValue.trim().length === 0;
+        // No sugerir si no se ha escrito un nombre de usuario antes del '@'
+        if (!prefix.trim()) return '';
 
-    const currentItemsCount = isDomainMode
-      ? domainSuggestions.length
-      : isHistoryMode
-      ? historyList.length
-      : 0;
+        // Si el dominio ya coincide exactamente con uno de la lista, no mostrar sufijo
+        const exactMatch = domains.some((d) => d.toLowerCase() === domainQuery);
+        if (exactMatch) return '';
 
-    // Abrir o cerrar menú según disponibilidad de items
-    useEffect(() => {
-      if (isDomainMode || isHistoryMode) {
-        setIsOpen(true);
-        setHighlightedIndex(0);
-      } else {
-        setIsOpen(false);
+        // Buscar el primer dominio que comience con lo escrito
+        const matched = domains.find((d) => d.toLowerCase().startsWith(domainQuery));
+        if (matched) {
+          // El texto gris es la porción restante del dominio
+          return matched.slice(domainQuery.length);
+        }
+
+        return '';
       }
-    }, [isDomainMode, isHistoryMode]);
 
-    // Aplicar un nuevo valor al input y disparar eventos para React Hook Form
+      // Si aún no ha escrito '@' y showHistory está activo, sugerir coincidencia desde historial
+      if (showHistory && historyList.length > 0) {
+        const trimmed = inputValue.trim().toLowerCase();
+        const matchedEmail = historyList.find(
+          (h) => h.toLowerCase().startsWith(trimmed) && h.toLowerCase() !== trimmed
+        );
+        if (matchedEmail) {
+          return matchedEmail.slice(inputValue.length);
+        }
+      }
+
+      return '';
+    }, [inputValue, domains, showHistory, historyList]);
+
+    // Aplicar valor completado y disparar eventos para React Hook Form
     const applyValue = useCallback(
-      (newEmail: string) => {
-        setInputValue(newEmail);
-        setIsOpen(false);
+      (completedEmail: string) => {
+        setInputValue(completedEmail);
+        setIsDismissed(false);
 
         if (internalInputRef.current) {
-          internalInputRef.current.value = newEmail;
-          // Disparar evento de input nativo para que react-hook-form y otros listeners se enteren
+          internalInputRef.current.value = completedEmail;
+          // Evento de input nativo para que react-hook-form actualice su estado interno
           const nativeEvent = new Event('input', { bubbles: true });
           internalInputRef.current.dispatchEvent(nativeEvent);
           internalInputRef.current.focus();
         }
 
-        // Llamar callbacks opcionales
         if (onChange) {
           const syntheticEvent = {
-            target: { value: newEmail, name: props.name },
-            currentTarget: { value: newEmail, name: props.name },
+            target: { value: completedEmail, name: props.name },
+            currentTarget: { value: completedEmail, name: props.name },
           } as React.ChangeEvent<HTMLInputElement>;
           onChange(syntheticEvent);
         }
 
-        onSelectSuggestion?.(newEmail);
+        onSelectSuggestion?.(completedEmail);
       },
       [onChange, onSelectSuggestion, props.name]
     );
 
-    // Cerrar al hacer clic fuera
-    useEffect(() => {
-      const handleOutsideClick = (e: MouseEvent) => {
-        if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-          setIsOpen(false);
-        }
-      };
-      document.addEventListener('mousedown', handleOutsideClick);
-      return () => document.removeEventListener('mousedown', handleOutsideClick);
-    }, []);
-
-    // Manejador de teclado
+    // Manejador de teclado para autocompletar con TAB, Flecha Derecha o Enter
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (isOpen && currentItemsCount > 0) {
-        if (e.key === 'ArrowDown') {
+      const activeSuffix = !isDismissed ? ghostSuffix : '';
+
+      if (activeSuffix) {
+        // Autocompletar al presionar TAB
+        if (e.key === 'Tab') {
           e.preventDefault();
-          setHighlightedIndex((prev) => (prev + 1) % currentItemsCount);
+          applyValue(inputValue + activeSuffix);
           return;
         }
 
-        if (e.key === 'ArrowUp') {
-          e.preventDefault();
-          setHighlightedIndex((prev) => (prev - 1 + currentItemsCount) % currentItemsCount);
-          return;
-        }
-
-        if (e.key === 'Tab' || e.key === 'Enter') {
-          // Si presiona Tab o Enter cuando las sugerencias están visibles
-          if (isDomainMode && domainSuggestions[highlightedIndex]) {
+        // Autocompletar al presionar Flecha Derecha al final del texto
+        if (e.key === 'ArrowRight') {
+          if (
+            internalInputRef.current &&
+            internalInputRef.current.selectionStart === inputValue.length
+          ) {
             e.preventDefault();
-            const selectedDomain = domainSuggestions[highlightedIndex];
-            applyValue(`${prefix}@${selectedDomain}`);
-            return;
-          }
-
-          if (isHistoryMode && historyList[highlightedIndex]) {
-            e.preventDefault();
-            applyValue(historyList[highlightedIndex]);
+            applyValue(inputValue + activeSuffix);
             return;
           }
         }
 
+        // Autocompletar al presionar Enter si hay sugerencia activa
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          applyValue(inputValue + activeSuffix);
+          return;
+        }
+
+        // Descartar sugerencia temporalmente con Escape
         if (e.key === 'Escape') {
           e.preventDefault();
-          setIsOpen(false);
+          setIsDismissed(true);
           return;
         }
       }
@@ -211,32 +207,45 @@ export const EmailAutocompleteInput = forwardRef<HTMLInputElement, EmailAutocomp
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       setInputValue(e.target.value);
+      setIsDismissed(false);
       onChange?.(e);
     };
 
     const handleInputFocus = (e: React.FocusEvent<HTMLInputElement>) => {
       if (showHistory) {
-        const freshHistory = getEmailHistory();
-        setHistoryList(freshHistory);
+        setHistoryList(getEmailHistory());
       }
-      if (isDomainMode || (showHistory && e.target.value.trim() === '')) {
-        setIsOpen(true);
-      }
+      setIsDismissed(false);
       onFocus?.(e);
     };
 
-    const handleRemoveHistoryItem = (emailToRemove: string, e: React.MouseEvent) => {
-      e.stopPropagation();
-      e.preventDefault();
-      const updated = removeEmailFromHistory(emailToRemove);
-      setHistoryList(updated);
-      if (updated.length === 0) {
-        setIsOpen(false);
+    const handleInputScroll = (e: React.UIEvent<HTMLInputElement>) => {
+      if (ghostRef.current) {
+        ghostRef.current.scrollLeft = e.currentTarget.scrollLeft;
       }
     };
 
+    const activeSuffix = !isDismissed ? ghostSuffix : '';
+
     return (
-      <div ref={containerRef} className={`relative w-full ${wrapperClassName}`}>
+      <div className={`relative flex items-center w-full h-full min-w-0 ${wrapperClassName}`}>
+        {/* Capa de Ghost Text (texto gris sincronizado exactamente con el cursor) */}
+        <div
+          ref={ghostRef}
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 flex items-center overflow-hidden whitespace-pre select-none font-sans text-sm text-left"
+        >
+          {/* Duplicado invisible del texto escrito para calibrar la posición exacta */}
+          <span className="invisible opacity-0">{inputValue}</span>
+          {/* Texto gris sugerido */}
+          {activeSuffix && (
+            <span className="text-slate-400/85 dark:text-slate-500 font-normal">
+              {activeSuffix}
+            </span>
+          )}
+        </div>
+
+        {/* Input accesible real */}
         <input
           ref={internalInputRef}
           type="email"
@@ -246,135 +255,16 @@ export const EmailAutocompleteInput = forwardRef<HTMLInputElement, EmailAutocomp
           onFocus={handleInputFocus}
           onBlur={onBlur}
           onKeyDown={handleKeyDown}
-          role="combobox"
-          aria-autocomplete="list"
-          aria-expanded={isOpen}
-          aria-controls={isOpen ? listboxId : undefined}
-          aria-activedescendant={
-            isOpen ? `${listboxId}-item-${highlightedIndex}` : undefined
-          }
+          onScroll={handleInputScroll}
           className={className}
           {...props}
         />
 
-        {/* Menú de Sugerencias Flotante */}
-        {isOpen && currentItemsCount > 0 && (
-          <div
-            id={listboxId}
-            role="listbox"
-            className="absolute z-50 left-0 right-0 top-[calc(100%+6px)] rounded-xl border border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shadow-xl overflow-hidden py-1.5 transition-all text-left"
-          >
-            {/* Encabezado contextual */}
-            <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-400 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-1 mb-1">
-              <span className="flex items-center gap-1.5">
-                {isDomainMode ? (
-                  <>
-                    <Mail className="w-3 h-3 text-blue-500" />
-                    Sugerencias de Correo
-                  </>
-                ) : (
-                  <>
-                    <Clock className="w-3 h-3 text-slate-400" />
-                    Cuentas Recientes
-                  </>
-                )}
-              </span>
-              <span className="text-[9px] font-normal lowercase tracking-normal text-slate-400">
-                Tab o clic para completar
-              </span>
-            </div>
-
-            {/* Lista de Sugerencias de Dominio (@gmail.com, etc.) */}
-            {isDomainMode && (
-              <div className="max-h-56 overflow-y-auto">
-                {domainSuggestions.map((domain, index) => {
-                  const isSelected = index === highlightedIndex;
-                  const fullEmail = `${prefix}@${domain}`;
-
-                  return (
-                    <button
-                      key={domain}
-                      id={`${listboxId}-item-${index}`}
-                      type="button"
-                      role="option"
-                      aria-selected={isSelected}
-                      onMouseEnter={() => setHighlightedIndex(index)}
-                      onClick={() => applyValue(fullEmail)}
-                      className={`w-full flex items-center justify-between px-3 py-2 text-xs transition cursor-pointer text-left ${
-                        isSelected
-                          ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-sky-300 font-medium'
-                          : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0 truncate">
-                        <AtSign
-                          className={`w-3.5 h-3.5 shrink-0 ${
-                            isSelected
-                              ? 'text-blue-500 dark:text-sky-400'
-                              : 'text-slate-400'
-                          }`}
-                        />
-                        <span className="truncate">
-                          <span className="text-slate-500 dark:text-slate-400 font-normal">
-                            {prefix}@
-                          </span>
-                          <span className="font-bold text-slate-900 dark:text-white">
-                            {domain}
-                          </span>
-                        </span>
-                      </div>
-
-                      {isSelected && (
-                        <kbd className="hidden sm:inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-sky-300 border border-blue-200 dark:border-blue-800 shrink-0 select-none">
-                          Tab ↹
-                        </kbd>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Lista de Historial Reciente */}
-            {isHistoryMode && (
-              <div className="max-h-52 overflow-y-auto">
-                {historyList.map((histEmail, index) => {
-                  const isSelected = index === highlightedIndex;
-
-                  return (
-                    <div
-                      key={histEmail}
-                      id={`${listboxId}-item-${index}`}
-                      role="option"
-                      aria-selected={isSelected}
-                      onMouseEnter={() => setHighlightedIndex(index)}
-                      onClick={() => applyValue(histEmail)}
-                      className={`flex items-center justify-between px-3 py-2 text-xs transition cursor-pointer ${
-                        isSelected
-                          ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-sky-300 font-medium'
-                          : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0 truncate">
-                        <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span className="truncate">{histEmail}</span>
-                      </div>
-
-                      <button
-                        type="button"
-                        title="Eliminar de historial"
-                        aria-label={`Eliminar ${histEmail} del historial`}
-                        onClick={(e) => handleRemoveHistoryItem(histEmail, e)}
-                        className="p-1 rounded text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+        {/* Indicador sutil de 'Tab ↹' en la esquina derecha cuando hay sugerencia disponible */}
+        {activeSuffix && (
+          <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] font-semibold tracking-tight text-slate-400 dark:text-slate-500 bg-slate-200/50 dark:bg-slate-700/50 px-1.5 py-0.5 rounded border border-slate-300/40 dark:border-slate-600/40 select-none animate-in fade-in duration-150">
+            Tab ↹
+          </span>
         )}
       </div>
     );
