@@ -38,6 +38,7 @@ import type { DoctorResponse, DoctorClinica } from '@/types';
 import { buildDoctorFullName, isDoctorActive, cleanZonaText, cleanZonasDomicilio } from '@/types/doctor';
 import { Navbar } from '@/components/navbar';
 import { DoctorCard, type DoctorCardData } from '@/components/doctor-card';
+import { DoctorCardMobile } from '@/components/doctor-card-mobile';
 import { useUserLocation } from '@/hooks/use-user-location';
 import { AnimatedList } from '@/components/animated-list';
 import { AnimatedModal } from '@/components/animated-modal';
@@ -426,6 +427,16 @@ function DashboardContent() {
     const [selectedClinicIndex, setSelectedClinicIndex] = useState<number | null>(null);
     const [selectedBuilding, setSelectedBuilding] = useState<BuildingLocation | null>(null);
     const [showMapMobile, setShowMapMobile] = useState(false);
+    const [isMobileScreen, setIsMobileScreen] = useState(false);
+
+    useEffect(() => {
+        const checkMobile = () => {
+            setIsMobileScreen(window.innerWidth < 1024);
+        };
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
 
     const selectedBuildingDoctorCodes = useMemo(() => {
         if (!selectedBuilding) return new Set<string>();
@@ -611,7 +622,10 @@ function DashboardContent() {
         setSelectedClinicIndex(null);
 
         if (nextSelectedId) {
-            if (!isMapVisible) setIsMapVisible(true);
+            // En móvil NO se abre el mapa automáticamente al seleccionar un médico
+            if (!isMobileScreen && !isMapVisible) {
+                setIsMapVisible(true);
+            }
             if (currentPage !== 1) setCurrentPage(1);
             setTimeout(() => {
                 const el = document.getElementById('doctores');
@@ -1023,12 +1037,44 @@ function DashboardContent() {
         setRecentDoctors(addRecentDoctor(item));
     };
 
-    const itemsPerPage = 16;
+    // ─── Columnas adaptativas y Paginación dinámica (elementos por fila x 4 filas) ───
+    const [columnsPerRow, setColumnsPerRow] = useState(4);
+
+    useEffect(() => {
+        const updateColumns = () => {
+            const width = window.innerWidth;
+            if (isMapVisible || selectedDoctorId) {
+                // Modo mapa lateral activo (el listado ocupa ~50% del ancho)
+                if (width >= 2000) setColumnsPerRow(3);
+                else if (width >= 768) setColumnsPerRow(2);
+                else setColumnsPerRow(1);
+            } else {
+                // Modo listado completo
+                if (width >= 2250) setColumnsPerRow(6);
+                else if (width >= 1650) setColumnsPerRow(5); // Monitores de 27 pulgadas o superiores (ej. 2034px)
+                else if (width >= 1100) setColumnsPerRow(4); // Laptops estándar de 15.6 pulgadas (ej. 1280px a 1600px)
+                else if (width >= 768) setColumnsPerRow(3);  // Tablets
+                else if (width >= 550) setColumnsPerRow(2);  // Tablets pequeñas / móviles apaisados
+                else setColumnsPerRow(1);                    // Móviles verticales
+            }
+        };
+
+        updateColumns();
+        window.addEventListener('resize', updateColumns);
+        return () => window.removeEventListener('resize', updateColumns);
+    }, [isMapVisible, selectedDoctorId]);
+
+    // La cantidad de elementos por página se calcula como: número de elementos por fila x 4 filas completas
+    const itemsPerPage = useMemo(() => {
+        if (columnsPerRow <= 1) return 8;
+        return columnsPerRow * 4;
+    }, [columnsPerRow]);
+
     const totalPages = Math.max(1, Math.ceil(visibleDoctors.length / itemsPerPage));
     const currentPageForView = Math.min(currentPage, totalPages);
     const paginatedDoctors = useMemo(
         () => visibleDoctors.slice((currentPageForView - 1) * itemsPerPage, currentPageForView * itemsPerPage),
-        [currentPageForView, visibleDoctors],
+        [currentPageForView, visibleDoctors, itemsPerPage],
     );
 
     const totalSpecialties = useMemo(
@@ -1088,7 +1134,7 @@ function DashboardContent() {
 
     return (
         <main className="min-h-screen text-slate-900 pb-16">
-            <div className="mx-auto w-[90%] max-w-[1800px] mt-6 flex flex-col gap-6">
+            <div className="mx-auto w-[92%] 2xl:w-[94%] max-w-[2400px] mt-6 flex flex-col gap-6">
                 {/* FILA 1: Dos Buscadores Gemelos Grandes (Médicos y Ubicación) + Acciones Globales */}
                 <div className={`flex flex-col lg:flex-row gap-3.5 items-stretch lg:items-center relative ${isSearchFocused || isLocationSearchFocused ? 'z-[700]' : 'z-[400]'}`}>
                     
@@ -1096,7 +1142,7 @@ function DashboardContent() {
                     <div className="flex flex-col md:flex-row items-center gap-3.5 flex-1 w-full">
                         
                         {/* 1. Buscador de Médicos / Especialidades */}
-                        <div ref={searchMenuRef} className={`relative flex-1 w-full rounded-2xl bg-surface border border-outline-variant/30 shadow-md flex items-center px-4 h-14 ${isSearchFocused ? 'z-[700] ring-2 ring-primary/30 border-primary' : 'z-[400]'} focus-within:ring-2 focus-within:ring-primary/30 focus-within:border-primary transition-all`}>
+                        <div ref={searchMenuRef} className={`relative flex-1 w-full rounded-2xl bg-surface border border-outline-variant/30 shadow-md flex items-center px-4 min-h-[58px] sm:h-14 ${isSearchFocused ? 'z-[700] ring-2 ring-primary/30 border-primary' : 'z-[400]'} focus-within:ring-2 focus-within:ring-primary/30 focus-within:border-primary transition-all`}>
                             <Search className="h-5 w-5 shrink-0 text-[#0ea5e9] mr-2" />
                             
                             <div className="flex items-center gap-2 h-full flex-nowrap shrink-0 overflow-x-auto no-scrollbar max-w-[45%]">
@@ -1366,7 +1412,7 @@ function DashboardContent() {
                         </div>
 
                         {/* 2. Buscador Exclusivo de Ubicación (Mismo Estilo Gemelo a la Par) */}
-                        <div ref={locationSearchRef} className={`relative flex-1 w-full rounded-2xl bg-surface border border-outline-variant/30 shadow-md flex items-center px-4 h-14 ${isLocationSearchFocused ? 'z-[700] ring-2 ring-sky-500/30 border-sky-500' : 'z-[400]'} focus-within:ring-2 focus-within:ring-sky-500/30 focus-within:border-sky-500 transition-all`}>
+                        <div ref={locationSearchRef} className={`relative flex-1 w-full rounded-2xl bg-surface border border-outline-variant/30 shadow-md flex items-center px-4 min-h-[58px] sm:h-14 ${isLocationSearchFocused ? 'z-[700] ring-2 ring-sky-500/30 border-sky-500' : 'z-[400]'} focus-within:ring-2 focus-within:ring-sky-500/30 focus-within:border-sky-500 transition-all`}>
                             <MapPin className="h-5 w-5 shrink-0 text-[#0ea5e9] mr-2" />
 
                             <input
@@ -1959,27 +2005,41 @@ function DashboardContent() {
                         <button
                             type="button"
                             onClick={() => {
-                                if (isMapVisible || selectedDoctorId) {
-                                    setIsMapVisible(false);
-                                    setSelectedDoctorId(null);
-                                    setShowMapMobile(false);
+                                if (isMobileScreen) {
+                                    if (showMapMobile) {
+                                        setShowMapMobile(false);
+                                        setIsMapVisible(false);
+                                    } else {
+                                        setSelectedDoctorId(null);
+                                        setIsMapVisible(true);
+                                        setShowMapMobile(true);
+                                    }
                                 } else {
-                                    setIsMapVisible(true);
+                                    if (isMapVisible || selectedDoctorId) {
+                                        setIsMapVisible(false);
+                                        setSelectedDoctorId(null);
+                                        setShowMapMobile(false);
+                                    } else {
+                                        setIsMapVisible(true);
+                                    }
                                 }
                             }}
                             className={`inline-flex h-12 items-center gap-2 rounded-2xl px-5 text-xs font-bold transition-all duration-150 active:scale-95 cursor-pointer shadow-sm hover:shadow-md ${
-                                (isMapVisible || selectedDoctorId)
+                                (showMapMobile || (!isMobileScreen && (isMapVisible || selectedDoctorId)))
                                     ? 'bg-slate-900 hover:bg-slate-800 text-white border border-slate-700'
                                     : 'bg-sky-600 hover:bg-sky-700 text-white'
                             }`}
                         >
-                            {(isMapVisible || selectedDoctorId) ? (
-                                <X className="w-4 h-4 text-rose-300" />
+                            {(showMapMobile || (!isMobileScreen && (isMapVisible || selectedDoctorId))) ? (
+                                <List className="w-4 h-4 text-sky-300" />
                             ) : (
                                 <MapPin className="w-4 h-4 text-white" />
                             )}
                             <span className="tracking-wide">
-                                {(isMapVisible || selectedDoctorId) ? 'Ocultar Mapa' : 'Ver Mapa'}
+                                {isMobileScreen
+                                    ? (showMapMobile ? 'Ver Lista' : 'Ver Mapa')
+                                    : ((isMapVisible || selectedDoctorId) ? 'Ocultar Mapa' : 'Ver Mapa')
+                                }
                             </span>
                         </button>
                     </div>
@@ -2024,27 +2084,43 @@ function DashboardContent() {
                                     <AnimatedList
                                         className={
                                             (isMapVisible || selectedDoctorId)
-                                                ? "grid grid-cols-1 md:grid-cols-2 gap-4 w-full"
-                                                : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 w-full"
+                                                ? "grid gap-4 w-full"
+                                                : "grid gap-6 w-full"
                                         }
+                                        style={{
+                                            gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))`,
+                                        }}
                                     >
                                         {paginatedDoctors.map((doctor) => (
-                                            <DoctorCard
-                                                key={doctor.doctor.exp_codigo}
-                                                data={doctor}
-                                                onVisit={handleDoctorVisit}
-                                                onSelect={handleDoctorCardSelect}
-                                                onClose={handleCloseSelectedDoctor}
-                                                onSelectClinic={(idx) => setSelectedClinicIndex(idx)}
-                                                selectedClinicIndex={selectedClinicIndex}
-                                                variant={selectedDoctorId === doctor.doctor.exp_codigo ? 'expanded' : 'compact'}
-                                                isHovered={hoveredDoctorId === doctor.doctor.exp_codigo}
-                                                isSelected={selectedDoctorId === doctor.doctor.exp_codigo}
-                                                isHighlightedByLocation={selectedBuildingDoctorCodes.has(doctor.doctor.exp_codigo)}
-                                                highlightedLocationName={selectedBuilding?.name}
-                                                onMouseEnter={() => setHoveredDoctorId(doctor.doctor.exp_codigo)}
-                                                onMouseLeave={() => setHoveredDoctorId(null)}
-                                            />
+                                            <div key={doctor.doctor.exp_codigo} className="w-full h-full flex justify-center">
+                                                {/* Vista Móvil: Tarjeta horizontal de 3 zonas (Foto | Información | Botones) */}
+                                                <div className="block md:hidden w-full">
+                                                    <DoctorCardMobile
+                                                        data={doctor}
+                                                        onVisit={handleDoctorVisit}
+                                                        isSelected={selectedDoctorId === doctor.doctor.exp_codigo}
+                                                    />
+                                                </div>
+
+                                                {/* Vista Escritorio / Tablet: Tarjeta original Airbnb y Expandida (100% intacta) */}
+                                                <div className="hidden md:block w-full h-full">
+                                                    <DoctorCard
+                                                        data={doctor}
+                                                        onVisit={handleDoctorVisit}
+                                                        onSelect={handleDoctorCardSelect}
+                                                        onClose={handleCloseSelectedDoctor}
+                                                        onSelectClinic={(idx) => setSelectedClinicIndex(idx)}
+                                                        selectedClinicIndex={selectedClinicIndex}
+                                                        variant={selectedDoctorId === doctor.doctor.exp_codigo ? 'expanded' : 'compact'}
+                                                        isHovered={hoveredDoctorId === doctor.doctor.exp_codigo}
+                                                        isSelected={selectedDoctorId === doctor.doctor.exp_codigo}
+                                                        isHighlightedByLocation={selectedBuildingDoctorCodes.has(doctor.doctor.exp_codigo)}
+                                                        highlightedLocationName={selectedBuilding?.name}
+                                                        onMouseEnter={() => setHoveredDoctorId(doctor.doctor.exp_codigo)}
+                                                        onMouseLeave={() => setHoveredDoctorId(null)}
+                                                    />
+                                                </div>
+                                            </div>
                                         ))}
                                     </AnimatedList>
                                 ) : (
@@ -2146,6 +2222,7 @@ function DashboardContent() {
                             setIsMapVisible(false);
                             setSelectedDoctorId(null);
                         } else {
+                            setSelectedDoctorId(null); // Garantiza mostrar todos los punteros de los médicos
                             setShowMapMobile(true);
                             setIsMapVisible(true);
                         }

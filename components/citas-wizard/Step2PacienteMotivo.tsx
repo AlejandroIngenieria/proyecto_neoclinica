@@ -8,7 +8,7 @@ import {
 } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { useCitaStore } from '@/store/use-cita-store';
-import { ChevronLeft, MapPin, Video, Home, Stethoscope, ArrowRight, CalendarDays, Building2, BriefcaseMedical, CalendarClock, Activity, ClipboardList, Plus, Loader2, UploadCloud, FileText, X, CheckCircle2, Sparkles } from 'lucide-react';
+import { ChevronLeft, MapPin, Video, Home, Stethoscope, ArrowRight, CalendarDays, Building2, BriefcaseMedical, CalendarClock, Activity, ClipboardList, Plus, Loader2, UploadCloud, FileText, X, CheckCircle2, Sparkles, AlertCircle } from 'lucide-react';
 import { usePacienteTitular, usePacientesByUsuario } from '@/hooks/use-pacientes';
 import type { PacienteSeleccionDto } from '@/types/citas';
 import { PacienteFormModal } from '@/components/paciente-form-modal';
@@ -25,18 +25,12 @@ const MOTIVOS = [
     id: 'Consulta de Seguimiento',
     title: 'Consulta de Seguimiento',
     badge: 'Control',
-    icon: CalendarClock
-  },
-  {
-    id: 'Enfermedad o Molestia',
-    title: 'Enfermedad o Molestia',
-    badge: 'Diagnóstico',
     icon: Activity
   },
   {
-    id: 'Renovación de Receta',
-    title: 'Renovación de Receta',
-    badge: 'Medicamentos',
+    id: 'Revisión de Exámenes / Resultados',
+    title: 'Revisión de Exámenes',
+    badge: 'Diagnóstico',
     icon: ClipboardList
   }
 ];
@@ -54,6 +48,7 @@ export function Step2PacienteMotivo() {
     archivos, setArchivos,
     direccionDomicilio, setDireccionDomicilio,
     referenciasDomicilio, setReferenciasDomicilio,
+    pacientesExcluidos,
     prevStep, nextStep
   } = useCitaStore();
 
@@ -123,20 +118,38 @@ export function Step2PacienteMotivo() {
     return list.sort((a, b) => (b.pacTitular ? 1 : 0) - (a.pacTitular ? 1 : 0));
   }, [pacientesSeleccion, pacientesUsuario, titular]);
 
-  // Auto-seleccionar al titular o al primer paciente si ninguno está seleccionado
+  // Filtrar pacientes excluidos por conflicto de horario
+  const pacientesFiltrados = useMemo(() => {
+    if (!pacientesExcluidos || pacientesExcluidos.length === 0) return pacientesDisponibles;
+    return pacientesDisponibles.filter(p => !pacientesExcluidos.includes(p.pacCodigo));
+  }, [pacientesDisponibles, pacientesExcluidos]);
+
+  const pacientesExcluidosDetalle = useMemo(() => {
+    if (!pacientesExcluidos || pacientesExcluidos.length === 0) return [];
+    return pacientesDisponibles.filter(p => pacientesExcluidos.includes(p.pacCodigo));
+  }, [pacientesDisponibles, pacientesExcluidos]);
+
+  // Auto-seleccionar al titular o al primer paciente si ninguno está seleccionado (respetando exclusiones)
   useEffect(() => {
-    if (!pacienteSeleccionado && pacientesDisponibles.length > 0) {
-      const titularPac = pacientesDisponibles.find(p => p.pacTitular) || pacientesDisponibles[0];
-      setPaciente(titularPac);
-    } else if (pacienteSeleccionado) {
-      const estado = ((pacienteSeleccionado as any).pacEstado || (pacienteSeleccionado as any).pac_estado || '').toLowerCase();
-      const stillValid = pacientesDisponibles.find(p => p.pacCodigo === pacienteSeleccionado.pacCodigo);
-      if (estado === 'independizado' || (!stillValid && pacientesDisponibles.length > 0)) {
-        const titularPac = pacientesDisponibles.find(p => p.pacTitular) || pacientesDisponibles[0] || null;
+    const pacCodigoActual = pacienteSeleccionado?.pacCodigo;
+    if (!pacCodigoActual) {
+      if (pacientesFiltrados.length > 0) {
+        const titularPac = pacientesFiltrados.find(p => p.pacTitular) || pacientesFiltrados[0];
         setPaciente(titularPac);
       }
+    } else {
+      const isExcluded = Boolean(pacientesExcluidos?.includes(pacCodigoActual));
+      const estado = ((pacienteSeleccionado as any)?.pacEstado || (pacienteSeleccionado as any)?.pac_estado || '').toLowerCase();
+      const stillValid = pacientesFiltrados.some(p => p.pacCodigo === pacCodigoActual);
+      
+      if (isExcluded || estado === 'independizado' || !stillValid) {
+        const nuevoPac = pacientesFiltrados.find(p => p.pacTitular) || pacientesFiltrados[0] || null;
+        if ((nuevoPac?.pacCodigo || null) !== (pacCodigoActual || null)) {
+          setPaciente(nuevoPac);
+        }
+      }
     }
-  }, [pacienteSeleccionado, pacientesDisponibles, setPaciente]);
+  }, [pacienteSeleccionado?.pacCodigo, pacientesFiltrados, pacientesExcluidos, setPaciente]);
 
   // Asegurar que la pantalla siempre se posicione hasta arriba al entrar al Paso 2
   useEffect(() => {
@@ -190,7 +203,7 @@ export function Step2PacienteMotivo() {
         <div>
           <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-6 tracking-tight">¿Quién asistirá a la consulta?</h2>
           <div className="flex items-end gap-6 sm:gap-10 overflow-x-auto max-w-full pb-2 scrollbar-none">
-            {pacientesDisponibles.map(pac => {
+            {pacientesFiltrados.map(pac => {
               const isSelected = pacienteSeleccionado?.pacCodigo === pac.pacCodigo;
               return (
                 <button key={pac.pacCodigo} onClick={() => setPaciente(pac)} className="flex flex-col items-center gap-3 group">
@@ -224,6 +237,16 @@ export function Step2PacienteMotivo() {
               <span className="font-bold text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors text-[13px]">Añadir Familiar</span>
             </button>
           </div>
+
+          {pacientesExcluidosDetalle.length > 0 && (
+            <div className="mt-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/50 flex items-center gap-2.5 text-xs text-amber-800 dark:text-amber-300">
+              <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+              <span>
+                <strong>{pacientesExcluidosDetalle.map(p => p.pacTitular ? 'Tú (titular)' : p.nombreCompleto).join(', ')}</strong>{' '}
+                no {pacientesExcluidosDetalle.length > 1 ? 'están disponibles' : 'está disponible'} para este turno porque ya tiene una cita agendada a esta hora.
+              </span>
+            </div>
+          )}
 
           <PacienteFormModal
             open={isAddPacienteOpen}

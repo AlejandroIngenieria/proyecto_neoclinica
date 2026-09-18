@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -11,6 +11,8 @@ import {
   restablecerPasswordSchema,
   type RestablecerPasswordFormValues,
 } from '@/lib/validations/auth';
+import { CapsLockWarning } from '@/components/caps-lock-warning';
+import { useCapsLock } from '@/hooks/use-caps-lock';
 
 function RestablecerPasswordForm() {
   const router = useRouter();
@@ -25,6 +27,9 @@ function RestablecerPasswordForm() {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
+  // Caps Lock detection
+  const { isCapsLockOn, checkCapsLock, resetCapsLock } = useCapsLock();
+
   const {
     register,
     handleSubmit,
@@ -38,6 +43,14 @@ function RestablecerPasswordForm() {
     },
     mode: 'onChange',
   });
+
+  // Auto-focus inteligente al cargar
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      document.getElementById('nuevaPassword')?.focus();
+    }, 120);
+    return () => clearTimeout(timer);
+  }, []);
 
   const watchPassword = watch('nuevaPassword') || '';
   const hasLength = watchPassword.length >= 8 && watchPassword.length <= 15;
@@ -166,9 +179,14 @@ function RestablecerPasswordForm() {
               <input
                 id="nuevaPassword"
                 type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
                 placeholder="Nueva Contraseña*"
+                onKeyDown={checkCapsLock}
+                onKeyUp={checkCapsLock}
+                aria-describedby={errors.nuevaPassword ? 'nuevaPassword_error' : undefined}
+                aria-invalid={!!errors.nuevaPassword}
                 className="autofill-fix h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 sm:text-[0.95rem]"
-                {...register('nuevaPassword')}
+                {...register('nuevaPassword', { onBlur: resetCapsLock })}
               />
               <button
                 type="button"
@@ -179,6 +197,7 @@ function RestablecerPasswordForm() {
                 {showPassword ? <EyeOff className="h-4.5 w-4.5" /> : <Eye className="h-4.5 w-4.5" />}
               </button>
             </div>
+            <CapsLockWarning isVisible={isCapsLockOn} className="text-amber-300" />
 
             {/* Requisitos de Contraseña */}
             <div className="mt-3 rounded-xl bg-[#0b234c]/50 p-3 text-sm">
@@ -208,7 +227,9 @@ function RestablecerPasswordForm() {
             </div>
 
             {errors.nuevaPassword && watchPassword.length === 0 ? (
-              <p className="mt-2 text-sm text-rose-300">{errors.nuevaPassword.message}</p>
+              <p id="nuevaPassword_error" role="alert" className="mt-2 text-sm text-rose-300">
+                {errors.nuevaPassword.message}
+              </p>
             ) : null}
           </div>
 
@@ -222,9 +243,14 @@ function RestablecerPasswordForm() {
               <input
                 id="confirmarPassword"
                 type={showConfirmPassword ? 'text' : 'password'}
+                autoComplete="new-password"
                 placeholder="Confirmar Contraseña*"
+                onKeyDown={checkCapsLock}
+                onKeyUp={checkCapsLock}
+                aria-describedby={errors.confirmarPassword ? 'confirmarPassword_error' : undefined}
+                aria-invalid={!!errors.confirmarPassword}
                 className="autofill-fix h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 sm:text-[0.95rem]"
-                {...register('confirmarPassword')}
+                {...register('confirmarPassword', { onBlur: resetCapsLock })}
               />
               <button
                 type="button"
@@ -235,8 +261,11 @@ function RestablecerPasswordForm() {
                 {showConfirmPassword ? <EyeOff className="h-4.5 w-4.5" /> : <Eye className="h-4.5 w-4.5" />}
               </button>
             </div>
+            <CapsLockWarning isVisible={isCapsLockOn} className="text-amber-300" />
             {errors.confirmarPassword ? (
-              <p className="mt-2 text-sm text-rose-300">{errors.confirmarPassword.message}</p>
+              <p id="confirmarPassword_error" role="alert" className="mt-2 text-sm text-rose-300">
+                {errors.confirmarPassword.message}
+              </p>
             ) : null}
           </div>
 

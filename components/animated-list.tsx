@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 type AnimatedListProps = {
   children: ReactNode[];
   className?: string;
+  style?: React.CSSProperties;
   /** Delay base entre items en segundos (default: 0.06) */
   staggerDelay?: number;
 };
@@ -24,10 +25,11 @@ const itemVariants = {
  *   {doctors.map(d => <DoctorCard key={d.id} ... />)}
  * </AnimatedList>
  */
-export function AnimatedList({ children, className, staggerDelay = 0.06 }: AnimatedListProps) {
+export function AnimatedList({ children, className, style, staggerDelay = 0.06 }: AnimatedListProps) {
   return (
     <motion.div
       className={className}
+      style={style}
       initial="hidden"
       animate="visible"
       variants={{

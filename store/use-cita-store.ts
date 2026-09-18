@@ -45,6 +45,11 @@ interface CitaState {
   solicitudIntercambio: { fecha: string; hora: string; mensaje?: string } | null;
   setSolicitudIntercambio: (data: { fecha: string; hora: string; mensaje?: string } | null) => void;
 
+  // Pacientes con conflicto de horario excluidos de la selección
+  pacientesExcluidos: string[];
+  setPacientesExcluidos: (codes: string[]) => void;
+  addPacienteExcluido: (code: string) => void;
+
   // Acciones
   setStep: (step: CitaStep) => void;
   nextStep: () => void;
@@ -112,6 +117,7 @@ const initialState = {
   recompensaSeleccionada: null,
   citaConfirmada: false,
   solicitudIntercambio: null,
+  pacientesExcluidos: [],
 };
 
 export const useCitaStore = create<CitaState>((set, get) => ({
@@ -119,6 +125,12 @@ export const useCitaStore = create<CitaState>((set, get) => ({
   
   setCitaConfirmada: (val) => set({ citaConfirmada: val }),
   setSolicitudIntercambio: (data) => set({ solicitudIntercambio: data }),
+  setPacientesExcluidos: (codes) => set({ pacientesExcluidos: codes }),
+  addPacienteExcluido: (code) => set((state) => ({
+    pacientesExcluidos: state.pacientesExcluidos.includes(code)
+      ? state.pacientesExcluidos
+      : [...state.pacientesExcluidos, code]
+  })),
 
   setStep: (step) => {
     if (typeof window !== 'undefined') {
@@ -153,18 +165,20 @@ export const useCitaStore = create<CitaState>((set, get) => ({
     areaDomicilio: null,
     // Resetear fecha y hora si cambia la modalidad porque los horarios pueden cambiar
     fecha: null,
-    hora: null
+    hora: null,
+    pacientesExcluidos: []
   }),
   
   setClinica: (clinica) => set({ 
     clinicaSeleccionada: clinica,
     fecha: null,
-    hora: null
+    hora: null,
+    pacientesExcluidos: []
   }),
   setServicio: (servicio) => set({ servicioSeleccionado: servicio }),
   setArea: (area) => set({ areaDomicilio: area }),
   
-  setFecha: (fecha) => set({ fecha, hora: null }),
+  setFecha: (fecha) => set({ fecha, hora: null, pacientesExcluidos: [] }),
   setHora: (hora) => set({ hora }),
   
   setPaciente: (paciente) => set({ pacienteSeleccionado: paciente }),

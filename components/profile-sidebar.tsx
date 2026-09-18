@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import ConfirmLogoutModal from '@/components/confirm-logout-modal';
 
 // ─── Navigation items ────────────────────────────────────────────────────────
 
@@ -36,6 +37,7 @@ export function ProfileSidebar() {
   const pathname = usePathname();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isDesktopOpen, setIsDesktopOpen] = useState(true);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   const userName = session?.user?.name || 'Usuario';
   const userEmail = session?.user?.email || 'Sin correo';
@@ -107,8 +109,8 @@ export function ProfileSidebar() {
       <div className="border-t border-slate-100 dark:border-slate-800 px-3 py-4 space-y-2">
         <button
           type="button"
-          onClick={() => signOut({ callbackUrl: '/login' })}
-          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-rose-500 dark:text-rose-400 transition hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-300"
+          onClick={() => setShowLogoutModal(true)}
+          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-rose-500 dark:text-rose-400 transition hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-300 cursor-pointer"
         >
           <LogOut className="h-4 w-4 shrink-0" />
           <span className="truncate">Cerrar sesión</span>
@@ -185,6 +187,12 @@ export function ProfileSidebar() {
           </>
         )}
       </AnimatePresence>
+
+      {/* Modal de confirmación de salida minimalista */}
+      <ConfirmLogoutModal
+        isOpen={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+      />
     </>
   );
 }

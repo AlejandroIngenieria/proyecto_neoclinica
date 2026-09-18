@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -12,6 +12,8 @@ import {
   type SolicitarRecuperacionFormValues,
 } from '@/lib/validations/auth';
 import { resilientRequest } from '@/lib/request-handler';
+import { EmailAutocompleteInput } from '@/components/email-autocomplete-input';
+import { getRememberedEmail } from '@/lib/email-history';
 
 function OlvidePasswordForm() {
   const searchParams = useSearchParams();
@@ -23,6 +25,7 @@ function OlvidePasswordForm() {
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<SolicitarRecuperacionFormValues>({
     resolver: zodResolver(solicitarRecuperacionSchema),
@@ -31,6 +34,20 @@ function OlvidePasswordForm() {
     },
     mode: 'onTouched',
   });
+
+  // Prellenar con correo recordado si no viene en searchParams y auto-focus inteligente
+  useEffect(() => {
+    if (!initialCorreo) {
+      const remembered = getRememberedEmail();
+      if (remembered) {
+        setValue('correo', remembered);
+      }
+    }
+    const timer = setTimeout(() => {
+      document.getElementById('correo')?.focus();
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [initialCorreo, setValue]);
 
   const onSubmit = async (values: SolicitarRecuperacionFormValues) => {
     setErrorMsg('');
@@ -122,17 +139,20 @@ function OlvidePasswordForm() {
             </label>
             <div className="flex h-14 items-center gap-3 rounded-2xl border border-sky-400/30 bg-[#0b234c] px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition focus-within:border-sky-300/70 focus-within:ring-2 focus-within:ring-sky-400/25">
               <Mail className="h-5 w-5 shrink-0 text-slate-300" />
-              <input
+              <EmailAutocompleteInput
                 id="correo"
-                type="email"
                 autoComplete="email"
                 placeholder="Correo electrónico*"
+                aria-describedby={errors.correo ? 'correo_error' : undefined}
+                aria-invalid={!!errors.correo}
                 className="autofill-fix h-full w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-400 sm:text-[0.95rem]"
                 {...register('correo')}
               />
             </div>
             {errors.correo ? (
-              <p className="mt-2 text-sm text-rose-300">{errors.correo.message}</p>
+              <p id="correo_error" role="alert" className="mt-2 text-sm text-rose-300">
+                {errors.correo.message}
+              </p>
             ) : null}
           </div>
 

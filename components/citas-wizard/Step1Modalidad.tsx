@@ -8,10 +8,11 @@ import { ChevronLeft, ChevronRight, Stethoscope, MapPin, Video, Home, ArrowRight
 import { DayPicker } from 'react-day-picker';
 import { es } from 'date-fns/locale';
 import { format } from 'date-fns';
-import type { HorarioCitaDto, ServicioMedicoCitaDto, GrupoCitaDto } from '@/types/citas';
+import type { HorarioCitaDto, ServicioMedicoCitaDto, GrupoCitaDto, CitaListDto } from '@/types/citas';
 import 'react-day-picker/style.css';
 import { NeoLoader } from '@/components/neo-loader';
 import { ModalSolicitarCambio } from './ModalSolicitarCambio';
+import { ModalMiCitaConflicto } from './ModalMiCitaConflicto';
 
 export function Step1Modalidad() {
   const {
@@ -23,7 +24,8 @@ export function Step1Modalidad() {
     grupoId, grupoNombre, setTemaSeguimiento,
     tipoPagoId, setTipoPagoId,
     creandoNuevoGrupo, nuevoGrupoTema, setCreandoNuevoGrupo, setNuevoGrupoTema,
-    solicitudIntercambio, setSolicitudIntercambio
+    solicitudIntercambio, setSolicitudIntercambio,
+    pacientesExcluidos, setPacientesExcluidos, addPacienteExcluido
   } = useCitaStore();
   const router = useRouter();
 
@@ -39,22 +41,28 @@ export function Step1Modalidad() {
   const codigosPacientes = useMemo(() => pacientes.map(p => p.pacCodigo), [pacientes]);
   const { data: misCitas = [] } = useAllCitasPacientes(codigosPacientes);
 
-  // Inicializar paciente por defecto si aún no está en el store
+  // Inicializar paciente por defecto si aún no está en el store (respetando exclusiones)
   useEffect(() => {
     if (!pacienteSeleccionado) {
-      if (titular) {
+      const titularCodigo = (titular as any)?.pacCodigo || titular?.pac_codigo;
+      const titularValido = titular && titularCodigo && !pacientesExcluidos?.includes(titularCodigo);
+
+      if (titularValido) {
         setPaciente({
-          pacCodigo: (titular as any).pacCodigo || titular.pac_codigo,
+          pacCodigo: titularCodigo,
           nombreCompleto: (titular as any).nombreCompleto || `${titular.pac_primer_nombre || ''} ${titular.pac_primer_apellido || ''}`.trim(),
           pacTitular: true,
           pacFechaNacimiento: (titular as any).pacFechaNacimiento || titular.pac_fecha_nacimiento || null,
           pacFotoPerfilUrl: (titular as any).pacFotoPerfilUrl || titular.pac_foto_perfil_url || undefined,
         });
       } else if (pacientes.length > 0) {
-        setPaciente(pacientes[0]);
+        const primerValido = pacientes.find(p => !pacientesExcluidos?.includes(p.pacCodigo));
+        if (primerValido) {
+          setPaciente(primerValido);
+        }
       }
     }
-  }, [titular, pacientes, pacienteSeleccionado, setPaciente]);
+  }, [titular, pacientes, pacienteSeleccionado, pacientesExcluidos, setPaciente]);
 
   const codPacActivo = pacienteSeleccionado?.pacCodigo || (titular as any)?.pacCodigo || titular?.pac_codigo || pacientes.find(p => p.pacTitular)?.pacCodigo || pacientes[0]?.pacCodigo || null;
   const { data: grupos = [], isLoading: loadingGrupos } = useGruposCita(codPacActivo, codMedico);
@@ -81,6 +89,13 @@ export function Step1Modalidad() {
 
   const [modalCambioOpen, setModalCambioOpen] = useState(false);
   const [slotParaCambio, setSlotParaCambio] = useState<{ raw: string; display: string } | null>(null);
+
+  const [modalMiCitaOpen, setModalMiCitaOpen] = useState(false);
+  const [citaConflictoSeleccionada, setCitaConflictoSeleccionada] = useState<{
+    cita: CitaListDto;
+    slotRaw: string;
+    horaDisplay: string;
+  } | null>(null);
 
   // Si la fecha seleccionada cambia y es en el pasado o hoy con hora pasada, limpiar cualquier hora de agendamiento
   useEffect(() => {
@@ -1014,7 +1029,7 @@ export function Step1Modalidad() {
                       )}
 
                       {availableTimeSlots.length > 0 ? (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 h-[320px] overflow-y-auto pr-2 custom-scrollbar content-start">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 h-[320px] overflow-y-auto pr-2 pt-7 pb-2 px-1 custom-scrollbar content-start">
                           {availableTimeSlots.map(({ time: slot, disabled, isTemaSlot, isMiCita, isPastHour, isOccupiedByOther }) => {
                             const isSelected = hora === slot;
 
@@ -1046,24 +1061,42 @@ export function Step1Modalidad() {
                               );
                             }
 
-                            // CASO: CITA DEL MISMO USUARIO/CUENTA (ya programada por el usuario o su familia)
+                            // CASO: CITA DEL MISMO USUARIO/CUENTA (fondo celeste, hover con tooltip, click abre modal de conflicto)
                             if (isMiCita) {
+                              const citaConflicto = misCitasActivasEnFecha.find(c => {
+                                const cHora = c.ctaHora ? String(c.ctaHora).slice(0, 5) : '';
+                                return cHora === slot;
+                              });
+
                               return (
-                                <div
+                                <button
                                   key={slot}
-                                  className="py-2.5 px-3 sm:px-4 border-2 border-sky-400/80 bg-sky-50/90 dark:bg-sky-950/60 dark:border-sky-700 rounded-xl text-left text-xs sm:text-sm font-bold text-sky-950 dark:text-sky-200 opacity-90 cursor-not-allowed shadow-xs flex flex-col justify-between"
-                                  title="Ya tienes una cita programada en este horario. Para cambiarla, modifícala desde tu panel de citas."
+                                  type="button"
+                                  onClick={() => {
+                                    if (citaConflicto) {
+                                      setCitaConflictoSeleccionada({
+                                        cita: citaConflicto,
+                                        slotRaw: slot,
+                                        horaDisplay: displayTime,
+                                      });
+                                      setModalMiCitaOpen(true);
+                                    }
+                                  }}
+                                  className={`relative group hover:z-30 py-3 px-3 sm:px-4 rounded-xl text-center text-xs sm:text-sm font-bold transition-all cursor-pointer active:scale-[0.98] ${
+                                    isSelected
+                                      ? 'border-2 border-sky-600 bg-sky-100 dark:bg-sky-900/60 text-sky-950 dark:text-white shadow-sm ring-2 ring-sky-400/50'
+                                      : 'border border-sky-300 dark:border-sky-800/80 bg-sky-50 dark:bg-sky-950/40 text-sky-950 dark:text-sky-200 hover:bg-sky-100 dark:hover:bg-sky-900/60 hover:border-sky-400'
+                                  }`}
                                 >
-                                  <div className="flex items-center justify-between gap-1">
-                                    <span>{displayTime}</span>
-                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase tracking-wider bg-sky-600 text-white px-1.5 py-0.5 rounded-md">
-                                      <Check className="w-2.5 h-2.5 stroke-[3]" /> Tu Cita
-                                    </span>
-                                  </div>
-                                  <span className="text-[10px] font-medium text-sky-700 dark:text-sky-400 mt-0.5">
-                                    Ya programada por ti (modificable)
+                                  <span>{displayTime}</span>
+
+                                  {/* Tooltip CSS elegante y minimalista */}
+                                  <span className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all duration-150 transform group-hover:-translate-y-1 group-focus-within:-translate-y-1 bg-slate-900/95 dark:bg-slate-800/95 text-white text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-xl whitespace-nowrap z-50 flex items-center gap-1.5 backdrop-blur-xs border border-white/10">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" />
+                                    <span>Tienes una cita programada a esta hora</span>
+                                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 border-x-4 border-x-transparent border-t-4 border-t-slate-900/95 dark:border-t-slate-800/95" />
                                   </span>
-                                </div>
+                                </button>
                               );
                             }
 
@@ -1072,7 +1105,7 @@ export function Step1Modalidad() {
                               fecha &&
                               solicitudIntercambio.fecha === format(fecha, 'yyyy-MM-dd');
 
-                            // CASO: HORARIO OCUPADO POR OTRO PACIENTE (solo para citas de terceros, aparece en NARANJA)
+                            // CASO: HORARIO OCUPADO POR OTRO PACIENTE (fondo naranja, hover con tooltip, click abre modal de intercambio)
                             if (isOccupiedByOther && !isPastHour) {
                               return (
                                 <button
@@ -1082,28 +1115,19 @@ export function Step1Modalidad() {
                                     setSlotParaCambio({ raw: slot, display: displayTime });
                                     setModalCambioOpen(true);
                                   }}
-                                  className={`py-3 px-3 sm:px-4 border-2 rounded-xl text-left text-xs sm:text-sm font-semibold transition-all cursor-pointer flex flex-col justify-between ${
+                                  className={`relative group hover:z-30 py-3 px-3 sm:px-4 rounded-xl text-center text-xs sm:text-sm font-bold transition-all cursor-pointer ${
                                     isSolicitadoActualmente
-                                      ? 'border-orange-500 bg-orange-500 text-white shadow-md ring-2 ring-orange-400/50'
-                                      : 'border-orange-300 dark:border-orange-800/80 bg-orange-50/90 dark:bg-orange-950/40 text-orange-950 dark:text-orange-200 hover:bg-orange-100 dark:hover:bg-orange-900/60 hover:border-orange-400 active:scale-[0.98]'
+                                      ? 'border-2 border-orange-500 bg-orange-500 text-white shadow-md ring-2 ring-orange-400/50'
+                                      : 'border border-orange-300 dark:border-orange-800/80 bg-orange-50 dark:bg-orange-950/40 text-orange-950 dark:text-orange-200 hover:bg-orange-100 dark:hover:bg-orange-900/60 hover:border-orange-400 active:scale-[0.98]'
                                   }`}
-                                  title="Horario ocupado - Haz clic para solicitar un cambio de horario con el paciente"
                                 >
-                                  <div className="flex items-center justify-between w-full">
-                                    <span className="font-black">{displayTime}</span>
-                                    <span className={`inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md ${
-                                      isSolicitadoActualmente
-                                        ? 'bg-white text-orange-700'
-                                        : 'bg-orange-200 dark:bg-orange-900/90 text-orange-800 dark:text-orange-200'
-                                    }`}>
-                                      <ArrowLeftRight className="w-2.5 h-2.5" />
-                                      {isSolicitadoActualmente ? 'Solicitado' : 'Ocupado · Solicitar'}
-                                    </span>
-                                  </div>
-                                  <span className={`text-[10px] font-medium mt-1 ${
-                                    isSolicitadoActualmente ? 'text-orange-100' : 'text-orange-700 dark:text-orange-400'
-                                  }`}>
-                                    {isSolicitadoActualmente ? 'Petición activa · Elige tu turno abajo' : 'Clic para solicitar intercambio'}
+                                  <span>{displayTime}</span>
+
+                                  {/* Tooltip CSS elegante y minimalista */}
+                                  <span className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all duration-150 transform group-hover:-translate-y-1 group-focus-within:-translate-y-1 bg-slate-900/95 dark:bg-slate-800/95 text-white text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-xl whitespace-nowrap z-50 flex items-center gap-1.5 backdrop-blur-xs border border-white/10">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-orange-400 shrink-0" />
+                                    <span>Horario ocupado · ¿Desea solicitar cambio?</span>
+                                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 border-x-4 border-x-transparent border-t-4 border-t-slate-900/95 dark:border-t-slate-800/95" />
                                   </span>
                                 </button>
                               );
@@ -1121,7 +1145,12 @@ export function Step1Modalidad() {
                                   name="time"
                                   value={slot}
                                   checked={isSelected}
-                                  onChange={() => !disabled && setHora(slot)}
+                                  onChange={() => {
+                                    if (!disabled) {
+                                      setHora(slot);
+                                      setPacientesExcluidos([]);
+                                    }
+                                  }}
                                   disabled={disabled}
                                   className="peer sr-only"
                                 />
@@ -1197,6 +1226,27 @@ export function Step1Modalidad() {
               hora: slot,
               mensaje: mensaje || undefined,
             });
+          }}
+        />
+      )}
+
+      {modalMiCitaOpen && citaConflictoSeleccionada && (
+        <ModalMiCitaConflicto
+          isOpen={modalMiCitaOpen}
+          onClose={() => {
+            setModalMiCitaOpen(false);
+            setCitaConflictoSeleccionada(null);
+          }}
+          citaConflicto={citaConflictoSeleccionada.cita}
+          horaDisplay={citaConflictoSeleccionada.horaDisplay}
+          slotRaw={citaConflictoSeleccionada.slotRaw}
+          codMedicoActual={codMedico || ''}
+          medicoNombreActual={doctor ? `${doctor.exp_primer_nom || ''} ${doctor.exp_primer_ape || ''}`.trim() : ''}
+          onAgendarDeTodosModos={(slotRaw, pacCodExcluido) => {
+            setHora(slotRaw);
+            if (pacCodExcluido) {
+              setPacientesExcluidos([pacCodExcluido]);
+            }
           }}
         />
       )}

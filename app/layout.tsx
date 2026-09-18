@@ -28,8 +28,17 @@ const roboto = Roboto({
 });
 
 export const metadata: Metadata = {
-  title: "NeoClinica",
-  description: "Portal clínico NeoClinica",
+  title: "NeoClínica",
+  description: "Portal clínico NeoClínica",
+  icons: {
+    icon: [
+      { url: '/iconNeo.png', type: 'image/png' },
+      { url: '/iconNeo.png', sizes: '32x32', type: 'image/png' },
+      { url: '/iconNeo.png', sizes: '192x192', type: 'image/png' },
+    ],
+    shortcut: '/iconNeo.png',
+    apple: '/iconNeo.png',
+  },
 };
 
 export default function RootLayout({

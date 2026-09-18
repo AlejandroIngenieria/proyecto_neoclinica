@@ -6,6 +6,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Lock, KeyRound, Eye, EyeOff, ShieldCheck, Check, AlertCircle, Loader2, Mail, CheckCircle2 } from 'lucide-react';
 import { useCambiarPassword, useReenviarPasswordTemporal } from '@/hooks/use-auth';
 import { toast } from 'sonner';
+import { CapsLockWarning } from '@/components/caps-lock-warning';
+import { useCapsLock } from '@/hooks/use-caps-lock';
 
 export function ForceChangePasswordModal() {
   const { data: session, update } = useSession();
@@ -22,6 +24,9 @@ export function ForceChangePasswordModal() {
   const [resendSuccessMsg, setResendSuccessMsg] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [isDone, setIsDone] = useState(false);
+
+  // Detección de Bloq Mayús
+  const { isCapsLockOn, checkCapsLock, resetCapsLock } = useCapsLock();
 
   // Temporizador para el cooldown de reenvío de correo (60s)
   useEffect(() => {
@@ -258,8 +263,12 @@ export function ForceChangePasswordModal() {
             <div className="relative">
               <input
                 type={showActual ? 'text' : 'password'}
+                autoComplete="current-password"
                 value={passwordActual}
                 onChange={(e) => setPasswordActual(e.target.value)}
+                onKeyDown={checkCapsLock}
+                onKeyUp={checkCapsLock}
+                onBlur={resetCapsLock}
                 placeholder="Ingresa la contraseña del correo"
                 required
                 className="w-full h-11 px-4 pr-11 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/40 outline-none transition"
@@ -273,6 +282,7 @@ export function ForceChangePasswordModal() {
                 {showActual ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
+            <CapsLockWarning isVisible={isCapsLockOn} />
           </div>
 
           {/* Nueva Contraseña */}
@@ -283,8 +293,12 @@ export function ForceChangePasswordModal() {
             <div className="relative">
               <input
                 type={showNueva ? 'text' : 'password'}
+                autoComplete="new-password"
                 value={nuevaPassword}
                 onChange={(e) => setNuevaPassword(e.target.value)}
+                onKeyDown={checkCapsLock}
+                onKeyUp={checkCapsLock}
+                onBlur={resetCapsLock}
                 placeholder="Mínimo 8 caracteres"
                 required
                 className="w-full h-11 px-4 pr-11 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/40 outline-none transition"
@@ -298,6 +312,7 @@ export function ForceChangePasswordModal() {
                 {showNueva ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
+            <CapsLockWarning isVisible={isCapsLockOn} />
 
             {/* Barra de Fuerza */}
             <div className="mt-2 space-y-1">
@@ -320,8 +335,12 @@ export function ForceChangePasswordModal() {
             <div className="relative">
               <input
                 type={showConfirmar ? 'text' : 'password'}
+                autoComplete="new-password"
                 value={confirmarPassword}
                 onChange={(e) => setConfirmarPassword(e.target.value)}
+                onKeyDown={checkCapsLock}
+                onKeyUp={checkCapsLock}
+                onBlur={resetCapsLock}
                 placeholder="Repite la nueva contraseña"
                 required
                 className="w-full h-11 px-4 pr-11 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/40 outline-none transition"
@@ -335,6 +354,7 @@ export function ForceChangePasswordModal() {
                 {showConfirmar ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
+            <CapsLockWarning isVisible={isCapsLockOn} />
           </div>
 
           {/* Checklist de Políticas de Seguridad */}

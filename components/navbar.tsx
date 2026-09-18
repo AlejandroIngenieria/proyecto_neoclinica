@@ -18,6 +18,7 @@ function getNavStyles(label: string) {
 }
 import { AnimatePresence, motion } from 'framer-motion';
 import { NotificacionesPopover } from '@/components/notificaciones-popover';
+import ConfirmLogoutModal from '@/components/confirm-logout-modal';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -46,6 +47,7 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
   const router = useRouter();
   const userMenuRef = useRef<HTMLDivElement | null>(null);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
   useEffect(() => {
@@ -257,8 +259,11 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
                   </Link>
                   <button
                     type="button"
-                    onClick={() => signOut({ callbackUrl: '/login' })}
-                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm font-semibold text-error transition hover:bg-error/10"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      setShowLogoutModal(true);
+                    }}
+                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm font-semibold text-error transition hover:bg-error/10 cursor-pointer"
                   >
                     <LogOut className="h-4 w-4" />
                     Cerrar sesión
@@ -303,6 +308,12 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
       )}
       </header>
       </div>
+
+      {/* Modal de confirmación de salida minimalista */}
+      <ConfirmLogoutModal
+        isOpen={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+      />
     </div>
   );
 }

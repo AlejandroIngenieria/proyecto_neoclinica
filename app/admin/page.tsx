@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
+import ConfirmLogoutModal from '@/components/confirm-logout-modal';
 import { useAdminCitas, useCambiarEstadoCita } from '@/hooks/use-flujo-citas';
 import type { CitaListDto, CitaEstado, CambiarEstadoCitaPayload } from '@/types/citas';
 import { NeoLoader } from '@/components/neo-loader';
@@ -463,6 +464,7 @@ export default function AdminPage() {
   const [selectedEstado, setSelectedEstado] = useState<string>('todos');
   const [selectedModalidad, setSelectedModalidad] = useState<string>('todas');
   const [selectedCitaModal, setSelectedCitaModal] = useState<CitaListDto | null>(null);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   const [pendingEstadoChange, setPendingEstadoChange] = useState<{
     citaId: string;
@@ -613,8 +615,8 @@ export default function AdminPage() {
 
             <button
               type="button"
-              onClick={() => signOut({ callbackUrl: '/admin/login' })}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50 text-xs font-bold hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors shadow-2xs active:scale-95"
+              onClick={() => setShowLogoutModal(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50 text-xs font-bold hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors shadow-2xs active:scale-95 cursor-pointer"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Salir</span>
@@ -1066,6 +1068,13 @@ export default function AdminPage() {
             : 'warning'
         }
         isLoading={cambiarEstadoMutation.isPending}
+      />
+
+      {/* Modal de confirmación de salida minimalista */}
+      <ConfirmLogoutModal
+        isOpen={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        callbackUrl="/admin/login"
       />
     </div>
   );

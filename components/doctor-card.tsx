@@ -91,7 +91,7 @@ function formatTime(timeStr: string) {
   return timeStr;
 }
 
-function HighlightText({ text, highlight }: { text: string; highlight?: string | string[] }) {
+export function HighlightText({ text, highlight }: { text: string; highlight?: string | string[] }) {
   if (!highlight || (Array.isArray(highlight) ? highlight.length === 0 : !highlight.trim())) {
     return <>{text}</>;
   }
@@ -281,6 +281,45 @@ export function DoctorCard({
   );
   const hasPresencial = modalities.some((m) => m.toLowerCase().includes('presencial')) || (doctor.clinicas && doctor.clinicas.length > 0);
   const hasDomicilio = modalities.some((m) => m.toLowerCase().includes('domicilio')) || (doctor.atencion_domicilio && doctor.atencion_domicilio.length > 0);
+
+  // Sedes list for smart grouping and truncation
+  const clinicas = doctor.clinicas || [];
+  const sedes: { nombre: string; isDomicilio?: boolean }[] = [
+    ...clinicas.map((cli, idx) => {
+      const cliName = cli.cli_descripcion || `Clínica ${idx + 1}`;
+      const zonaClean = cleanZonaShort(cli.cli_zona);
+      return {
+        nombre: `${cliName}${zonaClean ? `, ${zonaClean}` : ''}`,
+        isDomicilio: false,
+      };
+    }),
+    ...(doctor.atencion_domicilio && doctor.atencion_domicilio.length > 0
+      ? [
+          {
+            nombre: `Atención a domicilio ${cleanZonasDomicilio(doctor.atencion_domicilio[0]?.lad_zonas)}`,
+            isDomicilio: true,
+          },
+        ]
+      : []),
+  ];
+
+  if (sedes.length === 0) {
+    sedes.push({
+      nombre: locationOrDistance || 'Guatemala',
+      isDomicilio: false,
+    });
+  }
+
+  // Si hay una sede destacada por filtro/mapa, moverla al frente si coincide
+  if (highlightedLocationName && sedes.length > 1) {
+    const matchIdx = sedes.findIndex((s) =>
+      s.nombre.toLowerCase().includes(highlightedLocationName.toLowerCase())
+    );
+    if (matchIdx > 0) {
+      const [matched] = sedes.splice(matchIdx, 1);
+      sedes.unshift(matched);
+    }
+  }
 
   // Al hacer clic en la tarjeta
   const handleCardClick = () => {
@@ -770,7 +809,7 @@ export function DoctorCard({
       onClick={handleCardClick}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      className={`doctor-card group flex flex-col h-full bg-white rounded-2xl overflow-hidden transition-all duration-300 border cursor-pointer relative ${
+      className={`doctor-card group flex flex-col h-full w-full max-w-[365px] mx-auto bg-white rounded-2xl overflow-hidden transition-all duration-300 border cursor-pointer relative ${
         isHovered
           ? 'shadow-md border-sky-300 ring-2 ring-sky-200/50 -translate-y-0.5'
           : isHighlightedByLocation
@@ -825,7 +864,7 @@ export function DoctorCard({
             src={doctor.exp_foto_perfil}
             alt={fullName}
             fill
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 20vw"
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
             className="w-full h-full object-cover object-top group-hover:scale-[1.03] transition-transform duration-500 ease-out"
           />
         ) : (
@@ -836,8 +875,9 @@ export function DoctorCard({
       </div>
 
       {/* Information Body */}
-      <div className="p-4 flex flex-col flex-1 justify-between gap-3 bg-white">
-        <div className="space-y-2">
+      <div className="p-4 sm:p-5 flex flex-col flex-1 bg-white">
+        {/* Contenedor de Información (Nombre, especialidad, sedes): flex-1 */}
+        <div className="space-y-2 flex-1 min-w-0">
           {/* Badge minimalista de sede seleccionada en el mapa */}
           {isHighlightedByLocation && highlightedLocationName && (
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sky-50 border border-sky-200/90 text-sky-800 text-[10.5px] font-bold">
@@ -849,7 +889,7 @@ export function DoctorCard({
           {/* Fila 1: Nombre (Izq) | Calificación (Der) */}
           <div className="flex items-start justify-between gap-2 min-w-0">
             <h3
-              className="font-bold text-slate-900 text-base leading-snug break-words whitespace-normal flex-1 min-w-0 group-hover:text-sky-600 transition-colors"
+              className="font-bold text-slate-900 text-base leading-snug break-words whitespace-normal flex-1 min-w-0 line-clamp-2 group-hover:text-sky-600 transition-colors"
               title={fullDetailedName}
             >
               <HighlightText text={shortName} highlight={searchHighlight} />
@@ -903,49 +943,26 @@ export function DoctorCard({
             </div>
           </div>
 
-          {/* Fila 3: Múltiples ubicaciones sin ocultar datos (Bloque apilado verticalmente) */}
-          <div className="flex flex-col gap-1 pt-0.5">
-            {doctor.clinicas && doctor.clinicas.length > 0 ? (
-              doctor.clinicas.map((cli, idx) => {
-                const cliName = cli.cli_descripcion || `Clínica ${idx + 1}`;
-                const zonaClean = cleanZonaShort(cli.cli_zona);
-                const label = `${cliName}${zonaClean ? `, ${zonaClean}` : ''}`;
-
-                return (
-                  <div key={idx} className="flex items-start gap-1.5 text-xs text-slate-600 leading-snug">
-                    <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0 mt-0.5" />
-                    <span className="break-words whitespace-normal font-medium">
-                      <HighlightText text={label} highlight={searchHighlight} />
-                    </span>
-                  </div>
-                );
-              })
-            ) : doctor.atencion_domicilio && doctor.atencion_domicilio.length > 0 ? (
-              <div className="flex items-start gap-1.5 text-xs text-emerald-700 leading-snug">
-                <Home className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                <span className="break-words whitespace-normal font-medium">
-                  Atención a domicilio {cleanZonasDomicilio(doctor.atencion_domicilio[0]?.lad_zonas)}
-                </span>
-              </div>
+          {/* Fila 3: Sede principal con truncado inteligente y badge de sedes extra */}
+          <p className="text-xs text-slate-600 flex items-center gap-1.5 truncate pt-0.5">
+            {sedes[0].isDomicilio ? (
+              <Home className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
             ) : (
-              <div className="flex items-start gap-1.5 text-xs text-slate-500 leading-snug">
-                <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-                <span className="break-words whitespace-normal">
-                  <HighlightText text={locationOrDistance} highlight={searchHighlight} />
-                </span>
-              </div>
+              <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
             )}
+            <span className="truncate font-medium" title={sedes[0].nombre}>
+              <HighlightText text={sedes[0].nombre} highlight={searchHighlight} />
+            </span>
 
-            {/* Si además de clínicas tiene domicilio, se muestra como viñeta adicional */}
-            {doctor.clinicas && doctor.clinicas.length > 0 && doctor.atencion_domicilio && doctor.atencion_domicilio.length > 0 && (
-              <div className="flex items-start gap-1.5 text-xs text-emerald-700 leading-snug">
-                <Home className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                <span className="break-words whitespace-normal font-medium">
-                  Atención a domicilio {cleanZonasDomicilio(doctor.atencion_domicilio[0]?.lad_zonas)}
-                </span>
-              </div>
+            {sedes.length > 1 && (
+              <span
+                className="text-blue-600 font-bold shrink-0 ml-1 bg-blue-50 px-1.5 py-0.5 rounded-md text-[11px]"
+                title={sedes.slice(1).map((s) => s.nombre).join(' • ')}
+              >
+                +{sedes.length - 1} sedes
+              </span>
             )}
-          </div>
+          </p>
 
           {/* Fila 4: Idioma y Seguros en texto simple y limpio (sin contenedor gris) */}
           {(languages.length > 0 || insurances.length > 0) && (
@@ -966,8 +983,8 @@ export function DoctorCard({
           )}
         </div>
 
-        {/* Fila 5: Precio arriba + Botones de Acción abajo (Agendar Cita + Ver Perfil) */}
-        <div className="pt-2.5 border-t border-slate-100 space-y-2">
+        {/* Contenedor de Acción (Precio y botones): mt-auto shrink-0 */}
+        <div className="mt-auto shrink-0 pt-3 border-t border-slate-100 space-y-2">
           {/* Precio de la consulta */}
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-xs text-slate-500 font-medium">Precio consulta:</span>
