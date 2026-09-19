@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import Image from 'next/image';
 import { toast } from 'sonner';
-import { GoogleLogin, type CredentialResponse } from '@react-oauth/google';
+import { useGoogleLogin, type TokenResponse } from '@react-oauth/google';
 import FacebookLogin, { type FailResponse, type SuccessResponse } from '@greatsumini/react-facebook-login';
 import { SocialButton } from '@/components/base/buttons/social-button';
 import { EmailAutocompleteInput } from '@/components/email-autocomplete-input';
@@ -247,54 +247,61 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
   };
 
   // ─── GOOGLE LOGIN ──────────────────────────────────────────────────────────
-  const handleGoogleSuccess = async (credentialResponse: CredentialResponse) => {
-    if (!credentialResponse.credential) {
-      setLoginAuthError('No se recibió la credencial de Google.');
-      return;
-    }
-
-    setLoginAuthError('');
-    setLoginStatusText('Autenticando con Google...');
-
-    const timer1 = setTimeout(() => {
-      setLoginStatusText('Conectando con el servidor de autenticación...');
-    }, 3000);
-
-    const timer2 = setTimeout(() => {
-      setLoginStatusText('Iniciando recursos compartidos del servidor, un momento...');
-    }, 8000);
-
-    try {
-      const result = await signIn('credentials', {
-        redirect: false,
-        googleIdToken: credentialResponse.credential,
-      });
-
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-
-      if (result?.ok) {
-        setLoginStatusText('¡Inicio de sesión exitoso! Redirigiendo...');
-        try {
-          if (typeof window !== 'undefined') {
-            sessionStorage.setItem('neoclinica_random_seed', String(Math.floor(Math.random() * 1000000) + 1));
-          }
-        } catch {}
-
-        const returnUrl = searchParams.get('returnUrl') || searchParams.get('callbackUrl');
-        router.replace(returnUrl || '/dashboard');
+  const handleGoogleLogin = useGoogleLogin({
+    onSuccess: async (tokenResponse: TokenResponse) => {
+      if (!tokenResponse.access_token) {
+        setLoginAuthError('No se recibió la autorización de Google.');
+        setLoginStatusText('');
         return;
       }
 
+      setLoginAuthError('');
+      setLoginStatusText('Autenticando con Google...');
+
+      const timer1 = setTimeout(() => {
+        setLoginStatusText('Conectando con el servidor de autenticación...');
+      }, 3000);
+
+      const timer2 = setTimeout(() => {
+        setLoginStatusText('Iniciando recursos compartidos del servidor, un momento...');
+      }, 8000);
+
+      try {
+        const result = await signIn('credentials', {
+          redirect: false,
+          googleAccessToken: tokenResponse.access_token,
+        });
+
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+
+        if (result?.ok) {
+          setLoginStatusText('¡Inicio de sesión exitoso! Redirigiendo...');
+          try {
+            if (typeof window !== 'undefined') {
+              sessionStorage.setItem('neoclinica_random_seed', String(Math.floor(Math.random() * 1000000) + 1));
+            }
+          } catch {}
+
+          const returnUrl = searchParams.get('returnUrl') || searchParams.get('callbackUrl');
+          router.replace(returnUrl || '/dashboard');
+          return;
+        }
+
+        setLoginStatusText('');
+        setLoginAuthError(result?.error ? 'Error de autenticación con Google.' : 'Credenciales inválidas de Google.');
+      } catch {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+        setLoginStatusText('');
+        setLoginAuthError('No se pudo contactar al servidor de autenticación.');
+      }
+    },
+    onError: (errorResponse) => {
+      console.warn('Google login popup cerrado o con error:', errorResponse);
       setLoginStatusText('');
-      setLoginAuthError(result?.error ? 'Error de autenticación con Google.' : 'Credenciales inválidas de Google.');
-    } catch {
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-      setLoginStatusText('');
-      setLoginAuthError('No se pudo contactar al servidor de autenticación.');
-    }
-  };
+    },
+  });
 
   // ─── FACEBOOK LOGIN ────────────────────────────────────────────────────────
   const handleFacebookSuccess = async (response: SuccessResponse) => {
@@ -680,66 +687,39 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
                   {/* Botones Sociales — estilo unificado: fondo blanco, borde, logo izquierda, texto centrado */}
                   <div className="flex w-full flex-col gap-2.5 mb-3">
 
-                    {/* ── Botón Google (botón nativo de GSI envuelto en un custom button idéntico al de FB) ── */}
-                    <div className="group relative w-full h-11 overflow-hidden rounded-xl cursor-pointer">
-                      {/* Botón visual unificado Google (decorativo debajo, recibe estilos de hover via group) */}
-                      <div
-                        aria-hidden="true"
-                        className="
-                          relative flex h-11 w-full items-center rounded-xl
-                          border border-slate-200 bg-white
-                          shadow-[0_1px_3px_rgba(0,0,0,0.06)]
-                          transition-all duration-150
-                          group-hover:border-slate-300 group-hover:bg-slate-50 group-hover:shadow-[0_2px_6px_rgba(0,0,0,0.10)]
-                          group-active:scale-[0.99] group-active:shadow-none
-                          pointer-events-none select-none
-                        "
-                      >
-                        {/* Logo fijo a la izquierda */}
-                        <span className="absolute left-4 flex items-center">
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path d="M23.766 12.2764C23.766 11.4607 23.6999 10.6406 23.5588 9.83807H12.24V14.4591H18.7217C18.4528 15.9494 17.5885 17.2678 16.323 18.1056V21.1039H20.19C22.4608 19.0139 23.766 15.9274 23.766 12.2764Z" fill="#4285F4"/>
-                            <path d="M12.24 24.0008C15.4764 24.0008 18.2058 22.9382 20.1944 21.1039L16.3274 18.1055C15.2516 18.8375 13.8626 19.252 12.2444 19.252C9.11376 19.252 6.45934 17.1399 5.50693 14.3003H1.51648V17.3912C3.55359 21.4434 7.70278 24.0008 12.24 24.0008Z" fill="#34A853"/>
-                            <path d="M5.50253 14.3003C4.99987 12.8099 4.99987 11.1961 5.50253 9.70575V6.61481H1.51649C-0.18551 10.0056 -0.18551 14.0004 1.51649 17.3912L5.50253 14.3003Z" fill="#FBBC04"/>
-                            <path d="M12.24 4.74966C13.9508 4.7232 15.6043 5.36697 16.8433 6.54867L20.2694 3.12262C18.1 1.0855 15.2207 -0.034466 12.24 0.000808666C7.70277 0.000808666 3.55359 2.55822 1.51648 6.61481L5.50252 9.70575C6.45052 6.86173 9.10935 4.74966 12.24 4.74966Z" fill="#EA4335"/>
-                          </svg>
-                        </span>
-                        {/* Texto centrado en el botón completo */}
-                        <span className="w-full text-center text-sm font-semibold text-slate-700">
-                          Continuar con Google
-                        </span>
-                      </div>
-
-                      {/* GoogleLogin oficial — capa interactiva invisible ENCIMA (z-10, pointer-events-auto) */}
-                      <div
-                        id="google-identity-trigger"
-                        className="absolute inset-0 z-10 opacity-0 cursor-pointer overflow-hidden flex items-center justify-center scale-110"
-                        title="Continuar con Google"
-                      >
-                        <GoogleLogin
-                          onSuccess={handleGoogleSuccess}
-                          onError={() => {
-                            console.warn('Google Sign-In interacción cerrada o no completada.');
-                            setLoginStatusText('');
-                          }}
-                          promptMomentNotification={(notification) => {
-                            if (notification.isDismissedMoment() || notification.isSkippedMoment()) {
-                              setLoginStatusText('');
-                            }
-                          }}
-                          useOneTap={false}
-                          auto_select={false}
-                          shape="rectangular"
-                          theme="outline"
-                          size="large"
-                          text="signin_with"
-                          width="400"
-                          containerProps={{
-                            style: { width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' },
-                          }}
-                        />
-                      </div>
-                    </div>
+                    {/* ── Botón Google (useGoogleLogin directo) ── */}
+                    <button
+                      type="button"
+                      id="google-social-btn"
+                      onClick={() => {
+                        setLoginAuthError('');
+                        setLoginStatusText('Abriendo Google...');
+                        handleGoogleLogin();
+                      }}
+                      className="
+                        group relative flex h-11 w-full items-center rounded-xl
+                        border border-slate-200 bg-white
+                        shadow-[0_1px_3px_rgba(0,0,0,0.06)]
+                        transition-all duration-150
+                        hover:border-slate-300 hover:bg-slate-50 hover:shadow-[0_2px_6px_rgba(0,0,0,0.10)]
+                        active:scale-[0.99] active:shadow-none
+                        cursor-pointer
+                      "
+                    >
+                      {/* Logo fijo a la izquierda */}
+                      <span className="absolute left-4 flex items-center">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path d="M23.766 12.2764C23.766 11.4607 23.6999 10.6406 23.5588 9.83807H12.24V14.4591H18.7217C18.4528 15.9494 17.5885 17.2678 16.323 18.1056V21.1039H20.19C22.4608 19.0139 23.766 15.9274 23.766 12.2764Z" fill="#4285F4"/>
+                          <path d="M12.24 24.0008C15.4764 24.0008 18.2058 22.9382 20.1944 21.1039L16.3274 18.1055C15.2516 18.8375 13.8626 19.252 12.2444 19.252C9.11376 19.252 6.45934 17.1399 5.50693 14.3003H1.51648V17.3912C3.55359 21.4434 7.70278 24.0008 12.24 24.0008Z" fill="#34A853"/>
+                          <path d="M5.50253 14.3003C4.99987 12.8099 4.99987 11.1961 5.50253 9.70575V6.61481H1.51649C-0.18551 10.0056 -0.18551 14.0004 1.51649 17.3912L5.50253 14.3003Z" fill="#FBBC04"/>
+                          <path d="M12.24 4.74966C13.9508 4.7232 15.6043 5.36697 16.8433 6.54867L20.2694 3.12262C18.1 1.0855 15.2207 -0.034466 12.24 0.000808666C7.70277 0.000808666 3.55359 2.55822 1.51648 6.61481L5.50252 9.70575C6.45052 6.86173 9.10935 4.74966 12.24 4.74966Z" fill="#EA4335"/>
+                        </svg>
+                      </span>
+                      {/* Texto centrado en el botón completo */}
+                      <span className="w-full text-center text-sm font-semibold text-slate-700">
+                        Continuar con Google
+                      </span>
+                    </button>
 
                     {/* ── Botón Facebook — mismo estilo unificado ── */}
                     <FacebookLogin
@@ -779,27 +759,12 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
 
                             setLoginAuthError('');
 
-                            // Si window.FB ya está inicializado, llamar inmediatamente
-                            if (typeof window !== 'undefined' && (window as any).FB) {
-                              onClick?.();
+                            // Llamada sincrónica directa (preserva User Activation para no bloquear el popup)
+                            if (typeof window !== 'undefined' && !(window as any).FB) {
+                              setLoginAuthError('El servicio de Facebook aún se está cargando. Espera 2 segundos y presiona de nuevo.');
                               return;
                             }
-
-                            // Si el SDK de Facebook aún está cargando el script en segundo plano, esperar y abrir
-                            setLoginStatusText('Conectando con Facebook...');
-                            let attempts = 0;
-                            const checkFbInterval = setInterval(() => {
-                              attempts++;
-                              if (typeof window !== 'undefined' && (window as any).FB) {
-                                clearInterval(checkFbInterval);
-                                setLoginStatusText('');
-                                onClick?.();
-                              } else if (attempts >= 25) {
-                                clearInterval(checkFbInterval);
-                                setLoginStatusText('');
-                                setLoginAuthError('El servicio de Facebook no respondió a tiempo. Por favor intenta de nuevo.');
-                              }
-                            }, 100);
+                            onClick?.();
                           }}
                           className="
                             group relative flex h-11 w-full items-center rounded-xl

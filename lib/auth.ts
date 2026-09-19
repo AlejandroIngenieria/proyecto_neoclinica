@@ -129,12 +129,15 @@ async function postLoginWithRetries(
   return null;
 }
 
-async function postGoogleLogin(idToken: string, maxRetries = 3): Promise<BackendAuthResponse | null> {
+async function postGoogleLogin(tokens: { idToken?: string; accessToken?: string }, maxRetries = 3): Promise<BackendAuthResponse | null> {
   const url = `${apiBaseUrl}/api/Autenticacion/google`;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`=> NextAuth Google login request to ${url} (attempt ${attempt}/${maxRetries})`);
-      const { data } = await api.post<BackendAuthResponse>(url, { idToken });
+      const { data } = await api.post<BackendAuthResponse>(url, {
+        idToken: tokens.idToken,
+        accessToken: tokens.accessToken,
+      });
       return data;
     } catch (error: any) {
       const status = error?.response?.status;
@@ -195,13 +198,17 @@ export const authOptions: NextAuthOptions = {
         correo: { label: 'Correo', type: 'text' },
         password: { label: 'Contraseña', type: 'password' },
         googleIdToken: { label: 'Google ID Token', type: 'text' },
+        googleAccessToken: { label: 'Google Access Token', type: 'text' },
         facebookAccessToken: { label: 'Facebook Access Token', type: 'text' },
       },
       async authorize(credentials) {
         // --- 1. Autenticación con Google ---
-        if (credentials?.googleIdToken) {
+        if (credentials?.googleIdToken || credentials?.googleAccessToken) {
           try {
-            const data = await postGoogleLogin(credentials.googleIdToken);
+            const data = await postGoogleLogin({
+              idToken: credentials?.googleIdToken,
+              accessToken: credentials?.googleAccessToken,
+            });
             if (!data?.token) {
               console.log("=> Google login failed: token missing in response");
               return null;
