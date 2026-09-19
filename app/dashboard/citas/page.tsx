@@ -340,6 +340,7 @@ function CitasContent() {
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [isConsultasIndividualesOpen, setIsConsultasIndividualesOpen] = useState(true);
   const [isSeriesSectionOpen, setIsSeriesSectionOpen] = useState(true);
+  const [showIndependientesCitas, setShowIndependientesCitas] = useState<boolean>(false);
 
   // Solicitudes de intercambio de horario pendientes
   const { data: solicitudesPendientes = [], refetch: refetchSolicitudes } = useSolicitudesCambioPendientes();
@@ -693,6 +694,16 @@ function CitasContent() {
     });
   }, [pacientesTabsList, citasFiltradas, citasConTemas, tabActual]);
 
+  const seccionesActivos = useMemo(
+    () => seccionesPorPaciente.filter((s) => s.paciente.pacEstado !== 'independizado'),
+    [seccionesPorPaciente]
+  );
+
+  const seccionesIndependientes = useMemo(
+    () => seccionesPorPaciente.filter((s) => s.paciente.pacEstado === 'independizado'),
+    [seccionesPorPaciente]
+  );
+
   // Estado para vista Master-Detail de pacientes
   const selectedSection = useMemo(() => {
     if (!selectedPacienteId) return null;
@@ -989,29 +1000,121 @@ function CitasContent() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
-                  {seccionesPorPaciente.map(({ paciente: pac, standalone, series, totalCitas }) => {
-                    const solicitudesDelPaciente = solicitudesRecibidas.filter(
-                      (s) => s.objetivoPacCodigo === pac.pacCodigo
-                    );
-                    return (
-                      <PatientCard
-                        key={pac.pacCodigo}
-                        paciente={pac}
-                        totalCitas={totalCitas}
-                        standalone={standalone}
-                        series={series}
-                        tabActual={tabActual}
-                        solicitudesCount={solicitudesDelPaciente.length}
-                        onSelect={() => {
-                          setSelectedPacienteId(pac.pacCodigo);
-                          setTabActual('proximas');
-                        }}
-                        onAgendar={() => router.push(`/dashboard/directorio?paciente=${pac.pacCodigo}`)}
-                      />
-                    );
-                  })}
-                </div>
+                {/* Cuadrícula de Pacientes Activos */}
+                {seccionesActivos.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
+                    {seccionesActivos.map(({ paciente: pac, standalone, series, totalCitas }) => {
+                      const solicitudesDelPaciente = solicitudesRecibidas.filter(
+                        (s) => s.objetivoPacCodigo === pac.pacCodigo
+                      );
+                      return (
+                        <PatientCard
+                          key={pac.pacCodigo}
+                          paciente={pac}
+                          totalCitas={totalCitas}
+                          standalone={standalone}
+                          series={series}
+                          tabActual={tabActual}
+                          solicitudesCount={solicitudesDelPaciente.length}
+                          onSelect={() => {
+                            setSelectedPacienteId(pac.pacCodigo);
+                            setTabActual('proximas');
+                          }}
+                          onAgendar={() => router.push(`/dashboard/directorio?paciente=${pac.pacCodigo}`)}
+                        />
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-center space-y-2 shadow-xs">
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                      No tienes pacientes o citas activas en esta vista.
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Puedes revisar las citas de los pacientes independizados en el historial inferior.
+                    </p>
+                  </div>
+                )}
+
+                {/* Sección de Cuentas Independientes (Registro Histórico) */}
+                {seccionesIndependientes.length > 0 && (
+                  <div className="mt-10 pt-8 border-t border-slate-200/80 dark:border-slate-800">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-white dark:bg-[#1E293B] border border-slate-200/80 dark:border-slate-800 shadow-sm">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
+                          <UserCheck className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                              Historial de Cuentas Independientes
+                            </h2>
+                            <span className="inline-flex items-center rounded-full bg-indigo-50 dark:bg-indigo-950/80 px-2.5 py-0.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60">
+                              {seccionesIndependientes.length}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                            Citas de pacientes que fueron independizados y ahora gestionan su propia cuenta médica.
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowIndependientesCitas((prev) => !prev)}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shadow-2xs self-start sm:self-auto cursor-pointer"
+                      >
+                        <span>
+                          {showIndependientesCitas
+                            ? 'Ocultar cuentas independientes'
+                            : `Ver cuentas independientes (${seccionesIndependientes.length})`}
+                        </span>
+                        {showIndependientesCitas ? (
+                          <ChevronUp className="h-4 w-4" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Desplegable animado de independientes */}
+                    <AnimatePresence>
+                      {showIndependientesCitas && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ duration: 0.3 }}
+                          className="overflow-hidden pt-6"
+                        >
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
+                            {seccionesIndependientes.map(({ paciente: pac, standalone, series, totalCitas }) => {
+                              const solicitudesDelPaciente = solicitudesRecibidas.filter(
+                                (s) => s.objetivoPacCodigo === pac.pacCodigo
+                              );
+                              return (
+                                <PatientCard
+                                  key={pac.pacCodigo}
+                                  paciente={pac}
+                                  totalCitas={totalCitas}
+                                  standalone={standalone}
+                                  series={series}
+                                  tabActual={tabActual}
+                                  solicitudesCount={solicitudesDelPaciente.length}
+                                  onSelect={() => {
+                                    setSelectedPacienteId(pac.pacCodigo);
+                                    setTabActual('historial');
+                                  }}
+                                  onAgendar={() => {}}
+                                />
+                              );
+                            })}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
 
               </motion.div>
             ) : (
@@ -1088,6 +1191,21 @@ function CitasContent() {
                     )}
                   </div>
                 </div>
+
+                {/* Banner de Registro Histórico para Pacientes Independizados */}
+                {selectedSection.paciente.pacEstado === 'independizado' && (
+                  <div className="flex items-start gap-3.5 rounded-2xl border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/70 dark:bg-indigo-950/40 p-4 text-xs sm:text-sm text-indigo-950 dark:text-indigo-200 shadow-2xs">
+                    <UserCheck className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block text-indigo-900 dark:text-indigo-100">
+                        Cuenta Independizada · Registro Histórico
+                      </span>
+                      <p className="text-indigo-800 dark:text-indigo-300 text-xs mt-0.5 leading-relaxed">
+                        Este paciente ahora cuenta con una cuenta médica propia e independiente en NeoClínica y gestiona sus citas de forma autónoma. Las citas aquí presentes corresponden al historial previo a su proceso de independización.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* ── Barra de Navegación de Citas del Paciente (Pestañas Próximas / Historial + Filtros + Nueva Cita) ── */}
                 <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-slate-200/80 dark:border-slate-800 pb-0 pt-1">
@@ -1768,6 +1886,7 @@ function PatientCard({
 }: PatientCardProps) {
   const initial = pac.primerNombre ? pac.primerNombre.charAt(0).toUpperCase() : 'P';
   const hasCitas = totalCitas > 0;
+  const isIndependiente = pac.pacEstado === 'independizado' || pac.pacEstado === 'independiente';
 
   // Encontrar la próxima cita más relevante
   const todasCitas = useMemo(() => {
@@ -1788,10 +1907,20 @@ function PatientCard({
       whileTap={{ scale: 0.99 }}
       transition={{ duration: 0.2 }}
       onClick={onSelect}
-      className="group relative flex flex-col justify-between p-5 sm:p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm hover:shadow-xl hover:border-blue-400 dark:hover:border-blue-600 transition-all duration-200 cursor-pointer overflow-hidden"
+      className={`group relative flex flex-col justify-between p-5 sm:p-6 rounded-3xl bg-white dark:bg-slate-900 border shadow-sm hover:shadow-xl transition-all duration-200 cursor-pointer overflow-hidden ${
+        isIndependiente
+          ? 'border-indigo-200/90 dark:border-indigo-900/60 hover:border-indigo-400 dark:hover:border-indigo-500 hover:shadow-indigo-500/5'
+          : 'border-slate-200/80 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600'
+      }`}
     >
       {/* Indicador de acento en hover */}
-      <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-blue-500 to-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+      <div
+        className={`absolute top-0 inset-x-0 h-1 transition-opacity ${
+          isIndependiente
+            ? 'bg-gradient-to-r from-indigo-500 to-purple-500 opacity-80'
+            : 'bg-gradient-to-r from-blue-500 to-indigo-500 opacity-0 group-hover:opacity-100'
+        }`}
+      />
 
       <div>
         {/* Cabecera de la Tarjeta */}
@@ -1803,13 +1932,25 @@ function PatientCard({
                 <Image src={pac.fotoPerfilUrl} alt={pac.nombreCorto} fill className="object-cover" />
               </div>
             ) : (
-              <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white font-black text-lg sm:text-xl flex items-center justify-center shadow-md shadow-blue-500/15 shrink-0">
+              <div
+                className={`w-13 h-13 sm:w-14 sm:h-14 rounded-2xl text-white font-black text-lg sm:text-xl flex items-center justify-center shadow-md shrink-0 ${
+                  isIndependiente
+                    ? 'bg-gradient-to-br from-indigo-600 to-purple-600 shadow-indigo-500/15'
+                    : 'bg-gradient-to-br from-blue-600 to-indigo-600 shadow-blue-500/15'
+                }`}
+              >
                 {initial}
               </div>
             )}
 
             <div className="min-w-0">
-              <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors tracking-tight truncate">
+              <h3
+                className={`text-base sm:text-lg font-black text-slate-900 dark:text-white transition-colors tracking-tight truncate ${
+                  isIndependiente
+                    ? 'group-hover:text-indigo-600 dark:group-hover:text-indigo-400'
+                    : 'group-hover:text-blue-600 dark:group-hover:text-blue-400'
+                }`}
+              >
                 {pac.nombreCorto}
               </h3>
               <div className="flex items-center gap-1.5 mt-0.5">
@@ -1817,12 +1958,12 @@ function PatientCard({
                   {pac.pacTitular && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />}
                   {pac.parentesco}
                 </span>
-                {pac.pacEstado === 'independizado' && (
+                {isIndependiente && (
                   <span
                     data-cy="badge-paciente-card-independizado"
-                    className="text-[10px] sm:text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 inline-flex items-center gap-1"
+                    className="text-[10px] sm:text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60 inline-flex items-center gap-1"
                   >
-                    <UserCheck className="w-3 h-3 text-slate-500" />
+                    <UserCheck className="w-3 h-3 text-indigo-500" />
                     Independizado
                   </span>
                 )}
@@ -1832,7 +1973,13 @@ function PatientCard({
 
           {/* Badge de Conteo */}
           {hasCitas ? (
-            <span className="text-xs px-3 py-1 rounded-full font-black bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/40 shrink-0 shadow-2xs">
+            <span
+              className={`text-xs px-3 py-1 rounded-full font-black border shrink-0 shadow-2xs ${
+                isIndependiente
+                  ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border-indigo-200/60 dark:border-indigo-800/40'
+                  : 'bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border-blue-200/60 dark:border-blue-800/40'
+              }`}
+            >
               {totalCitas} {totalCitas === 1 ? 'cita' : 'citas'}
             </span>
           ) : (
@@ -1890,8 +2037,14 @@ function PatientCard({
 
       {/* Pie de Tarjeta */}
       <div className="mt-5 pt-3.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs">
-        <span className="font-bold text-blue-600 dark:text-blue-400 group-hover:text-blue-700 dark:group-hover:text-blue-300 transition-colors flex items-center gap-1">
-          Ver citas
+        <span
+          className={`font-bold transition-colors flex items-center gap-1 ${
+            isIndependiente
+              ? 'text-indigo-600 dark:text-indigo-400 group-hover:text-indigo-700 dark:group-hover:text-indigo-300'
+              : 'text-blue-600 dark:text-blue-400 group-hover:text-blue-700 dark:group-hover:text-blue-300'
+          }`}
+        >
+          {isIndependiente ? 'Consultar historial' : 'Ver citas'}
           <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
         </span>
 
@@ -1902,7 +2055,7 @@ function PatientCard({
               {totalSeries} {totalSeries === 1 ? 'serie' : 'series'}
             </span>
           )}
-          {pac.pacEstado !== 'independizado' && (
+          {!isIndependiente && (
             <button
               type="button"
               onClick={(e) => {

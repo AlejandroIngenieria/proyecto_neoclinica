@@ -53,6 +53,12 @@ export interface IndependizarPacienteRequest {
   conservarHistorial: boolean;
 }
 
+export interface IndependizarPacienteResponse {
+  mensaje: string;
+  nuevoUsuCodigo?: string;
+  esCuentaExistente?: boolean;
+}
+
 // ─── Parentesco ──────────────────────────────────────────────────────────────
 
 export type ParentescoInfo = {

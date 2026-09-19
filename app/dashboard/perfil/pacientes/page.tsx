@@ -629,15 +629,21 @@ function IndependizarModal({
 
   const onSubmit = async (data: { nuevoCorreo: string }) => {
     try {
-      await independizarMutation.mutateAsync({
+      const res = await independizarMutation.mutateAsync({
         pacCodigo: paciente.pac_codigo,
         nuevoCorreo: data.nuevoCorreo,
         conservarHistorial,
       });
 
-      toast.success('¡Cuenta Independizada con Éxito!', {
-        description: `El paciente ${pacienteName} se ha independizado correctamente. Se ha enviado un correo con las credenciales temporales a ${data.nuevoCorreo}.`,
-      });
+      if (res?.esCuentaExistente) {
+        toast.success('¡Expediente Vinculado con Éxito!', {
+          description: `El expediente de ${pacienteName} se ha vinculado a su cuenta existente (${data.nuevoCorreo}). No se requieren nuevas contraseñas.`,
+        });
+      } else {
+        toast.success('¡Cuenta Independizada con Éxito!', {
+          description: `El paciente ${pacienteName} se ha independizado correctamente. Se ha enviado un correo con las credenciales temporales a ${data.nuevoCorreo}.`,
+        });
+      }
 
       reset();
       setConservarHistorial(true);
@@ -679,16 +685,16 @@ function IndependizarModal({
 
         {/* Content */}
         <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-5">
-          <div className="flex items-start gap-3 rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 p-4 text-sm text-amber-900 dark:text-amber-300">
-            <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+          <div className="flex items-start gap-3 rounded-2xl border border-blue-200 dark:border-blue-900/50 bg-blue-50 dark:bg-blue-950/30 p-4 text-sm text-blue-950 dark:text-blue-200">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-blue-600 dark:text-blue-400 mt-0.5" />
             <p className="leading-relaxed text-xs sm:text-sm">
-              Al independizar a este paciente, se creará un usuario titular propio y quedará en tu cuenta como registro histórico.
+              Al independizar a este paciente, se creará una cuenta titular propia o se unificará su expediente con su cuenta existente si ya está registrado en NeoClínica. En tu cuenta se conservará en modo consulta histórica.
             </p>
           </div>
 
           <div>
             <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-              Correo Electrónico del Nuevo Usuario *
+              Correo Electrónico de la Cuenta (Nueva o Existente) *
             </label>
             <div className="relative flex items-center">
               <Mail className="absolute left-3.5 h-4 w-4 text-slate-400" />

@@ -220,8 +220,8 @@ export async function independizarPaciente(
   token: string,
   pacCodigo: string,
   payload: IndependizarPacienteRequest,
-): Promise<{ mensaje: string }> {
-  const { data } = await expedientesApi.post<{ mensaje: string }>(
+): Promise<import('@/types').IndependizarPacienteResponse> {
+  const { data } = await expedientesApi.post<import('@/types').IndependizarPacienteResponse>(
     `/api/pacientes/${pacCodigo}/independizar`,
     payload,
     getAuthHeaders(token),

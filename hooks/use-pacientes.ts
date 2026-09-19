@@ -211,9 +211,8 @@ export function useIndependizarPaciente() {
         nuevoCorreo,
         conservarHistorial,
       }),
-    onSuccess: (_, variables) => {
+    onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['pacientes'] });
-      toast.success('Cuenta independizada correctamente');
 
       if (token && userId) {
         crearNotificacion(token, {
@@ -221,11 +220,13 @@ export function useIndependizarPaciente() {
           usuarioTipo: 'paciente',
           tipo: 'sistema',
           titulo: 'Familiar Independizado',
-          mensaje: `El paciente ha sido independizado con la cuenta ${variables.nuevoCorreo}.${
-            variables.conservarHistorial
-              ? ' Su historial médico fue trasladado.'
-              : ''
-          }`,
+          mensaje: data?.esCuentaExistente
+            ? `El expediente del paciente ha sido vinculado a su cuenta existente ${variables.nuevoCorreo}.${
+                variables.conservarHistorial ? ' Su historial médico fue trasladado.' : ''
+              }`
+            : `El paciente ha sido independizado con la cuenta ${variables.nuevoCorreo}.${
+                variables.conservarHistorial ? ' Su historial médico fue trasladado.' : ''
+              }`,
           accionUrl: '/dashboard/perfil/pacientes',
         }).catch(() => {});
       }
