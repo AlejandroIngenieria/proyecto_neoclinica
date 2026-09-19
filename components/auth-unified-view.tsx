@@ -681,39 +681,19 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
                   <div className="flex w-full flex-col gap-2.5 mb-3">
 
                     {/* ── Botón Google (botón nativo de GSI envuelto en un custom button idéntico al de FB) ── */}
-                    {/* Usamos un botón custom que activa el popup de Google mediante useGoogleLogin implícitamente.
-                        Como @react-oauth/google no permite customizar el layout del <GoogleLogin>, renderizamos
-                        el GoogleLogin original invisible y superponemos nuestro botón visualmente encima. */}
-                    <div className="relative w-full h-11">
-                      {/* Botón visual unificado Google */}
-                      
-                      <button
-                        type="button"
-                        id="google-social-btn"
+                    <div className="group relative w-full h-11 overflow-hidden rounded-xl cursor-pointer">
+                      {/* Botón visual unificado Google (decorativo debajo, recibe estilos de hover via group) */}
+                      <div
+                        aria-hidden="true"
                         className="
-                          group relative flex h-11 w-full items-center rounded-xl
+                          relative flex h-11 w-full items-center rounded-xl
                           border border-slate-200 bg-white
                           shadow-[0_1px_3px_rgba(0,0,0,0.06)]
                           transition-all duration-150
-                          hover:border-slate-300 hover:bg-slate-50 hover:shadow-[0_2px_6px_rgba(0,0,0,0.10)]
-                          active:scale-[0.99] active:shadow-none
-                          cursor-pointer
+                          group-hover:border-slate-300 group-hover:bg-slate-50 group-hover:shadow-[0_2px_6px_rgba(0,0,0,0.10)]
+                          group-active:scale-[0.99] group-active:shadow-none
+                          pointer-events-none select-none
                         "
-                        onClick={() => {
-                          // Simular click en el iframe de Google que está oculto debajo
-                          const iframe = document.querySelector<HTMLIFrameElement>(
-                            'iframe[src*="accounts.google.com"]'
-                          );
-                          if (iframe) {
-                            iframe.click();
-                          } else {
-                            // Fallback: disparar click en el contenedor del GoogleLogin
-                            const gContainer = document.getElementById('google-identity-hidden');
-                            gContainer?.querySelector('div[role="button"], button, [tabindex]')?.dispatchEvent(
-                              new MouseEvent('click', { bubbles: true })
-                            );
-                          }
-                        }}
                       >
                         {/* Logo fijo a la izquierda */}
                         <span className="absolute left-4 flex items-center">
@@ -728,25 +708,33 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
                         <span className="w-full text-center text-sm font-semibold text-slate-700">
                           Continuar con Google
                         </span>
-                      </button>
+                      </div>
 
-                      {/* GoogleLogin oficial — invisible, actúa como trigger real */}
+                      {/* GoogleLogin oficial — capa interactiva invisible ENCIMA (z-10, pointer-events-auto) */}
                       <div
-                        id="google-identity-hidden"
-                        className="absolute inset-0 opacity-0 pointer-events-none overflow-hidden"
-                        aria-hidden="true"
+                        id="google-identity-trigger"
+                        className="absolute inset-0 z-10 opacity-0 cursor-pointer overflow-hidden flex items-center justify-center scale-110"
+                        title="Continuar con Google"
                       >
                         <GoogleLogin
                           onSuccess={handleGoogleSuccess}
                           onError={() => {
-                            setLoginAuthError(
-                              'No se pudo conectar con Google. Verifica que el dominio de producción esté registrado en los "Orígenes de JavaScript autorizados" de Google Cloud Console.'
-                            );
+                            console.warn('Google Sign-In interacción cerrada o no completada.');
+                            setLoginStatusText('');
+                          }}
+                          promptMomentNotification={(notification) => {
+                            if (notification.isDismissedMoment() || notification.isSkippedMoment()) {
+                              setLoginStatusText('');
+                            }
                           }}
                           shape="rectangular"
                           theme="outline"
                           size="large"
                           text="signin_with"
+                          width="400"
+                          containerProps={{
+                            style: { width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' },
+                          }}
                         />
                       </div>
                     </div>
@@ -754,15 +742,23 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
                     {/* ── Botón Facebook — mismo estilo unificado ── */}
                     <FacebookLogin
                       appId={process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || ''}
+                      scope="email,public_profile"
                       onSuccess={handleFacebookSuccess}
                       onFail={(error: FailResponse) => {
-                        console.error('Facebook login failed:', error);
+                        console.warn('Facebook login status:', error);
+                        setLoginStatusText('');
+                        // Cancelación silenciosa si el usuario cerró la ventana o canceló
+                        if (error?.status === 'loginCancelled') {
+                          return;
+                        }
                         if (typeof window !== 'undefined' && window.location.protocol === 'http:') {
                           setLoginAuthError(
                             'Meta (Facebook) exige una conexión segura HTTPS para iniciar sesión con FB.login. Inicia el servidor con HTTPS (npm run dev:https) o pruébalo en producción.'
                           );
                         } else {
-                          setLoginAuthError('No se pudo completar el inicio de sesión con Facebook.');
+                          setLoginAuthError(
+                            'No se pudo completar el inicio de sesión con Facebook. Si la app está en modo desarrollo, asegúrate de que tu cuenta de Facebook esté agregada como Tester en Meta for Developers.'
+                          );
                         }
                       }}
                       render={({ onClick }) => (
