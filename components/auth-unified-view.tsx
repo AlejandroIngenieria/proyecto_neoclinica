@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
@@ -19,6 +19,7 @@ import {
   X,
   ShieldCheck,
   AlertCircle,
+  Info,
   Mail,
   Lock,
   Stethoscope,
@@ -88,6 +89,19 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
   const [loginStatusText, setLoginStatusText] = useState('');
   const [recoveryNotice, setRecoveryNotice] = useState('');
   const [showTermsModal, setShowTermsModal] = useState(false);
+
+  // Social login loading & retry feedback
+  const [socialLoading, setSocialLoading] = useState<'google' | 'facebook' | null>(null);
+  const [fbAttempts, setFbAttempts] = useState(0);
+  const isProcessingTokenRef = useRef(false);
+  const popupOpenTimeRef = useRef<number>(0);
+  const popupWindowRef = useRef<Window | null>(null);
+
+  const resetSocialState = useCallback(() => {
+    if (isProcessingTokenRef.current) return;
+    setSocialLoading(null);
+    setLoginStatusText('');
+  }, []);
 
   // Clean up expired session if reasonParam is present
   useEffect(() => {
@@ -249,9 +263,12 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
   // ─── GOOGLE LOGIN ──────────────────────────────────────────────────────────
   const handleGoogleLogin = useGoogleLogin({
     onSuccess: async (tokenResponse: TokenResponse) => {
+      isProcessingTokenRef.current = true;
+
       if (!tokenResponse.access_token) {
+        isProcessingTokenRef.current = false;
+        resetSocialState();
         setLoginAuthError('No se recibió la autorización de Google.');
-        setLoginStatusText('');
         return;
       }
 
@@ -288,24 +305,41 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
           return;
         }
 
-        setLoginStatusText('');
+        isProcessingTokenRef.current = false;
+        resetSocialState();
         setLoginAuthError(result?.error ? 'Error de autenticación con Google.' : 'Credenciales inválidas de Google.');
       } catch {
         clearTimeout(timer1);
         clearTimeout(timer2);
-        setLoginStatusText('');
+        isProcessingTokenRef.current = false;
+        resetSocialState();
         setLoginAuthError('No se pudo contactar al servidor de autenticación.');
       }
     },
     onError: (errorResponse) => {
       console.warn('Google login popup cerrado o con error:', errorResponse);
-      setLoginStatusText('');
+      if (!isProcessingTokenRef.current) {
+        resetSocialState();
+      }
+    },
+    onNonOAuthError: (nonOAuthError) => {
+      console.warn('Google login non-OAuth error (popup cerrado o bloqueado):', nonOAuthError);
+      if (!isProcessingTokenRef.current) {
+        resetSocialState();
+        if (nonOAuthError?.type === 'popup_failed_to_open') {
+          setLoginAuthError('El navegador bloqueó la ventana emergente de Google. Por favor, habilita las ventanas emergentes en tu navegador.');
+        }
+      }
     },
   });
 
   // ─── FACEBOOK LOGIN ────────────────────────────────────────────────────────
   const handleFacebookSuccess = async (response: SuccessResponse) => {
+    isProcessingTokenRef.current = true;
+
     if (!response.accessToken) {
+      isProcessingTokenRef.current = false;
+      resetSocialState();
       setLoginAuthError('No se recibió el token de acceso de Facebook.');
       return;
     }
@@ -343,15 +377,113 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
         return;
       }
 
-      setLoginStatusText('');
+      isProcessingTokenRef.current = false;
+      resetSocialState();
       setLoginAuthError(result?.error ? 'Error de autenticación con Facebook.' : 'Credenciales inválidas de Facebook.');
     } catch {
       clearTimeout(timer1);
       clearTimeout(timer2);
-      setLoginStatusText('');
+      isProcessingTokenRef.current = false;
+      resetSocialState();
       setLoginAuthError('No se pudo contactar al servidor de autenticación.');
     }
   };
+
+  // Interceptar window.open para rastrear de forma nativa cuando la ventana emergente es cerrada
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const originalOpen = window.open;
+    window.open = function (...args) {
+      const popup = originalOpen.apply(window, args);
+      popupWindowRef.current = popup;
+
+      if (popup && typeof popup === 'object') {
+        const pollInterval = setInterval(() => {
+          try {
+            if (popup.closed) {
+              clearInterval(pollInterval);
+              if (!isProcessingTokenRef.current) {
+                resetSocialState();
+              }
+            }
+          } catch {
+            // Restricción COOP del navegador: limpiar intervalo y delegar a los eventos de foco y visibilidad
+            clearInterval(pollInterval);
+          }
+        }, 350);
+
+        setTimeout(() => clearInterval(pollInterval), 25000);
+      }
+
+      return popup;
+    };
+
+    return () => {
+      window.open = originalOpen;
+    };
+  }, [resetSocialState]);
+
+  // Monitor multicanal: foco de ventana, cambio de visibilidad e interacción para detectar cierre del popup
+  useEffect(() => {
+    if (!socialLoading) return;
+
+    let checkTimer: NodeJS.Timeout | null = null;
+
+    const handleReturnToTab = () => {
+      // Ignorar rebotes de foco en los primeros 700ms tras abrir la ventana
+      const elapsed = Date.now() - popupOpenTimeRef.current;
+      if (elapsed < 700) return;
+
+      if (checkTimer) clearTimeout(checkTimer);
+
+      checkTimer = setTimeout(() => {
+        // Solo desbloquear si el proveedor NO entregó credenciales válidas que estemos autenticando
+        if (!isProcessingTokenRef.current) {
+          if (socialLoading === 'facebook') {
+            try {
+              if (typeof window !== 'undefined' && (window as any).FB) {
+                (window as any).FB.getLoginStatus((res: any) => {
+                  if (res.status !== 'connected' && !isProcessingTokenRef.current) {
+                    resetSocialState();
+                  }
+                });
+                return;
+              }
+            } catch {}
+          }
+          resetSocialState();
+        }
+      }, 600);
+    };
+
+    // Si el usuario hace clic o interactúa en la pestaña principal tras haber abierto el popup
+    const handleUserInteraction = () => {
+      const elapsed = Date.now() - popupOpenTimeRef.current;
+      if (elapsed > 1000 && !isProcessingTokenRef.current) {
+        resetSocialState();
+      }
+    };
+
+    window.addEventListener('focus', handleReturnToTab);
+    document.addEventListener('visibilitychange', handleReturnToTab);
+    window.addEventListener('pointerdown', handleUserInteraction);
+
+    // Timeout de seguridad máximo (15s): garantiza que la interfaz NUNCA quede bloqueada
+    const maxSafetyTimer = setTimeout(() => {
+      if (!isProcessingTokenRef.current) {
+        resetSocialState();
+      }
+    }, 15000);
+
+    return () => {
+      if (checkTimer) clearTimeout(checkTimer);
+      clearTimeout(maxSafetyTimer);
+      window.removeEventListener('focus', handleReturnToTab);
+      document.removeEventListener('visibilitychange', handleReturnToTab);
+      window.removeEventListener('pointerdown', handleUserInteraction);
+    };
+  }, [socialLoading, resetSocialState]);
 
   // ─── RECOVERY FORM ─────────────────────────────────────────────────────────
   const {
@@ -691,33 +823,45 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
                     <button
                       type="button"
                       id="google-social-btn"
+                      disabled={socialLoading !== null}
                       onClick={() => {
+                        if (socialLoading !== null) return;
+                        setSocialLoading('google');
+                        popupOpenTimeRef.current = Date.now();
+                        isProcessingTokenRef.current = false;
                         setLoginAuthError('');
                         setLoginStatusText('Abriendo Google...');
                         handleGoogleLogin();
                       }}
-                      className="
+                      className={`
                         group relative flex h-11 w-full items-center rounded-xl
                         border border-slate-200 bg-white
                         shadow-[0_1px_3px_rgba(0,0,0,0.06)]
                         transition-all duration-150
-                        hover:border-slate-300 hover:bg-slate-50 hover:shadow-[0_2px_6px_rgba(0,0,0,0.10)]
-                        active:scale-[0.99] active:shadow-none
-                        cursor-pointer
-                      "
+                        ${socialLoading === 'google'
+                          ? 'cursor-wait bg-slate-50 opacity-90'
+                          : socialLoading !== null
+                          ? 'opacity-60 cursor-not-allowed'
+                          : 'hover:border-slate-300 hover:bg-slate-50 hover:shadow-[0_2px_6px_rgba(0,0,0,0.10)] active:scale-[0.99] active:shadow-none cursor-pointer'
+                        }
+                      `}
                     >
-                      {/* Logo fijo a la izquierda */}
+                      {/* Logo o Spinner a la izquierda */}
                       <span className="absolute left-4 flex items-center">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                          <path d="M23.766 12.2764C23.766 11.4607 23.6999 10.6406 23.5588 9.83807H12.24V14.4591H18.7217C18.4528 15.9494 17.5885 17.2678 16.323 18.1056V21.1039H20.19C22.4608 19.0139 23.766 15.9274 23.766 12.2764Z" fill="#4285F4"/>
-                          <path d="M12.24 24.0008C15.4764 24.0008 18.2058 22.9382 20.1944 21.1039L16.3274 18.1055C15.2516 18.8375 13.8626 19.252 12.2444 19.252C9.11376 19.252 6.45934 17.1399 5.50693 14.3003H1.51648V17.3912C3.55359 21.4434 7.70278 24.0008 12.24 24.0008Z" fill="#34A853"/>
-                          <path d="M5.50253 14.3003C4.99987 12.8099 4.99987 11.1961 5.50253 9.70575V6.61481H1.51649C-0.18551 10.0056 -0.18551 14.0004 1.51649 17.3912L5.50253 14.3003Z" fill="#FBBC04"/>
-                          <path d="M12.24 4.74966C13.9508 4.7232 15.6043 5.36697 16.8433 6.54867L20.2694 3.12262C18.1 1.0855 15.2207 -0.034466 12.24 0.000808666C7.70277 0.000808666 3.55359 2.55822 1.51648 6.61481L5.50252 9.70575C6.45052 6.86173 9.10935 4.74966 12.24 4.74966Z" fill="#EA4335"/>
-                        </svg>
+                        {socialLoading === 'google' ? (
+                          <Loader2 className="w-[18px] h-[18px] text-blue-600 animate-spin" />
+                        ) : (
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M23.766 12.2764C23.766 11.4607 23.6999 10.6406 23.5588 9.83807H12.24V14.4591H18.7217C18.4528 15.9494 17.5885 17.2678 16.323 18.1056V21.1039H20.19C22.4608 19.0139 23.766 15.9274 23.766 12.2764Z" fill="#4285F4"/>
+                            <path d="M12.24 24.0008C15.4764 24.0008 18.2058 22.9382 20.1944 21.1039L16.3274 18.1055C15.2516 18.8375 13.8626 19.252 12.2444 19.252C9.11376 19.252 6.45934 17.1399 5.50693 14.3003H1.51648V17.3912C3.55359 21.4434 7.70278 24.0008 12.24 24.0008Z" fill="#34A853"/>
+                            <path d="M5.50253 14.3003C4.99987 12.8099 4.99987 11.1961 5.50253 9.70575V6.61481H1.51649C-0.18551 10.0056 -0.18551 14.0004 1.51649 17.3912L5.50253 14.3003Z" fill="#FBBC04"/>
+                            <path d="M12.24 4.74966C13.9508 4.7232 15.6043 5.36697 16.8433 6.54867L20.2694 3.12262C18.1 1.0855 15.2207 -0.034466 12.24 0.000808666C7.70277 0.000808666 3.55359 2.55822 1.51648 6.61481L5.50252 9.70575C6.45052 6.86173 9.10935 4.74966 12.24 4.74966Z" fill="#EA4335"/>
+                          </svg>
+                        )}
                       </span>
                       {/* Texto centrado en el botón completo */}
                       <span className="w-full text-center text-sm font-semibold text-slate-700">
-                        Continuar con Google
+                        {socialLoading === 'google' ? 'Iniciando con Google...' : 'Continuar con Google'}
                       </span>
                     </button>
 
@@ -728,26 +872,34 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
                       onSuccess={handleFacebookSuccess}
                       onFail={(error: FailResponse) => {
                         console.warn('Facebook login status:', error);
-                        setLoginStatusText('');
-                        // Cancelación silenciosa si el usuario cerró la ventana o si el SDK apenas estaba cargando
-                        if (error?.status === 'loginCancelled' || error?.status === 'facebookNotLoaded') {
-                          return;
-                        }
-                        if (typeof window !== 'undefined' && window.location.protocol === 'http:') {
-                          setLoginAuthError(
-                            'Meta (Facebook) exige una conexión segura HTTPS para iniciar sesión con FB.login. Inicia el servidor con HTTPS (npm run dev:https) o pruébalo en producción.'
-                          );
-                        } else {
-                          setLoginAuthError(
-                            'No se pudo completar el inicio de sesión con Facebook. Si la app está en modo desarrollo, asegúrate de que tu cuenta de Facebook esté agregada como Tester en Meta for Developers.'
-                          );
+                        if (!isProcessingTokenRef.current) {
+                          resetSocialState();
+
+                          // Cancelación silenciosa si el usuario cerró la ventana o si el SDK apenas estaba cargando
+                          if (error?.status === 'loginCancelled' || error?.status === 'facebookNotLoaded') {
+                            return;
+                          }
+                          setFbAttempts((prev) => prev + 1);
+
+                          if (typeof window !== 'undefined' && window.location.protocol === 'http:') {
+                            setLoginAuthError(
+                              'Meta (Facebook) exige una conexión segura HTTPS para iniciar sesión con FB.login. Inicia el servidor con HTTPS (npm run dev:https) o pruébalo en producción.'
+                            );
+                          } else {
+                            setLoginAuthError(
+                              'No se pudo completar el inicio de sesión con Facebook. Si la app está en modo desarrollo, asegúrate de que tu cuenta de Facebook esté agregada como Tester en Meta for Developers.'
+                            );
+                          }
                         }
                       }}
                       render={({ onClick }) => (
                         <button
                           type="button"
                           id="facebook-social-btn"
+                          disabled={socialLoading !== null}
                           onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+                            if (socialLoading !== null) return;
+
                             if (typeof window !== 'undefined' && window.location.protocol === 'http:') {
                               e.preventDefault();
                               e.stopPropagation();
@@ -764,31 +916,81 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
                               setLoginAuthError('El servicio de Facebook aún se está cargando. Espera 2 segundos y presiona de nuevo.');
                               return;
                             }
+
+                            setSocialLoading('facebook');
+                            popupOpenTimeRef.current = Date.now();
+                            isProcessingTokenRef.current = false;
+                            setLoginStatusText('Abriendo Facebook...');
                             onClick?.();
                           }}
-                          className="
+                          className={`
                             group relative flex h-11 w-full items-center rounded-xl
                             border border-slate-200 bg-white
                             shadow-[0_1px_3px_rgba(0,0,0,0.06)]
                             transition-all duration-150
-                            hover:border-slate-300 hover:bg-slate-50 hover:shadow-[0_2px_6px_rgba(0,0,0,0.10)]
-                            active:scale-[0.99] active:shadow-none
-                            cursor-pointer
-                          "
+                            ${socialLoading === 'facebook'
+                              ? 'cursor-wait bg-slate-50 opacity-90'
+                              : socialLoading !== null
+                              ? 'opacity-60 cursor-not-allowed'
+                              : 'hover:border-slate-300 hover:bg-slate-50 hover:shadow-[0_2px_6px_rgba(0,0,0,0.10)] active:scale-[0.99] active:shadow-none cursor-pointer'
+                            }
+                          `}
                         >
-                          {/* Logo "f" oficial de Facebook fijo a la izquierda */}
+                          {/* Logo o Spinner a la izquierda */}
                           <span className="absolute left-4 flex items-center">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                              <path d="M24 12C24 5.37258 18.6274 0 12 0C5.37258 0 0 5.37258 0 12C0 17.9895 4.3882 22.954 10.125 23.8542V15.4688H7.07812V12H10.125V9.35625C10.125 6.34875 11.9166 4.6875 14.6576 4.6875C15.9701 4.6875 17.3438 4.92188 17.3438 4.92188V7.875H15.8306C14.34 7.875 13.875 8.80008 13.875 9.75V12H17.2031L16.6711 15.4688H13.875V23.8542C19.6118 22.954 24 17.9895 24 12Z" fill="#1877F2"/>
-                            </svg>
+                            {socialLoading === 'facebook' ? (
+                              <Loader2 className="w-[18px] h-[18px] text-[#1877F2] animate-spin" />
+                            ) : (
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path d="M24 12C24 5.37258 18.6274 0 12 0C5.37258 0 0 5.37258 0 12C0 17.9895 4.3882 22.954 10.125 23.8542V15.4688H7.07812V12H10.125V9.35625C10.125 6.34875 11.9166 4.6875 14.6576 4.6875C15.9701 4.6875 17.3438 4.92188 17.3438 4.92188V7.875H15.8306C14.34 7.875 13.875 8.80008 13.875 9.75V12H17.2031L16.6711 15.4688H13.875V23.8542C19.6118 22.954 24 17.9895 24 12Z" fill="#1877F2"/>
+                              </svg>
+                            )}
                           </span>
                           {/* Texto centrado en el botón completo */}
                           <span className="w-full text-center text-sm font-semibold text-slate-700">
-                            Continuar con Facebook
+                            {socialLoading === 'facebook' ? 'Iniciando con Facebook...' : 'Continuar con Facebook'}
                           </span>
                         </button>
                       )}
                     />
+
+                    {/* Escape hatch inmediato si el usuario cerró la ventana o desea cancelar */}
+                    {socialLoading && (
+                      <div className="flex items-center justify-between rounded-lg bg-slate-50 dark:bg-slate-800/80 px-3 py-1.5 border border-slate-200 dark:border-slate-700 animate-in fade-in duration-150">
+                        <span className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 font-medium">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600 shrink-0" />
+                          {socialLoading === 'google' ? 'Ventana de Google abierta...' : 'Ventana de Facebook abierta...'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            isProcessingTokenRef.current = false;
+                            resetSocialState();
+                          }}
+                          className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 font-semibold cursor-pointer underline underline-offset-2 hover:scale-102 transition-transform"
+                        >
+                          Cancelar y reintentar
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Soporte amigable si Facebook ha fallado repetidamente */}
+                    {fbAttempts >= 2 && (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50/85 p-3 text-xs text-amber-900 animate-in fade-in duration-200 shadow-2xs">
+                        <div className="flex items-start gap-2.5">
+                          <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div className="space-y-1">
+                            <p className="font-semibold text-amber-950 text-xs">¿Problemas para acceder con Facebook?</p>
+                            <p className="text-amber-800 leading-relaxed text-[11px]">
+                              Si tu aplicación en Meta está en <strong>Modo Desarrollo</strong>, Facebook bloquea a cualquier cuenta que no esté dada de alta como <em>Tester</em> en Meta for Developers.
+                            </p>
+                            <p className="text-amber-800 leading-relaxed text-[11px]">
+                              Te recomendamos ingresar con <strong>Google</strong> (que ya está listo) o usando tu <strong>correo y contraseña</strong> abajo.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                     {/* Divisor con líneas sutiles */}
