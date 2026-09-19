@@ -727,6 +727,8 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
                               setLoginStatusText('');
                             }
                           }}
+                          useOneTap={false}
+                          auto_select={false}
                           shape="rectangular"
                           theme="outline"
                           size="large"
@@ -741,14 +743,14 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
 
                     {/* ── Botón Facebook — mismo estilo unificado ── */}
                     <FacebookLogin
-                      appId={process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || ''}
+                      appId={process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || '4624725251186454'}
                       scope="email,public_profile"
                       onSuccess={handleFacebookSuccess}
                       onFail={(error: FailResponse) => {
                         console.warn('Facebook login status:', error);
                         setLoginStatusText('');
-                        // Cancelación silenciosa si el usuario cerró la ventana o canceló
-                        if (error?.status === 'loginCancelled') {
+                        // Cancelación silenciosa si el usuario cerró la ventana o si el SDK apenas estaba cargando
+                        if (error?.status === 'loginCancelled' || error?.status === 'facebookNotLoaded') {
                           return;
                         }
                         if (typeof window !== 'undefined' && window.location.protocol === 'http:') {
@@ -774,7 +776,30 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
                               );
                               return;
                             }
-                            onClick?.();
+
+                            setLoginAuthError('');
+
+                            // Si window.FB ya está inicializado, llamar inmediatamente
+                            if (typeof window !== 'undefined' && (window as any).FB) {
+                              onClick?.();
+                              return;
+                            }
+
+                            // Si el SDK de Facebook aún está cargando el script en segundo plano, esperar y abrir
+                            setLoginStatusText('Conectando con Facebook...');
+                            let attempts = 0;
+                            const checkFbInterval = setInterval(() => {
+                              attempts++;
+                              if (typeof window !== 'undefined' && (window as any).FB) {
+                                clearInterval(checkFbInterval);
+                                setLoginStatusText('');
+                                onClick?.();
+                              } else if (attempts >= 25) {
+                                clearInterval(checkFbInterval);
+                                setLoginStatusText('');
+                                setLoginAuthError('El servicio de Facebook no respondió a tiempo. Por favor intenta de nuevo.');
+                              }
+                            }, 100);
                           }}
                           className="
                             group relative flex h-11 w-full items-center rounded-xl
