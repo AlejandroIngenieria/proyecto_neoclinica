@@ -31,7 +31,9 @@ export function useCrearResena() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['resenasMedico', variables.codDoc] });
       queryClient.invalidateQueries({ queryKey: ['doctors'] });
+      queryClient.invalidateQueries({ queryKey: ['doctor', variables.codDoc] });
       queryClient.invalidateQueries({ queryKey: ['doctorByCode', variables.codDoc] });
+      queryClient.invalidateQueries({ queryKey: ['citas'] });
       queryClient.invalidateQueries({ queryKey: ['lealtadEstado'] });
     },
   });
@@ -44,9 +46,14 @@ export function useActualizarResena() {
   return useMutation({
     mutationFn: ({ resCodigo, payload }: { resCodigo: string; payload: Partial<CrearResenaRequest> }) =>
       actualizarResena(token!, resCodigo, payload),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['resenasMedico'] });
       queryClient.invalidateQueries({ queryKey: ['doctors'] });
+      if (variables?.payload?.codDoc) {
+        queryClient.invalidateQueries({ queryKey: ['doctor', variables.payload.codDoc] });
+        queryClient.invalidateQueries({ queryKey: ['doctorByCode', variables.payload.codDoc] });
+      }
+      queryClient.invalidateQueries({ queryKey: ['citas'] });
     },
   });
 }

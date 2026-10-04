@@ -126,6 +126,9 @@ export function useUpdatePaciente() {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['pacientes'] });
       queryClient.invalidateQueries({ queryKey: ['paciente', variables.pacCodigo] });
+      queryClient.invalidateQueries({ queryKey: ['pacientesSeleccion'] });
+      queryClient.invalidateQueries({ queryKey: ['billetera'] });
+      queryClient.invalidateQueries({ queryKey: ['pacienteTitular'] });
       toast.success('Perfil actualizado correctamente');
 
       if (token && userId) {
@@ -157,6 +160,9 @@ export function useCreateDependiente() {
     }) => createDependiente(token!, body, userId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pacientes'] });
+      queryClient.invalidateQueries({ queryKey: ['pacientesSeleccion'] });
+      queryClient.invalidateQueries({ queryKey: ['billetera'] });
+      queryClient.invalidateQueries({ queryKey: ['pacienteTitular'] });
       toast.success('Familiar registrado con éxito');
 
       if (token && userId) {

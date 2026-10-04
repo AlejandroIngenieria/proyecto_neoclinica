@@ -27,6 +27,16 @@
   
   --error: #ba1a1a;
   --on-error: #ffffff;
+
+  /* Sidebar Tokens - Light Mode */
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #0F172A;
+  --sidebar-primary: #2563EB;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #F1F5F9;
+  --sidebar-accent-foreground: #0F172A;
+  --sidebar-border: #E2E8F0;
+  --sidebar-ring: #2563EB;
 }
 
 .dark {
@@ -53,6 +63,16 @@
   
   --error: #ffb4ab;
   --on-error: #690005;
+
+  /* Sidebar Tokens - Dark Mode */
+  --sidebar: #0B1120;
+  --sidebar-foreground: #F8FAFC;
+  --sidebar-primary: #2563EB;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #1E293B;
+  --sidebar-accent-foreground: #F8FAFC;
+  --sidebar-border: #1E293B;
+  --sidebar-ring: #3B82F6;
 }
 
 @theme inline {
@@ -83,6 +103,16 @@
   
   --color-error: var(--error);
   --color-on-error: var(--on-error);
+
+  /* Sidebar theme mapping */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
 
   /* Fonts */
   --font-display: var(--font-inter);
@@ -218,4 +248,30 @@ input:-webkit-autofill:active,
     -webkit-box-shadow: 0 0 0px 1000px #1e293b inset !important;
     -webkit-text-fill-color: #f8fafc !important;
     caret-color: #f8fafc !important;
+}
+
+/* ─── react-masonry-css Layout ─────────────────────────────────────────── */
+.saludya-masonry-grid {
+  display: flex;
+  margin-left: -16px; /* gutter size offset */
+  width: auto;
+}
+.saludya-masonry-grid_column {
+  padding-left: 16px; /* gutter size */
+  background-clip: padding-box;
+}
+.saludya-masonry-grid_column > div {
+  margin-bottom: 16px;
+}
+
+@media (min-width: 640px) {
+  .saludya-masonry-grid {
+    margin-left: -20px;
+  }
+  .saludya-masonry-grid_column {
+    padding-left: 20px;
+  }
+  .saludya-masonry-grid_column > div {
+    margin-bottom: 20px;
+  }
 }

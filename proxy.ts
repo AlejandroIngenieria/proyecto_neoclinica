@@ -37,7 +37,32 @@ async function validateBackendSession(token: string, origin: string): Promise<Va
   }
 }
 
+// Rutas privadas del dashboard que SIEMPRE requieren autenticación
+function isProtectedDashboardPath(pathname: string): boolean {
+  if (pathname === '/dashboard') return true;
+
+  const protectedPrefixes = [
+    '/dashboard/agendar',
+    '/dashboard/citas',
+    '/dashboard/configuracion',
+    '/dashboard/medicamentos',
+    '/dashboard/notificaciones',
+    '/dashboard/perfil',
+  ];
+
+  return protectedPrefixes.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  );
+}
+
 export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Si la ruta NO es una de las secciones privadas del dashboard (ej: perfil de médico /dashboard/[expCodigo] o directorio público), permitir acceso libre
+  if (!isProtectedDashboardPath(pathname)) {
+    return NextResponse.next();
+  }
+
   const token = await getToken({ req: request, secret: getAuthSecret() });
 
   if (!token?.accessToken || typeof token.accessToken !== 'string') {

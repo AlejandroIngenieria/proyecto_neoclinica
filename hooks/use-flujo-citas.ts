@@ -20,9 +20,13 @@ import {
   completarCita,
   updateCita,
   fetchMetodosPago,
+  fetchCuentasBancariasMedico,
   pagarCita,
   fetchBilletera,
+  fetchAseguradoras,
+  SEED_ASEGURADORAS,
   guardarSeguro,
+  eliminarSeguro,
   guardarTarjeta,
   cambiarEstadoCita,
   fetchAllCitas,
@@ -32,6 +36,7 @@ import {
   crearSolicitudCambio,
   responderSolicitudCambio,
   cancelarSolicitudCambio,
+  marcarLlegadaClinica,
 } from '@/services/flujo-citas';
 import type {
   CrearCitaRequest, CitaListDto, UpdateCitaRequest,
@@ -40,6 +45,7 @@ import type {
   CambiarEstadoCitaPayload, CitaEstado, ServicioMedicoCitaDto,
   SolicitudCambioDto, CrearSolicitudCambioRequest, ResponderSolicitudCambioRequest,
   CancelarSolicitudCambioRequest,
+  AseguradoraCatalogoDto,
 } from '@/types/citas';
 
 import { toast } from 'sonner';
@@ -440,6 +446,15 @@ export function useMetodosPago(codMedico: string | null) {
   });
 }
 
+export function useCuentasBancariasMedico(codMedico: string | null) {
+  return useQuery<any[]>({
+    queryKey: ['cuentasBancariasMedico', codMedico],
+    queryFn: () => fetchCuentasBancariasMedico(codMedico!),
+    enabled: !!codMedico,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 export function usePagarCita() {
   const { token } = useAuthInfo();
   const queryClient = useQueryClient();
@@ -462,13 +477,48 @@ export function useBilletera(codPac: string | null) {
   });
 }
 
+export function useAseguradoras() {
+  const { token } = useAuthInfo();
+  return useQuery<AseguradoraCatalogoDto[]>({
+    queryKey: ['catalogoAseguradoras'],
+    queryFn: () => fetchAseguradoras(token || undefined),
+    initialData: SEED_ASEGURADORAS,
+    staleTime: 30 * 60 * 1000,
+    retry: false,
+  });
+}
+
 export function useGuardarSeguro() {
   const { token } = useAuthInfo();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: { codPac: string; payload: GuardarSeguroRequest }) => guardarSeguro(token!, data.codPac, data.payload),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['billetera', variables.codPac] });
+    mutationFn: (data: { codPac: string; payload: GuardarSeguroRequest | FormData; segCodigo?: string | null }) =>
+      guardarSeguro(token!, data.codPac, data.payload, data.segCodigo),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['billetera'] });
+      queryClient.invalidateQueries({ queryKey: ['pacientesSeleccion'] });
+      queryClient.invalidateQueries({ queryKey: ['pacientes'] });
+      queryClient.invalidateQueries({ queryKey: ['paciente'] });
+      queryClient.invalidateQueries({ queryKey: ['pacienteTitular'] });
+    }
+  });
+}
+
+export function useEliminarSeguro() {
+  const { token } = useAuthInfo();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { codPac: string; segCodigo: string }) => eliminarSeguro(token!, data.codPac, data.segCodigo),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['billetera'] });
+      queryClient.invalidateQueries({ queryKey: ['pacientesSeleccion'] });
+      queryClient.invalidateQueries({ queryKey: ['pacientes'] });
+      queryClient.invalidateQueries({ queryKey: ['paciente'] });
+      queryClient.invalidateQueries({ queryKey: ['pacienteTitular'] });
+      toast.success('Seguro médico eliminado correctamente');
+    },
+    onError: () => {
+      toast.error('No se pudo eliminar el seguro médico.');
     }
   });
 }
@@ -657,6 +707,32 @@ export function useCancelarSolicitudCambio() {
     onError: (error: any) => {
       const msg = error?.response?.data?.mensaje || error?.message || 'Error al cancelar la solicitud';
       toast.error(typeof msg === 'string' ? msg : 'Error al cancelar solicitud');
+    },
+  });
+}
+
+/**
+ * Hook para marcar la llegada presencial del paciente a la clínica
+ */
+export function useMarcarLlegadaClinica() {
+  const { token } = useAuthInfo();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (citaId: string) => marcarLlegadaClinica(token!, citaId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['citasPaciente'] });
+      queryClient.invalidateQueries({ queryKey: ['citasTodosPacientes'] });
+      queryClient.invalidateQueries({ queryKey: ['all-citas-paciente'] });
+      queryClient.invalidateQueries({ queryKey: ['cola-turnos'] });
+      queryClient.invalidateQueries({ queryKey: ['cola-dia'] });
+      queryClient.invalidateQueries({ queryKey: ['adminCitas'] });
+      toast.success('¡Llegada confirmada!', {
+        description: 'Se ha registrado que te encuentras en la clínica. Tu presencia ya es visible en la sala de espera.',
+      });
+    },
+    onError: (error: any) => {
+      const msg = error?.response?.data?.mensaje || error?.message || 'Error al registrar llegada';
+      toast.error(typeof msg === 'string' ? msg : 'Error al registrar llegada a la clínica');
     },
   });
 }

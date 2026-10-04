@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 
 /**
- * Hook para sincronizar un valor string con un parámetro de la URL.
+ * Hook para sincronizar un valor string con un parámetro de la URL con reactividad en tiempo real.
  *
  * @example
  * const [search, setSearch] = useParamString('q', '');
@@ -15,29 +15,43 @@ export function useParamString(key: string, defaultValue: string = ''): [string,
   const router = useRouter();
   const pathname = usePathname();
 
-  const value = searchParams.get(key) ?? defaultValue;
+  const paramValue = searchParams.get(key) ?? defaultValue;
+  const [localValue, setLocalValue] = useState(paramValue);
+
+  useEffect(() => {
+    setLocalValue(paramValue);
+  }, [paramValue]);
 
   const setValue = useCallback(
     (next: string) => {
-      const params = new URLSearchParams(searchParams.toString());
+      setLocalValue(next);
+
+      const currentParams = typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search)
+        : new URLSearchParams(searchParams.toString());
 
       if (next === defaultValue || next === '') {
-        params.delete(key);
+        currentParams.delete(key);
       } else {
-        params.set(key, next);
+        currentParams.set(key, next);
       }
 
-      const query = params.toString();
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+      const query = currentParams.toString();
+      const url = query ? `${pathname}?${query}` : pathname;
+
+      if (typeof window !== 'undefined') {
+        window.history.replaceState(window.history.state, '', url);
+      }
+      router.replace(url, { scroll: false });
     },
     [defaultValue, key, pathname, router, searchParams],
   );
 
-  return [value, setValue];
+  return [localValue, setValue];
 }
 
 /**
- * Hook para sincronizar un booleano con un parámetro de la URL.
+ * Hook para sincronizar un booleano con un parámetro de la URL con reactividad en tiempo real.
  *
  * @example
  * const [active, setActive] = useParamBoolean('active', false);
@@ -49,29 +63,43 @@ export function useParamBoolean(key: string, defaultValue: boolean = false): [bo
   const pathname = usePathname();
 
   const raw = searchParams.get(key);
-  const value = raw !== null ? raw === '1' || raw === 'true' : defaultValue;
+  const paramValue = raw !== null ? raw === '1' || raw === 'true' : defaultValue;
+  const [localValue, setLocalValue] = useState(paramValue);
+
+  useEffect(() => {
+    setLocalValue(paramValue);
+  }, [paramValue]);
 
   const setValue = useCallback(
     (next: boolean) => {
-      const params = new URLSearchParams(searchParams.toString());
+      setLocalValue(next);
+
+      const currentParams = typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search)
+        : new URLSearchParams(searchParams.toString());
 
       if (next === defaultValue) {
-        params.delete(key);
+        currentParams.delete(key);
       } else {
-        params.set(key, next ? '1' : '0');
+        currentParams.set(key, next ? '1' : '0');
       }
 
-      const query = params.toString();
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+      const query = currentParams.toString();
+      const url = query ? `${pathname}?${query}` : pathname;
+
+      if (typeof window !== 'undefined') {
+        window.history.replaceState(window.history.state, '', url);
+      }
+      router.replace(url, { scroll: false });
     },
     [defaultValue, key, pathname, router, searchParams],
   );
 
-  return [value, setValue];
+  return [localValue, setValue];
 }
 
 /**
- * Hook para sincronizar un número con un parámetro de la URL.
+ * Hook para sincronizar un número con un parámetro de la URL con reactividad en tiempo real.
  *
  * @example
  * const [price, setPrice] = useParamNumber('price', 5000);
@@ -83,26 +111,40 @@ export function useParamNumber(key: string, defaultValue: number): [number, (val
   const pathname = usePathname();
 
   const raw = searchParams.get(key);
-  const value = raw !== null ? Number(raw) : defaultValue;
-  const safeValue = Number.isFinite(value) ? value : defaultValue;
+  const parsed = raw !== null ? Number(raw) : defaultValue;
+  const paramValue = Number.isFinite(parsed) ? parsed : defaultValue;
+  const [localValue, setLocalValue] = useState(paramValue);
+
+  useEffect(() => {
+    setLocalValue(paramValue);
+  }, [paramValue]);
 
   const setValue = useCallback(
     (next: number) => {
-      const params = new URLSearchParams(searchParams.toString());
+      setLocalValue(next);
+
+      const currentParams = typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search)
+        : new URLSearchParams(searchParams.toString());
 
       if (next === defaultValue) {
-        params.delete(key);
+        currentParams.delete(key);
       } else {
-        params.set(key, String(next));
+        currentParams.set(key, String(next));
       }
 
-      const query = params.toString();
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+      const query = currentParams.toString();
+      const url = query ? `${pathname}?${query}` : pathname;
+
+      if (typeof window !== 'undefined') {
+        window.history.replaceState(window.history.state, '', url);
+      }
+      router.replace(url, { scroll: false });
     },
     [defaultValue, key, pathname, router, searchParams],
   );
 
-  return [safeValue, setValue];
+  return [localValue, setValue];
 }
 
 /**
@@ -113,6 +155,9 @@ export function useResetParams() {
   const pathname = usePathname();
 
   return useCallback(() => {
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(window.history.state, '', pathname);
+    }
     router.replace(pathname, { scroll: false });
   }, [pathname, router]);
 }

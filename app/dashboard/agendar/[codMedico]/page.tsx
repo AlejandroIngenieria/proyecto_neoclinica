@@ -34,10 +34,11 @@ export default function AgendarCitaPage({ params }: { params: Promise<{ codMedic
     setTemaSeguimiento, setModalidad, setPaciente, reset 
   } = useCitaStore();
 
-  // Inicializar estado del wizard
+  // Inicializar estado del wizard al montar
   useEffect(() => {
     reset();
-  }, [reset]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Pre-seleccionar tema de seguimiento si viene en los parámetros
   useEffect(() => {

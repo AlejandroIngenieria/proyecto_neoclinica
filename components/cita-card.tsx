@@ -5,10 +5,10 @@ import Link from 'next/link';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
-import { CalendarDays, Clock, MapPin, Video, Home, Edit2, XCircle, Loader2, MoreVertical, FileText, Navigation, Paperclip, ExternalLink, X, Star, ChevronDown, CalendarPlus, FolderPlus, FolderMinus, ClipboardList, Stethoscope, Pill, FlaskConical, Activity, Info, Lock, Play, CheckCircle2, UserCheck, CreditCard, Upload, AlertCircle, ArrowLeftRight } from 'lucide-react';
+import { CalendarDays, Clock, MapPin, Video, Home, Edit2, XCircle, Loader2, MoreVertical, FileText, Navigation, Paperclip, ExternalLink, X, Star, ChevronDown, CalendarPlus, FolderPlus, FolderMinus, ClipboardList, Stethoscope, Pill, FlaskConical, Activity, Info, Lock, Play, CheckCircle2, UserCheck, CreditCard, Upload, AlertCircle, ArrowLeftRight, Building2 } from 'lucide-react';
 import type { CitaListDto, SolicitudCambioDto } from '@/types/citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
-import { useCambiarEstadoCita, usePagarCita, isCitaPasada } from '@/hooks/use-flujo-citas';
+import { useCambiarEstadoCita, usePagarCita, isCitaPasada, useMarcarLlegadaClinica } from '@/hooks/use-flujo-citas';
 import { useDropzone } from 'react-dropzone';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -48,6 +48,7 @@ export function CitaCard({
   const { data: doctor, isLoading } = useDoctorByCode(cita.ctaCoddoc);
   const cambiarEstadoMutation = useCambiarEstadoCita();
   const pagarCitaMutation = usePagarCita();
+  const marcarLlegadaMutation = useMarcarLlegadaClinica();
   const [isNavMenuOpen, setIsNavMenuOpen] = useState(false);
   const [mostrarModalArchivos, setMostrarModalArchivos] = useState(false);
   const [mostrarModalInfo, setMostrarModalInfo] = useState(false);
@@ -114,52 +115,74 @@ export function CitaCard({
     }
   };
 
+  const normalizeEstadoStr = (estado: string | undefined | null) => {
+    if (!estado) return '';
+    return estado
+      .toLowerCase()
+      .trim()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[\s\-]+/g, '_');
+  };
+
   const getStatusDotColor = (estado: string) => {
-    switch (estado?.toLowerCase()) {
+    const clean = normalizeEstadoStr(estado);
+    switch (clean) {
       case 'programada': return 'bg-sky-500';
       case 'confirmada': return 'bg-emerald-500';
       case 'pospuesta': return 'bg-amber-500';
       case 'en_proceso': return 'bg-blue-600 animate-pulse';
-      case 'completada': return 'bg-slate-400';
+      case 'completada':
+      case 'finalizada':
+      case 'realizada': return 'bg-slate-400';
       case 'cancelada':
       case 'rechazada':
-      case 'no_asistio': return 'bg-rose-500';
+      case 'no_asistio':
+      case 'noasistio': return 'bg-rose-500';
       default: return 'bg-slate-400';
     }
   };
 
   const getStatusTextColor = (estado: string) => {
-    switch (estado?.toLowerCase()) {
+    const clean = normalizeEstadoStr(estado);
+    switch (clean) {
       case 'programada': return 'text-sky-600 dark:text-sky-400';
       case 'confirmada': return 'text-emerald-600 dark:text-emerald-400';
       case 'pospuesta': return 'text-amber-600 dark:text-amber-400';
       case 'en_proceso': return 'text-blue-600 dark:text-blue-400 font-black';
-      case 'completada': return 'text-slate-600 dark:text-slate-400';
+      case 'completada':
+      case 'finalizada':
+      case 'realizada': return 'text-slate-600 dark:text-slate-400';
       case 'cancelada':
       case 'rechazada':
-      case 'no_asistio': return 'text-rose-600 dark:text-rose-400';
+      case 'no_asistio':
+      case 'noasistio': return 'text-rose-600 dark:text-rose-400';
       default: return 'text-slate-600 dark:text-slate-400';
     }
   };
 
   const getEstadoColor = (estado: string) => {
-    switch (estado?.toLowerCase()) {
+    const clean = normalizeEstadoStr(estado);
+    switch (clean) {
       case 'programada': return 'bg-sky-100 text-sky-700';
       case 'confirmada': return 'bg-emerald-100 text-emerald-700';
       case 'pospuesta': return 'bg-amber-100 text-amber-700';
       case 'en_proceso': return 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-300 dark:border-blue-700';
-      case 'completada': return 'bg-slate-100 text-slate-700';
+      case 'completada':
+      case 'finalizada':
+      case 'realizada': return 'bg-slate-100 text-slate-700';
       case 'cancelada':
       case 'rechazada':
-      case 'no_asistio': return 'bg-rose-100 text-rose-700';
+      case 'no_asistio':
+      case 'noasistio': return 'bg-rose-100 text-rose-700';
       default: return 'bg-slate-100 text-slate-700';
     }
   };
 
   const formatCitaEstado = (estado: string | undefined | null) => {
     if (!estado) return '';
-    const clean = estado.toLowerCase().trim();
-    if (clean === 'no_asistio' || clean === 'no-asistio') return 'No asistió';
+    const clean = normalizeEstadoStr(estado);
+    if (clean === 'no_asistio' || clean === 'noasistio') return 'No asistió';
     if (clean === 'en_proceso') return 'En proceso';
     return clean.charAt(0).toUpperCase() + clean.slice(1).replace(/_/g, ' ');
   };
@@ -173,16 +196,37 @@ export function CitaCard({
     .map((part) => part[0])
     .join('') || 'MD';
 
-  const estadoLower = (cita.ctaEstado || '').toLowerCase();
+  const estadoLower = normalizeEstadoStr(cita.ctaEstado);
   const isPospuesta = estadoLower === 'pospuesta';
   const isIndependizado = (cita.pacienteEstado || '').toLowerCase() === 'independizado';
   const isPastCita = isPast || isCitaPasada(cita.ctaFecha, cita.ctaHora);
   const canModify = !isIndependizado && !isPastCita && ['programada', 'confirmada', 'pospuesta', 'en_proceso'].includes(estadoLower);
 
-  const isCompletedState =
-    (cita.ctaEstado || '').toLowerCase() === 'completada' ||
-    (cita.ctaEstado || '').toLowerCase() === 'finalizada' ||
-    (isPastCita && !['programada', 'confirmada', 'pospuesta', 'en_proceso', 'cancelada', 'rechazada', 'no_asistio'].includes((cita.ctaEstado || '').toLowerCase()));
+  const isCompletedState = ['completada', 'finalizada', 'realizada'].includes(estadoLower);
+
+  // Verificación estricta: ÚNICAMENTE el día de la cita (no antes, ni después)
+  const isTodayCita = useMemo(() => {
+    if (!cita?.ctaFecha) return false;
+    try {
+      const citaDatePart = cita.ctaFecha.includes('T') ? cita.ctaFecha.split('T')[0] : cita.ctaFecha;
+      const todayStr = format(new Date(), 'yyyy-MM-dd');
+      return citaDatePart === todayStr;
+    } catch {
+      return false;
+    }
+  }, [cita?.ctaFecha]);
+
+  const isPresencial = (cita.ctaModalidad || '').toLowerCase() === 'presencial';
+  const ctaEnClinica = Boolean(cita.ctaEnClinica);
+  const canMarcarLlegada = isTodayCita && isPresencial && !['cancelada', 'rechazada', 'no_asistio', 'completada'].includes(estadoLower);
+  const fechaQuery = cita.ctaFecha ? cita.ctaFecha.split('T')[0] : '';
+  const colaUrl = `/dashboard/citas/sala-espera?citaId=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}&fecha=${fechaQuery}`;
+  const puedeVerCola = !isCompletedState && !isPast && !['cancelada', 'rechazada', 'no_asistio'].includes(estadoLower);
+
+  const handleMarcarLlegada = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    marcarLlegadaMutation.mutate(cita.ctaCodigo);
+  };
 
   // Manejador para simulación de acciones del médico (iniciar / finalizar consulta)
   const handleSimularEstado = (e: React.MouseEvent, nuevoEstado: 'en_proceso' | 'completada') => {
@@ -514,16 +558,51 @@ export function CitaCard({
               className="relative w-full max-w-2xl bg-white dark:bg-[#0F172A] rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[85vh] flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 mb-6">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-2xl">
+              <div className="flex items-start justify-between pb-4 border-b border-slate-100 dark:border-slate-800 mb-5">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-2xl shrink-0 mt-0.5">
                     <ClipboardList className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-black text-slate-900 dark:text-white leading-tight">Información de la Consulta</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {cita.medicoNombre ? `Dr. ${cita.medicoNombre}` : 'Médico'} • {format(dateObj, "d 'de' MMMM, yyyy", { locale: es })} ({cita.ctaHora.slice(0, 5)})
-                    </p>
+                    <h3 className="text-xl font-black text-slate-900 dark:text-white leading-tight">
+                      {isCompletedState ? 'Resumen Clínico de la Consulta' : 'Detalle de la Cita Médica'}
+                    </h3>
+                    <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                      {/* Badge dinámico con el estado real */}
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                        estadoLower === 'programada' ? 'bg-sky-50 text-sky-700 border-sky-200/80 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-800/60'
+                        : estadoLower === 'confirmada' ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800/60'
+                        : estadoLower === 'pospuesta' ? 'bg-amber-50 text-amber-700 border-amber-200/80 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800/60'
+                        : estadoLower === 'en_proceso' ? 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 animate-pulse'
+                        : isCompletedState ? 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                        : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800/60'
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${
+                          estadoLower === 'programada' ? 'bg-sky-500'
+                          : estadoLower === 'confirmada' ? 'bg-emerald-500'
+                          : estadoLower === 'pospuesta' ? 'bg-amber-500'
+                          : estadoLower === 'en_proceso' ? 'bg-blue-600'
+                          : isCompletedState ? 'bg-slate-500'
+                          : 'bg-rose-500'
+                        }`} />
+                        <span>{formatCitaEstado(cita.ctaEstado)}</span>
+                      </span>
+
+                      {/* Calificación si ya fue evaluada */}
+                      {isCompletedState && yaTieneResena && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                          <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                          <span>{cita.ctaCalificacion}/5 Estrellas</span>
+                        </span>
+                      )}
+
+                      {/* Grupo si existe */}
+                      {cita.grupoTema && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/70 dark:border-indigo-800/60">
+                          <FolderPlus className="w-3 h-3" /> {cita.grupoTema}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <button
@@ -536,7 +615,193 @@ export function CitaCard({
               </div>
 
               <div className="flex-1 overflow-y-auto pr-1 space-y-4">
-                {/* 1. Motivo y Síntomas Iniciales */}
+                {/* 1. Banner contextual explicativo según el estado REAL de la cita */}
+                {(estadoLower === 'no_asistio' || estadoLower === 'noasistio') ? (
+                  <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 flex items-start gap-3.5">
+                    <div className="p-2.5 rounded-xl bg-rose-600 text-white shadow-xs shrink-0 mt-0.5">
+                      <XCircle className="w-5 h-5" />
+                    </div>
+                    <div className="text-xs">
+                      <h4 className="font-bold text-rose-900 dark:text-rose-200 text-sm">Estado de la Cita: No asistió</h4>
+                      <p className="text-rose-700 dark:text-rose-300/90 mt-1 leading-relaxed">
+                        Esta consulta médica fue registrada como no asistida. El paciente no se presentó en la fecha y horario establecido ({format(dateObj, "d 'de' MMMM", { locale: es })} a las {cita.ctaHora.slice(0, 5)} hrs). Por esta razón no se generó expediente clínico ni prescripción médica.
+                      </p>
+                    </div>
+                  </div>
+                ) : estadoLower === 'cancelada' ? (
+                  <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 flex items-start gap-3.5">
+                    <div className="p-2.5 rounded-xl bg-rose-600 text-white shadow-xs shrink-0 mt-0.5">
+                      <XCircle className="w-5 h-5" />
+                    </div>
+                    <div className="text-xs">
+                      <h4 className="font-bold text-rose-900 dark:text-rose-200 text-sm">Estado de la Cita: Cancelada</h4>
+                      <p className="text-rose-700 dark:text-rose-300/90 mt-1 leading-relaxed">
+                        La cita médica fue cancelada previamente. El horario asignado quedó liberado en el sistema y no se efectuaron cargos clínicos.
+                      </p>
+                    </div>
+                  </div>
+                ) : estadoLower === 'rechazada' ? (
+                  <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 flex items-start gap-3.5">
+                    <div className="p-2.5 rounded-xl bg-rose-600 text-white shadow-xs shrink-0 mt-0.5">
+                      <AlertCircle className="w-5 h-5" />
+                    </div>
+                    <div className="text-xs">
+                      <h4 className="font-bold text-rose-900 dark:text-rose-200 text-sm">Estado de la Cita: Solicitud Rechazada</h4>
+                      <p className="text-rose-700 dark:text-rose-300/90 mt-1 leading-relaxed">
+                        Esta solicitud de cita no pudo ser confirmada y fue declinada por el médico o centro de salud.
+                      </p>
+                    </div>
+                  </div>
+                ) : estadoLower === 'en_proceso' ? (
+                  <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 flex items-start gap-3.5 animate-pulse">
+                    <div className="p-2.5 rounded-xl bg-blue-600 text-white shadow-xs shrink-0 mt-0.5">
+                      <Activity className="w-5 h-5" />
+                    </div>
+                    <div className="text-xs">
+                      <h4 className="font-bold text-blue-900 dark:text-blue-200 text-sm">Estado de la Cita: Consulta en Proceso</h4>
+                      <p className="text-blue-700 dark:text-blue-300/90 mt-1 leading-relaxed">
+                        El médico se encuentra atendiendo esta consulta. El diagnóstico y prescripción médica se registrarán en el expediente al finalizar.
+                      </p>
+                    </div>
+                  </div>
+                ) : estadoLower === 'confirmada' ? (
+                  <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 flex items-start gap-3.5">
+                    <div className="p-2.5 rounded-xl bg-emerald-600 text-white shadow-xs shrink-0 mt-0.5">
+                      <CheckCircle2 className="w-5 h-5" />
+                    </div>
+                    <div className="text-xs">
+                      <h4 className="font-bold text-emerald-900 dark:text-emerald-200 text-sm">Estado de la Cita: Confirmada</h4>
+                      <p className="text-emerald-700 dark:text-emerald-300/90 mt-1 leading-relaxed">
+                        Tu cita se encuentra confirmada por el centro médico. Te recomendamos presentarte con 10 a 15 minutos de anticipación en la fecha indicada.
+                      </p>
+                    </div>
+                  </div>
+                ) : estadoLower === 'pospuesta' ? (
+                  <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 flex items-start gap-3.5">
+                    <div className="p-2.5 rounded-xl bg-amber-500 text-white shadow-xs shrink-0 mt-0.5">
+                      <Clock className="w-5 h-5" />
+                    </div>
+                    <div className="text-xs">
+                      <h4 className="font-bold text-amber-900 dark:text-amber-200 text-sm">Estado de la Cita: Pospuesta</h4>
+                      <p className="text-amber-700 dark:text-amber-300/90 mt-1 leading-relaxed">
+                        Esta consulta fue pospuesta/reprogramada. Revisa los nuevos horarios asignados para tu atención.
+                      </p>
+                    </div>
+                  </div>
+                ) : estadoLower === 'programada' ? (
+                  <div className="p-4 rounded-2xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-900/60 flex items-start gap-3.5">
+                    <div className="p-2.5 rounded-xl bg-sky-600 text-white shadow-xs shrink-0 mt-0.5">
+                      <Clock className="w-5 h-5" />
+                    </div>
+                    <div className="text-xs">
+                      <h4 className="font-bold text-sky-900 dark:text-sky-200 text-sm">Estado de la Cita: Programada</h4>
+                      <p className="text-sky-700 dark:text-sky-300/90 mt-1 leading-relaxed">
+                        Cita agendada en el sistema, pendiente de atención médica en la fecha y hora seleccionada ({format(dateObj, "d 'de' MMMM", { locale: es })} a las {cita.ctaHora.slice(0, 5)} hrs).
+                      </p>
+                    </div>
+                  </div>
+                ) : isCompletedState ? (
+                  <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-start gap-3.5">
+                    <div className="p-2.5 rounded-xl bg-slate-700 dark:bg-slate-600 text-white shadow-xs shrink-0 mt-0.5">
+                      <CheckCircle2 className="w-5 h-5" />
+                    </div>
+                    <div className="text-xs">
+                      <h4 className="font-bold text-slate-900 dark:text-white text-sm">Estado de la Cita: Consulta Completada</h4>
+                      <p className="text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
+                        Esta consulta médica fue atendida y finalizada con éxito. A continuación encontrarás el expediente clínico registrado por el doctor.
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* 2. Ficha de Datos Conectados de la Cita */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 text-xs">
+                  {/* Paciente */}
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Paciente</span>
+                    <p className="font-bold text-slate-900 dark:text-white text-sm">
+                      {cita.pacienteNombre || 'Paciente Registrado'}
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      {isIndependizado ? 'Cuenta Independizada' : 'Paciente de la cuenta'}
+                    </p>
+                  </div>
+
+                  {/* Médico y Especialidad */}
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Médico Tratante</span>
+                    <p className="font-bold text-slate-900 dark:text-white text-sm">
+                      Dr. {cita.medicoNombre}
+                    </p>
+                    <p className="text-[11px] text-sky-600 dark:text-sky-400 font-semibold">
+                      {cita.medicoEspecialidad || doctor?.exp_profesion || 'Especialista Médico'}
+                    </p>
+                  </div>
+
+                  {/* Fecha y Horario */}
+                  <div className="space-y-1 pt-2.5 border-t border-slate-200/70 dark:border-slate-700/60">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Fecha y Hora</span>
+                    <p className="font-bold text-slate-800 dark:text-slate-100 capitalize">
+                      {format(dateObj, "EEEE d 'de' MMMM, yyyy", { locale: es })}
+                    </p>
+                    <p className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                      {cita.ctaHora.slice(0, 5)} hrs
+                    </p>
+                  </div>
+
+                  {/* Modalidad y Lugar */}
+                  <div className="space-y-1 pt-2.5 border-t border-slate-200/70 dark:border-slate-700/60">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Modalidad & Sede</span>
+                    <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-100 capitalize">
+                      {getModalityIcon(cita.ctaModalidad)}
+                      <span>{cita.ctaModalidad}</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      {cita.ctaModalidad === 'presencial'
+                        ? (cita.clinicaNombre || 'Clínica Principal')
+                        : cita.ctaModalidad === 'virtual'
+                        ? (cita.enlaceVideollamada ? 'Videollamada disponible' : 'Enlace en sala de espera')
+                        : (cita.direccionDomicilio || 'Dirección registrada a domicilio')}
+                    </p>
+                  </div>
+
+                  {/* Costo, Método de Pago y Llegada */}
+                  <div className="sm:col-span-2 pt-2.5 border-t border-slate-200/70 dark:border-slate-700/60 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 block">Costo de Consulta</span>
+                      <span className="font-black text-slate-900 dark:text-white text-sm">
+                        Q{cita.ctaPrecio ?? 0}
+                      </span>
+                      <span className="text-slate-500 dark:text-slate-400 text-[11px] ml-2">
+                        • {cita.tipoPagoDescripcion || 'Pago en clínica'} ({cita.estadoPago === 'pagado' ? 'Pagado' : 'Pago presencial'})
+                      </span>
+                    </div>
+
+                    {cita.ctaModalidad === 'presencial' && (
+                      <div className="flex items-center gap-1.5">
+                        {ctaEnClinica && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 font-bold text-[11px] border border-emerald-200 dark:border-emerald-800">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Llegada confirmada
+                          </span>
+                        )}
+                        {cita.cliUrlGoogleMaps && (
+                          <a
+                            href={cita.cliUrlGoogleMaps}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:text-sky-600 font-bold text-[11px] border border-slate-200 dark:border-slate-600 transition shadow-2xs"
+                          >
+                            <MapPin className="w-3 h-3 text-rose-500" />
+                            <span>Ver Mapa</span>
+                          </a>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 3. Motivo y Síntomas Registrados al Agendar */}
                 <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60">
                   <div className="flex items-center gap-2 mb-1.5">
                     <Activity className="w-4 h-4 text-sky-500" />
@@ -547,21 +812,13 @@ export function CitaCard({
                   </p>
                 </div>
 
-                {/* Información Clínica: Solo para citas completadas */}
-                {cita.ctaEstado !== 'completada' ? (
-                  <div className="p-5 rounded-2xl bg-sky-50/70 dark:bg-sky-950/30 border border-sky-200/80 dark:border-sky-900/40 text-center space-y-2">
-                    <div className="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-900/50 text-sky-600 dark:text-sky-400 mx-auto flex items-center justify-center">
-                      <Clock className="w-5 h-5" />
-                    </div>
-                    <h4 className="text-sm font-black text-slate-900 dark:text-white">
-                      Consulta médica programada
+                {/* 4. Expediente Clínico: ÚNICAMENTE para citas completadas */}
+                {isCompletedState && (
+                  <div className="space-y-3 pt-1">
+                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 px-1">
+                      Expediente Clínico de la Consulta
                     </h4>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
-                      El diagnóstico clínico, tratamiento médico, recetas y notas de evolución estarán disponibles en esta sección una vez que el médico haya atendido y completado la consulta.
-                    </p>
-                  </div>
-                ) : (
-                  <>
+
                     {/* Diagnóstico Médico */}
                     <div className="p-4 rounded-2xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50">
                       <div className="flex items-center gap-2 mb-1.5">
@@ -613,21 +870,54 @@ export function CitaCard({
                         </p>
                       </div>
                     )}
-                  </>
+
+                    {/* Reseña registrada */}
+                    {yaTieneResena && (
+                      <div className="p-4 rounded-2xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-900/40 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                            <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+                            Tu Calificación: {cita.ctaCalificacion}/5
+                          </span>
+                          {cita.resenaFecha && (
+                            <span className="text-[10px] text-amber-600 dark:text-amber-400">
+                              {format(parseISO(cita.resenaFecha), "d MMM yyyy", { locale: es })}
+                            </span>
+                          )}
+                        </div>
+                        {cita.resenaComentario?.trim() && (
+                          <blockquote className="text-xs italic text-slate-700 dark:text-slate-300 border-l-2 border-amber-400 pl-2.5">
+                            &ldquo;{cita.resenaComentario}&rdquo;
+                          </blockquote>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
 
-                {/* Ubicación y Modalidad */}
-                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 flex flex-wrap items-center justify-between gap-3 text-xs">
-                  <span className="text-slate-500 dark:text-slate-400 font-medium">
-                    Modalidad: <strong className="text-slate-800 dark:text-slate-200 capitalize">{cita.ctaModalidad}</strong>
-                    {cita.clinicaNombre ? ` • ${cita.clinicaNombre}` : ''}
-                  </span>
-                  {cita.grupoTema && (
-                    <span className="inline-flex items-center gap-1 font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-1 rounded-lg border border-indigo-200/70 dark:border-indigo-800/60">
-                      <FolderPlus className="w-3 h-3" /> Tema: {cita.grupoTema}
-                    </span>
-                  )}
-                </div>
+                {/* 5. Documentos Adjuntos (Acceso rápido) */}
+                {tieneArchivos && (
+                  <div className="p-4 rounded-2xl bg-sky-50/60 dark:bg-sky-950/30 border border-sky-200/70 dark:border-sky-800/60 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <Paperclip className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
+                      <div>
+                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                          Documentos Adjuntos ({listaArchivos.length})
+                        </p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          Órdenes médicas, recetas o archivos subidos
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setMostrarModalInfo(false); setMostrarModalArchivos(true); }}
+                      className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                    >
+                      Ver archivos
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
@@ -706,26 +996,17 @@ export function CitaCard({
                   )}
                 </div>
 
-                <div className="flex items-start gap-2.5 p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 text-xs border border-blue-200/80 dark:border-blue-900/50">
-                  <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
-                  <span>Puedes modificar tu calificación por estrellas y tus comentarios en cualquier momento.</span>
+                <div className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 text-xs border border-slate-200 dark:border-slate-700">
+                  <Info className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
+                  <span>Esta reseña ya fue registrada y se mantiene como registro permanente de tu experiencia médica (solo consulta, no editable).</span>
                 </div>
               </div>
 
-              <div className="pt-5 mt-5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
-                <Link
-                  href={`/paciente/resenas/nueva?cita=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}`}
-                  onClick={() => setMostrarModalResena(false)}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-xs cursor-pointer"
-                >
-                  <Edit2 className="w-3.5 h-3.5" />
-                  <span>Editar Reseña</span>
-                </Link>
-
+              <div className="pt-5 mt-5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end">
                 <button
                   type="button"
                   onClick={() => setMostrarModalResena(false)}
-                  className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition active:scale-95 cursor-pointer"
+                  className="px-6 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition active:scale-95 cursor-pointer"
                 >
                   Cerrar
                 </button>
@@ -794,10 +1075,10 @@ export function CitaCard({
           type="button"
           onClick={(e) => { e.stopPropagation(); setMostrarModalInfo(true); }}
           className={`${btnBaseClass} bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/80`}
-          title="Ver resumen completo: diagnóstico, síntomas iniciales, tratamiento y exámenes"
+          title="Ver detalle completo: diagnóstico, síntomas iniciales, tratamiento y exámenes"
         >
           <ClipboardList className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-          <span className="truncate">Información</span>
+          <span className="truncate">Detalle</span>
         </button>
 
         {/* 2. Documentos adjuntos */}
@@ -836,15 +1117,13 @@ export function CitaCard({
             <span className="truncate">Escribir reseña</span>
           </button>
         ) : (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); setMostrarModalResena(true); }}
-            className={`${btnBaseClass} bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 text-amber-700 dark:text-amber-300 border border-amber-200/80`}
-            title="Ver reseña de la cita"
+          <div
+            className={`${btnBaseClass} bg-slate-50 dark:bg-slate-800/40 text-slate-400 dark:text-slate-500 border border-slate-200/60 dark:border-slate-700/60 cursor-default opacity-60`}
+            title="Esta consulta no cuenta con reseña"
           >
-            <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 shrink-0" />
-            <span className="truncate">Ver Reseña</span>
-          </button>
+            <Star className="w-3.5 h-3.5 text-slate-300 dark:text-slate-600 shrink-0" />
+            <span className="truncate">Sin reseña</span>
+          </div>
         )}
 
         {/* 4. Nueva Cita (Reagendar directo) */}
@@ -936,6 +1215,16 @@ export function CitaCard({
                     >
                       <UserCheck className="w-3.5 h-3.5 text-slate-500" />
                       <span>Paciente Independizado</span>
+                    </span>
+                  )}
+
+                  {canMarcarLlegada && ctaEnClinica && (
+                    <span
+                      className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950/70 dark:text-emerald-200 dark:border-emerald-700 shadow-2xs"
+                      title="Llegada confirmada a la clínica para la cita de hoy"
+                    >
+                      <Building2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span>En la clínica</span>
                     </span>
                   )}
 
@@ -1096,24 +1385,63 @@ export function CitaCard({
                       type="button"
                       onClick={(e) => { e.stopPropagation(); setMostrarModalInfo(true); }}
                       className="h-8 px-3.5 inline-flex items-center justify-center gap-1.5 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/80 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer whitespace-nowrap"
-                      title="Ver información y detalles de la cita"
+                      title={isCompletedState ? "Ver detalle de la cita" : "Ver información de la cita"}
                     >
                       <ClipboardList className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                      <span>Detalles</span>
+                      <span>{isCompletedState ? 'Detalle' : 'Información'}</span>
                     </button>
                   </div>
                 ) : (
                   <>
+                    {canMarcarLlegada && (
+                      ctaEnClinica ? (
+                        <div className="mb-2 w-full flex justify-end">
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-bold shadow-2xs">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                            <span>Llegada confirmada</span>
+                          </span>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={marcarLlegadaMutation.isPending}
+                          onClick={handleMarcarLlegada}
+                          className="mb-2 w-full h-8.5 px-3.5 inline-flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-black transition-all shadow-md active:scale-95 cursor-pointer whitespace-nowrap"
+                          title="Confirmar que ya llegaste a la clínica para tu cita de hoy"
+                        >
+                          {marcarLlegadaMutation.isPending ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Building2 className="w-3.5 h-3.5 text-white shrink-0" />
+                          )}
+                          <span>Ya estoy en la clínica</span>
+                        </button>
+                      )
+                    )}
+                    {puedeVerCola && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          router.push(colaUrl);
+                        }}
+                        className="mb-2 w-full h-8.5 px-3.5 inline-flex items-center justify-center gap-1.5 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/80 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer whitespace-nowrap"
+                        title="Ver sala de espera y cola de atención"
+                      >
+                        <Activity className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                        <span>Ver cola</span>
+                      </button>
+                    )}
                     <div className="grid grid-cols-2 gap-2 w-full sm:w-auto min-w-[220px]">
                   {/* Fila 1, Col 1: Detalles */}
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); setMostrarModalInfo(true); }}
                     className="h-8.5 px-3.5 inline-flex items-center justify-center gap-1.5 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/80 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer whitespace-nowrap"
-                    title="Ver información y detalles de la cita"
+                    title={isCompletedState ? "Ver detalle de la cita" : "Ver información de la cita"}
                   >
                     <ClipboardList className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                    <span>Detalles</span>
+                    <span>{isCompletedState ? 'Detalle' : 'Información'}</span>
                   </button>
 
                   {/* Fila 1, Col 2: Modificar */}
@@ -1334,6 +1662,34 @@ export function CitaCard({
                 {formatCitaEstado(cita.ctaEstado)}
               </span>
 
+              {/* Botón Llegada a Clínica (Exclusivo para el día de la cita y presencial) */}
+              {canMarcarLlegada && (
+                ctaEnClinica ? (
+                  <span
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shadow-2xs"
+                    title="Ya has registrado que te encuentras en la clínica"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>Llegada confirmada</span>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={marcarLlegadaMutation.isPending}
+                    onClick={handleMarcarLlegada}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-black rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-sm hover:shadow-md transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+                    title="Confirmar que ya llegaste a la clínica para tu cita de hoy"
+                  >
+                    {marcarLlegadaMutation.isPending ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Building2 className="w-3.5 h-3.5 text-white" />
+                    )}
+                    <span>Ya estoy en la clínica</span>
+                  </button>
+                )
+              )}
+
 
               {solicitudCambio && solicitudCambio.estado === 'pendiente' && (
                 solicitudCambio.tipoRelacion === 'enviada' ? (
@@ -1359,14 +1715,28 @@ export function CitaCard({
                 )
               )}
 
+              {puedeVerCola && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    router.push(colaUrl);
+                  }}
+                  className="px-2 py-1 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 hover:bg-blue-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-blue-200/50 dark:border-blue-800/40 cursor-pointer"
+                  title="Ver sala de espera y cola de atención"
+                >
+                  <Activity className="w-3 h-3 text-blue-600 dark:text-blue-400" /> Ver cola
+                </button>
+              )}
+
               {/* Botón Detalles */}
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setMostrarModalInfo(true); }}
                 className="px-2 py-1 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 hover:bg-blue-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-blue-200/50 dark:border-blue-800/40 cursor-pointer"
-                title="Ver información y detalles de la cita"
+                title={isCompletedState ? "Ver detalle de la cita" : "Ver información de la cita"}
               >
-                <ClipboardList className="w-3 h-3 text-blue-600 dark:text-blue-400" /> Detalles
+                <ClipboardList className="w-3 h-3 text-blue-600 dark:text-blue-400" /> {isCompletedState ? 'Detalle' : 'Información'}
               </button>
 
               {/* Botón Documentos adjuntos */}
@@ -1623,14 +1993,29 @@ export function CitaCard({
               renderCompletedActionsGrid(false)
             ) : (
               <>
+                {puedeVerCola && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      router.push(colaUrl);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-800/60 transition active:scale-95 shadow-2xs cursor-pointer"
+                    title="Ver sala de espera y cola de atención"
+                  >
+                    <Activity className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                    <span>Ver cola</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); setMostrarModalInfo(true); }}
                   className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-800/60 transition active:scale-95 shadow-2xs cursor-pointer"
-                  title="Ver información y detalles de la cita"
+                  title={isCompletedState ? "Ver detalle de la cita" : "Ver información de la cita"}
                 >
                   <ClipboardList className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                  <span>Detalles</span>
+                  <span>{isCompletedState ? 'Detalle' : 'Información'}</span>
                 </button>
 
                 {canReview && (

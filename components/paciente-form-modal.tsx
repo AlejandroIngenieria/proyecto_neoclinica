@@ -23,7 +23,9 @@ import { useCreateDependiente, useUpdatePaciente } from '@/hooks/use-pacientes';
 import { completarTareaLealtad } from '@/services/lealtad';
 import { ImageDropzone } from '@/components/image-dropzone';
 import { DocumentDropzone } from '@/components/document-dropzone';
-import type { Paciente, Pais, Departamento, Municipio } from '@/types';
+import { toast } from 'sonner';
+import { buildPacienteFullName, type Paciente, type Pais, type Departamento, type Municipio } from '@/types';
+import { useAseguradoras } from '@/hooks/use-flujo-citas';
 
 // ─── Form types ──────────────────────────────────────────────────────────────
 
@@ -48,6 +50,7 @@ export type PacienteFormData = {
   pac_avenida: string;
   pac_calle: string;
   pac_numero_casa: string;
+  pac_aldea: string;
   codParentesco: string;
   pac_contacto_emergencia_nombre: string;
   pac_contacto_emergencia_relacion: string;
@@ -116,6 +119,7 @@ export function PacienteForm({
       pac_avenida: paciente?.pac_avenida ?? '',
       pac_calle: paciente?.pac_calle ?? '',
       pac_numero_casa: paciente?.pac_numero_casa ?? '',
+      pac_aldea: paciente?.pac_aldea ?? '',
       codParentesco: mode === 'edit' ? (paciente?.pac_codpar?.toString() ?? '') : '',
       pac_contacto_emergencia_nombre: paciente?.pac_contacto_emergencia_nombre ?? '',
       pac_contacto_emergencia_relacion: paciente?.pac_contacto_emergencia_relacion ?? '',
@@ -162,7 +166,6 @@ export function PacienteForm({
   }, [setValue]);
 
   const [selectedPhoto, setSelectedPhoto] = useState<File | null>(null);
-  const [selectedCarne, setSelectedCarne] = useState<File | null>(null);
   const [selectedDocumento, setSelectedDocumento] = useState<File | null>(null);
 
   const handleCopyTitularData = useCallback(() => {
@@ -178,9 +181,31 @@ export function PacienteForm({
     setValue('pac_avenida', titular.pac_avenida || '');
     setValue('pac_calle', titular.pac_calle || '');
     setValue('pac_numero_casa', titular.pac_numero_casa || '');
-    setValue('pac_contacto_emergencia_nombre', titular.pac_contacto_emergencia_nombre || '');
-    setValue('pac_contacto_emergencia_relacion', titular.pac_contacto_emergencia_relacion || '');
-    setValue('pac_contacto_emergencia_telefono', titular.pac_contacto_emergencia_telefono || '');
+    setValue('pac_aldea', titular.pac_aldea || '');
+
+    // Al copiar datos del titular, se asigna al titular como contacto de emergencia
+    const titularNombre = buildPacienteFullName(titular);
+    const titularTelefono = titular.pac_celular || titular.pac_telefono_casa || titular.pac_telefono_trabajo || '';
+
+    setValue('pac_contacto_emergencia_nombre', titularNombre);
+    setValue('pac_contacto_emergencia_relacion', '');
+    setValue('pac_contacto_emergencia_telefono', titularTelefono);
+
+    toast.success('Datos del titular copiados', {
+      description: 'Se ha asignado al titular como contacto de emergencia.',
+    });
+  }, [titular, setValue]);
+
+  const handleCopyTitularEmergency = useCallback(() => {
+    if (!titular) return;
+    const titularNombre = buildPacienteFullName(titular);
+    const titularTelefono = titular.pac_celular || titular.pac_telefono_casa || titular.pac_telefono_trabajo || '';
+
+    setValue('pac_contacto_emergencia_nombre', titularNombre);
+    setValue('pac_contacto_emergencia_relacion', '');
+    setValue('pac_contacto_emergencia_telefono', titularTelefono);
+
+    toast.success('Titular asignado como contacto de emergencia');
   }, [titular, setValue]);
 
   const onSubmit = async (data: PacienteFormData) => {
@@ -215,7 +240,7 @@ export function PacienteForm({
     appendSeguro('DepDirId', data.pac_dep_dir_id || paciente?.pac_dep_dir_id);
     appendSeguro('MunDirId', data.pac_mun_dir_id || paciente?.pac_mun_dir_id);
 
-    appendSeguro('Aldea', paciente?.pac_aldea);
+    appendSeguro('Aldea', data.pac_aldea || paciente?.pac_aldea);
     appendSeguro('Zona', data.pac_zona || paciente?.pac_zona);
     appendSeguro('Colonia', data.pac_colonia || paciente?.pac_colonia);
     appendSeguro('Avenida', data.pac_avenida || paciente?.pac_avenida);
@@ -230,9 +255,6 @@ export function PacienteForm({
 
     if (selectedPhoto) {
       formData.append('FotoPerfilArchivo', selectedPhoto);
-    }
-    if (selectedCarne) {
-      formData.append('FotoCarneArchivo', selectedCarne);
     }
     if (selectedDocumento) {
       formData.append('documentoIdentificacionArchivo', selectedDocumento);
@@ -374,7 +396,7 @@ export function PacienteForm({
                 />
               </div>
               <div>
-                <label className={labelClasses}>Apellido de casada/o</label>
+                <label className={labelClasses}>Apellido de matrimonio</label>
                 <input
                   {...register('pac_apellido_casado')}
                   className={inputClasses}
@@ -535,7 +557,7 @@ export function PacienteForm({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4">
             <div>
               <label className={labelClasses}>Zona</label>
               <input {...register('pac_zona')} className={inputClasses} placeholder="Ej: 10" />
@@ -545,12 +567,20 @@ export function PacienteForm({
               <input {...register('pac_colonia')} className={inputClasses} placeholder="Ej: Las Charcas" />
             </div>
             <div>
+              <label className={labelClasses}>Aldea</label>
+              <input {...register('pac_aldea')} className={inputClasses} placeholder="Ej: San José" />
+            </div>
+            <div>
               <label className={labelClasses}>Avenida</label>
               <input {...register('pac_avenida')} className={inputClasses} placeholder="Ej: 5ta Avenida" />
             </div>
             <div>
-              <label className={labelClasses}>Calle / No. Casa</label>
-              <input {...register('pac_calle')} className={inputClasses} placeholder="Ej: 12-45" />
+              <label className={labelClasses}>Calle</label>
+              <input {...register('pac_calle')} className={inputClasses} placeholder="Ej: 12 Calle" />
+            </div>
+            <div>
+              <label className={labelClasses}>Número de Casa</label>
+              <input {...register('pac_numero_casa')} className={inputClasses} placeholder="Ej: 15-30" />
             </div>
           </div>
         </fieldset>
@@ -559,16 +589,14 @@ export function PacienteForm({
         <fieldset className="mb-8 pt-6 border-t border-slate-100 dark:border-slate-800">
           <legend className="mb-4 flex items-center gap-2 text-sm font-black uppercase tracking-[0.15em] text-blue-600 dark:text-blue-400">
             <FileText className="h-4 w-4" />
-            Documentación
+            Documento de Identificación
           </legend>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            <ImageDropzone
-              label="Foto Carné de Seguro"
-              initialImageUrl={paciente?.pac_foto_carne_seguro}
-              onImageDrop={(file) => setSelectedCarne(file)}
-            />
+          <p className="text-xs text-slate-500 mb-4">
+            Adjunta DPI, Pasaporte o Certificado de Nacimiento para validar la identidad del paciente.
+          </p>
 
+          <div className="max-w-md">
             <DocumentDropzone
               label="DPI / Certificado de Nacimiento / Pasaporte"
               initialDocumentUrl={paciente?.pac_documento_identificacion_url}
@@ -579,10 +607,23 @@ export function PacienteForm({
 
         {/* Section: Contacto de Emergencia */}
         <fieldset className="mb-8 pt-6 border-t border-slate-100 dark:border-slate-800">
-          <legend className="mb-4 flex items-center gap-2 text-sm font-black uppercase tracking-[0.15em] text-blue-600 dark:text-blue-400">
-            <ShieldCheck className="h-4 w-4" />
-            Contacto de Emergencia
-          </legend>
+          <div className="flex items-center justify-between mb-4">
+            <legend className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.15em] text-blue-600 dark:text-blue-400">
+              <ShieldCheck className="h-4 w-4" />
+              Contacto de Emergencia
+            </legend>
+
+            {mode === 'add' && titular && (
+              <button
+                type="button"
+                onClick={handleCopyTitularEmergency}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                Copiar datos del titular
+              </button>
+            )}
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -22,6 +22,7 @@ import {
   Home,
   Calendar,
   X,
+  User,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -37,6 +38,8 @@ import {
 import { useFavoritos, useAddFavorito, useRemoveFavorito } from '@/hooks/use-favoritos';
 import { usePacienteTitular } from '@/hooks/use-pacientes';
 import { useUserLocation } from '@/hooks/use-user-location';
+import { ShareDoctorModal } from '@/components/share-doctor-modal';
+import { InsuranceLogoBadge } from '@/components/insurance-logo-badge';
 
 export type DoctorCardData = {
   doctor: DoctorResponse;
@@ -49,6 +52,7 @@ export type DoctorCardData = {
   matchedLocation?: string;
   matchedSpecialty?: string;
   searchHighlight?: string | string[];
+  selectedInsurances?: string[];
 };
 
 type DoctorCardProps = {
@@ -138,6 +142,7 @@ export function DoctorCard({
 }: DoctorCardProps) {
   const router = useRouter();
   const [isHorariosModalOpen, setIsHorariosModalOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -174,58 +179,10 @@ export function DoctorCard({
     }
   };
 
-  const handleShare = async (e: React.MouseEvent) => {
+  const handleShare = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const profileUrl = `${origin}/dashboard/${data.doctor.exp_codigo}`;
-    const doctorTitle = fullName || 'Médico Especialista';
-    const shareTitle = `${doctorTitle} - NeoClínica`;
-    const shareText = `Conoce el perfil de ${doctorTitle} en NeoClínica:`;
-
-    const copyFallback = async () => {
-      try {
-        if (navigator?.clipboard?.writeText) {
-          await navigator.clipboard.writeText(profileUrl);
-          toast.success('¡Enlace del perfil copiado al portapapeles!', {
-            description: profileUrl,
-          });
-        } else {
-          const textArea = document.createElement('textarea');
-          textArea.value = profileUrl;
-          textArea.style.position = 'fixed';
-          textArea.style.opacity = '0';
-          document.body.appendChild(textArea);
-          textArea.focus();
-          textArea.select();
-          document.execCommand('copy');
-          document.body.removeChild(textArea);
-          toast.success('¡Enlace del perfil copiado al portapapeles!', {
-            description: profileUrl,
-          });
-        }
-      } catch (err) {
-        console.error('Error al copiar enlace:', err);
-        toast.error('No se pudo copiar el enlace.');
-      }
-    };
-
-    if (typeof navigator !== 'undefined' && navigator.share) {
-      try {
-        await navigator.share({
-          title: shareTitle,
-          text: shareText,
-          url: profileUrl,
-        });
-      } catch (err: any) {
-        if (err?.name !== 'AbortError') {
-          await copyFallback();
-        }
-      }
-    } else {
-      await copyFallback();
-    }
+    setIsShareModalOpen(true);
   };
 
   const { doctor, fullName, matchedSpecialty, searchHighlight } = data;
@@ -266,10 +223,24 @@ export function DoctorCard({
     ? data.languagePreview
     : (doctor.idiomas || []).map((i) => i.idioma).filter(Boolean);
 
-  // Insurance preview
+  // Insurance preview & sorting with active filter support
+  const rawAseguradoras = doctor.aseguradoras || [];
+  const selectedInsurances = data.selectedInsurances || [];
+  const sortedAseguradoras = useMemo(() => {
+    const list = [...rawAseguradoras];
+    if (selectedInsurances.length === 0) return list;
+    return list.sort((a, b) => {
+      const aMatches = selectedInsurances.includes(a.aseguradora);
+      const bMatches = selectedInsurances.includes(b.aseguradora);
+      if (aMatches && !bMatches) return -1;
+      if (!aMatches && bMatches) return 1;
+      return 0;
+    });
+  }, [rawAseguradoras, selectedInsurances]);
+
   const insurances = (data.insurancePreview && data.insurancePreview.length > 0)
     ? data.insurancePreview
-    : (doctor.aseguradoras || []).map((a) => a.aseguradora).filter(Boolean);
+    : rawAseguradoras.map((a) => a.aseguradora).filter(Boolean);
 
   // Modalities logic
   const modalities = data.modalityPreview && data.modalityPreview.length > 0
@@ -320,6 +291,48 @@ export function DoctorCard({
       sedes.unshift(matched);
     }
   }
+
+  // Etiquetas / Filtros activos para Variant 2
+  const todayDayOfWeek = new Date().getDay();
+  const isAvailableToday = clinicas.some((cli) =>
+    (cli.horarios_atencion || []).some(
+      (h) => h.hor_dia_semana === todayDayOfWeek || (todayDayOfWeek === 0 && h.hor_dia_semana === 7)
+    )
+  );
+
+  const modalityList = [
+    hasPresencial && 'Presencial',
+    hasVirtual && 'Virtual',
+    hasDomicilio && 'A Domicilio',
+  ].filter(Boolean) as string[];
+  const modalityLabel = modalityList.length > 1
+    ? (hasPresencial && hasVirtual ? 'Presencial / Virtual' : modalityList.join(' / '))
+    : (modalityList[0] || 'Presencial');
+
+  const insurancesList = sortedAseguradoras.map((a) => a.aseguradora).filter(Boolean);
+  const insurancesLabel = insurancesList.length > 0
+    ? (insurancesList.slice(0, 2).join(', ') + (insurancesList.length > 2 ? ` +${insurancesList.length - 2}` : ''))
+    : null;
+
+  const languagesLabel = languages.length > 0
+    ? Array.from(
+        new Set(
+          languages.map((l) => {
+            const lower = l.toLowerCase().trim();
+            if (lower.startsWith('ing') || lower.startsWith('eng')) return 'EN';
+            if (lower.startsWith('esp') || lower.startsWith('spa')) return 'ES';
+            if (lower.startsWith('fra') || lower.startsWith('fre')) return 'FR';
+            if (lower.startsWith('ale') || lower.startsWith('ger') || lower.startsWith('deu')) return 'DE';
+            if (lower.startsWith('por')) return 'PT';
+            if (lower.startsWith('ita')) return 'IT';
+            if (lower.startsWith('man') || lower.startsWith('chi') || lower.startsWith('zho')) return 'ZH';
+            return l.slice(0, 2).toUpperCase();
+          })
+        )
+      ).join(', ')
+    : 'ES';
+
+  const genderLabel = doctor.exp_sexo === 'F' ? 'Dra.' : 'Dr.';
 
   // Al hacer clic en la tarjeta
   const handleCardClick = () => {
@@ -551,10 +564,31 @@ export function DoctorCard({
                   <span className="truncate max-w-[90px]">{languages[0] || 'Español'}</span>
                 </div>
 
-                {insurances.length > 0 && (
-                  <div className="flex items-center gap-1 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200/70 text-[11px] text-purple-800" title={insurances.join(', ')}>
-                    <ShieldCheck className="w-3 h-3 text-purple-600 shrink-0" />
-                    <span>{insurances.length} seguro{insurances.length > 1 ? 's' : ''}</span>
+                {sortedAseguradoras.length > 0 && (
+                  <div
+                    className="flex items-center gap-1.5 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200/70 text-[11px] text-slate-700"
+                    title={`Aseguradoras aceptadas: ${sortedAseguradoras.map((a) => a.aseguradora).join(', ')}`}
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                    <span className="text-[10.5px] font-medium text-slate-500 hidden sm:inline">Seguros:</span>
+                    <div className="flex items-center gap-1">
+                      {sortedAseguradoras.slice(0, 4).map((asg, idx) => (
+                        <InsuranceLogoBadge
+                          key={idx}
+                          asg={asg}
+                          isHighlighted={selectedInsurances.includes(asg.aseguradora)}
+                          size="xs"
+                        />
+                      ))}
+                      {sortedAseguradoras.length > 4 && (
+                        <span
+                          className="text-[10px] font-bold text-slate-500 ml-0.5"
+                          title={sortedAseguradoras.slice(4).map((a) => a.aseguradora).join(', ')}
+                        >
+                          +{sortedAseguradoras.length - 4}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -801,7 +835,7 @@ export function DoctorCard({
   }
 
   // ═════════════════════════════════════════════════════════════════════════════════
-  // VARIANT 2: COMPACT (AIRBNB-STYLE GRID CARD WITH SMART SUMMARY ICONS)
+  // VARIANT 2: COMPACT (MODERN UI FROM MARS REFACTORED CARD)
   // ═════════════════════════════════════════════════════════════════════════════════
   return (
     <div
@@ -809,46 +843,42 @@ export function DoctorCard({
       onClick={handleCardClick}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      className={`doctor-card group flex flex-col h-full w-full max-w-[365px] mx-auto bg-white rounded-2xl overflow-hidden transition-all duration-300 border cursor-pointer relative ${
-        isHovered
-          ? 'shadow-md border-sky-300 ring-2 ring-sky-200/50 -translate-y-0.5'
-          : isHighlightedByLocation
-            ? 'shadow-md border-sky-400 ring-2 ring-sky-400/20 bg-sky-50/15 -translate-y-0.5'
-            : 'shadow-xs hover:shadow-md hover:-translate-y-0.5 border-slate-100'
+      className={`doctor-card group relative w-full max-w-[365px] mx-auto h-[480px] max-md:h-auto overflow-hidden bg-white rounded-2xl shadow-sm hover:shadow-md border border-slate-200 cursor-pointer flex flex-col md:block ${
+        isHovered ? 'ring-2 ring-blue-400/30 border-blue-400' : ''
       }`}
     >
-      {/* Photo Container (Aspect 4/3 Airbnb style) */}
-      <div className="w-full aspect-[4/3] bg-slate-100 relative shrink-0 overflow-hidden rounded-t-2xl">
+      {/* 2. Imagen (Capa Fondo Arriba): h-[280px] */}
+      <div className="relative max-md:h-[280px] md:absolute md:top-0 md:left-0 w-full h-[280px] z-0 overflow-hidden bg-slate-100 shrink-0">
         {/* Floating Experience Badge Top-Left */}
         {doctor.exp_anios_experiencia ? (
-          <div className="absolute top-3 left-3 z-10 flex items-center gap-1 bg-white/90 backdrop-blur-md text-slate-800 px-2.5 py-0.5 rounded-full text-xs font-semibold shadow-xs">
+          <div className="absolute top-3 left-3 z-20 flex items-center gap-1 bg-white/95 backdrop-blur-md text-slate-800 px-2.5 py-0.5 rounded-full text-xs font-semibold shadow-xs">
             <Award className="w-3.5 h-3.5 text-amber-500 shrink-0" />
             <span>{doctor.exp_anios_experiencia} años exp.</span>
           </div>
         ) : null}
 
-        {/* Floating Actions Top-Right (Share + Favorite) - Compact size for unselected cards */}
-        <div className="absolute top-2.5 right-2.5 z-10 flex items-center gap-1">
+        {/* Floating Actions Top-Right (Share + Favorite) */}
+        <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1.5">
           <button
             type="button"
             onClick={handleShare}
-            className="p-1 rounded-full bg-black/35 backdrop-blur-xs text-white hover:text-sky-300 transition-transform hover:scale-110 focus:outline-none cursor-pointer shadow-xs"
+            className="p-1.5 rounded-full bg-black/40 backdrop-blur-xs text-white hover:text-sky-300 hover:bg-black/60 transition-all hover:scale-110 focus:outline-none cursor-pointer shadow-xs"
             title="Compartir perfil"
             aria-label="Compartir perfil"
           >
-            <Share2 className="w-3.5 h-3.5 drop-shadow-sm" />
+            <Share2 className="w-3.5 h-3.5 drop-shadow-xs" />
           </button>
 
           {titular && (
             <button
               type="button"
               onClick={toggleFavorite}
-              className="p-1 rounded-full bg-black/35 backdrop-blur-xs transition-transform hover:scale-110 focus:outline-none cursor-pointer shadow-xs"
+              className="p-1.5 rounded-full bg-black/40 backdrop-blur-xs transition-all hover:scale-110 focus:outline-none cursor-pointer shadow-xs hover:bg-black/60"
               aria-label={isFavorito ? 'Quitar de favoritos' : 'Guardar en favoritos'}
               title={isFavorito ? 'Quitar de favoritos' : 'Guardar en favoritos'}
             >
               <Heart
-                className={`w-3.5 h-3.5 transition-colors drop-shadow-sm ${
+                className={`w-3.5 h-3.5 transition-colors drop-shadow-xs ${
                   isFavorito
                     ? 'fill-rose-500 text-rose-500'
                     : 'text-white fill-white/20 hover:text-rose-400'
@@ -858,14 +888,14 @@ export function DoctorCard({
           )}
         </div>
 
-        {/* Photo */}
+        {/* Fotografía (w-full h-full object-cover) */}
         {doctor.exp_foto_perfil ? (
           <Image
             src={doctor.exp_foto_perfil}
             alt={fullName}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
-            className="w-full h-full object-cover object-top group-hover:scale-[1.03] transition-transform duration-500 ease-out"
+            className="w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-4xl font-black text-slate-300">
@@ -874,155 +904,201 @@ export function DoctorCard({
         )}
       </div>
 
-      {/* Information Body */}
-      <div className="p-4 sm:p-5 flex flex-col flex-1 bg-white">
-        {/* Contenedor de Información (Nombre, especialidad, sedes): flex-1 */}
-        <div className="space-y-2 flex-1 min-w-0">
-          {/* Badge minimalista de sede seleccionada en el mapa */}
-          {isHighlightedByLocation && highlightedLocationName && (
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sky-50 border border-sky-200/90 text-sky-800 text-[10.5px] font-bold">
-              <Building2 className="w-3 h-3 text-sky-600 shrink-0" />
-              <span className="truncate max-w-[200px]">{highlightedLocationName}</span>
+      {/* 3. Contenedor de Textos (Capa Media - Animada) */}
+      <div className="relative md:absolute md:top-[280px] md:left-0 w-full h-auto md:h-[200px] bg-white p-5 flex flex-col justify-between transition-transform duration-300 md:group-hover:-translate-y-[64px] max-md:transform-none z-10">
+        {/* Viñeta de Ubicación arriba del bloque de contenido (aparece en hover) */}
+        <div className="absolute -top-3.5 left-4 sm:left-5 z-20 pointer-events-none opacity-0 group-hover:opacity-100 translate-y-1 group-hover:translate-y-0 transition-all duration-300">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-600 text-white shadow-md shadow-blue-500/25 border border-blue-500/30 text-xs font-bold backdrop-blur-md">
+            <MapPin className="w-3.5 h-3.5 text-white shrink-0" />
+            <span>Haz clic para ver la ubicación</span>
+          </span>
+        </div>
+        <div>
+          {/* Header: Nombre + Calificación */}
+          <div className="flex items-center justify-between gap-2 min-w-0">
+            <div className="min-w-0 flex-1">
+              <h3
+                className="text-base font-bold text-slate-900 leading-snug truncate hover:text-slate-700 transition-colors cursor-pointer"
+                title={fullDetailedName}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleVisitProfile(e);
+                }}
+              >
+                <HighlightText text={shortName} highlight={searchHighlight} />
+              </h3>
             </div>
-          )}
 
-          {/* Fila 1: Nombre (Izq) | Calificación (Der) */}
-          <div className="flex items-start justify-between gap-2 min-w-0">
-            <h3
-              className="font-bold text-slate-900 text-base leading-snug break-words whitespace-normal flex-1 min-w-0 line-clamp-2 group-hover:text-sky-600 transition-colors"
-              title={fullDetailedName}
-            >
-              <HighlightText text={shortName} highlight={searchHighlight} />
-            </h3>
             {doctor.total_resenas > 0 && doctor.promedio_valoracion > 0 ? (
-              <div className="flex items-center gap-1 shrink-0 pt-0.5 bg-amber-50/80 px-2 py-0.5 rounded-lg border border-amber-200/60">
-                <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                <span className="text-xs font-bold text-slate-900">
+              <div className="inline-flex items-center gap-1 shrink-0 bg-amber-50/90 px-2 py-0.5 rounded-lg border border-amber-200/60 text-xs">
+                <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400 shrink-0" />
+                <span className="font-bold text-slate-900">
                   {doctor.promedio_valoracion.toFixed(1)}
                 </span>
                 <span className="text-[10px] text-slate-500">({doctor.total_resenas})</span>
               </div>
             ) : (
-              <span className="inline-flex items-center text-[11px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full shrink-0">
+              <span className="inline-flex items-center text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg shrink-0">
                 Nuevo
               </span>
             )}
           </div>
 
-          {/* Fila 2: Especialidad + Modalidades de consulta agrupadas junto a ella */}
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <p className="text-sky-700 text-xs font-semibold break-words whitespace-normal leading-snug flex-1 min-w-0">
+          {/* Fila 2: Especialidad */}
+          <div className="mt-0.5">
+            <p className="text-xs sm:text-sm font-semibold text-blue-600 leading-tight truncate">
               <HighlightText
-                text={data.matchedSpecialty || specialtyPreview[0] || 'Especialidad médica'}
+                text={data.matchedSpecialty || specialtyPreview[0] || 'Médico Especialista'}
                 highlight={searchHighlight}
               />
               {doctor.exp_colegiado_gt && (
-                <span className="text-slate-400 font-normal ml-1.5">
+                <span className="text-slate-400 font-normal ml-1.5 text-xs">
                   · Col. {doctor.exp_colegiado_gt}
                 </span>
               )}
             </p>
-
-            {/* Íconos de modalidades agrupados junto a la especialidad */}
-            <div className="flex items-center gap-1 shrink-0" title={`Modalidades: ${modalities.join(', ') || 'Presencial'}`}>
-              {hasPresencial && (
-                <span title="Presencial" className="inline-flex items-center justify-center p-1 rounded-md bg-sky-50 text-sky-600">
-                  <MapPin className="w-3.5 h-3.5" />
-                </span>
-              )}
-              {hasVirtual && (
-                <span title="Consulta Virtual" className="inline-flex items-center justify-center p-1 rounded-md bg-indigo-50 text-indigo-600">
-                  <Video className="w-3.5 h-3.5" />
-                </span>
-              )}
-              {hasDomicilio && (
-                <span title="Atención a Domicilio" className="inline-flex items-center justify-center p-1 rounded-md bg-emerald-50 text-emerald-600">
-                  <Home className="w-3.5 h-3.5" />
-                </span>
-              )}
-            </div>
           </div>
 
-          {/* Fila 3: Sede principal con truncado inteligente y badge de sedes extra */}
-          <p className="text-xs text-slate-600 flex items-center gap-1.5 truncate pt-0.5">
-            {sedes[0].isDomicilio ? (
-              <Home className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-            ) : (
-              <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-            )}
-            <span className="truncate font-medium" title={sedes[0].nombre}>
-              <HighlightText text={sedes[0].nombre} highlight={searchHighlight} />
-            </span>
-
-            {sedes.length > 1 && (
-              <span
-                className="text-blue-600 font-bold shrink-0 ml-1 bg-blue-50 px-1.5 py-0.5 rounded-md text-[11px]"
-                title={sedes.slice(1).map((s) => s.nombre).join(' • ')}
-              >
-                +{sedes.length - 1} sedes
-              </span>
-            )}
-          </p>
-
-          {/* Fila 4: Idioma y Seguros en texto simple y limpio (sin contenedor gris) */}
-          {(languages.length > 0 || insurances.length > 0) && (
-            <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500 pt-0.5">
-              {languages.length > 0 && (
-                <span className="inline-flex items-center gap-1">
-                  <Globe className="w-3 h-3 text-slate-400 shrink-0" />
-                  <span>{languages.slice(0, 2).join(', ')}</span>
-                </span>
+          {/* Ubicación: Ícono + Clínica/Sede */}
+          {sedes.length > 0 && (
+            <div className="flex items-center gap-1.5 text-xs text-slate-500 truncate mt-1">
+              {sedes[0].isDomicilio ? (
+                <Home className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              ) : (
+                <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               )}
-              {insurances.length > 0 && (
-                <span className="inline-flex items-center gap-1">
-                  <ShieldCheck className="w-3 h-3 text-slate-400 shrink-0" />
-                  <span>{insurances.length} {insurances.length === 1 ? 'seguro' : 'seguros'}</span>
+              <span className="truncate" title={sedes[0].nombre}>
+                <HighlightText text={sedes[0].nombre} highlight={searchHighlight} />
+              </span>
+              {sedes.length > 1 && (
+                <span
+                  className="text-blue-600 font-medium shrink-0 ml-0.5"
+                  title={sedes.slice(1).map((s) => s.nombre).join(' • ')}
+                >
+                  +{sedes.length - 1} sedes
                 </span>
               )}
             </div>
           )}
         </div>
 
-        {/* Contenedor de Acción (Precio y botones): mt-auto shrink-0 */}
-        <div className="mt-auto shrink-0 pt-3 border-t border-slate-100 space-y-2">
-          {/* Precio de la consulta */}
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-xs text-slate-500 font-medium">Precio consulta:</span>
-            {priceInfo.hasPrice ? (
-              <span className="font-extrabold text-slate-900 text-sm">
-                {priceInfo.label}
+        <div>
+          {/* Fila de Seguros y Precio */}
+          <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+            <span className="text-sm font-bold text-slate-900">
+              {priceInfo.hasPrice ? priceInfo.label : 'Consultar precio'}
+            </span>
+
+            {sortedAseguradoras.length > 0 && (
+              <div
+                className="flex -space-x-2 items-center"
+                title={`Aseguradoras: ${sortedAseguradoras.map((a) => a.aseguradora).join(', ')}`}
+              >
+                {sortedAseguradoras.slice(0, 4).map((asg, idx) => (
+                  <div
+                    key={idx}
+                    className="w-6 h-6 border-2 border-white rounded-full bg-white flex items-center justify-center shrink-0 shadow-xs overflow-hidden"
+                  >
+                    {asg.imagen ? (
+                      <img
+                        src={asg.imagen}
+                        alt={asg.aseguradora}
+                        className="w-full h-full object-contain p-0.5"
+                      />
+                    ) : (
+                      <span className="text-[9px] font-bold text-slate-600">
+                        {(asg.aseguradora || 'A')[0].toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                ))}
+                {sortedAseguradoras.length > 4 && (
+                  <div className="w-6 h-6 border-2 border-white rounded-full bg-slate-100 text-slate-600 text-[9px] font-bold flex items-center justify-center shrink-0 shadow-xs">
+                    +{sortedAseguradoras.length - 4}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Modalidades: Solo íconos limpios SIN bordes de colores */}
+          <div className="flex items-center gap-1.5 mt-1.5">
+            {hasPresencial && (
+              <span
+                title="Atención Presencial en Clínica"
+                className="inline-flex items-center justify-center p-1 rounded-md bg-sky-50 text-sky-600"
+              >
+                <MapPin className="w-3.5 h-3.5" />
               </span>
-            ) : (
-              <span className="text-[11px] font-semibold text-slate-400">
-                Sin precio base
+            )}
+            {hasVirtual && (
+              <span
+                title="Consulta Virtual"
+                className="inline-flex items-center justify-center p-1 rounded-md bg-indigo-50 text-indigo-600"
+              >
+                <Video className="w-3.5 h-3.5" />
+              </span>
+            )}
+            {hasDomicilio && (
+              <span
+                title="Atención a Domicilio"
+                className="inline-flex items-center justify-center p-1 rounded-md bg-emerald-50 text-emerald-600"
+              >
+                <Home className="w-3.5 h-3.5" />
               </span>
             )}
           </div>
 
-          {/* Botones de acción en cuadrícula de 2 columnas */}
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={handleBookAppointment}
-              className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all bg-sky-600 hover:bg-sky-700 active:scale-95 text-white cursor-pointer shadow-xs shadow-sky-600/20"
-              title="Agendar Cita con este médico"
-            >
-              <Calendar className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">Agendar Cita</span>
-            </button>
+          {/* Fila 2 de Detalles: Idiomas a la izquierda y Disponibilidad a la derecha */}
+          <div className="flex items-center justify-between text-xs text-slate-500 mt-1.5">
+            {/* Idiomas a la izquierda */}
+            <div className="flex items-center gap-1.5" title={`Idiomas: ${languages.join(', ') || 'Español'}`}>
+              <Globe className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span>{languagesLabel}</span>
+            </div>
 
-            <button
-              type="button"
-              onClick={handleVisitProfile}
-              className="w-full inline-flex items-center justify-center gap-1 px-3 py-2 rounded-xl text-xs font-bold transition-all bg-sky-50 text-sky-700 hover:bg-sky-100 dark:bg-sky-950/40 dark:text-sky-300 dark:hover:bg-sky-900/50 cursor-pointer shadow-2xs border border-sky-200/60 dark:border-sky-800/60"
-              title="Ver perfil completo del especialista"
-            >
-              <span className="truncate">Ver Perfil</span>
-              <ChevronRight className="w-3.5 h-3.5 shrink-0" />
-            </button>
+            {/* Disponibilidad a la derecha */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <div className="w-2 h-2 bg-emerald-500 rounded-full shrink-0" />
+              <span>{isAvailableToday ? 'Disponible Hoy' : 'Con Cita'}</span>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* 4. Contenedor de Botones (Capa Fondo Abajo) */}
+      <div className="relative md:absolute md:bottom-0 md:left-0 w-full h-auto md:h-[64px] px-5 pb-5 pt-1 flex gap-2 z-0 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-300 opacity-100 bg-white">
+        <button
+          type="button"
+          onClick={handleBookAppointment}
+          className="w-[60%] h-9.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
+          title="Agendar Cita con este especialista"
+        >
+          <Calendar className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">Agendar Cita</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={handleVisitProfile}
+          className="w-[40%] h-9.5 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 font-semibold text-xs flex items-center justify-center gap-1 border border-slate-200 transition-all cursor-pointer"
+          title="Ver perfil completo"
+        >
+          <span className="truncate">Ver Perfil</span>
+          <ChevronRight className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+        </button>
+      </div>
+
+      <ShareDoctorModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        doctor={{
+          nombre: fullDetailedName,
+          especialidad: data.specialtyPreview[0] || data.matchedSpecialty || undefined,
+          fotoPerfil: doctor.exp_foto_perfil,
+          expCodigo: doctor.exp_codigo,
+        }}
+      />
     </div>
   );
 }

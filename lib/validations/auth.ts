@@ -10,6 +10,7 @@ export const registerSchema = z.object({
   primerApellido: z.string().trim().min(1, 'El primer apellido es obligatorio').max(100, 'Máximo 100 caracteres'),
   segundoApellido: z.string().trim().max(100, 'Máximo 100 caracteres').optional(),
   apellidoCasado: z.string().trim().max(100, 'Máximo 100 caracteres').optional(),
+  aldea: z.string().trim().max(100, 'Máximo 100 caracteres').optional(),
   fechaNacimiento: z.string().trim().min(1, 'La fecha de nacimiento es obligatoria').refine((val) => {
     const parts = val.split('-');
     if (parts.length !== 3) return false;

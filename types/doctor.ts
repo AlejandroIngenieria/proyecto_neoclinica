@@ -36,7 +36,11 @@ export type ExpedienteDoctor = {
 
 // ─── Sub-colecciones del doctor ──────────────────────────────────────────────
 
-export type DoctorEspecialidad = { especialidad: string };
+export type DoctorEspecialidad = {
+  esp_codigo?: number;
+  especialidad: string;
+  nivel?: 'especialidad' | 'sub_especialidad' | 'alta_especialidad' | string;
+};
 export type DoctorModalidad = { modalidad: string };
 export type DoctorIdioma = { idioma: string };
 export type DoctorSintoma = { sintoma: string };
@@ -173,9 +177,16 @@ export function isDoctorActive(doctor: Pick<ExpedienteDoctor, 'exp_estado'>): bo
   return doctor.exp_estado === 'A';
 }
 
-/** Construye el nombre completo a partir de los campos del expediente (incluyendo apellido de casada). */
+/** Devuelve el prefijo de título médico según el sexo ('Dr.' o 'Dra.'). */
+export function getDoctorTitle(sexo?: string): string {
+  const s = (sexo || '').trim().toUpperCase();
+  return s === 'F' ? 'Dra.' : 'Dr.';
+}
+
+/** Construye el nombre completo a partir de los campos del expediente (incluyendo prefijo Dr./Dra. y apellido de casada). */
 export function buildDoctorFullName(
-  doctor: Pick<ExpedienteDoctor, 'exp_primer_nom' | 'exp_segundo_nom' | 'exp_primer_ape' | 'exp_segundo_ape' | 'exp_apellido_cas'>,
+  doctor: Pick<ExpedienteDoctor, 'exp_primer_nom' | 'exp_segundo_nom' | 'exp_primer_ape' | 'exp_segundo_ape' | 'exp_apellido_cas'> & { exp_sexo?: string },
+  options?: { includeTitle?: boolean }
 ): string {
   const parts = [
     doctor.exp_primer_nom,
@@ -189,14 +200,36 @@ export function buildDoctorFullName(
     parts.push(casTrim.toLowerCase().startsWith('de ') ? casTrim : `de ${casTrim}`);
   }
 
-  return parts.filter(Boolean).join(' ');
+  const baseName = parts.filter(Boolean).join(' ');
+  if (!baseName) return '';
+
+  if (options?.includeTitle ?? true) {
+    if (!/^dr(a)?\./i.test(baseName)) {
+      const title = getDoctorTitle(doctor.exp_sexo);
+      return `${title} ${baseName}`;
+    }
+  }
+
+  return baseName;
 }
 
 /** Construye el nombre corto (Primer Nombre + Primer Apellido) para vistas de cuadrícula compacta. */
 export function buildDoctorShortName(
-  doctor: Pick<ExpedienteDoctor, 'exp_primer_nom' | 'exp_primer_ape'>,
+  doctor: Pick<ExpedienteDoctor, 'exp_primer_nom' | 'exp_primer_ape'> & { exp_sexo?: string },
+  options?: { includeTitle?: boolean }
 ): string {
-  return [doctor.exp_primer_nom, doctor.exp_primer_ape].filter(Boolean).join(' ');
+  const parts = [doctor.exp_primer_nom, doctor.exp_primer_ape].filter(Boolean);
+  const baseName = parts.join(' ');
+  if (!baseName) return '';
+
+  if (options?.includeTitle ?? true) {
+    if (!/^dr(a)?\./i.test(baseName)) {
+      const title = getDoctorTitle(doctor.exp_sexo);
+      return `${title} ${baseName}`;
+    }
+  }
+
+  return baseName;
 }
 
 /**

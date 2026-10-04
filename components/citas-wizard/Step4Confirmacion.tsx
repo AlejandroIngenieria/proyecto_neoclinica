@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { toast } from 'sonner';
@@ -67,6 +67,15 @@ export function Step4Confirmacion() {
   const [createdCitaId, setCreatedCitaId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Desplazar la vista inmediatamente hasta arriba al iniciar o procesar la confirmación
+  useEffect(() => {
+    if (isSubmitting) {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    }
+  }, [isSubmitting]);
+
   const isMultiMode = !!(grupoId || creandoNuevoGrupo) && citasMultiples.length > 0;
   const countCitas = isMultiMode ? citasMultiples.length : 1;
 
@@ -115,6 +124,9 @@ export function Step4Confirmacion() {
       setIsSubmitting(true);
       setError(null);
       setSubmitStatusText('Preparando grupo de citas...');
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
 
       try {
         // 0. Crear grupo si es nuevo
@@ -185,7 +197,9 @@ export function Step4Confirmacion() {
             enlaceVideollamada: null,
             recompensaCodigo: i === 0 ? rcpCod : undefined,
             rcpCodigo: i === 0 ? rcpCod : undefined,
-            archivos: archivos.length > 0 ? archivos : undefined,
+            tipoPagoId: tipoPagoId ? Number(tipoPagoId) : undefined,
+            referenciaPago: referenciaTransferencia?.trim() || billeteraItemId || undefined,
+            archivos: [...archivos, ...(comprobanteTransferencia ? [comprobanteTransferencia] : [])],
           };
 
           const idCitaCreada = await createCita(request);
@@ -238,11 +252,14 @@ export function Step4Confirmacion() {
     }
 
     // Modo Cita Individual
-    if (!codMedico || !pacienteSeleccionado || !fecha || !hora || !modalidad || !tipoPagoId) return;
+    if (!codMedico || !pacienteSeleccionado || !fecha || !hora || !modalidad || (!tipoPagoId && !omitirPago)) return;
 
     setIsSubmitting(true);
     setError(null);
     setSubmitStatusText('Verificando turno y registrando consulta...');
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
 
     try {
       // 0. Si se solicitó crear un nuevo grupo de citas, crearlo primero
@@ -306,7 +323,9 @@ export function Step4Confirmacion() {
         enlaceVideollamada: null,
         recompensaCodigo: rcpCod,
         rcpCodigo: rcpCod,
-        archivos: archivos.length > 0 ? archivos : undefined,
+        tipoPagoId: tipoPagoId ? Number(tipoPagoId) : undefined,
+        referenciaPago: referenciaTransferencia?.trim() || billeteraItemId || undefined,
+        archivos: [...archivos, ...(comprobanteTransferencia ? [comprobanteTransferencia] : [])],
       };
 
       // 2. Crear Cita
@@ -345,7 +364,7 @@ export function Step4Confirmacion() {
       }
 
       // 3. Registrar método de pago
-      if (tipoPagoId) {
+      if (!omitirPago && tipoPagoId) {
         try {
           setSubmitStatusText('Confirmando cita programada...');
           await pagarCita({
@@ -395,6 +414,15 @@ export function Step4Confirmacion() {
               : 'Tu consulta médica ha sido reservada y registrada en el sistema de SaludYa.'}
           </p>
 
+          {createdCitaId && (
+            <div className="inline-flex items-center gap-2 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 px-4 py-1.5 rounded-full text-xs font-mono font-bold mt-3 shadow-xs">
+              <span className="text-slate-500 dark:text-slate-400 font-sans font-medium">Código oficial:</span>
+              <span className="text-blue-700 dark:text-blue-400 font-extrabold tracking-wider">
+                CIT-{createdCitaId.replace(/-/g, '').slice(0, 8).toUpperCase()}
+              </span>
+            </div>
+          )}
+
           {/* Doctor Info with Circular Photo */}
           <div className="my-6 p-4 sm:p-5 rounded-2xl bg-sky-50/60 dark:bg-sky-950/40 border border-sky-200/80 dark:border-sky-800/60 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
             <div className="w-20 h-20 rounded-full overflow-hidden border-3 border-white dark:border-slate-700 shadow-md shrink-0 bg-slate-100 dark:bg-slate-800">
@@ -427,6 +455,15 @@ export function Step4Confirmacion() {
                 <ShieldCheck className="w-3.5 h-3.5" /> Confirmadas
               </span>
             </div>
+
+            {createdCitaId && (
+              <div className="flex items-center justify-between py-1 border-b border-slate-200/50 dark:border-slate-800/60 text-xs">
+                <span className="font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Código de Confirmación</span>
+                <span className="font-mono font-black text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-2.5 py-0.5 rounded-md border border-blue-200 dark:border-blue-800">
+                  CIT-{createdCitaId.replace(/-/g, '').slice(0, 8).toUpperCase()}
+                </span>
+              </div>
+            )}
 
             {/* Si es multi-citas, mostramos la lista de todas las citas confirmadas */}
             {isMultiMode ? (
@@ -497,8 +534,8 @@ export function Step4Confirmacion() {
                 <p className="text-sm font-bold text-slate-900 dark:text-slate-100 capitalize">
                   {modalidad === 'presencial' && clinicaSeleccionada
                     ? `Presencial · ${clinicaSeleccionada.cliDescripcion}`
-                    : modalidad === 'domicilio' && areaDomicilio
-                    ? `A Domicilio · ${areaDomicilio.municipio}`
+                    : modalidad === 'domicilio'
+                    ? `A Domicilio · ${direccionDomicilio || areaDomicilio?.municipio || 'Domicilio'}`
                     : 'Telemedicina Virtual (Videollamada)'}
                 </p>
               </div>

@@ -20,6 +20,11 @@ export type Paciente = {
   pac_foto_perfil_url: string | null;
   pac_foto_carne_seguro: string | null;
   pac_documento_identificacion_url?: string | null;
+  // Seguro Médico Asociado
+  seg_codase?: number | null;
+  aseguradora_nombre?: string | null;
+  seg_numero_poliza?: string | null;
+  aseguradora_imagen?: string | null;
   // Ubicación de nacimiento
   pac_pais_nac_id: number | null;
   pac_dep_nac_id: number | null;

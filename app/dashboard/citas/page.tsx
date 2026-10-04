@@ -38,6 +38,7 @@ import {
   UserCheck,
   SlidersHorizontal,
   ArrowLeftRight,
+  Activity,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -680,12 +681,26 @@ function CitasContent() {
       standalone.sort(sortFn);
       Object.values(seriesMap).forEach((arr) => arr.sort(sortFn));
 
+      let completadas = 0;
+      let canceladas = 0;
+      citasConTemas.forEach((c) => {
+        if (c.ctaCodpac !== pac.pacCodigo) return;
+        const est = (c.ctaEstado || '').toLowerCase().trim();
+        if (est === 'completada') {
+          completadas += 1;
+        } else if (est === 'cancelada' || est === 'rechazada') {
+          canceladas += 1;
+        }
+      });
+
       return {
         paciente: pac,
         standalone,
         series: seriesMap,
         seriesStats,
         totalCitas: citasPaciente.length,
+        completadasCount: completadas,
+        canceladasCount: canceladas,
       };
     }).filter(({ paciente: pac, totalCitas }) => {
       // Pacientes independizados solo se muestran si conservan citas en esta cuenta
@@ -710,9 +725,21 @@ function CitasContent() {
     return seccionesPorPaciente.find((s) => s.paciente.pacCodigo === selectedPacienteId) || null;
   }, [seccionesPorPaciente, selectedPacienteId]);
 
-  // Conteo específico para el paciente seleccionado (Próximas vs Historial)
-  const { pacienteProximasCount, pacienteHistorialCount } = useMemo(() => {
-    if (!selectedPacienteId) return { pacienteProximasCount: 0, pacienteHistorialCount: 0 };
+  // Conteo específico para el paciente seleccionado (Próximas vs Historial vs Completadas vs Canceladas)
+  const {
+    pacienteProximasCount,
+    pacienteHistorialCount,
+    pacienteCompletadasCount,
+    pacienteCanceladasCount,
+  } = useMemo(() => {
+    if (!selectedPacienteId) {
+      return {
+        pacienteProximasCount: 0,
+        pacienteHistorialCount: 0,
+        pacienteCompletadasCount: 0,
+        pacienteCanceladasCount: 0,
+      };
+    }
     const historialEstados = ['cancelada', 'no_asistio', 'completada', 'rechazada'];
     const pacCitas = citasConTemas.filter((c) => c.ctaCodpac === selectedPacienteId);
     const historial = pacCitas.filter((c) =>
@@ -721,7 +748,18 @@ function CitasContent() {
     const proximas = pacCitas.filter((c) =>
       !historialEstados.includes((c.ctaEstado || '').toLowerCase().trim()) && !isCitaPasada(c.ctaFecha, c.ctaHora)
     ).length;
-    return { pacienteProximasCount: proximas, pacienteHistorialCount: historial };
+    const completadas = pacCitas.filter((c) =>
+      (c.ctaEstado || '').toLowerCase().trim() === 'completada'
+    ).length;
+    const canceladas = pacCitas.filter((c) =>
+      ['cancelada', 'rechazada'].includes((c.ctaEstado || '').toLowerCase().trim())
+    ).length;
+    return {
+      pacienteProximasCount: proximas,
+      pacienteHistorialCount: historial,
+      pacienteCompletadasCount: completadas,
+      pacienteCanceladasCount: canceladas,
+    };
   }, [citasConTemas, selectedPacienteId]);
 
   const totalCitasFiltradas = citasFiltradas.length;
@@ -1003,7 +1041,7 @@ function CitasContent() {
                 {/* Cuadrícula de Pacientes Activos */}
                 {seccionesActivos.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
-                    {seccionesActivos.map(({ paciente: pac, standalone, series, totalCitas }) => {
+                    {seccionesActivos.map(({ paciente: pac, standalone, series, totalCitas, completadasCount, canceladasCount }) => {
                       const solicitudesDelPaciente = solicitudesRecibidas.filter(
                         (s) => s.objetivoPacCodigo === pac.pacCodigo
                       );
@@ -1012,6 +1050,8 @@ function CitasContent() {
                           key={pac.pacCodigo}
                           paciente={pac}
                           totalCitas={totalCitas}
+                          completadasCount={completadasCount}
+                          canceladasCount={canceladasCount}
                           standalone={standalone}
                           series={series}
                           tabActual={tabActual}
@@ -1088,7 +1128,7 @@ function CitasContent() {
                           className="overflow-hidden pt-6"
                         >
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
-                            {seccionesIndependientes.map(({ paciente: pac, standalone, series, totalCitas }) => {
+                            {seccionesIndependientes.map(({ paciente: pac, standalone, series, totalCitas, completadasCount, canceladasCount }) => {
                               const solicitudesDelPaciente = solicitudesRecibidas.filter(
                                 (s) => s.objetivoPacCodigo === pac.pacCodigo
                               );
@@ -1097,6 +1137,8 @@ function CitasContent() {
                                   key={pac.pacCodigo}
                                   paciente={pac}
                                   totalCitas={totalCitas}
+                                  completadasCount={completadasCount}
+                                  canceladasCount={canceladasCount}
                                   standalone={standalone}
                                   series={series}
                                   tabActual={tabActual}
@@ -1491,22 +1533,72 @@ function CitasContent() {
 
                 {/* Contenido de Citas del Paciente */}
                 {selectedSection.totalCitas === 0 ? (
-                  <div className="p-8 sm:p-12 rounded-3xl bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-800 text-center space-y-3">
+                  <div className="p-8 sm:p-12 rounded-3xl bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-800 text-center space-y-4 shadow-2xs">
                     <div className="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto shadow-inner">
                       <CalendarDays className="w-7 h-7" />
                     </div>
-                    <h3 className="text-base font-black text-slate-900 dark:text-white">
-                      Sin citas {tabActual === 'proximas' ? 'próximas' : 'en el historial'}
-                    </h3>
-                    <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-                      {selectedSection.paciente.primerNombre} no tiene citas {tabActual === 'proximas' ? 'programadas en este momento' : 'registradas en el historial'}.
-                    </p>
+                    <div className="space-y-1">
+                      <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                        Sin citas {tabActual === 'proximas' ? 'próximas' : 'en el historial'}
+                      </h3>
+                      <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+                        {selectedSection.paciente.primerNombre} no tiene citas {tabActual === 'proximas' ? 'programadas en este momento' : 'registradas en el historial'}.
+                      </p>
+                    </div>
+
+                    {/* Resumen de Citas Completadas y Canceladas */}
+                    {tabActual === 'proximas' && (
+                      <div className="pt-1 pb-1 max-w-sm mx-auto w-full">
+                        <div className="grid grid-cols-2 gap-3">
+                          {/* Card Completadas */}
+                          <button
+                            type="button"
+                            onClick={() => setTabActual('historial')}
+                            className="p-3.5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-800/40 flex items-center gap-3 text-left hover:border-emerald-300 dark:hover:border-emerald-700 transition cursor-pointer group shadow-2xs"
+                            title="Ver citas completadas en el historial"
+                          >
+                            <div className="w-10 h-10 rounded-xl bg-emerald-500/15 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                              <CheckCircle2 className="w-5 h-5" />
+                            </div>
+                            <div className="min-w-0">
+                              <span className="text-lg font-black text-emerald-700 dark:text-emerald-300 leading-none block">
+                                {pacienteCompletadasCount}
+                              </span>
+                              <span className="text-[11px] font-bold text-emerald-600/90 dark:text-emerald-400/90 truncate block mt-0.5">
+                                {pacienteCompletadasCount === 1 ? 'Completada' : 'Completadas'}
+                              </span>
+                            </div>
+                          </button>
+
+                          {/* Card Canceladas */}
+                          <button
+                            type="button"
+                            onClick={() => setTabActual('historial')}
+                            className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60 flex items-center gap-3 text-left hover:border-slate-300 dark:hover:border-slate-600 transition cursor-pointer group shadow-2xs"
+                            title="Ver citas canceladas en el historial"
+                          >
+                            <div className="w-10 h-10 rounded-xl bg-rose-500/15 dark:bg-rose-500/20 text-rose-500 dark:text-rose-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                              <XCircle className="w-5 h-5" />
+                            </div>
+                            <div className="min-w-0">
+                              <span className="text-lg font-black text-slate-800 dark:text-slate-200 leading-none block">
+                                {pacienteCanceladasCount}
+                              </span>
+                              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 truncate block mt-0.5">
+                                {pacienteCanceladasCount === 1 ? 'Cancelada' : 'Canceladas'}
+                              </span>
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {selectedSection.paciente.pacEstado !== 'independizado' ? (
                       <div className="pt-2">
                         <button
                           type="button"
                           onClick={() => router.push(`/dashboard/directorio?paciente=${selectedSection.paciente.pacCodigo}`)}
-                          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200/60 dark:border-blue-800/40 transition cursor-pointer"
+                          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200/60 dark:border-blue-800/40 transition active:scale-95 cursor-pointer shadow-2xs"
                         >
                           <CalendarPlus className="w-4 h-4" />
                           Agendar para {selectedSection.paciente.primerNombre}
@@ -1866,24 +1958,28 @@ interface PatientCardProps {
     pacEstado?: string;
   };
   totalCitas: number;
+  completadasCount?: number;
+  canceladasCount?: number;
   standalone: CitaListDto[];
   series: Record<string, CitaListDto[]>;
   tabActual: 'proximas' | 'historial';
   solicitudesCount?: number;
   onSelect: () => void;
-  onAgendar: () => void;
+  onAgendar?: () => void;
 }
 
 function PatientCard({
   paciente: pac,
   totalCitas,
+  completadasCount = 0,
+  canceladasCount = 0,
   standalone,
   series,
   tabActual,
   solicitudesCount = 0,
   onSelect,
-  onAgendar,
 }: PatientCardProps) {
+  const router = useRouter();
   const initial = pac.primerNombre ? pac.primerNombre.charAt(0).toUpperCase() : 'P';
   const hasCitas = totalCitas > 0;
   const isIndependiente = pac.pacEstado === 'independizado' || pac.pacEstado === 'independiente';
@@ -1900,6 +1996,12 @@ function PatientCard({
 
   const proximaCita = todasCitas[0];
   const totalSeries = Object.keys(series).length;
+
+  const tieneCitaParaCola = Boolean(
+    proximaCita &&
+    tabActual === 'proximas' &&
+    !['cancelada', 'rechazada', 'completada', 'no_asistio'].includes((proximaCita.ctaEstado || '').toLowerCase())
+  );
 
   return (
     <motion.div
@@ -2013,13 +2115,29 @@ function PatientCard({
             </div>
           </div>
         ) : (
-          <div className="mt-4 p-3.5 rounded-2xl bg-slate-50/50 dark:bg-slate-800/30 border border-dashed border-slate-200 dark:border-slate-800/80 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center shrink-0">
-              <CalendarDays className="w-4 h-4" />
+          <div className="mt-4 p-3.5 rounded-2xl bg-slate-50/60 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-800 space-y-2.5">
+            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
+              <CalendarDays className="w-4 h-4 text-blue-500/80 shrink-0" />
+              <span>{tabActual === 'proximas' ? 'Sin citas próximas programadas' : 'Sin citas en el historial'}</span>
             </div>
-            <p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
-              {tabActual === 'proximas' ? 'Sin citas próximas programadas' : 'Sin citas en el historial'}
-            </p>
+
+            {/* Resumen de citas completadas y canceladas */}
+            {tabActual === 'proximas' && (
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
+                <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 truncate">
+                    {completadasCount} {completadasCount === 1 ? 'completada' : 'completadas'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60">
+                  <XCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                  <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 truncate">
+                    {canceladasCount} {canceladasCount === 1 ? 'cancelada' : 'canceladas'}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
         {solicitudesCount > 0 && (
@@ -2055,17 +2173,21 @@ function PatientCard({
               {totalSeries} {totalSeries === 1 ? 'serie' : 'series'}
             </span>
           )}
-          {!isIndependiente && (
+          {tieneCitaParaCola && (
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                onAgendar();
+                const fechaQuery = proximaCita.ctaFecha ? proximaCita.ctaFecha.split('T')[0] : '';
+                router.push(
+                  `/dashboard/citas/sala-espera?citaId=${proximaCita.ctaCodigo}&doc=${proximaCita.ctaCoddoc}&fecha=${fechaQuery}`
+                );
               }}
-              title={`Agendar para ${pac.primerNombre}`}
-              className="p-1.5 rounded-xl text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition cursor-pointer"
+              title="Ver sala de espera y cola de atención"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60 text-xs font-bold shadow-2xs transition active:scale-95 cursor-pointer"
             >
-              <CalendarPlus className="w-3.5 h-3.5" />
+              <Activity className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <span>Ver cola</span>
             </button>
           )}
         </div>

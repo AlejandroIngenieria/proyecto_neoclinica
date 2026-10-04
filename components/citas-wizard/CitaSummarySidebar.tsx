@@ -23,6 +23,9 @@ export function CitaSummarySidebar() {
     recompensaSeleccionada,
     citasMultiples,
     pacienteModoCita,
+    direccionDomicilio,
+    municipioDomicilio,
+    zonaDomicilio,
   } = useCitaStore();
 
   const isMultiMode = !!(grupoId || creandoNuevoGrupo) && citasMultiples.length > 0;
@@ -43,8 +46,16 @@ export function CitaSummarySidebar() {
 
   if (modalidad === 'presencial' && clinicaSeleccionada) {
     ubicacionStr = clinicaSeleccionada.cliDescripcion;
-  } else if (modalidad === 'domicilio' && areaDomicilio) {
-    ubicacionStr = `Domicilio: ${areaDomicilio.municipio}`;
+  } else if (modalidad === 'domicilio') {
+    if (direccionDomicilio) {
+      ubicacionStr = direccionDomicilio;
+    } else if (municipioDomicilio) {
+      ubicacionStr = `Domicilio: ${municipioDomicilio}${zonaDomicilio ? `, ${zonaDomicilio}` : ''}`;
+    } else if (areaDomicilio) {
+      ubicacionStr = `Domicilio: ${areaDomicilio.municipio}`;
+    } else {
+      ubicacionStr = 'Domicilio (Ubicación pendiente)';
+    }
   } else if (modalidad === 'virtual') {
     ubicacionStr = 'Videollamada';
   }

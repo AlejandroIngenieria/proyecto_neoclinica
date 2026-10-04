@@ -43,10 +43,10 @@ import {
 
 import {
   loginSchema,
-  recoverySchema,
+  solicitarRecuperacionSchema,
   registerSchema,
   type LoginFormValues,
-  type RecoveryFormValues,
+  type SolicitarRecuperacionFormValues,
   type RegisterFormValues,
 } from '@/lib/validations/auth';
 import { withProgress } from '@/lib/request-handler';
@@ -88,6 +88,7 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
   // Feedback states
   const [loginAuthError, setLoginAuthError] = useState('');
   const [loginStatusText, setLoginStatusText] = useState('');
+  const [registerStatusText, setRegisterStatusText] = useState('');
   const [recoveryNotice, setRecoveryNotice] = useState('');
   const [showTermsModal, setShowTermsModal] = useState(false);
 
@@ -213,7 +214,9 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         if (attempt > 1) {
-          setLoginStatusText(`Conectando con el servidor (intento ${attempt} de ${maxAttempts})...`);
+          setLoginStatusText('Reintentando...');
+        } else {
+          setLoginStatusText('Iniciando sesión...');
         }
 
         const result = await signIn('credentials', {
@@ -225,7 +228,7 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
         if (result?.ok) {
           // Guardar en historial de cuentas recientes usadas exitosamente
           saveEmailToHistory(values.correo);
-          setLoginStatusText('¡Inicio de sesión exitoso! Redirigiendo...');
+          setLoginStatusText('Redirigiendo...');
           try {
             if (typeof window !== 'undefined') {
               sessionStorage.setItem('neoclinica_random_seed', String(Math.floor(Math.random() * 1000000) + 1));
@@ -274,14 +277,14 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
       }
 
       setLoginAuthError('');
-      setLoginStatusText('Autenticando con Google...');
+      setLoginStatusText('Conectando...');
 
       const timer1 = setTimeout(() => {
-        setLoginStatusText('Conectando con el servidor de autenticación...');
+        setLoginStatusText('Iniciando sesión...');
       }, 3000);
 
       const timer2 = setTimeout(() => {
-        setLoginStatusText('Iniciando recursos compartidos del servidor, un momento...');
+        setLoginStatusText('Iniciando sesión...');
       }, 8000);
 
       try {
@@ -294,7 +297,7 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
         clearTimeout(timer2);
 
         if (result?.ok) {
-          setLoginStatusText('¡Inicio de sesión exitoso! Redirigiendo...');
+          setLoginStatusText('Redirigiendo...');
           try {
             if (typeof window !== 'undefined') {
               sessionStorage.setItem('neoclinica_random_seed', String(Math.floor(Math.random() * 1000000) + 1));
@@ -346,14 +349,14 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
     }
 
     setLoginAuthError('');
-    setLoginStatusText('Autenticando con Facebook...');
+    setLoginStatusText('Conectando...');
 
     const timer1 = setTimeout(() => {
-      setLoginStatusText('Conectando con el servidor de autenticación...');
+      setLoginStatusText('Iniciando sesión...');
     }, 3000);
 
     const timer2 = setTimeout(() => {
-      setLoginStatusText('Iniciando recursos del servidor, un momento...');
+      setLoginStatusText('Iniciando sesión...');
     }, 8000);
 
     try {
@@ -366,7 +369,7 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
       clearTimeout(timer2);
 
       if (result?.ok) {
-        setLoginStatusText('¡Inicio de sesión exitoso! Redirigiendo...');
+        setLoginStatusText('Redirigiendo...');
         try {
           if (typeof window !== 'undefined') {
             sessionStorage.setItem('neoclinica_random_seed', String(Math.floor(Math.random() * 1000000) + 1));
@@ -492,13 +495,13 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
     handleSubmit: handleRecoverySubmit,
     setValue: setRecoveryValue,
     formState: { errors: recoveryErrors, isSubmitting: isRecoverySubmitting },
-  } = useForm<RecoveryFormValues>({
-    resolver: zodResolver(recoverySchema),
-    defaultValues: { correo: '', nuevaPassword: '' },
+  } = useForm<SolicitarRecuperacionFormValues>({
+    resolver: zodResolver(solicitarRecuperacionSchema),
+    defaultValues: { correo: '' },
     mode: 'onTouched',
   });
 
-  const onRecoverPassword = async (values: RecoveryFormValues) => {
+  const onRecoverPassword = async (values: SolicitarRecuperacionFormValues) => {
     setLoginAuthError('');
     setRecoveryNotice('');
 
@@ -506,7 +509,7 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
       const response = await fetch('/api/autenticacion/solicitar-recuperacion', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(values),
+        body: JSON.stringify({ correo: values.correo }),
       });
 
       const contentType = response.headers.get('content-type') ?? '';
@@ -524,6 +527,7 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
       }
 
       setRecoveryNotice('Si el correo está registrado, te hemos enviado un enlace para restablecer tu contraseña. Revisa tu bandeja de entrada o carpeta de spam.');
+      toast.success('Enlace de recuperación enviado. Revisa tu correo.');
     } catch {
       setLoginAuthError('No se pudo contactar al servidor. Intenta de nuevo.');
     }
@@ -592,6 +596,7 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
   };
 
   const onPatientRegister = async (values: RegisterFormValues) => {
+    setRegisterStatusText('Registrando...');
     try {
       await withProgress(
         async () => {
@@ -626,13 +631,14 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
           return responseBody;
         },
         {
-          progressTitle: 'Creando tu Cuenta',
-          initialMessage: 'Registrando tus datos como paciente en NeoClínica...',
+          progressTitle: 'Creando Cuenta',
+          initialMessage: 'Registrando tus datos...',
           successTitle: '¡Registro Exitoso!',
-          successText: 'Tu cuenta de paciente ha sido creada correctamente. Ahora puedes iniciar sesión.',
+          successText: 'Tu cuenta ha sido creada correctamente.',
         },
       );
 
+      setRegisterStatusText('Redirigiendo...');
       toast.success('¡Cuenta creada con éxito! Inicia sesión con tus credenciales.');
       resetRegister();
       setRegisterStep(1);
@@ -645,6 +651,8 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Error al crear la cuenta de paciente';
       toast.error(errorMessage);
+    } finally {
+      setRegisterStatusText('');
     }
   };
 
@@ -844,7 +852,7 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
                               popupOpenTimeRef.current = Date.now();
                               isProcessingTokenRef.current = false;
                               setLoginAuthError('');
-                              setLoginStatusText('Abriendo Google...');
+                              setLoginStatusText('Conectando...');
                               handleGoogleLogin();
                             }}
                             className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-100/70 dark:hover:bg-blue-900/50 active:scale-95 transition-all cursor-pointer"
@@ -876,7 +884,7 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
                           popupOpenTimeRef.current = Date.now();
                           isProcessingTokenRef.current = false;
                           setLoginAuthError('');
-                          setLoginStatusText('Abriendo Google...');
+                          setLoginStatusText('Conectando...');
                           handleGoogleLogin();
                         }}
                         className={`
@@ -955,7 +963,7 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
                                   popupOpenTimeRef.current = Date.now();
                                   isProcessingTokenRef.current = false;
                                   setLoginAuthError('');
-                                  setLoginStatusText('Abriendo Facebook...');
+                                  setLoginStatusText('Conectando...');
                                   onClick?.();
                                 }}
                                 className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:text-[#1877F2] hover:bg-blue-100/70 dark:hover:bg-blue-900/50 active:scale-95 transition-all cursor-pointer"
@@ -1004,7 +1012,7 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
                               setSocialLoading('facebook');
                               popupOpenTimeRef.current = Date.now();
                               isProcessingTokenRef.current = false;
-                              setLoginStatusText('Abriendo Facebook...');
+                              setLoginStatusText('Conectando...');
                               onClick?.();
                             }}
                             className={`
@@ -1220,6 +1228,13 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
                     </div>
                   ) : null}
 
+                  {loginAuthError ? (
+                    <div className="mb-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 p-2.5 text-xs text-rose-700 dark:text-rose-300 flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                      <span>{loginAuthError}</span>
+                    </div>
+                  ) : null}
+
                   <form onSubmit={handleRecoverySubmit(onRecoverPassword)} noValidate className="space-y-3">
                     <div>
                       <label htmlFor="recovery_correo" className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1 tracking-wide">
@@ -1253,7 +1268,7 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
                         {isRecoverySubmitting ? (
                           <span className="flex items-center gap-2">
                             <Loader2 className="w-4 h-4 animate-spin" />
-                            Enviando enlace...
+                            Enviando...
                           </span>
                         ) : (
                           'Enviar Enlace'
@@ -1420,10 +1435,10 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
                           </div>
                         </div>
 
-                        {/* Apellido de Casada */}
+                        {/* Apellido de matrimonio */}
                         <div>
                           <label htmlFor="reg_apellidoCasado" className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1 tracking-wide">
-                            Apellido de Casada (opcional)
+                            Apellido de matrimonio (opcional)
                           </label>
                           <div className="flex h-11 items-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/70 px-3 shadow-2xs transition focus-within:border-blue-600 focus-within:ring-3 focus-within:ring-blue-500/15 focus-within:bg-white dark:focus-within:bg-slate-800">
                             <input
@@ -1610,13 +1625,13 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
                           </button>
                           <button
                             type="submit"
-                            disabled={isRegisterSubmitting || !isRegisterValid || !isRegPasswordValid}
-                            className="flex-1 h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm tracking-wide shadow-md shadow-blue-500/20 transition active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center cursor-pointer"
+                            disabled={isRegisterSubmitting || Boolean(registerStatusText) || !isRegisterValid || !isRegPasswordValid}
+                            className="flex-1 h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm tracking-wide shadow-md shadow-blue-500/20 transition active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center cursor-pointer px-3"
                           >
-                            {isRegisterSubmitting ? (
-                              <span className="flex items-center gap-2">
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                                Creando cuenta...
+                            {isRegisterSubmitting || registerStatusText ? (
+                              <span className="flex items-center gap-2 truncate text-xs sm:text-sm">
+                                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                                <span className="truncate">{registerStatusText || 'Registrando...'}</span>
                               </span>
                             ) : (
                               'Crear Cuenta'

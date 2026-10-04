@@ -8,13 +8,16 @@ import {
 } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { useCitaStore } from '@/store/use-cita-store';
-import { ChevronLeft, MapPin, Video, Home, Stethoscope, ArrowRight, CalendarDays, Building2, BriefcaseMedical, CalendarClock, Activity, ClipboardList, Plus, Loader2, UploadCloud, FileText, X, CheckCircle2, Sparkles, AlertCircle, Users, User } from 'lucide-react';
+import { ChevronLeft, MapPin, Video, Home, Stethoscope, ArrowRight, CalendarDays, Building2, BriefcaseMedical, CalendarClock, Activity, ClipboardList, Plus, Loader2, UploadCloud, FileText, X, CheckCircle2, Sparkles, AlertCircle, Users, User, Check } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { usePacienteTitular, usePacientesByUsuario } from '@/hooks/use-pacientes';
 import type { PacienteSeleccionDto } from '@/types/citas';
 import { PacienteFormModal } from '@/components/paciente-form-modal';
 import { NeoLoader } from '@/components/neo-loader';
+import { toast } from 'sonner';
+
+const MAX_ARCHIVOS = 5;
 
 const MOTIVOS = [
   {
@@ -51,6 +54,7 @@ export function Step2PacienteMotivo() {
     archivos, setArchivos,
     direccionDomicilio, setDireccionDomicilio,
     referenciasDomicilio, setReferenciasDomicilio,
+    municipioDomicilio, zonaDomicilio, departamentoDomicilio, aldeaDomicilio,
     pacientesExcluidos,
     prevStep, nextStep
   } = useCitaStore();
@@ -162,7 +166,18 @@ export function Step2PacienteMotivo() {
   }, []);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    setArchivos([...archivos, ...acceptedFiles]);
+    const slotsDisponibles = MAX_ARCHIVOS - archivos.length;
+    if (slotsDisponibles <= 0) {
+      toast.warning(`Has alcanzado el límite máximo de ${MAX_ARCHIVOS} archivos.`);
+      return;
+    }
+
+    if (acceptedFiles.length > slotsDisponibles) {
+      toast.warning(`Solo se agregaron ${slotsDisponibles} archivo(s) para no superar el límite de ${MAX_ARCHIVOS}.`);
+      setArchivos([...archivos, ...acceptedFiles.slice(0, slotsDisponibles)]);
+    } else {
+      setArchivos([...archivos, ...acceptedFiles]);
+    }
   }, [archivos, setArchivos]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -171,7 +186,9 @@ export function Step2PacienteMotivo() {
       'image/*': ['.jpeg', '.jpg', '.png'],
       'application/pdf': ['.pdf']
     },
-    maxSize: 5 * 1024 * 1024 // 5MB
+    maxSize: 5 * 1024 * 1024, // 5MB
+    disabled: archivos.length >= MAX_ARCHIVOS,
+    maxFiles: MAX_ARCHIVOS
   });
 
   const removeFile = (index: number) => {
@@ -220,7 +237,7 @@ export function Step2PacienteMotivo() {
     : pacienteSeleccionado !== null;
 
   const isComplete = isPacienteValid && (servicioSeleccionado !== null || motivo !== '') && 
-    (modalidad !== 'domicilio' || (direccionDomicilio.trim() !== '' && referenciasDomicilio.trim() !== ''));
+    (modalidad !== 'domicilio' || direccionDomicilio.trim() !== '');
   const isSeguimientoVisible = isPacienteValid;
 
   return (
@@ -523,8 +540,18 @@ export function Step2PacienteMotivo() {
         {/* SECTION Domicilio: DIRECCION EXACTA (Solo Domicilio) */}
         {modalidad === 'domicilio' && (
           <div className={`transition-all duration-300 animate-in fade-in slide-in-from-top-4 ${pacienteSeleccionado ? 'opacity-100 translate-y-0' : 'opacity-40 pointer-events-none translate-y-4'}`}>
-            <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-1 tracking-tight">Dirección de visita</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Proporciona la dirección exacta para que el médico pueda llegar sin problemas.</p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-1">
+              <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Dirección de visita médica</h2>
+              {municipioDomicilio && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold shadow-xs">
+                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>Cobertura confirmada: {municipioDomicilio} · {zonaDomicilio || 'Zona de servicio'}</span>
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
+              Ubicación verificada en el mapa para la visita médica a domicilio del especialista.
+            </p>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-[#0F172A] rounded-3xl p-6 border border-slate-100 dark:border-slate-800">
               <div className="space-y-2">
@@ -538,7 +565,7 @@ export function Step2PacienteMotivo() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300 block">Referencias <span className="text-red-500">*</span></label>
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300 block">Referencias de llegada</label>
                 <input 
                   type="text" 
                   value={referenciasDomicilio}
@@ -553,20 +580,50 @@ export function Step2PacienteMotivo() {
 
         {/* SECTION 4: ARCHIVOS (OPCIONAL) */}
         <div className={`transition-all duration-300 ${pacienteSeleccionado ? 'opacity-100 translate-y-0' : 'opacity-40 pointer-events-none translate-y-4'}`}>
-          <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-1 tracking-tight">Documentos previos (Opcional)</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Puedes adjuntar fotos de recetas anteriores, resultados de laboratorio o imágenes relevantes. (Max 5MB)</p>
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Documentos previos (Opcional)</h2>
+            <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
+              archivos.length >= MAX_ARCHIVOS 
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400' 
+                : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+            }`}>
+              {archivos.length} de {MAX_ARCHIVOS} archivos
+            </span>
+          </div>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
+            Puedes adjuntar recetas anteriores, resultados de laboratorio o imágenes relevantes. (Máximo {MAX_ARCHIVOS} archivos, hasta 5MB c/u)
+          </p>
 
           <div
             {...getRootProps()}
-            className={`flex flex-col items-center justify-center rounded-3xl border-2 border-dashed p-8 transition-colors cursor-pointer ${isDragActive ? 'border-sky-500 bg-sky-50 dark:bg-sky-900/20' : 'border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-[#0F172A] hover:bg-slate-100 dark:hover:bg-[#1E293B]'
-              }`}
+            className={`flex flex-col items-center justify-center rounded-3xl border-2 border-dashed p-8 transition-colors ${
+              archivos.length >= MAX_ARCHIVOS 
+                ? 'opacity-60 bg-slate-100 dark:bg-slate-900/50 border-slate-300 dark:border-slate-800 cursor-not-allowed'
+                : isDragActive 
+                  ? 'border-sky-500 bg-sky-50 dark:bg-sky-900/20 cursor-pointer' 
+                  : 'border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-[#0F172A] hover:bg-slate-100 dark:hover:bg-[#1E293B] cursor-pointer'
+            }`}
           >
             <input {...getInputProps()} />
-            <UploadCloud className={`h-10 w-10 ${isDragActive ? 'text-sky-500' : 'text-slate-400 dark:text-slate-500'}`} />
-            <p className="mt-4 text-sm font-bold text-slate-700 dark:text-slate-300">
-              {isDragActive ? 'Suelta los archivos aquí...' : 'Haz clic o arrastra archivos aquí'}
+            <UploadCloud className={`h-10 w-10 ${
+              archivos.length >= MAX_ARCHIVOS 
+                ? 'text-slate-400 dark:text-slate-600' 
+                : isDragActive 
+                  ? 'text-sky-500' 
+                  : 'text-slate-400 dark:text-slate-500'
+            }`} />
+            <p className="mt-4 text-sm font-bold text-slate-700 dark:text-slate-300 text-center">
+              {archivos.length >= MAX_ARCHIVOS 
+                ? `Has alcanzado el límite máximo de ${MAX_ARCHIVOS} archivos`
+                : isDragActive 
+                  ? 'Suelta los archivos aquí...' 
+                  : 'Haz clic o arrastra archivos aquí'}
             </p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">PDF, JPG o PNG</p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {archivos.length >= MAX_ARCHIVOS 
+                ? 'Elimina algún archivo adjunto si necesitas subir otro' 
+                : 'PDF, JPG o PNG (máx. 5MB)'}
+            </p>
           </div>
 
           {archivos.length > 0 && (

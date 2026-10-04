@@ -14,6 +14,7 @@ import 'react-day-picker/style.css';
 import { NeoLoader } from '@/components/neo-loader';
 import { ModalSolicitarCambio } from './ModalSolicitarCambio';
 import { ModalMiCitaConflicto } from './ModalMiCitaConflicto';
+import { DomicilioSelectorMap } from './DomicilioSelectorMap';
 
 export function Step1Modalidad() {
   const {
@@ -27,7 +28,8 @@ export function Step1Modalidad() {
     creandoNuevoGrupo, nuevoGrupoTema, setCreandoNuevoGrupo, setNuevoGrupoTema,
     solicitudIntercambio, setSolicitudIntercambio,
     pacientesExcluidos, setPacientesExcluidos, addPacienteExcluido,
-    citasMultiples, addCitaMultiple, removeCitaMultiple, clearCitasMultiples
+    citasMultiples, addCitaMultiple, removeCitaMultiple, clearCitasMultiples,
+    coberturaDomicilioValida, ubicacionDomicilioConfirmada
   } = useCitaStore();
   const router = useRouter();
 
@@ -421,7 +423,7 @@ export function Step1Modalidad() {
   }, [fecha, isPastDateSelected, horarios, horasOcupadas, horasTemaEnFecha, misHorasEnFecha]);
 
   useEffect(() => {
-    if (!modalidad && modalidades.length > 0) {
+    if (!modalidad && modalidades.length === 1) {
       const hasPresencial = modalidades.some(m => m.modDescripcion.toLowerCase().includes('presencial'));
       setModalidad(hasPresencial ? 'presencial' : modalidades[0].modDescripcion.toLowerCase() as any);
     }
@@ -447,7 +449,7 @@ export function Step1Modalidad() {
   const isScheduleEnabled =
     (modalidad === 'virtual') ||
     (modalidad === 'presencial' && clinicaSeleccionada) ||
-    (modalidad === 'domicilio' && areaDomicilio);
+    (modalidad === 'domicilio' && coberturaDomicilioValida && ubicacionDomicilioConfirmada);
 
   const isMultiMode = !!(grupoId || creandoNuevoGrupo);
   const fechasCitasMultiples = useMemo(() => citasMultiples.map(c => c.fecha), [citasMultiples]);
@@ -498,7 +500,7 @@ export function Step1Modalidad() {
               }}
               className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline self-start sm:self-auto cursor-pointer"
             >
-              Desvincular (Cita individual)
+              Desagrupar cita
             </button>
           )}
         </div>
@@ -639,7 +641,7 @@ export function Step1Modalidad() {
           /* Si el paciente no tiene grupos previos con este médico */
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-3">
-              {/* Primero: Cita individual */}
+              {/* Cita individual */}
               <button
                 type="button"
                 onClick={() => {
@@ -656,18 +658,7 @@ export function Step1Modalidad() {
                 <span>Cita individual</span>
               </button>
 
-              {/* Segundo: Agrupar cita (deshabilitado sin grupos previos) */}
-              <button
-                type="button"
-                disabled
-                className="px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-600 opacity-60 cursor-not-allowed"
-                title="No tienes grupos de citas previos con este especialista"
-              >
-                <FolderPlus className="w-3.5 h-3.5" />
-                <span>Agrupar cita (Sin grupos previos)</span>
-              </button>
-
-              {/* Tercero: Crear grupo de citas */}
+              {/* Crear grupo de citas */}
               <button
                 type="button"
                 onClick={() => {
@@ -780,114 +771,154 @@ export function Step1Modalidad() {
         </div>
       )}
 
-      {/* 3. MODALITY TABS (No Heading) */}
-      <div className="border-b border-slate-200 dark:border-slate-800 flex gap-2 overflow-x-auto scrollbar-none pb-1">
-        {modalidades.map((mod) => {
-          const normalizedTipo = mod.modDescripcion.toLowerCase().includes('domicilio')
-            ? 'domicilio'
-            : mod.modDescripcion.toLowerCase() as any;
-          const isSelected = modalidad === normalizedTipo;
+      {/* 3. MODALIDAD DE ATENCIÓN (BOTONES GRANDES Y CENTRADOS CON ICONO) */}
+      <div className="my-6 bg-white dark:bg-[#1E293B] rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="text-center mb-5">
+          <h3 className="text-base font-bold text-slate-900 dark:text-white">
+            Modalidad de Atención
+          </h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Selecciona cómo deseas realizar tu consulta con el especialista
+          </p>
+        </div>
 
-          return (
-            <label key={mod.modCodigo} className="cursor-pointer">
-              <input
-                type="radio"
-                name="modality"
-                value={normalizedTipo}
-                checked={isSelected}
-                onChange={() => setModalidad(normalizedTipo)}
-                className="peer sr-only"
-              />
-              <div className={`flex items-center gap-2 px-6 py-3 transition-colors mb-[-1px] ${isSelected
-                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-900 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-500 rounded-t-lg'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-[#1E293B] border-b-2 border-transparent'
-                }`}>
-                {getIcon(normalizedTipo, isSelected)}
-                <span className={`text-sm font-semibold capitalize ${isSelected ? 'text-blue-900 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'}`}>
-                  {mod.modDescripcion}
-                </span>
-              </div>
-            </label>
-          )
-        })}
+        <div className="flex flex-wrap items-stretch justify-center gap-4 max-w-3xl mx-auto">
+          {modalidades.map((mod) => {
+            const normalizedTipo = mod.modDescripcion.toLowerCase().includes('domicilio')
+              ? 'domicilio'
+              : mod.modDescripcion.toLowerCase() as any;
+            const isSelected = modalidad === normalizedTipo;
+
+            let subtitle = 'Atención médica';
+            let IconComponent = Stethoscope;
+            if (normalizedTipo === 'presencial') {
+              subtitle = 'En consultorio o clínica médica';
+              IconComponent = Building2;
+            } else if (normalizedTipo === 'virtual') {
+              subtitle = 'Consulta online por videollamada';
+              IconComponent = Video;
+            } else if (normalizedTipo === 'domicilio') {
+              subtitle = 'Atención médica en tu domicilio';
+              IconComponent = Home;
+            }
+
+            return (
+              <button
+                key={mod.modCodigo}
+                type="button"
+                onClick={() => setModalidad(normalizedTipo)}
+                className={`relative flex-1 min-w-[200px] max-w-[260px] p-5 rounded-2xl border-2 transition-all flex flex-col items-center justify-between text-center cursor-pointer group ${
+                  isSelected
+                    ? 'border-blue-600 dark:border-blue-500 bg-blue-50/70 dark:bg-blue-950/40 shadow-md ring-2 ring-blue-500/20'
+                    : 'border-slate-200 dark:border-slate-700/80 bg-slate-50/50 dark:bg-slate-900/40 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-100/50'
+                }`}
+              >
+                {/* Active check pill */}
+                {isSelected && (
+                  <span className="absolute -top-2.5 right-4 bg-blue-600 dark:bg-blue-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                    <Check className="w-3 h-3 stroke-[3]" /> Seleccionado
+                  </span>
+                )}
+
+                <div
+                  className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-3 transition-transform group-hover:scale-105 ${
+                    isSelected
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25'
+                      : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shadow-xs'
+                  }`}
+                >
+                  <IconComponent className="w-7 h-7" />
+                </div>
+
+                <div className="w-full">
+                  <h4
+                    className={`font-bold text-sm mb-1 capitalize transition-colors ${
+                      isSelected ? 'text-blue-900 dark:text-blue-200' : 'text-slate-800 dark:text-slate-200'
+                    }`}
+                  >
+                    {mod.modDescripcion}
+                  </h4>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+                    {subtitle}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
+      {/* 4. AGENDAMIENTO RESPECTIVO (SEDE / CALENDARIO / HORARIOS) */}
+      {!modalidad ? (
+        <div className="my-8 p-10 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/20 text-center flex flex-col items-center justify-center">
+          <div className="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-3">
+            <Stethoscope className="w-7 h-7" />
+          </div>
+          <h4 className="text-base font-bold text-slate-800 dark:text-slate-200">
+            Selecciona una modalidad para ver los horarios
+          </h4>
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mt-1">
+            Elige una de las modalidades arriba (Presencial, Virtual o Domicilio) para consultar sedes disponibles y agendar tu cita.
+          </p>
+        </div>
+      ) : (
+        <>
+
       {/* 3. COLUMNS CONTENT */}
+      {modalidad === 'domicilio' && (
+        <div className="mb-8">
+          <DomicilioSelectorMap doctor={doctor} areas={areas} />
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 flex-grow min-h-[360px]">
 
-        {/* Column 1: Ubicación */}
-        {modalidad !== 'virtual' && (
+        {/* Column 1: Ubicación para Presencial */}
+        {modalidad === 'presencial' && (
           <div className="lg:col-span-4 flex flex-col space-y-4 pt-6 md:pt-8">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Ubicación</h3>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Clínica Médica</h3>
 
-            {modalidad === 'presencial' && (
-              <div className="flex flex-col gap-3 h-[320px] overflow-y-auto pr-2 custom-scrollbar">
-                {loadingClinicas ? (
-                  <div className="h-24 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
-                ) : (
-                  clinicas.map((clinica) => {
-                    const isSelected = clinicaSeleccionada?.mclCodigo === clinica.mclCodigo;
-                    return (
-                      <button
-                        key={clinica.mclCodigo}
-                        onClick={() => setClinica(clinica)}
-                        className={`text-left p-4 rounded-lg border transition-all shrink-0 ${isSelected
-                          ? 'bg-blue-50/50 dark:bg-blue-900/20 border-blue-600/50 dark:border-blue-500/50 shadow-sm'
-                          : 'bg-white dark:bg-[#1E293B] border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-                          }`}
-                      >
-                        <h4 className={`font-semibold text-[15px] leading-tight ${isSelected ? 'text-slate-900 dark:text-white' : 'text-slate-800 dark:text-slate-200'}`}>
-                          {clinica.cliDescripcion}
-                        </h4>
-                        <p className="text-[13px] text-slate-600 dark:text-slate-400 mt-1 line-clamp-2">
-                          {clinica.cliDireccionCompleta}
-                        </p>
-                      </button>
-                    )
-                  })
-                )}
-              </div>
-            )}
-
-            {modalidad === 'domicilio' && (
-              <div className="flex flex-col gap-3 h-[320px] overflow-y-auto pr-2 custom-scrollbar">
-                {loadingAreas ? (
-                  <div className="h-24 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
-                ) : (
-                  areas.map((area) => {
-                    const isSelected = areaDomicilio?.ladCodigo === area.ladCodigo;
-                    return (
-                      <button
-                        key={area.ladCodigo}
-                        onClick={() => setArea(area)}
-                        className={`text-left p-4 rounded-lg border transition-all flex items-center justify-between shrink-0 ${isSelected
-                          ? 'bg-blue-50/50 dark:bg-blue-900/20 border-blue-600/50 dark:border-blue-500/50 shadow-sm'
-                          : 'bg-white dark:bg-[#1E293B] border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-                          }`}
-                      >
-                        <span className="font-semibold text-[15px] text-slate-800 dark:text-slate-200">{area.municipio}</span>
-                        {area.ladZonas && (
-                          <span className={`text-[11px] px-2 py-0.5 rounded-full ${isSelected ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
-                            Zonas: {area.ladZonas}
-                          </span>
-                        )}
-                      </button>
-                    )
-                  })
-                )}
-              </div>
-            )}
+            <div className="flex flex-col gap-3 h-[320px] overflow-y-auto pr-2 custom-scrollbar">
+              {loadingClinicas ? (
+                <div className="h-24 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
+              ) : (
+                clinicas.map((clinica) => {
+                  const isSelected = clinicaSeleccionada?.mclCodigo === clinica.mclCodigo;
+                  return (
+                    <button
+                      key={clinica.mclCodigo}
+                      onClick={() => setClinica(clinica)}
+                      className={`text-left p-4 rounded-lg border transition-all shrink-0 ${isSelected
+                        ? 'bg-blue-50/50 dark:bg-blue-900/20 border-blue-600/50 dark:border-blue-500/50 shadow-sm'
+                        : 'bg-white dark:bg-[#1E293B] border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                        }`}
+                    >
+                      <h4 className={`font-semibold text-[15px] leading-tight ${isSelected ? 'text-slate-900 dark:text-white' : 'text-slate-800 dark:text-slate-200'}`}>
+                        {clinica.cliDescripcion}
+                      </h4>
+                      <p className="text-[13px] text-slate-600 dark:text-slate-400 mt-1 line-clamp-2">
+                        {clinica.cliDireccionCompleta}
+                      </p>
+                    </button>
+                  )
+                })
+              )}
+            </div>
           </div>
         )}
 
         {/* Calendar and Time columns grouped inside a soft card */}
-        <div className={`lg:col-span-8 bg-slate-50/50 dark:bg-[#0F172A] rounded-2xl p-4 sm:p-6 md:p-8 flex flex-col md:flex-row gap-6 md:gap-8 lg:gap-16 border border-slate-100 dark:border-slate-800/50 ${modalidad === 'virtual' ? 'lg:col-span-12' : ''}`}>
+        <div className={`bg-slate-50/50 dark:bg-[#0F172A] rounded-2xl p-4 sm:p-6 md:p-8 flex flex-col md:flex-row gap-6 md:gap-8 lg:gap-16 border border-slate-100 dark:border-slate-800/50 ${modalidad === 'presencial' ? 'lg:col-span-8' : 'lg:col-span-12'}`}>
 
           {!isScheduleEnabled ? (
-            <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl h-[320px] bg-white dark:bg-[#1E293B]">
+            <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl h-[320px] bg-white dark:bg-[#1E293B] p-6 text-center">
               <CalendarDays className="h-10 w-10 text-slate-300 dark:text-slate-600 mb-3" />
-              <p className="text-sm font-medium text-slate-500 dark:text-slate-400 max-w-[200px] text-center">
-                Selecciona la {modalidad === 'presencial' ? 'clínica' : 'zona'} a la izquierda para cargar los horarios.
+              <p className="text-sm font-medium text-slate-500 dark:text-slate-400 max-w-sm">
+                {modalidad === 'presencial'
+                  ? 'Selecciona una clínica a la izquierda para cargar los horarios.'
+                  : modalidad === 'domicilio'
+                    ? 'Indica y confirma tu ubicación en el mapa de arriba para verificar la cobertura y habilitar las fechas y horarios disponibles.'
+                    : 'Cargando disponibilidad del médico...'}
               </p>
             </div>
           ) : (
@@ -1337,6 +1368,8 @@ export function Step1Modalidad() {
             </div>
           )}
         </div>
+      )}
+        </>
       )}
 
       {/* Footer Next Button ALWAYS VISIBLE BUT BLOCKED IF NOT COMPLETE */}

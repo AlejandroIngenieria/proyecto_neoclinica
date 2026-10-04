@@ -33,6 +33,7 @@ import {
   ChevronRight,
   CalendarDays,
   Building2,
+  UserCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useColaDelDia } from '@/hooks/use-cola-dia';
@@ -44,6 +45,7 @@ import {
   useSolicitudesCambioPendientes,
   useTodasSolicitudesUsuario,
   useCancelarSolicitudCambio,
+  useMarcarLlegadaClinica,
 } from '@/hooks/use-flujo-citas';
 import { ModalSolicitarCambio } from '@/components/citas-wizard/ModalSolicitarCambio';
 import { ModalResponderIntercambio } from '@/components/citas/ModalResponderIntercambio';
@@ -88,6 +90,7 @@ interface TurnoCardProps {
   onResponderSolicitud?: (solicitud: SolicitudCambioDto) => void;
   intentoGastado?: boolean;
   yaEnvioSolicitudEnEstaCola?: boolean;
+  isToday?: boolean;
 }
 
 function TurnoCard({
@@ -107,6 +110,7 @@ function TurnoCard({
   onResponderSolicitud,
   intentoGastado = false,
   yaEnvioSolicitudEnEstaCola = false,
+  isToday = false,
 }: TurnoCardProps) {
   const estado = (t.ctaEstado || '').toLowerCase();
   const isEnProceso = estado === 'en_proceso';
@@ -115,6 +119,7 @@ function TurnoCard({
   const isMine = t.esMiTurno || (miTurno && t.ctaCodigo === miTurno.ctaCodigo) || (misCitasCodigos?.has(t.ctaCodigo) ?? false);
   const horaTurno = t.ctaHora ? t.ctaHora.slice(0, 5) : '--:--';
   const modTurno = (t.ctaModalidad || 'presencial').toLowerCase();
+  const marcarLlegadaMutation = useMarcarLlegadaClinica();
 
   return (
     <div
@@ -189,9 +194,9 @@ function TurnoCard({
         </div>
       </div>
 
-      <div className="mt-4 pt-3 border-t border-slate-200/60 dark:border-slate-800/80 flex items-center justify-between gap-2">
-        {/* Modalidad bien visible */}
-        <div>
+      <div className="mt-4 pt-3 border-t border-slate-200/60 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-2">
+        {/* Modalidad y Presencia en clínica para cualquier turno */}
+        <div className="flex items-center gap-1.5 flex-wrap">
           {modTurno === 'virtual' ? (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-black bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800 shadow-2xs">
               <Video className="w-3.5 h-3.5 text-sky-500" />
@@ -206,6 +211,17 @@ function TurnoCard({
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-black bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shadow-2xs">
               <Building2 className="w-3.5 h-3.5 text-emerald-500" />
               <span>Presencial</span>
+            </span>
+          )}
+
+          {/* Indicador de paciente en la clínica (para cualquier turno que ya esté en la clínica) */}
+          {t.enClinica && (
+            <span
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-black bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border border-teal-200/80 dark:border-teal-800/80 shadow-2xs"
+              title="El paciente de este turno ya se encuentra en la clínica"
+            >
+              <UserCheck className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+              <span>En clínica</span>
             </span>
           )}
         </div>
@@ -234,6 +250,29 @@ function TurnoCard({
           )}
         </div>
       </div>
+
+      {/* Botón Ya estoy en la clínica para el propio turno del usuario (exclusivo para la fecha de hoy) */}
+      {isMine && isToday && modTurno === 'presencial' && !t.enClinica && !isCompletada && !isNoAsistio && (
+        <div className="mt-3 pt-2.5 border-t border-slate-200/60 dark:border-slate-800/80">
+          <button
+            type="button"
+            disabled={marcarLlegadaMutation.isPending}
+            onClick={(e) => {
+              e.stopPropagation();
+              marcarLlegadaMutation.mutate(t.ctaCodigo);
+            }}
+            className="w-full inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-xs transition active:scale-95 cursor-pointer"
+            title="Confirmar que ya te encuentras en la clínica para tu cita"
+          >
+            {marcarLlegadaMutation.isPending ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Building2 className="w-3.5 h-3.5 text-white" />
+            )}
+            <span>Ya estoy en la clínica</span>
+          </button>
+        </div>
+      )}
 
       {/* Botones de simulación médica: Iniciar consulta y Finalizar consulta */}
       <div className="mt-3 pt-2.5 border-t border-slate-200/60 dark:border-slate-800/80 flex items-center justify-between gap-2">
@@ -1105,6 +1144,7 @@ function SalaEsperaContent() {
                     solicitudRecibida={mapaSolicitudesRecibidas.get(t.ctaCodigo)}
                     intentoGastado={turnosConIntentoGastado.has(t.ctaCodigo)}
                     yaEnvioSolicitudEnEstaCola={yaEnvioSolicitudEnEstaCola}
+                    isToday={isToday}
                     onCancelarSolicitud={(sol) => setSolicitudACancelar(sol)}
                     onResponderSolicitud={(sol) => setSolicitudParaResponder(sol)}
                   />
@@ -1179,6 +1219,7 @@ function SalaEsperaContent() {
                     solicitudRecibida={mapaSolicitudesRecibidas.get(t.ctaCodigo)}
                     intentoGastado={turnosConIntentoGastado.has(t.ctaCodigo)}
                     yaEnvioSolicitudEnEstaCola={yaEnvioSolicitudEnEstaCola}
+                    isToday={isToday}
                     onCancelarSolicitud={(sol) => setSolicitudACancelar(sol)}
                     onResponderSolicitud={(sol) => setSolicitudParaResponder(sol)}
                   />

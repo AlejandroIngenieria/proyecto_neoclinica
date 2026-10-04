@@ -43,6 +43,17 @@ interface CitaState {
   direccionDomicilio: string;
   referenciasDomicilio: string;
   
+  // Demografía y Geografía para Cita a Domicilio
+  paisDomicilio: string;
+  departamentoDomicilio: string;
+  municipioDomicilio: string;
+  zonaDomicilio: string;
+  aldeaDomicilio: string;
+  latitudDomicilio: number | null;
+  longitudDomicilio: number | null;
+  coberturaDomicilioValida: boolean;
+  ubicacionDomicilioConfirmada: boolean;
+  
   archivos: File[];
   tipoPagoId: number | null;
   billeteraItemId: string | null;
@@ -82,14 +93,28 @@ interface CitaState {
   clearCitasMultiples: () => void;
   setPacienteModoCita: (modo: 'mismo' | 'variado') => void;
   setPacienteCitaMultiple: (id: string, paciente: PacienteSeleccionDto | null) => void;
-  setOmitirPago: (val: boolean) => void;
-  
+  setOmitirPago: (val: boolean, tipoPagoId?: number | null) => void;
   setPaciente: (paciente: PacienteSeleccionDto | null) => void;
   setGrupo: (grupoId: string | null) => void;
   setTemaSeguimiento: (grupoId: string | null, temaNombre?: string | null) => void;
   setMotivo: (motivo: string) => void;
   setDireccionDomicilio: (direccion: string) => void;
   setReferenciasDomicilio: (referencias: string) => void;
+  setDatosDomicilio: (datos: {
+    pais?: string;
+    departamento?: string;
+    municipio?: string;
+    zona?: string;
+    aldea?: string;
+    direccion?: string;
+    referencias?: string;
+    latitud?: number | null;
+    longitud?: number | null;
+    coberturaValida?: boolean;
+    confirmada?: boolean;
+    area?: AreaDomicilioDto | null;
+  }) => void;
+  setUbicacionDomicilioConfirmada: (val: boolean) => void;
   
   creandoNuevoGrupo: boolean;
   nuevoGrupoTema: string;
@@ -130,6 +155,17 @@ const initialState = {
   motivo: '',
   direccionDomicilio: '',
   referenciasDomicilio: '',
+  
+  // Demografía y Geografía para Domicilio
+  paisDomicilio: 'Guatemala',
+  departamentoDomicilio: '',
+  municipioDomicilio: '',
+  zonaDomicilio: '',
+  aldeaDomicilio: '',
+  latitudDomicilio: null as number | null,
+  longitudDomicilio: null as number | null,
+  coberturaDomicilioValida: false,
+  ubicacionDomicilioConfirmada: false,
   
   creandoNuevoGrupo: false,
   nuevoGrupoTema: '',
@@ -250,9 +286,12 @@ export const useCitaStore = create<CitaState>((set, get) => ({
     citasMultiples: state.citasMultiples.map(c => c.id === id ? { ...c, paciente } : c)
   })),
 
-  setOmitirPago: (val: boolean) => set({
+  setOmitirPago: (val: boolean, tipoPagoId?: number | null) => set({
     omitirPago: val,
-    ...(val ? { tipoPagoId: null, billeteraItemId: null, comprobanteTransferencia: null, referenciaTransferencia: '' } : {})
+    tipoPagoId: val ? (tipoPagoId ?? null) : null,
+    billeteraItemId: null,
+    comprobanteTransferencia: null,
+    referenciaTransferencia: '',
   }),
 
   setPaciente: (paciente) => set({ pacienteSeleccionado: paciente }),
@@ -267,6 +306,42 @@ export const useCitaStore = create<CitaState>((set, get) => ({
   setMotivo: (motivo) => set({ motivo }),
   setDireccionDomicilio: (direccion) => set({ direccionDomicilio: direccion }),
   setReferenciasDomicilio: (referencias) => set({ referenciasDomicilio: referencias }),
+  setDatosDomicilio: (datos) => set((state) => {
+    const nuevoPais = datos.pais !== undefined ? datos.pais : state.paisDomicilio;
+    const nuevoDepto = datos.departamento !== undefined ? datos.departamento : state.departamentoDomicilio;
+    const nuevoMuni = datos.municipio !== undefined ? datos.municipio : state.municipioDomicilio;
+    const nuevaZona = datos.zona !== undefined ? datos.zona : state.zonaDomicilio;
+    const nuevaAldea = datos.aldea !== undefined ? datos.aldea : state.aldeaDomicilio;
+    const nuevaDirDetallada = datos.direccion !== undefined ? datos.direccion : state.direccionDomicilio;
+
+    // Si no se proporcionó una dirección formateada explícita, construirla a partir de los datos demográficos
+    const formattedAddress = datos.direccion !== undefined 
+      ? datos.direccion 
+      : [
+          nuevaDirDetallada,
+          nuevaAldea ? `Aldea/Col: ${nuevaAldea}` : '',
+          nuevaZona ? (nuevaZona.toLowerCase().includes('zona') ? nuevaZona : `Zona ${nuevaZona}`) : '',
+          nuevoMuni,
+          nuevoDepto,
+          nuevoPais
+        ].filter(Boolean).join(', ');
+
+    return {
+      paisDomicilio: nuevoPais,
+      departamentoDomicilio: nuevoDepto,
+      municipioDomicilio: nuevoMuni,
+      zonaDomicilio: nuevaZona,
+      aldeaDomicilio: nuevaAldea,
+      direccionDomicilio: formattedAddress,
+      referenciasDomicilio: datos.referencias !== undefined ? datos.referencias : state.referenciasDomicilio,
+      latitudDomicilio: datos.latitud !== undefined ? datos.latitud : state.latitudDomicilio,
+      longitudDomicilio: datos.longitud !== undefined ? datos.longitud : state.longitudDomicilio,
+      coberturaDomicilioValida: datos.coberturaValida !== undefined ? datos.coberturaValida : state.coberturaDomicilioValida,
+      ubicacionDomicilioConfirmada: datos.confirmada !== undefined ? datos.confirmada : state.ubicacionDomicilioConfirmada,
+      areaDomicilio: datos.area !== undefined ? datos.area : state.areaDomicilio,
+    };
+  }),
+  setUbicacionDomicilioConfirmada: (val) => set({ ubicacionDomicilioConfirmada: val }),
   
   setCreandoNuevoGrupo: (val) => set({ 
     creandoNuevoGrupo: val, 

@@ -456,7 +456,7 @@ function PatientDetailsModal({
                 <Phone className="h-4 w-4" />
                 Contacto y Dirección
               </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 bg-slate-50 dark:bg-[#0F172A] p-4 rounded-2xl border border-slate-100 dark:border-slate-800 text-xs">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 dark:bg-[#0F172A] p-4 rounded-2xl border border-slate-100 dark:border-slate-800 text-xs">
                 <div>
                   <p className="text-slate-400 font-bold uppercase text-[10px]">Celular</p>
                   <p className="font-semibold text-slate-900 dark:text-slate-100">{paciente.pac_celular || '—'}</p>
@@ -469,10 +469,14 @@ function PatientDetailsModal({
                   <p className="text-slate-400 font-bold uppercase text-[10px]">Teléfono Trabajo</p>
                   <p className="font-semibold text-slate-900 dark:text-slate-100">{paciente.pac_telefono_trabajo || '—'}</p>
                 </div>
-                <div className="col-span-2 sm:col-span-3">
+                <div>
+                  <p className="text-slate-400 font-bold uppercase text-[10px]">Aldea</p>
+                  <p className="font-semibold text-slate-900 dark:text-slate-100">{paciente.pac_aldea || '—'}</p>
+                </div>
+                <div className="col-span-2 sm:col-span-4">
                   <p className="text-slate-400 font-bold uppercase text-[10px]">Dirección Registrada</p>
                   <p className="font-semibold text-slate-900 dark:text-slate-100">
-                    {[paciente.pac_calle, paciente.pac_avenida, paciente.pac_numero_casa, paciente.pac_colonia, paciente.pac_zona ? `Zona ${paciente.pac_zona}` : null, paciente.pac_aldea].filter(Boolean).join(', ') || 'No especificada'}
+                    {[paciente.pac_calle, paciente.pac_avenida, paciente.pac_numero_casa, paciente.pac_colonia, paciente.pac_zona ? `Zona ${paciente.pac_zona}` : null, paciente.pac_aldea ? `Aldea ${paciente.pac_aldea}` : null].filter(Boolean).join(', ') || 'No especificada'}
                   </p>
                 </div>
               </div>

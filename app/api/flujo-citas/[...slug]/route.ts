@@ -23,7 +23,9 @@ async function proxyRequest(request: NextRequest, context: RouteContext, method:
     subPath.includes('areas-domicilio') ||
     subPath.includes('horarios') ||
     subPath.includes('horas-ocupadas') ||
-    subPath.includes('metodos-pago')
+    subPath.includes('metodos-pago') ||
+    subPath.includes('cuentas-bancarias') ||
+    subPath.includes('aseguradoras')
   );
 
   if (!authorization && !isPublicGet) {

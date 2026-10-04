@@ -19,16 +19,20 @@ import {
   AlertCircle,
   FileText,
   ExternalLink,
+  ShieldCheck,
+  Eye,
 } from 'lucide-react';
 
 import { NeoLoader } from '@/components/neo-loader';
 import { usePacienteTitular, useUpdatePaciente } from '@/hooks/use-pacientes';
+import { useAseguradoras } from '@/hooks/use-flujo-citas';
 import { getPaises, getDepartamentosPorPais, getMunicipiosPorDepartamento, getPaisByCodigo, getDepartamentoByCodigo, getMunicipioByCodigo } from '@/lib/api-client';
 import type { Paciente, Pais, Departamento, Municipio } from '@/types';
 import { buildPacienteFullName, calcularEdad, getPacienteInitials, isPacientePendiente } from '@/types';
 import { ImageDropzone } from '@/components/image-dropzone';
 import { DocumentDropzone } from '@/components/document-dropzone';
 import { ProfileCompletenessWidget } from '@/components/profile-completeness-widget';
+import { BilleteraSegurosSeccion } from '@/components/seguros/BilleteraSegurosSeccion';
 import Link from 'next/link';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -302,7 +306,6 @@ function EditProfileForm({
   );
 
   const [selectedPhoto, setSelectedPhoto] = useState<File | null>(null);
-  const [selectedCarne, setSelectedCarne] = useState<File | null>(null);
   const [selectedDocumento, setSelectedDocumento] = useState<File | null>(null);
 
   const onSubmit = async (values: ProfileFormValues) => {
@@ -352,9 +355,6 @@ function EditProfileForm({
 
     if (selectedPhoto) {
       formData.append('FotoPerfilArchivo', selectedPhoto);
-    }
-    if (selectedCarne) {
-      formData.append('FotoCarneArchivo', selectedCarne);
     }
     if (selectedDocumento) {
       formData.append('documentoIdentificacionArchivo', selectedDocumento);
@@ -424,7 +424,7 @@ function EditProfileForm({
               <FormField label="Segundo Apellido">
                 <input {...register('pac_segundo_apellido')} className={inputClass} placeholder="López" />
               </FormField>
-              <FormField label="Apellido de Casada/o">
+              <FormField label="Apellido de matrimonio">
                 <input {...register('pac_apellido_casado')} className={inputClass} placeholder="Pérez" />
               </FormField>
               <FormField label="Fecha de Nacimiento" required>
@@ -612,18 +612,16 @@ function EditProfileForm({
             </div>
           </fieldset>
 
-          {/* Insurance Card & Documento Identificación Dropzone */}
+          {/* Documento Identificación Dropzone */}
           <fieldset className="mb-8 border-t border-slate-100 pt-8">
             <legend className="mb-4 flex items-center gap-2 text-sm font-black uppercase tracking-[0.15em] text-blue-600">
-              <Briefcase className="h-4 w-4" />
-              Documentación
+              <FileText className="h-4 w-4" />
+              Documento de Identificación
             </legend>
-            <div className="grid gap-6 md:grid-cols-2">
-              <ImageDropzone 
-                label="Carné de Seguro (Opcional)" 
-                initialImageUrl={titular.pac_foto_carne_seguro}
-                onImageDrop={(file) => setSelectedCarne(file)} 
-              />
+            <p className="text-xs text-slate-500 mb-4">
+              Adjunta tu DPI, Pasaporte o Certificado de Nacimiento para validar tu cuenta.
+            </p>
+            <div className="max-w-md">
               <DocumentDropzone 
                 label="Documento de Identificación (DPI/Pasaporte)" 
                 initialDocumentUrl={titular.pac_documento_identificacion_url}
@@ -669,6 +667,7 @@ function EditProfileForm({
 function PerfilContent() {
   const { data: session } = useSession();
   const [isEditing, setIsEditing] = useState(false);
+  const [zoomCarnetUrl, setZoomCarnetUrl] = useState<string | null>(null);
 
   const { titular, isLoading, error } = usePacienteTitular();
 
@@ -935,12 +934,10 @@ function PerfilContent() {
                     <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Municipio</p>
                     <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{munDesc || '—'}</p>
                   </div>
-                  {titular.pac_aldea ? (
-                    <div className="space-y-1">
-                      <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Aldea</p>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{titular.pac_aldea}</p>
-                    </div>
-                  ) : null}
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Aldea</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{titular.pac_aldea || '—'}</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -994,24 +991,12 @@ function PerfilContent() {
                 </div>
               </div>
 
-              {/* Carné de Seguro Card */}
-              {titular.pac_foto_carne_seguro && (
-                <div className="bg-white dark:bg-[#1E293B] p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm transition-transform hover:scale-[1.01] duration-300">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-950/40 flex items-center justify-center text-rose-600 dark:text-rose-400">
-                      <Heart className="h-5 w-5" />
-                    </div>
-                    <h2 className="text-lg font-bold text-slate-900 dark:text-white">Carné de Seguro</h2>
-                  </div>
-                  <div className="overflow-hidden rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-[#0F172A] p-2">
-                    <img 
-                      src={titular.pac_foto_carne_seguro} 
-                      alt="Carné de seguro médico" 
-                      className="w-full max-h-48 object-contain rounded-xl"
-                    />
-                  </div>
-                </div>
-              )}
+              {/* Billetera Médica: Seguros y Métodos de Pago */}
+              <BilleteraSegurosSeccion
+                pacCodigo={titular.pac_codigo}
+                pacienteNombre={titular.pac_primer_nombre}
+                onZoomCarne={(url) => setZoomCarnetUrl(url)}
+              />
 
               {/* Documento de Identificación Card */}
               {titular.pac_documento_identificacion_url ? (
@@ -1083,6 +1068,39 @@ function PerfilContent() {
             </div>
           </div>
         </div>
+        {/* Modal Zoom Carné de Seguro */}
+        {zoomCarnetUrl && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in"
+            onClick={() => setZoomCarnetUrl(null)}
+          >
+            <div
+              className="relative max-w-2xl w-full bg-white dark:bg-[#1E293B] rounded-3xl p-5 shadow-2xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                <span className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-blue-600" />
+                  Carné de Seguro Médico
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setZoomCarnetUrl(null)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-4 flex items-center justify-center">
+                <img
+                  src={zoomCarnetUrl!}
+                  alt="Carné de Seguro Ampliado"
+                  className="max-h-[75vh] w-auto object-contain rounded-xl shadow-md"
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </main>
   );
 }

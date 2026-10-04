@@ -22,6 +22,7 @@ import type {
   CrearSolicitudCambioRequest,
   ResponderSolicitudCambioRequest,
   CancelarSolicitudCambioRequest,
+  AseguradoraCatalogoDto,
 } from '@/types/citas';
 
 export async function fetchModalidades(token: string, codMedico: string): Promise<ModalidadDto[]> {
@@ -49,11 +50,13 @@ export async function fetchServiciosMedico(token: string | undefined, codMedico:
 }
 
 export async function fetchAreasDomicilio(token: string, codMedico: string): Promise<AreaDomicilioDto[]> {
-  const { data } = await expedientesApi.get<AreaDomicilioDto[]>(
+  const { data } = await expedientesApi.get<any>(
     `/api/flujo-citas/medicos/${codMedico}/areas-domicilio`,
     getAuthHeaders(token)
   );
-  return Array.isArray(data) ? data : [];
+  if (Array.isArray(data)) return data;
+  if (data?.value && Array.isArray(data.value)) return data.value;
+  return [];
 }
 
 export async function fetchHorarios(token: string, mclCodigo: number): Promise<HorarioCitaDto[]> {
@@ -138,6 +141,8 @@ export async function createCita(token: string, request: CrearCitaRequest): Prom
   if (request.enlaceVideollamada) formData.append('EnlaceVideollamada', request.enlaceVideollamada);
   if (request.recompensaCodigo) formData.append('RecompensaCodigo', String(request.recompensaCodigo));
   if (request.rcpCodigo) formData.append('RcpCodigo', String(request.rcpCodigo));
+  if (request.tipoPagoId) formData.append('TipoPagoId', String(request.tipoPagoId));
+  if (request.referenciaPago) formData.append('ReferenciaPago', request.referenciaPago);
 
   // 3. Archivos adjuntos
   if (request.archivos && request.archivos.length > 0) {
@@ -349,6 +354,13 @@ export async function fetchMetodosPago(token: string, codMedico: string): Promis
   return Array.isArray(data) ? data : [];
 }
 
+export async function fetchCuentasBancariasMedico(codMedico: string): Promise<any[]> {
+  const { data } = await expedientesApi.get<any[]>(
+    `/api/flujo-citas/medico/${codMedico}/cuentas-bancarias`
+  );
+  return Array.isArray(data) ? data : [];
+}
+
 export async function pagarCita(token: string, citaId: string, request: PagarCitaRequest): Promise<void> {
   await expedientesApi.put(
     `/api/flujo-citas/cita/${citaId}/pago`,
@@ -365,10 +377,67 @@ export async function fetchBilletera(token: string, codPac: string): Promise<Bil
   return Array.isArray(data) ? data : [];
 }
 
-export async function guardarSeguro(token: string, codPac: string, request: GuardarSeguroRequest): Promise<void> {
-  await expedientesApi.post(
-    `/api/flujo-citas/paciente/${codPac}/seguro`,
+export const SEED_ASEGURADORAS: AseguradoraCatalogoDto[] = [
+  { aseCodigo: 1, aseDescripcion: 'Seguros G&T', aseImagen: null },
+  { aseCodigo: 2, aseDescripcion: 'Seguros El Roble', aseImagen: null },
+  { aseCodigo: 3, aseDescripcion: 'Aseguradora General', aseImagen: null },
+  { aseCodigo: 4, aseDescripcion: 'Mapfre Guatemala', aseImagen: null },
+  { aseCodigo: 5, aseDescripcion: 'Pan-American Life', aseImagen: null },
+  { aseCodigo: 6, aseDescripcion: 'Aseguradora Rural', aseImagen: null },
+  { aseCodigo: 7, aseDescripcion: 'Seguros Universales', aseImagen: null },
+  { aseCodigo: 8, aseDescripcion: 'Seguros Bantrab', aseImagen: null },
+  { aseCodigo: 9, aseDescripcion: 'FICOHSA Seguros', aseImagen: null },
+  { aseCodigo: 10, aseDescripcion: 'BMI Guatemala', aseImagen: null },
+  { aseCodigo: 11, aseDescripcion: 'Bupa Global', aseImagen: 'https://upload.wikimedia.org/wikipedia/en/thumb/0/07/Bupa_logo.svg/512px-Bupa_logo.svg.png' },
+  { aseCodigo: 12, aseDescripcion: 'Seguros Agromercantil (BAM)', aseImagen: null },
+];
+
+export async function fetchAseguradoras(token?: string): Promise<AseguradoraCatalogoDto[]> {
+  try {
+    const headers = token ? getAuthHeaders(token) : undefined;
+    const { data } = await expedientesApi.get<AseguradoraCatalogoDto[]>(
+      `/api/flujo-citas/aseguradoras`,
+      headers
+    );
+    if (Array.isArray(data) && data.length > 0) return data;
+  } catch (err) {
+    console.warn('[fetchAseguradoras] Utilizando catálogo semilla:', err);
+  }
+  return SEED_ASEGURADORAS;
+}
+
+export async function guardarSeguro(
+  token: string,
+  codPac: string,
+  request: GuardarSeguroRequest | FormData,
+  segCodigo?: string | null
+): Promise<void> {
+  const isForm = typeof FormData !== 'undefined' && request instanceof FormData;
+  const targetSegCodigo = segCodigo || (!isForm ? (request as GuardarSeguroRequest).segCodigo : (request as FormData).get('SegCodigo')?.toString() || (request as FormData).get('segCodigo')?.toString());
+  
+  const url = targetSegCodigo
+    ? `/api/flujo-citas/paciente/${codPac}/seguro/${targetSegCodigo}`
+    : `/api/flujo-citas/paciente/${codPac}/seguro`;
+
+  const method = targetSegCodigo ? 'put' : 'post';
+
+  await expedientesApi[method](
+    url,
     request,
+    isForm
+      ? {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      : getAuthHeaders(token)
+  );
+}
+
+export async function eliminarSeguro(token: string, codPac: string, segCodigo: string): Promise<void> {
+  await expedientesApi.delete(
+    `/api/flujo-citas/paciente/${codPac}/seguro/${segCodigo}`,
     getAuthHeaders(token)
   );
 }
@@ -458,4 +527,17 @@ export async function cancelarSolicitudCambio(
   );
   return data;
 }
+
+export async function marcarLlegadaClinica(
+  token: string,
+  citaId: string
+): Promise<{ mensaje: string }> {
+  const { data } = await expedientesApi.post<{ mensaje: string }>(
+    `/api/flujo-citas/${citaId}/llegada-clinica`,
+    undefined,
+    getAuthHeaders(token)
+  );
+  return data;
+}
+
 

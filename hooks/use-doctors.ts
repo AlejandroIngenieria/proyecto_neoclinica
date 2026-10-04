@@ -24,7 +24,9 @@ export function useDoctors() {
     queryKey: ['doctors'],
     queryFn: () => fetchDoctors(token),
     enabled: true,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -43,6 +45,8 @@ export function useDoctorByCode(expCodigo: string) {
     queryKey: ['doctor', expCodigo],
     queryFn: () => fetchDoctorByCode(token, expCodigo),
     enabled: Boolean(expCodigo),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   });
 }

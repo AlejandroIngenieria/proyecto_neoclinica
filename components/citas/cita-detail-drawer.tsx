@@ -50,7 +50,7 @@ export function CitaDetailDrawer({ isOpen, onClose, cita, onEdit, onCancel, doct
       }
       subtitle={
         <span className="inline-flex items-center gap-1.5 mt-2 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-slate-700 px-2.5 py-1 rounded-md text-xs font-bold text-[#111827] dark:text-white uppercase tracking-wider">
-          {cita.ctaEstado?.toLowerCase() === 'no_asistio' ? 'No asistió' : (cita.ctaEstado || '').replace(/_/g, ' ')}
+          {((cita.ctaEstado || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\s\-]+/g, '_') === 'no_asistio') ? 'No asistió' : (cita.ctaEstado || '').replace(/_/g, ' ')}
         </span>
       }
     >
@@ -60,7 +60,7 @@ export function CitaDetailDrawer({ isOpen, onClose, cita, onEdit, onCancel, doct
         <div className="space-y-3">
           <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-widest mb-4">Acciones Rápidas</p>
 
-          {['completada', 'finalizada', 'realizada'].includes((cita.ctaEstado || '').toLowerCase()) && (!cita.ctaCalificacion || cita.ctaCalificacion <= 0) && (
+          {['completada', 'finalizada', 'realizada'].includes((cita.ctaEstado || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\s\-]+/g, '_')) && (!cita.ctaCalificacion || cita.ctaCalificacion <= 0) && (
             <button 
               onClick={() => {
                 onClose();
@@ -149,23 +149,54 @@ export function CitaDetailDrawer({ isOpen, onClose, cita, onEdit, onCancel, doct
 
             <div className="border-t border-[#E5E7EB] dark:border-slate-700 pt-5 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-[#6B7280] dark:text-slate-400">Estado Médico</span>
+                <span className="text-sm font-medium text-[#6B7280] dark:text-slate-400">Estado de la Cita</span>
                 <span className="text-sm font-bold text-[#111827] dark:text-white flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-[#2563EB]"></span> Programada
+                  <span className={`w-2.5 h-2.5 rounded-full ${
+                    ['completada', 'finalizada', 'realizada'].includes((cita.ctaEstado || '').toLowerCase().trim().replace(/[\s\-]/g, '_')) ? 'bg-slate-400'
+                    : ['cancelada', 'rechazada', 'no_asistio'].includes((cita.ctaEstado || '').toLowerCase().trim().replace(/[\s\-]/g, '_')) ? 'bg-rose-500'
+                    : (cita.ctaEstado || '').toLowerCase().trim().replace(/[\s\-]/g, '_') === 'confirmada' ? 'bg-emerald-500'
+                    : (cita.ctaEstado || '').toLowerCase().trim().replace(/[\s\-]/g, '_') === 'pospuesta' ? 'bg-amber-500'
+                    : (cita.ctaEstado || '').toLowerCase().trim().replace(/[\s\-]/g, '_') === 'en_proceso' ? 'bg-blue-600 animate-pulse'
+                    : 'bg-sky-500'
+                  }`}></span>
+                  {((cita.ctaEstado || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\s\-]+/g, '_') === 'no_asistio')
+                    ? 'No asistió'
+                    : (cita.ctaEstado || '').toLowerCase().trim().replace(/[\s\-]+/g, '_') === 'en_proceso'
+                    ? 'En proceso'
+                    : (cita.ctaEstado || 'Programada').charAt(0).toUpperCase() + (cita.ctaEstado || 'Programada').slice(1).replace(/_/g, ' ')}
                 </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-[#6B7280] dark:text-slate-400">Estado de Pago</span>
                 <span className="text-sm font-bold text-[#111827] dark:text-white flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-[#D97706]"></span> Pendiente
+                  <span className={`w-2.5 h-2.5 rounded-full ${cita.estadoPago === 'pagado' ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+                  {cita.estadoPago === 'pagado' ? 'Pagado' : (cita.tipoPagoDescripcion ? `${cita.tipoPagoDescripcion} (En consultorio)` : 'Pago en consultorio')}
                 </span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* 3. PREPARACIÓN / CONTACTO SECUNDARIO */}
-        {['programada', 'confirmada'].includes(cita.ctaEstado) && (
+        {/* 3. PREPARACIÓN / CONTACTO SECUNDARIO SEGÚN ESTADO */}
+        {(cita.ctaEstado || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\s\-]+/g, '_') === 'no_asistio' ? (
+          <div className="bg-rose-50 dark:bg-rose-950/40 rounded-2xl p-5 border border-rose-200 dark:border-rose-900/60">
+            <p className="font-bold text-rose-900 dark:text-rose-200 text-sm mb-1.5 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600" /> Cita No Asistida
+            </p>
+            <p className="text-xs text-rose-700 dark:text-rose-300/90 leading-relaxed">
+              Esta consulta fue registrada como no asistida debido a que el paciente no se presentó en la fecha y horario establecido.
+            </p>
+          </div>
+        ) : (cita.ctaEstado || '').toLowerCase().trim().replace(/[\s\-]+/g, '_') === 'cancelada' ? (
+          <div className="bg-rose-50 dark:bg-rose-950/40 rounded-2xl p-5 border border-rose-200 dark:border-rose-900/60">
+            <p className="font-bold text-rose-900 dark:text-rose-200 text-sm mb-1.5 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600" /> Cita Cancelada
+            </p>
+            <p className="text-xs text-rose-700 dark:text-rose-300/90 leading-relaxed">
+              Esta consulta médica fue cancelada. No se realizaron cargos en la cuenta.
+            </p>
+          </div>
+        ) : ['programada', 'confirmada'].includes((cita.ctaEstado || '').toLowerCase().trim().replace(/[\s\-]+/g, '_')) ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-[#F8FAFC] dark:bg-[#0B1120] rounded-2xl p-5 border border-[#E5E7EB] dark:border-slate-700">
               <p className="font-bold text-[#111827] dark:text-white text-sm mb-3 flex items-center gap-2">
@@ -194,7 +225,7 @@ export function CitaDetailDrawer({ isOpen, onClose, cita, onEdit, onCancel, doct
               </div>
             </div>
           </div>
-        )}
+        ) : null}
 
         {/* 4. NOTAS PRIVADAS */}
         <div>

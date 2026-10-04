@@ -14,6 +14,7 @@ import {
     Search,
     ShieldCheck,
     Sparkles,
+    User,
     Users,
     X,
     ArrowDownUp,
@@ -39,6 +40,7 @@ import { buildDoctorFullName, isDoctorActive, cleanZonaText, cleanZonasDomicilio
 import { Navbar } from '@/components/navbar';
 import { DoctorCard, type DoctorCardData } from '@/components/doctor-card';
 import { DoctorCardMobile } from '@/components/doctor-card-mobile';
+import { InsuranceLogoBadge } from '@/components/insurance-logo-badge';
 import { useUserLocation } from '@/hooks/use-user-location';
 import { AnimatedList } from '@/components/animated-list';
 import { AnimatedModal } from '@/components/animated-modal';
@@ -88,26 +90,26 @@ function normalizeText(value: string) {
 }
 
 const specialtyHomologues: Record<string, string[]> = {
-    'traumatologo': ['traumatología', 'traumatologia', 'traumatologo', 'ortopedia'],
-    'urologo': ['urología', 'urologia', 'urologo'],
-    'cardiologo': ['cardiología', 'cardiologia', 'cardiologo'],
-    'ginecologo': ['ginecología', 'ginecologia', 'ginecologo', 'obstetricia'],
-    'pediatra': ['pediatría', 'pediatria', 'pediatra'],
-    'dermatologo': ['dermatología', 'dermatologia', 'dermatologo'],
-    'oftalmologo': ['oftalmología', 'oftalmologia', 'oftalmologo'],
-    'neurologo': ['neurología', 'neurologia', 'neurologo'],
-    'psiquiatra': ['psiquiatría', 'psiquiatria', 'psiquiatra'],
-    'psicologo': ['psicología', 'psicologia', 'psicologo'],
-    'gastroenterologo': ['gastroenterología', 'gastroenterologia', 'gastroenterologo'],
-    'otorrino': ['otorrinolaringología', 'otorrinolaringologia', 'otorrinolaringologo', 'otorrino'],
-    'endocrinologo': ['endocrinología', 'endocrinologia', 'endocrinologo'],
-    'oncologo': ['oncología', 'oncologia', 'oncologo'],
-    'neumologo': ['neumología', 'neumologia', 'neumologo'],
-    'nefrologo': ['nefrología', 'nefrologia', 'nefrologo'],
-    'reumatologo': ['reumatología', 'reumatologia', 'reumatologo'],
-    'alergologo': ['alergología', 'alergologia', 'alergologo'],
-    'odontologo': ['odontología', 'odontologia', 'odontologo', 'dentista'],
-    'nutricionista': ['nutrición', 'nutricion', 'nutricionista']
+    'traumatologo': ['traumatología', 'traumatologia', 'traumatologo', 'traumatologa', 'ortopedia', 'ortopedista'],
+    'urologo': ['urología', 'urologia', 'urologo', 'urologa'],
+    'cardiologo': ['cardiología', 'cardiologia', 'cardiologo', 'cardiologa'],
+    'ginecologo': ['ginecología', 'ginecologia', 'ginecologo', 'ginecologa', 'ginecologas', 'obstetricia', 'obstetra'],
+    'pediatra': ['pediatría', 'pediatria', 'pediatra', 'pediatras'],
+    'dermatologo': ['dermatología', 'dermatologia', 'dermatologo', 'dermatologa'],
+    'oftalmologo': ['oftalmología', 'oftalmologia', 'oftalmologo', 'oftalmologa'],
+    'neurologo': ['neurología', 'neurologia', 'neurologo', 'neurologa'],
+    'psiquiatra': ['psiquiatría', 'psiquiatria', 'psiquiatra', 'psiquiatras'],
+    'psicologo': ['psicología', 'psicologia', 'psicologo', 'psicologa'],
+    'gastroenterologo': ['gastroenterología', 'gastroenterologia', 'gastroenterologo', 'gastroenterologa'],
+    'otorrino': ['otorrinolaringología', 'otorrinolaringologia', 'otorrinolaringologo', 'otorrinolaringologa', 'otorrino'],
+    'endocrinologo': ['endocrinología', 'endocrinologia', 'endocrinologo', 'endocrinologa'],
+    'oncologo': ['oncología', 'oncologia', 'oncologo', 'oncologa'],
+    'neumologo': ['neumología', 'neumologia', 'neumologo', 'neumologa'],
+    'nefrologo': ['nefrología', 'nefrologia', 'nefrologo', 'nefrologa'],
+    'reumatologo': ['reumatología', 'reumatologia', 'reumatologo', 'reumatologa'],
+    'alergologo': ['alergología', 'alergologia', 'alergologo', 'alergologa'],
+    'odontologo': ['odontología', 'odontologia', 'odontologo', 'odontologa', 'dentista'],
+    'nutricionista': ['nutrición', 'nutricion', 'nutricionista', 'nutricionistas']
 };
 
 function getNormalizedHomologues(term: string): string[] {
@@ -164,10 +166,14 @@ function resolveDoctor(doctor: DoctorResponse): ResolvedDoctor {
         ...(doctor.atencion_domicilio || []).map(d => `Domicilio: ${[d.mun_descripcion, cleanZonasDomicilio(d.lad_zonas)].filter(Boolean).join(', ')}`).filter(Boolean)
     ]));
 
-    // Restringimos el índice a lo que el usuario realmente buscaría: Nombres, Especialidades y Colegiado
+    // Restringimos el índice a lo que el usuario realmente buscaría: Nombres, Especialidades, Colegiado y Género
+    const isFemale = (doctor.exp_sexo || '').toUpperCase() === 'F';
+    const genderKeywords = isFemale ? 'doctora doctoras dra mujer femenina ginecologa' : 'doctor doctores dr hombre masculino';
+
     const searchIndex = normalizeText(
         [
             fullName,
+            genderKeywords,
             doctor.exp_colegiado_gt ?? '',
             ...doctor.especialidades.map((item) => item.especialidad),
             ...locationPreview
@@ -339,6 +345,7 @@ function DashboardContent() {
     const [availability, setAvailability] = useParamString('availability', '');
     const [modality, setModality] = useParamString('modality', 'all');
     const [specialtyParam, setSpecialtyParam] = useParamString('specialty', 'all');
+    const [gender, setGender] = useParamString('gender', 'all');
 
     // Semilla aleatoria con hidratación segura: genera un nuevo orden aleatorio en cada ingreso al directorio
     const [sessionSeed, setSessionSeed] = useState<number>(42);
@@ -380,7 +387,7 @@ function DashboardContent() {
         setLocalPriceLimit(priceLimit);
     }, [priceLimit]);
 
-    const [activePopover, setActivePopover] = useState<'fechas' | 'modalidad' | 'precio' | 'aseguradoras' | 'idiomas' | 'radar' | null>(null);
+    const [activePopover, setActivePopover] = useState<'fechas' | 'modalidad' | 'precio' | 'aseguradoras' | 'idiomas' | 'radar' | 'genero' | null>(null);
     const popoverRef = useRef<HTMLDivElement | null>(null);
 
     const [currentPage, setCurrentPage] = useParamNumber('page', 1);
@@ -681,8 +688,9 @@ function DashboardContent() {
             selectedLanguages.length > 0,
             selectedInsurances.length > 0,
             specialtyParam !== 'all',
+            gender !== 'all',
         ].filter(Boolean).length;
-    }, [availability, modality, priceLimit, selectedLanguages, selectedInsurances, specialtyParam]);
+    }, [availability, modality, priceLimit, selectedLanguages, selectedInsurances, specialtyParam, gender]);
     
     const deferredSearchTerm = useDeferredValue(searchTerm);
 
@@ -696,6 +704,7 @@ function DashboardContent() {
         modality !== 'all' || 
         specialtyParam !== 'all' || 
         availability !== '' || 
+        gender !== 'all' ||
         showOnlyFavorites ||
         showOnlyActive ||
         isNearMeActive ||
@@ -717,6 +726,15 @@ function DashboardContent() {
         setSelectedClinicIndex(0);
         setTargetPage(null);
         setActivePopover(null);
+        setGender('all');
+        setModality('all');
+        setAvailability('');
+        setSpecialtyParam('all');
+        setLocationTerm('');
+        setSortBy('default');
+        setShowOnlyActive(false);
+        setShowOnlyFavorites(false);
+        setPriceLimit(PRICE_LIMIT_MAX);
 
         // 2. Limpiar todos los parámetros de la URL en una sola navegación limpia y reordenar aleatoriamente
         const newSeed = Math.floor(Math.random() * 10000000) + 1;
@@ -893,7 +911,10 @@ function DashboardContent() {
                 }
             }
 
-            if (!(matchesLocation && matchesActive && matchesModality && matchesAvailability && matchesPrice && matchesSpecialtyParam && matchesLanguages && matchesInsurances && matchesRadar)) {
+            // Filtro de Sexo / Género del Doctor
+            const matchesGender = gender === 'all' || (doctor.doctor.exp_sexo || '').toUpperCase() === gender.toUpperCase();
+
+            if (!(matchesLocation && matchesActive && matchesModality && matchesAvailability && matchesPrice && matchesSpecialtyParam && matchesLanguages && matchesInsurances && matchesRadar && matchesGender)) {
                 return null;
             }
 
@@ -908,8 +929,9 @@ function DashboardContent() {
                 matchedSpecialty,
                 matchedLocation,
                 searchHighlight: [...searchTags, deferredSearchTerm.trim()].filter(Boolean),
+                selectedInsurances,
             };
-        }).filter(Boolean) as (typeof resolvedDoctors[0] & { matchedSpecialty?: string, matchedLocation?: string, searchHighlight?: string[] })[];
+        }).filter(Boolean) as (typeof resolvedDoctors[0] & { matchedSpecialty?: string; matchedLocation?: string; searchHighlight?: string[]; selectedInsurances?: string[] })[];
 
         return filteredDoctors.sort((leftDoctor, rightDoctor) => {
             if (selectedDoctorId) {
@@ -943,7 +965,7 @@ function DashboardContent() {
             // Por defecto: Presentación aleatoria (única y diferente en cada inicio de sesión)
             return getDoctorHash(leftDoctor.doctor.exp_codigo, sessionSeed) - getDoctorHash(rightDoctor.doctor.exp_codigo, sessionSeed);
         });
-    }, [locationTerm, activeModalities, availability, priceLimit, resolvedDoctors, deferredSearchTerm, showOnlyActive, showOnlyFavorites, favoritos, sortBy, activeSpecialties, searchTags, selectedLanguages, selectedInsurances, isNearMeActive, searchedLocation, getDistanceToDoctorCustom, selectedDoctorId, sessionSeed]);
+    }, [locationTerm, activeModalities, availability, priceLimit, resolvedDoctors, deferredSearchTerm, showOnlyActive, showOnlyFavorites, favoritos, sortBy, activeSpecialties, searchTags, selectedLanguages, selectedInsurances, isNearMeActive, searchedLocation, getDistanceToDoctorCustom, selectedDoctorId, sessionSeed, gender, radarRadiusKm]);
 
     const matchingRecentDoctors = useMemo(() => {
         const query = normalizeText(searchTerm.trim());
@@ -1080,8 +1102,11 @@ function DashboardContent() {
     // Si hay un médico seleccionado, se separa para mostrarse al inicio en su propia fila completa
     const selectedDoctorCard = useMemo(() => {
         if (!selectedDoctorId) return null;
-        return resolvedDoctors.find((d) => d.doctor.exp_codigo === selectedDoctorId) || null;
-    }, [selectedDoctorId, resolvedDoctors]);
+        const found = visibleDoctors.find((d) => d.doctor.exp_codigo === selectedDoctorId);
+        if (found) return found;
+        const res = resolvedDoctors.find((d) => d.doctor.exp_codigo === selectedDoctorId);
+        return res ? { ...res, selectedInsurances } : null;
+    }, [selectedDoctorId, visibleDoctors, resolvedDoctors, selectedInsurances]);
 
     const doctorsForGrid = useMemo(() => {
         if (!selectedDoctorId) return paginatedDoctors;
@@ -1117,10 +1142,20 @@ function DashboardContent() {
         () => Array.from(new Set(resolvedDoctors.flatMap((doctor) => doctor.languagePreview || []))).sort(),
         [resolvedDoctors],
     );
-    const insurancePicks = useMemo(
-        () => Array.from(new Set(resolvedDoctors.flatMap((doctor) => doctor.doctor.aseguradoras?.map(a => a.aseguradora) || []))).sort(),
-        [resolvedDoctors],
-    );
+    const insurancePicks = useMemo(() => {
+        const map = new Map<string, { aseguradora: string; imagen: string | null }>();
+        for (const doc of resolvedDoctors) {
+            for (const asg of doc.doctor.aseguradoras || []) {
+                if (asg.aseguradora) {
+                    const existing = map.get(asg.aseguradora);
+                    if (!existing || (!existing.imagen && asg.imagen)) {
+                        map.set(asg.aseguradora, { aseguradora: asg.aseguradora, imagen: asg.imagen || null });
+                    }
+                }
+            }
+        }
+        return Array.from(map.values()).sort((a, b) => a.aseguradora.localeCompare(b.aseguradora, 'es'));
+    }, [resolvedDoctors]);
 
     const toggleSpecialty = (id: string) => {
         if (id === 'all') {
@@ -1666,7 +1701,7 @@ function DashboardContent() {
                                 }`}
                             >
                                 <Calendar className={`w-4 h-4 shrink-0 ${availability ? 'text-sky-600 dark:text-sky-400' : 'text-slate-600 dark:text-slate-400'}`} />
-                                <span>{availability ? format(new Date(availability + 'T00:00:00'), 'd MMM', { locale: es }) : 'Fechas'}</span>
+                                <span>{availability ? format(new Date(availability + 'T00:00:00'), 'd MMM', { locale: es }) : 'Disponibilidad'}</span>
                                 {availability ? (
                                     <span
                                         role="button"
@@ -1872,25 +1907,47 @@ function DashboardContent() {
                             </button>
 
                             {activePopover === 'aseguradoras' && (
-                                <div className="absolute left-0 top-[calc(100%+8px)] z-[500] w-64 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-[0_20px_50px_rgba(0,0,0,0.18)] space-y-3 animate-in fade-in zoom-in-95 duration-150">
-                                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200 pb-1 border-b border-slate-100 dark:border-slate-800">
-                                        Seleccionar aseguradoras
+                                <div className="absolute left-0 top-[calc(100%+8px)] z-[500] w-72 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-[0_20px_50px_rgba(0,0,0,0.18)] space-y-3 animate-in fade-in zoom-in-95 duration-150">
+                                    <div className="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
+                                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                                            Seleccionar aseguradoras
+                                        </span>
+                                        {selectedInsurances.length > 0 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedInsurances([])}
+                                                className="text-[11px] font-semibold text-sky-600 hover:text-sky-700 dark:text-sky-400 cursor-pointer"
+                                            >
+                                                Limpiar
+                                            </button>
+                                        )}
                                     </div>
-                                    <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
-                                        {insurancePicks.length > 0 ? insurancePicks.map(ins => (
-                                            <label key={ins} className="flex items-center gap-2.5 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors text-xs font-medium text-slate-700 dark:text-slate-200">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={selectedInsurances.includes(ins)}
-                                                    onChange={(e) => {
-                                                        if (e.target.checked) setSelectedInsurances(prev => [...prev, ins]);
-                                                        else setSelectedInsurances(prev => prev.filter(i => i !== ins));
-                                                    }}
-                                                    className="rounded text-sky-600 focus:ring-sky-500 h-4 w-4"
-                                                />
-                                                <span className="truncate">{ins}</span>
-                                            </label>
-                                        )) : <span className="text-xs text-slate-400 p-2">Sin aseguradoras</span>}
+                                    <div className="flex flex-col gap-1 max-h-56 overflow-y-auto pr-1">
+                                        {insurancePicks.length > 0 ? insurancePicks.map(ins => {
+                                            const isChecked = selectedInsurances.includes(ins.aseguradora);
+                                            return (
+                                                <label
+                                                    key={ins.aseguradora}
+                                                    className={`flex items-center gap-2.5 p-1.5 rounded-xl cursor-pointer transition-colors text-xs font-medium ${
+                                                        isChecked
+                                                            ? 'bg-sky-50 dark:bg-sky-950/50 text-sky-900 dark:text-sky-100'
+                                                            : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200'
+                                                    }`}
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isChecked}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) setSelectedInsurances(prev => [...prev, ins.aseguradora]);
+                                                            else setSelectedInsurances(prev => prev.filter(i => i !== ins.aseguradora));
+                                                        }}
+                                                        className="rounded text-sky-600 focus:ring-sky-500 h-4 w-4 shrink-0"
+                                                    />
+                                                    <InsuranceLogoBadge asg={ins} size="xs" isHighlighted={isChecked} />
+                                                    <span className="truncate">{ins.aseguradora}</span>
+                                                </label>
+                                            );
+                                        }) : <span className="text-xs text-slate-400 p-2">Sin aseguradoras</span>}
                                     </div>
                                 </div>
                             )}
@@ -1955,6 +2012,95 @@ function DashboardContent() {
                                                 </button>
                                             );
                                         }) : <span className="text-xs text-slate-400 p-2">Sin idiomas</span>}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* 6. [ Sexo / Género del Doctor ] */}
+                        <div className="relative">
+                            <button
+                                type="button"
+                                onClick={() => setActivePopover(activePopover === 'genero' ? null : 'genero')}
+                                className={`px-4 py-2.5 rounded-full text-xs font-bold transition-all duration-150 flex items-center gap-2 whitespace-nowrap cursor-pointer shadow-2xs active:scale-98 ${
+                                    gender !== 'all'
+                                        ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-800 dark:text-sky-200 border border-sky-200/80 dark:border-sky-800/80'
+                                        : activePopover === 'genero'
+                                        ? 'bg-slate-200/90 dark:bg-slate-700 text-slate-900 dark:text-white'
+                                        : 'bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700/80'
+                                }`}
+                            >
+                                <User className={`w-4 h-4 shrink-0 ${gender !== 'all' ? 'text-sky-600 dark:text-sky-400' : 'text-slate-600 dark:text-slate-400'}`} />
+                                <span>{gender === 'F' ? 'Femenino' : gender === 'M' ? 'Masculino' : 'Género'}</span>
+                                {gender !== 'all' ? (
+                                    <span
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setGender('all');
+                                        }}
+                                        className="p-0.5 -mr-1 rounded-full hover:bg-sky-200/70 dark:hover:bg-sky-800/70 text-sky-600 dark:text-sky-300 transition-colors"
+                                        title="Limpiar filtro de sexo"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </span>
+                                ) : (
+                                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 dark:text-slate-500 transition-transform duration-150 ${activePopover === 'genero' ? 'rotate-180' : ''}`} />
+                                )}
+                            </button>
+
+                            {activePopover === 'genero' && (
+                                <div className="absolute left-0 top-[calc(100%+8px)] z-[500] w-64 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3.5 shadow-[0_20px_50px_rgba(0,0,0,0.18)] space-y-2 animate-in fade-in zoom-in-95 duration-150">
+                                    <div className="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
+                                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                                            Sexo del especialista
+                                        </span>
+                                        {gender !== 'all' && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setGender('all');
+                                                    setActivePopover(null);
+                                                }}
+                                                className="text-[11px] font-semibold text-sky-600 hover:text-sky-700 dark:text-sky-400 cursor-pointer"
+                                            >
+                                                Limpiar
+                                            </button>
+                                        )}
+                                    </div>
+                                    <div className="space-y-1">
+                                        {[
+                                            { id: 'all', label: 'Todos' },
+                                            { id: 'F', label: 'Femenino' },
+                                            { id: 'M', label: 'Masculino' },
+                                        ].map((opt) => {
+                                            const isSelected = gender === opt.id;
+                                            return (
+                                                <button
+                                                    key={opt.id}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setGender(opt.id);
+                                                        setActivePopover(null);
+                                                    }}
+                                                    className={`w-full flex items-start gap-2.5 p-2 rounded-xl text-left transition-all cursor-pointer ${
+                                                        isSelected
+                                                            ? 'bg-sky-50 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-700 text-sky-900 dark:text-sky-100'
+                                                            : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                                                    }`}
+                                                >
+                                                    <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+                                                        isSelected ? 'border-sky-600 bg-sky-600 text-white' : 'border-slate-300 dark:border-slate-600'
+                                                    }`}>
+                                                        {isSelected && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
+                                                    </div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="text-xs font-bold leading-tight">{opt.label}</p>
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             )}

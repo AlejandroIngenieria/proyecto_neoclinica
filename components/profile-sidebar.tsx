@@ -1,27 +1,38 @@
 'use client';
 
+import * as React from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import { signOut, useSession } from 'next-auth/react';
-import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft,
-  ChevronLeft,
+  ChevronRight,
   LogOut,
-  Menu,
+  Moon,
   Settings,
-  Stethoscope,
   Star,
-  UserPlus,
+  Sun,
   UserRound,
   Users,
-  X,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
+  SidebarRail,
+  SidebarSeparator,
+  SidebarTrigger,
+  useSidebar,
+} from '@/components/ui/sidebar';
 import ConfirmLogoutModal from '@/components/confirm-logout-modal';
 
-// ─── Navigation items ────────────────────────────────────────────────────────
+// ─── Navigation Items ────────────────────────────────────────────────────────
 
 const NAV_ITEMS = [
   { href: '/dashboard/perfil', label: 'Datos Personales', icon: UserRound },
@@ -30,29 +41,35 @@ const NAV_ITEMS = [
   { href: '/dashboard/perfil/configuracion', label: 'Configuración', icon: Settings },
 ];
 
-// ─── Component ───────────────────────────────────────────────────────────────
-
 export function ProfileSidebar() {
-  const { data: session } = useSession();
   const pathname = usePathname();
-  const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const [isDesktopOpen, setIsDesktopOpen] = useState(true);
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const { state } = useSidebar();
+  const isCollapsed = state === 'collapsed';
 
-  const userName = session?.user?.name || 'Usuario';
-  const userEmail = session?.user?.email || 'Sin correo';
-  const userImage = session?.user?.image || '';
+  const [showLogoutModal, setShowLogoutModal] = React.useState(false);
+  const [theme, setTheme] = React.useState<'light' | 'dark'>('light');
 
-  const userInitials = useMemo(
-    () =>
-      userName
-        .split(' ')
-        .filter(Boolean)
-        .slice(0, 2)
-        .map((part) => part[0]?.toUpperCase())
-        .join('') || 'U',
-    [userName],
-  );
+  // Sincronizar tema con document y localStorage
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const isDark =
+        document.documentElement.classList.contains('dark') ||
+        localStorage.getItem('theme') === 'dark';
+      setTheme(isDark ? 'dark' : 'light');
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    if (nextTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  };
 
   const isActive = (href: string) => {
     if (href === '/dashboard/perfil') {
@@ -61,134 +78,155 @@ export function ProfileSidebar() {
     return pathname.startsWith(href);
   };
 
-  const sidebarContent = (
-    <div className="flex h-full flex-col w-72 relative bg-white dark:bg-[#0B1120]">
-      {/* ── Toggle Collapse Button (Centered Right) ── */}
-      <button
-        onClick={() => setIsDesktopOpen(false)}
-        className="absolute right-0 top-1/2 z-50 flex h-12 w-6 -translate-y-1/2 items-center justify-center rounded-l-lg border-y border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0F172A] text-slate-400 dark:text-slate-400 shadow-sm transition hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 hidden lg:flex"
-        aria-label="Ocultar menú"
-      >
-        <ChevronLeft className="h-4 w-4" />
-      </button>
-
-      {/* ── Top Back Button ── */}
-      <div className="pt-4 px-5">
-        <Link
-          href="/dashboard"
-          className="group flex w-fit items-center gap-2 rounded-lg px-2 py-2 text-blue-600 dark:text-blue-400 transition-colors hover:bg-blue-50 dark:hover:bg-blue-950/40"
-        >
-          <ArrowLeft className="h-5 w-5 transition-transform group-hover:-translate-x-1" />
-          <span className="text-sm font-semibold">Volver al menú</span>
-        </Link>
-      </div>
-
-      {/* ── Navigation ── */}
-      <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
-        {NAV_ITEMS.map((item) => {
-          const active = isActive(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setIsMobileOpen(false)}
-              className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-200 ${
-                active
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <item.icon className={`h-[18px] w-[18px] shrink-0 ${active ? 'text-white' : 'text-slate-400 dark:text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400'}`} />
-              <span className="truncate">{item.label}</span>
-            </Link>
-          );
-        })}
-      </nav>
-
-      {/* ── Bottom actions ── */}
-      <div className="border-t border-slate-100 dark:border-slate-800 px-3 py-4 space-y-2">
-        <button
-          type="button"
-          onClick={() => setShowLogoutModal(true)}
-          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-rose-500 dark:text-rose-400 transition hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-300 cursor-pointer"
-        >
-          <LogOut className="h-4 w-4 shrink-0" />
-          <span className="truncate">Cerrar sesión</span>
-        </button>
-      </div>
-    </div>
-  );
-
   return (
     <>
-      {/* ── Toggle button (mobile always, desktop when closed) ── */}
-      <button
-        type="button"
-        onClick={() => {
-          setIsMobileOpen(true);
-          setIsDesktopOpen(true);
-        }}
-        className={`fixed top-6 left-6 z-40 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-xl shadow-blue-500/30 transition hover:bg-blue-700 ${
-          isDesktopOpen ? 'lg:hidden' : 'lg:flex'
-        }`}
-        aria-label="Abrir menú de perfil"
-      >
-        <Menu className="h-5 w-5" />
-      </button>
-
-      {/* ── Desktop sidebar ── */}
-      <AnimatePresence initial={false}>
-        {isDesktopOpen && (
-          <motion.aside
-            initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 288, opacity: 1 }}
-            exit={{ width: 0, opacity: 0 }}
-            transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="hidden lg:flex lg:shrink-0 lg:flex-col border-r border-slate-200/60 dark:border-slate-800 bg-white dark:bg-[#0B1120] backdrop-blur-xl sticky top-0 h-screen overflow-hidden"
-          >
-            {sidebarContent}
-          </motion.aside>
-        )}
-      </AnimatePresence>
-
-      {/* ── Mobile drawer ── */}
-      <AnimatePresence>
-        {isMobileOpen && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm lg:hidden"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsMobileOpen(false)}
-            />
-
-            {/* Panel */}
-            <motion.aside
-              className="fixed inset-y-0 left-0 z-50 w-72 bg-white dark:bg-[#0F172A] border-r border-slate-200 dark:border-slate-800 shadow-2xl lg:hidden"
-              initial={{ x: '-100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '-100%' }}
-              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            >
-              {/* Close button */}
-              <button
-                type="button"
-                onClick={() => setIsMobileOpen(false)}
-                className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 dark:text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-200"
-                aria-label="Cerrar menú"
+      <Sidebar collapsible="icon" className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all">
+        {/* ── Header ── */}
+        <SidebarHeader className="p-2">
+          {isCollapsed ? (
+            <div className="flex flex-col items-center gap-2 w-full py-1">
+              <SidebarTrigger className="h-8 w-8 rounded-lg text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors" />
+              <Link
+                href="/dashboard"
+                className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white hover:scale-105 transition-transform shadow-xs shrink-0"
+                title="Volver al Dashboard"
               >
-                <X className="h-5 w-5" />
-              </button>
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-2 px-1 py-1">
+              <Link
+                href="/dashboard"
+                className="flex items-center gap-2.5 rounded-xl p-1 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition group overflow-hidden"
+                title="Volver al menú principal"
+              >
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white shrink-0 group-hover:scale-105 transition-transform shadow-xs">
+                  <ArrowLeft className="h-4 w-4" />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs font-black tracking-tight text-slate-900 dark:text-white truncate">
+                    NeoClínica
+                  </span>
+                  <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+                    Volver al Dashboard
+                  </span>
+                </div>
+              </Link>
 
-              {sidebarContent}
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
+              <SidebarTrigger className="h-8 w-8 rounded-lg text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent shrink-0" />
+            </div>
+          )}
+        </SidebarHeader>
 
-      {/* Modal de confirmación de salida minimalista */}
+        <SidebarSeparator className="my-1" />
+
+        {/* ── Content Navigation ── */}
+        <SidebarContent className="px-2 py-2">
+          <SidebarGroup className="p-0">
+            {!isCollapsed && (
+              <SidebarGroupLabel className="text-[10px] font-black uppercase tracking-wider text-sidebar-foreground/60 px-2 mb-1.5">
+                Menú del Perfil
+              </SidebarGroupLabel>
+            )}
+            <SidebarGroupContent>
+              <SidebarMenu className="gap-2">
+                {NAV_ITEMS.map((item) => {
+                  const active = isActive(item.href);
+                  const Icon = item.icon;
+                  return (
+                    <SidebarMenuItem key={item.href} className="flex justify-center">
+                      <SidebarMenuButton
+                        asChild
+                        isActive={active}
+                        tooltip={item.label}
+                        size="default"
+                        className={`rounded-xl transition-all ${
+                          isCollapsed
+                            ? 'size-8! p-0! justify-center! items-center!'
+                            : 'w-full px-3 py-2.5'
+                        } text-xs font-bold ${
+                          active
+                            ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20 data-[active=true]:bg-blue-600 data-[active=true]:text-white'
+                            : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <Link
+                          href={item.href}
+                          className={`flex items-center ${
+                            isCollapsed
+                              ? 'justify-center w-full h-full'
+                              : 'gap-3 w-full'
+                          }`}
+                        >
+                          <Icon
+                            className={`h-4 w-4 shrink-0 ${
+                              active ? 'text-white' : 'text-slate-500 dark:text-slate-400'
+                            }`}
+                          />
+                          {!isCollapsed && <span className="truncate">{item.label}</span>}
+                          {active && !isCollapsed && (
+                            <ChevronRight className="ml-auto h-3.5 w-3.5 opacity-80" />
+                          )}
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+
+        {/* ── Footer ── */}
+        <SidebarFooter className="p-2 space-y-2 border-t border-sidebar-border">
+          <SidebarMenu className="gap-2">
+            {/* Theme Toggle Button */}
+            <SidebarMenuItem className="flex justify-center">
+              <SidebarMenuButton
+                onClick={toggleTheme}
+                tooltip={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+                className={`rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 cursor-pointer ${
+                  isCollapsed
+                    ? 'size-8! p-0! justify-center! items-center!'
+                    : 'w-full px-3 py-2'
+                }`}
+              >
+                {theme === 'dark' ? (
+                  <Sun className="h-4 w-4 text-amber-400 shrink-0" />
+                ) : (
+                  <Moon className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                )}
+                {!isCollapsed && (
+                  <span className="truncate">
+                    {theme === 'dark' ? 'Modo Claro' : 'Modo Oscuro'}
+                  </span>
+                )}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+
+            {/* Logout Button */}
+            <SidebarMenuItem className="flex justify-center">
+              <SidebarMenuButton
+                onClick={() => setShowLogoutModal(true)}
+                tooltip="Cerrar sesión"
+                className={`rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-300 cursor-pointer transition-colors ${
+                  isCollapsed
+                    ? 'size-8! p-0! justify-center! items-center!'
+                    : 'w-full px-3 py-2'
+                }`}
+              >
+                <LogOut className="h-4 w-4 shrink-0" />
+                {!isCollapsed && <span className="truncate">Cerrar sesión</span>}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+
+        <SidebarRail />
+      </Sidebar>
+
+      {/* Modal de confirmación de salida */}
       <ConfirmLogoutModal
         isOpen={showLogoutModal}
         onClose={() => setShowLogoutModal(false)}

@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import {
@@ -23,6 +24,7 @@ import {
   cleanZonasDomicilio,
 } from '@/types/doctor';
 import { useUserLocation } from '@/hooks/use-user-location';
+import { InsuranceLogoBadge } from '@/components/insurance-logo-badge';
 
 type DoctorCardMobileProps = {
   data: DoctorCardData;
@@ -42,6 +44,20 @@ export function DoctorCardMobile({
 
   const { getDistanceToDoctor } = useUserLocation();
   const distanceInfo = getDistanceToDoctor(doctor.clinicas);
+
+  const rawAseguradoras = doctor.aseguradoras || [];
+  const selectedInsurances = data.selectedInsurances || [];
+  const sortedAseguradoras = useMemo(() => {
+    const list = [...rawAseguradoras];
+    if (selectedInsurances.length === 0) return list;
+    return list.sort((a, b) => {
+      const aMatches = selectedInsurances.includes(a.aseguradora);
+      const bMatches = selectedInsurances.includes(b.aseguradora);
+      if (aMatches && !bMatches) return -1;
+      if (!aMatches && bMatches) return 1;
+      return 0;
+    });
+  }, [rawAseguradoras, selectedInsurances]);
 
   // Ubicación principal o distancia
   const primaryClinic = doctor.clinicas?.[0];
@@ -169,10 +185,33 @@ export function DoctorCardMobile({
           </p>
         </div>
 
-        {/* Ubicación / Sede */}
-        <div className="flex items-center gap-1 text-[11px] text-slate-600 truncate leading-none">
-          <MapPin className="w-3 h-3 text-sky-600 shrink-0" />
-          <span className="truncate">{locationOrDistance}</span>
+        {/* Ubicación / Sede y Aseguradoras */}
+        <div className="flex items-center justify-between gap-1 text-[11px] text-slate-600 truncate leading-none">
+          <div className="flex items-center gap-1 truncate min-w-0">
+            <MapPin className="w-3 h-3 text-sky-600 shrink-0" />
+            <span className="truncate">{locationOrDistance}</span>
+          </div>
+
+          {sortedAseguradoras.length > 0 && (
+            <div
+              className="flex items-center gap-0.5 shrink-0 ml-1"
+              title={`Aseguradoras: ${sortedAseguradoras.map((a) => a.aseguradora).join(', ')}`}
+            >
+              {sortedAseguradoras.slice(0, 3).map((asg, idx) => (
+                <InsuranceLogoBadge
+                  key={idx}
+                  asg={asg}
+                  isHighlighted={selectedInsurances.includes(asg.aseguradora)}
+                  size="xs"
+                />
+              ))}
+              {sortedAseguradoras.length > 3 && (
+                <span className="text-[9px] font-bold text-slate-500">
+                  +{sortedAseguradoras.length - 3}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Fila de Calificación, Precio y Modalidades */}

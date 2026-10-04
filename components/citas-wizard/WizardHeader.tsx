@@ -15,13 +15,10 @@ import {
 export function WizardHeader() {
   const router = useRouter();
   const { 
-    codMedico, modalidad,
-    servicioSeleccionado,
-    fecha, hora, step, setStep,
-    pacienteSeleccionado, motivo,
-    tipoPagoId, billeteraItemId,
+    codMedico,
+    step,
+    setStep,
     citaConfirmada,
-    grupoId, creandoNuevoGrupo, citasMultiples, omitirPago, pacienteModoCita
   } = useCitaStore();
 
   const { data: doctor } = useDoctorByCode(codMedico || "");
@@ -30,26 +27,11 @@ export function WizardHeader() {
     return null;
   }
 
-  const isMultiMode = !!(grupoId || creandoNuevoGrupo) && citasMultiples.length > 0;
-
-  const isStep1Done = step > 1 || (isMultiMode ? citasMultiples.length > 0 : !!(modalidad && fecha && hora));
-  const isStep2Done = step > 2 || (isStep1Done && (
-    isMultiMode && pacienteModoCita === 'variado'
-      ? citasMultiples.length > 0 && citasMultiples.every(c => !!(c.paciente || pacienteSeleccionado))
-      : !!pacienteSeleccionado
-  ));
-  const isStep3Done = step > 3 || (isStep2Done && (
-    isMultiMode && omitirPago
-      ? true
-      : !!(tipoPagoId || billeteraItemId)
-  ));
-  const isStep4Done = step === 4;
-
-  const stepsList: { num: CitaStep; label: string; icon: any; isDone: boolean; isCurrent: boolean; canNavigate: boolean }[] = [
-    { num: 1, label: 'Horario', icon: CalendarClock, isDone: isStep1Done, isCurrent: step === 1, canNavigate: step > 1 },
-    { num: 2, label: 'Paciente', icon: User, isDone: isStep2Done, isCurrent: step === 2, canNavigate: isStep1Done && step > 2 },
-    { num: 3, label: 'Pago', icon: CreditCard, isDone: isStep3Done, isCurrent: step === 3, canNavigate: isStep2Done && step > 3 },
-    { num: 4, label: 'Confirmar', icon: ShieldCheck, isDone: isStep4Done, isCurrent: step === 4, canNavigate: false },
+  const stepsList: { num: CitaStep; label: string; icon: any }[] = [
+    { num: 1, label: 'Horario', icon: CalendarClock },
+    { num: 2, label: 'Paciente', icon: User },
+    { num: 3, label: 'Pago', icon: CreditCard },
+    { num: 4, label: 'Confirmar', icon: ShieldCheck },
   ];
 
   return (
@@ -92,36 +74,38 @@ export function WizardHeader() {
         <div className="flex items-center gap-1.5 sm:gap-2.5 bg-white dark:bg-[#1E293B] px-3.5 py-1.5 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xs shrink-0">
           {stepsList.map((s, idx, arr) => {
             const IconComponent = s.icon;
-            const isCompleted = s.isDone && !s.isCurrent;
+            const isPassed = step > s.num;
+            const isCurrent = step === s.num;
+            const canNavigate = step > s.num;
 
             return (
               <div key={s.num} className="flex items-center gap-1.5 sm:gap-2">
                 <button
                   type="button"
-                  onClick={() => s.canNavigate && setStep(s.num)}
-                  disabled={!s.canNavigate}
+                  onClick={() => canNavigate && setStep(s.num)}
+                  disabled={!canNavigate}
                   className={`flex items-center gap-1.5 py-1 px-1.5 sm:px-2 rounded-xl transition-all duration-200 ${
-                    s.canNavigate ? 'cursor-pointer hover:opacity-80' : 'cursor-default'
+                    canNavigate ? 'cursor-pointer hover:opacity-80' : 'cursor-default'
                   } ${
-                    isCompleted
-                      ? 'text-emerald-700 dark:text-emerald-300'
-                      : s.isCurrent
-                      ? 'text-sky-700 dark:text-sky-300 font-extrabold'
-                      : 'text-slate-400 dark:text-slate-500'
+                    isPassed
+                      ? 'text-emerald-700 dark:text-emerald-300 font-semibold'
+                      : isCurrent
+                      ? 'text-blue-700 dark:text-blue-300 font-extrabold'
+                      : 'text-slate-400 dark:text-slate-500 font-medium'
                   }`}
-                  title={`Paso ${s.num}: ${s.label}${isCompleted ? ' (Completado - Clic para volver)' : ''}`}
+                  title={`Paso ${s.num}: ${s.label}${isPassed ? ' (Completado - Clic para volver)' : isCurrent ? ' (Paso actual)' : ''}`}
                 >
                   {/* Minimalist Icon Badge */}
                   <div
                     className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 ${
-                      isCompleted
+                      isPassed
                         ? 'bg-emerald-500 text-white shadow-xs ring-2 ring-emerald-200 dark:ring-emerald-900/60'
-                        : s.isCurrent
-                        ? 'bg-sky-600 text-white shadow-sm shadow-sky-600/30 ring-2 ring-sky-300 dark:ring-sky-700'
+                        : isCurrent
+                        ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30 ring-2 ring-blue-300 dark:ring-blue-700'
                         : 'bg-slate-100 dark:bg-slate-800/80 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700'
                     }`}
                   >
-                    {isCompleted ? (
+                    {isPassed ? (
                       <Check className="w-3.5 h-3.5 stroke-[3.5]" />
                     ) : (
                       <IconComponent className="w-3.5 h-3.5" />
@@ -130,7 +114,7 @@ export function WizardHeader() {
 
                   {/* Minimalist Label */}
                   <span className={`text-[11px] font-bold tracking-tight hidden sm:inline ${
-                    s.isCurrent ? 'text-slate-900 dark:text-white font-extrabold' : ''
+                    isCurrent ? 'text-slate-900 dark:text-white font-extrabold' : ''
                   }`}>
                     {s.label}
                   </span>
@@ -140,7 +124,7 @@ export function WizardHeader() {
                 {idx < arr.length - 1 && (
                   <div
                     className={`w-2 sm:w-3.5 h-0.5 rounded-full transition-colors duration-300 ${
-                      s.isDone ? 'bg-emerald-400 dark:bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'
+                      step > s.num ? 'bg-emerald-400 dark:bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'
                     }`}
                   />
                 )}

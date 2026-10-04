@@ -37,6 +37,12 @@ export interface PacienteSeleccionDto {
   nombreCompleto: string;
   pacFechaNacimiento: string | null;
   pacFotoPerfilUrl?: string;
+  pacFotoCarneSeguro?: string | null;
+  pac_foto_carne_seguro?: string | null;
+  segCodAse?: number | null;
+  aseguradoraNombre?: string | null;
+  segNumeroPoliza?: string | null;
+  aseguradoraImagen?: string | null;
 }
 
 export interface GrupoCitaItemDto {
@@ -89,6 +95,8 @@ export interface CrearCitaRequest {
   enlaceVideollamada?: string | null;
   recompensaCodigo?: number | null;
   rcpCodigo?: number | null;
+  tipoPagoId?: number | null;
+  referenciaPago?: string | null;
   archivos?: File[];
 }
 
@@ -197,6 +205,9 @@ export interface CitaListDto {
   estadoPago?: 'pendiente' | 'pagado' | 'fallido' | 'reembolsado' | null;
   tipoPagoId?: number | null;
   tipoPagoDescripcion?: string | null;
+  // Llegada presencial a clínica
+  ctaEnClinica?: boolean;
+  ctaFechaLlegadaClinica?: string | null;
 }
 
 export interface UpdateCitaRequest {
@@ -246,11 +257,24 @@ export interface BilleteraMetodoDto {
   proveedor: string; // "Visa", "GNP", etc.
   descripcion: string; // "**** 1234" o "Póliza: 98765"
   es_principal: boolean;
+  imagen_url?: string | null;
+  cod_ase?: number | null;
+  foto_carne_url?: string | null;
+  foto_carne_reverso_url?: string | null;
+}
+
+export interface AseguradoraCatalogoDto {
+  aseCodigo: number;
+  aseDescripcion: string;
+  aseImagen: string | null;
 }
 
 export interface GuardarSeguroRequest {
   codAse: number;
   numeroPoliza: string;
+  fotoCarneUrl?: string | null;
+  fotoCarneReversoUrl?: string | null;
+  segCodigo?: string | null;
 }
 
 export interface GuardarTarjetaRequest {
@@ -271,6 +295,8 @@ export interface ColaTurnoDto {
   medicoEspecialidad: string;
   clinicaNombre?: string | null;
   servicioNombre?: string | null;
+  enClinica?: boolean;
+  fechaLlegadaClinica?: string | null;
 }
 
 export interface SolicitudCambioDto {

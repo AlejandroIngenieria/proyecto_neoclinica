@@ -17,9 +17,11 @@ import {
   Volume2,
   VolumeX,
   Megaphone,
+  Building2,
 } from 'lucide-react';
 import { useColaDelDia } from '@/hooks/use-cola-dia';
 import { useTurnVoice } from '@/hooks/use-turn-voice';
+import { useMarcarLlegadaClinica } from '@/hooks/use-flujo-citas';
 import type { CitaListDto } from '@/types/citas';
 
 interface ColaTurnosWidgetProps {
@@ -29,11 +31,28 @@ interface ColaTurnosWidgetProps {
 
 export function ColaTurnosWidget({ citaHoy, pacienteActualId }: { citaHoy: CitaListDto; pacienteActualId?: string | null }) {
   const fechaCita = citaHoy.ctaFecha ? citaHoy.ctaFecha.split('T')[0] : '';
+  const marcarLlegadaMutation = useMarcarLlegadaClinica();
   const { data: turnos = [], isLoading, isRefetching, refetch } = useColaDelDia(
     citaHoy.ctaCoddoc,
     fechaCita,
     pacienteActualId || citaHoy.ctaCodpac
   );
+
+  // Verificación estricta: ÚNICAMENTE el día de la cita (no antes, ni después)
+  const isToday = useMemo(() => {
+    if (!citaHoy?.ctaFecha) return false;
+    try {
+      const citaDatePart = citaHoy.ctaFecha.includes('T') ? citaHoy.ctaFecha.split('T')[0] : citaHoy.ctaFecha;
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const todayStr = `${year}-${month}-${day}`;
+      return citaDatePart === todayStr;
+    } catch {
+      return false;
+    }
+  }, [citaHoy?.ctaFecha]);
 
   // Encontrar el turno del paciente y el turno en consulta
   const miTurno = useMemo(() => {
@@ -216,6 +235,31 @@ export function ColaTurnosWidget({ citaHoy, pacienteActualId }: { citaHoy: CitaL
                 En consulta: Turno #{turnoEnConsulta.turnoNumero}
               </div>
             )}
+
+            {/* Botón / Confirmación de llegada a clínica si es presencial y es el día de la cita */}
+            {miTurno && isToday && (citaHoy.ctaModalidad || '').toLowerCase() === 'presencial' && (
+              miTurno.enClinica ? (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 text-[11px] font-black text-teal-700 dark:text-teal-300 self-start sm:self-auto shadow-2xs">
+                  <Building2 className="h-3.5 w-3.5 text-teal-600" />
+                  <span>En la clínica</span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={marcarLlegadaMutation.isPending}
+                  onClick={() => marcarLlegadaMutation.mutate(miTurno.ctaCodigo)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black shadow-xs active:scale-95 transition cursor-pointer self-start sm:self-auto"
+                  title="Confirmar que ya llegaste a la clínica"
+                >
+                  {marcarLlegadaMutation.isPending ? (
+                    <RefreshCw className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Building2 className="h-3 w-3" />
+                  )}
+                  <span>Ya estoy en la clínica</span>
+                </button>
+              )
+            )}
           </div>
         ) : null}
       </div>
@@ -226,9 +270,10 @@ export function ColaTurnosWidget({ citaHoy, pacienteActualId }: { citaHoy: CitaL
           <p className="text-xs font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
             Avance de Turnos del Día ({turnos.length} programados)
           </p>
-          <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
+          <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400 font-semibold flex-wrap">
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Atendidos ({turnosAtendidos})</span>
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-500" /> En Consulta</span>
+            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-teal-500" /> En Clínica</span>
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-slate-400" /> En Espera</span>
           </div>
         </div>
@@ -300,7 +345,15 @@ export function ColaTurnosWidget({ citaHoy, pacienteActualId }: { citaHoy: CitaL
                   </div>
 
                   {/* Estado Visual */}
-                  <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                  <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800/80 flex flex-col gap-1">
+                    {/* Indicador de paciente en la clínica (para cualquier turno) */}
+                    {t.enClinica && (
+                      <span className="inline-flex items-center gap-1 text-[9px] font-black text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 border border-teal-200/80 dark:border-teal-800/80 px-1.5 py-0.5 rounded-md w-full justify-center shadow-2xs" title="El paciente de este turno ya se encuentra en la clínica">
+                        <Building2 className="h-2.5 w-2.5 text-teal-600 dark:text-teal-400" />
+                        <span>En clínica</span>
+                      </span>
+                    )}
+
                     {isEnProceso ? (
                       <span className="inline-flex items-center gap-1 text-[10px] font-black text-amber-700 dark:text-amber-300 bg-amber-100/80 dark:bg-amber-900/50 px-2 py-0.5 rounded-md w-full justify-center">
                         <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-ping" />
