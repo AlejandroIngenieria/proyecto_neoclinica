@@ -67,7 +67,7 @@ export async function fetchHorarios(token: string, mclCodigo: number): Promise<H
   return Array.isArray(data) ? data : [];
 }
 
-export async function fetchHorasOcupadas(token: string, codMedico: string, fecha: string): Promise<string[]> {
+export async function fetchHorasOcupadas(token: string | null | undefined, codMedico: string, fecha: string): Promise<string[]> {
   const { data } = await expedientesApi.get<string[]>(
     `/api/flujo-citas/medicos/${codMedico}/horas-ocupadas?fecha=${fecha}`,
     getAuthHeaders(token)
@@ -143,12 +143,18 @@ export async function createCita(token: string, request: CrearCitaRequest): Prom
   if (request.rcpCodigo) formData.append('RcpCodigo', String(request.rcpCodigo));
   if (request.tipoPagoId) formData.append('TipoPagoId', String(request.tipoPagoId));
   if (request.referenciaPago) formData.append('ReferenciaPago', request.referenciaPago);
+  if (request.tipoConsulta) formData.append('TipoConsulta', request.tipoConsulta);
 
   // 3. Archivos adjuntos
   if (request.archivos && request.archivos.length > 0) {
     request.archivos.forEach((archivo) => {
       formData.append('Archivos', archivo);
     });
+  }
+
+  // 4. Comprobante de transferencia bancaria
+  if (request.comprobanteTransferencia) {
+    formData.append('ComprobanteTransferencia', request.comprobanteTransferencia);
   }
 
   const authHeaders = getAuthHeaders(token).headers as any;

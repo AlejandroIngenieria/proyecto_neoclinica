@@ -8,7 +8,7 @@ import {
 } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { useCitaStore } from '@/store/use-cita-store';
-import { ChevronLeft, MapPin, Video, Home, Stethoscope, ArrowRight, CalendarDays, Building2, BriefcaseMedical, CalendarClock, Activity, ClipboardList, Plus, Loader2, UploadCloud, FileText, X, CheckCircle2, Sparkles, AlertCircle, Users, User, Check } from 'lucide-react';
+import { ChevronLeft, MapPin, Video, Home, Stethoscope, ArrowRight, CalendarDays, Building2, BriefcaseMedical, CalendarClock, Activity, ClipboardList, Plus, Loader2, UploadCloud, FileText, X, CheckCircle2, Sparkles, AlertCircle, Users, User, Check, Crown, HardDrive } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { usePacienteTitular, usePacientesByUsuario } from '@/hooks/use-pacientes';
@@ -16,8 +16,11 @@ import type { PacienteSeleccionDto } from '@/types/citas';
 import { PacienteFormModal } from '@/components/paciente-form-modal';
 import { NeoLoader } from '@/components/neo-loader';
 import { toast } from 'sonner';
+import { compressImageFile, formatBytes } from '@/utils/image-compression';
 
 const MAX_ARCHIVOS = 5;
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB individual
+const MAX_TOTAL_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB acumulado total por cita
 
 const MOTIVOS = [
   {
@@ -165,29 +168,118 @@ export function Step2PacienteMotivo() {
     document.body.scrollTop = 0;
   }, []);
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
+  const [isCompressing, setIsCompressing] = useState(false);
+
+  const totalBytesUsados = useMemo(() => {
+    return archivos.reduce((acc, f) => acc + (f.size || 0), 0);
+  }, [archivos]);
+
+  const porcentajeUsado = useMemo(() => {
+    return Math.min(100, Math.round((totalBytesUsados / MAX_TOTAL_SIZE_BYTES) * 100));
+  }, [totalBytesUsados]);
+
+  const limiteAlcanzado = archivos.length >= MAX_ARCHIVOS || totalBytesUsados >= MAX_TOTAL_SIZE_BYTES;
+
+  const onDrop = useCallback(async (acceptedFiles: File[], fileRejections: any[]) => {
+    if (fileRejections && fileRejections.length > 0) {
+      fileRejections.forEach(rej => {
+        if (rej.errors?.some((e: any) => e.code === 'file-too-large')) {
+          toast.warning(`"${rej.file.name}" supera el límite individual de 5 MB.`);
+        }
+      });
+    }
+
+    if (acceptedFiles.length === 0) return;
+
     const slotsDisponibles = MAX_ARCHIVOS - archivos.length;
     if (slotsDisponibles <= 0) {
       toast.warning(`Has alcanzado el límite máximo de ${MAX_ARCHIVOS} archivos.`);
       return;
     }
 
-    if (acceptedFiles.length > slotsDisponibles) {
-      toast.warning(`Solo se agregaron ${slotsDisponibles} archivo(s) para no superar el límite de ${MAX_ARCHIVOS}.`);
-      setArchivos([...archivos, ...acceptedFiles.slice(0, slotsDisponibles)]);
-    } else {
-      setArchivos([...archivos, ...acceptedFiles]);
+    if (totalBytesUsados >= MAX_TOTAL_SIZE_BYTES) {
+      toast.warning('Has alcanzado el límite de 25 MB de adjuntos para esta cita.');
+      return;
     }
-  }, [archivos, setArchivos]);
+
+    setIsCompressing(true);
+    const toastId = toast.loading('Optimizando y procesando archivos adjuntos...');
+
+    try {
+      // 1. Aplicar compresión inteligente a imágenes (reduce fotos pesadas de smartphones)
+      const archivosProcesados: File[] = [];
+      for (const file of acceptedFiles) {
+        if (file.type.startsWith('image/')) {
+          try {
+            const compressed = await compressImageFile(file, {
+              maxDimension: 1920,
+              quality: 0.82,
+              maxSizeBytes: 1024 * 1024,
+            });
+            archivosProcesados.push(compressed);
+          } catch {
+            archivosProcesados.push(file);
+          }
+        } else {
+          archivosProcesados.push(file);
+        }
+      }
+
+      // 2. Validar que cada archivo individual <= 5 MB
+      const archivosValidosIndividual: File[] = [];
+      for (const f of archivosProcesados) {
+        if (f.size > MAX_FILE_SIZE_BYTES) {
+          toast.error(`"${f.name}" (${formatBytes(f.size)}) excede el límite máximo de 5 MB por archivo.`);
+        } else {
+          archivosValidosIndividual.push(f);
+        }
+      }
+
+      if (archivosValidosIndividual.length === 0) {
+        toast.dismiss(toastId);
+        return;
+      }
+
+      // 3. Respetar slots disponibles (máximo 5)
+      const archivosParaEvaluar = archivosValidosIndividual.slice(0, slotsDisponibles);
+      if (archivosValidosIndividual.length > slotsDisponibles) {
+        toast.info(`Solo se procesaron ${slotsDisponibles} archivo(s) para no exceder el máximo de ${MAX_ARCHIVOS}.`);
+      }
+
+      // 4. Validar suma total acumulada <= 25 MB
+      let acumulado = totalBytesUsados;
+      const archivosFinales: File[] = [];
+      for (const f of archivosParaEvaluar) {
+        if (acumulado + f.size > MAX_TOTAL_SIZE_BYTES) {
+          toast.error(`"${f.name}" (${formatBytes(f.size)}) excede la capacidad disponible de 25 MB para esta cita.`);
+        } else {
+          acumulado += f.size;
+          archivosFinales.push(f);
+        }
+      }
+
+      toast.dismiss(toastId);
+
+      if (archivosFinales.length > 0) {
+        setArchivos([...archivos, ...archivosFinales]);
+        toast.success(`Se ${archivosFinales.length === 1 ? 'adjuntó 1 archivo' : `adjuntaron ${archivosFinales.length} archivos`} optimizados.`);
+      }
+    } catch (e) {
+      toast.dismiss(toastId);
+      console.error(e);
+      toast.error('Ocurrió un error al procesar los archivos.');
+    } finally {
+      setIsCompressing(false);
+    }
+  }, [archivos, totalBytesUsados, setArchivos]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'image/*': ['.jpeg', '.jpg', '.png'],
+      'image/*': ['.jpeg', '.jpg', '.png', '.webp'],
       'application/pdf': ['.pdf']
     },
-    maxSize: 5 * 1024 * 1024, // 5MB
-    disabled: archivos.length >= MAX_ARCHIVOS,
+    disabled: limiteAlcanzado || isCompressing,
     maxFiles: MAX_ARCHIVOS
   });
 
@@ -580,72 +672,181 @@ export function Step2PacienteMotivo() {
 
         {/* SECTION 4: ARCHIVOS (OPCIONAL) */}
         <div className={`transition-all duration-300 ${pacienteSeleccionado ? 'opacity-100 translate-y-0' : 'opacity-40 pointer-events-none translate-y-4'}`}>
-          <div className="flex items-center justify-between mb-1">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-1">
             <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Documentos previos (Opcional)</h2>
-            <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
-              archivos.length >= MAX_ARCHIVOS 
-                ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400' 
-                : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
-            }`}>
-              {archivos.length} de {MAX_ARCHIVOS} archivos
-            </span>
+            <div className="flex items-center gap-2">
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
+                archivos.length >= MAX_ARCHIVOS 
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400' 
+                  : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+              }`}>
+                {archivos.length} de {MAX_ARCHIVOS} archivos
+              </span>
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
+                totalBytesUsados >= MAX_TOTAL_SIZE_BYTES
+                  ? 'bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-400'
+                  : totalBytesUsados > 18 * 1024 * 1024
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400'
+                    : 'bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400'
+              }`}>
+                {formatBytes(totalBytesUsados)} / 25 MB
+              </span>
+            </div>
           </div>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
-            Puedes adjuntar recetas anteriores, resultados de laboratorio o imágenes relevantes. (Máximo {MAX_ARCHIVOS} archivos, hasta 5MB c/u)
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+            Adjunta recetas anteriores, resultados de laboratorio o imágenes. Con optimización inteligente de compresión automática (hasta 5MB por archivo, máx. 25MB total por cita).
           </p>
 
+          {/* BARRA DE PROGRESO DE ALMACENAMIENTO DE ARCHIVOS */}
+          <div className="mb-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0F172A] p-4 shadow-2xs">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="flex items-center gap-2">
+                <HardDrive className={`w-4 h-4 ${porcentajeUsado >= 100 ? 'text-rose-500' : porcentajeUsado >= 70 ? 'text-amber-500' : 'text-blue-600 dark:text-blue-400'}`} />
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                  Capacidad de adjuntos de la cita: {formatBytes(totalBytesUsados)} de 25.0 MB ({porcentajeUsado}%)
+                </span>
+              </div>
+              <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+                {formatBytes(Math.max(0, MAX_TOTAL_SIZE_BYTES - totalBytesUsados))} libres
+              </span>
+            </div>
+
+            {/* Barra Visual */}
+            <div className="w-full h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+              <div
+                className={`h-full transition-all duration-300 rounded-full ${
+                  porcentajeUsado >= 90
+                    ? 'bg-rose-500'
+                    : porcentajeUsado >= 65
+                      ? 'bg-amber-500'
+                      : 'bg-gradient-to-r from-blue-600 to-indigo-500'
+                }`}
+                style={{ width: `${porcentajeUsado}%` }}
+              />
+            </div>
+
+            {limiteAlcanzado && (
+              <p className="text-xs font-semibold text-rose-600 dark:text-rose-400 mt-2 flex items-center gap-1.5 animate-in fade-in">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                {archivos.length >= MAX_ARCHIVOS
+                  ? `Has alcanzado el límite máximo de ${MAX_ARCHIVOS} archivos permitidos para esta cita.`
+                  : 'Has alcanzado el límite de 25 MB permitido para esta cita. Elimina algún archivo si deseas subir otro.'}
+              </p>
+            )}
+          </div>
+
+          {/* DROPZONE DE CARGA */}
           <div
             {...getRootProps()}
             className={`flex flex-col items-center justify-center rounded-3xl border-2 border-dashed p-8 transition-colors ${
-              archivos.length >= MAX_ARCHIVOS 
+              limiteAlcanzado || isCompressing
                 ? 'opacity-60 bg-slate-100 dark:bg-slate-900/50 border-slate-300 dark:border-slate-800 cursor-not-allowed'
                 : isDragActive 
-                  ? 'border-sky-500 bg-sky-50 dark:bg-sky-900/20 cursor-pointer' 
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 cursor-pointer' 
                   : 'border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-[#0F172A] hover:bg-slate-100 dark:hover:bg-[#1E293B] cursor-pointer'
             }`}
           >
             <input {...getInputProps()} />
-            <UploadCloud className={`h-10 w-10 ${
-              archivos.length >= MAX_ARCHIVOS 
-                ? 'text-slate-400 dark:text-slate-600' 
-                : isDragActive 
-                  ? 'text-sky-500' 
-                  : 'text-slate-400 dark:text-slate-500'
-            }`} />
-            <p className="mt-4 text-sm font-bold text-slate-700 dark:text-slate-300 text-center">
-              {archivos.length >= MAX_ARCHIVOS 
-                ? `Has alcanzado el límite máximo de ${MAX_ARCHIVOS} archivos`
-                : isDragActive 
-                  ? 'Suelta los archivos aquí...' 
-                  : 'Haz clic o arrastra archivos aquí'}
-            </p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              {archivos.length >= MAX_ARCHIVOS 
-                ? 'Elimina algún archivo adjunto si necesitas subir otro' 
-                : 'PDF, JPG o PNG (máx. 5MB)'}
-            </p>
+            {isCompressing ? (
+              <div className="flex flex-col items-center justify-center py-2">
+                <Loader2 className="h-10 w-10 text-blue-600 dark:text-blue-400 animate-spin" />
+                <p className="mt-3 text-sm font-bold text-slate-700 dark:text-slate-300">
+                  Comprimiendo y optimizando imágenes...
+                </p>
+                <p className="text-xs text-slate-400">
+                  Reduciendo peso automáticamente para evitar demoras
+                </p>
+              </div>
+            ) : (
+              <>
+                <UploadCloud className={`h-10 w-10 ${
+                  limiteAlcanzado 
+                    ? 'text-slate-400 dark:text-slate-600' 
+                    : isDragActive 
+                      ? 'text-blue-500' 
+                      : 'text-slate-400 dark:text-slate-500'
+                }`} />
+                <p className="mt-4 text-sm font-bold text-slate-700 dark:text-slate-300 text-center">
+                  {limiteAlcanzado 
+                    ? 'Límite de capacidad alcanzado (5 archivos o 25 MB)'
+                    : isDragActive 
+                      ? 'Suelta los archivos aquí...' 
+                      : 'Haz clic o arrastra archivos aquí'}
+                </p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 text-center">
+                  {limiteAlcanzado 
+                    ? 'Elimina algún archivo adjunto si necesitas subir otro' 
+                    : 'PDF, JPG, PNG o WEBP (máx. 5MB por archivo · Auto-compresión activa)'}
+                </p>
+              </>
+            )}
           </div>
 
+          {/* LISTA DE ARCHIVOS ADJUNTOS */}
           {archivos.length > 0 && (
-            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
               {archivos.map((file, idx) => (
-                <div key={idx} className="flex items-center justify-between rounded-xl border border-slate-200 dark:border-slate-700 p-3 bg-white dark:bg-[#1E293B] shadow-sm">
-                  <div className="flex items-center gap-3 overflow-hidden">
-                    <FileText className="h-5 w-5 shrink-0 text-sky-500" />
-                    <p className="truncate text-sm font-semibold text-slate-700 dark:text-slate-200">{file.name}</p>
+                <div key={idx} className="flex items-center justify-between rounded-xl border border-slate-200 dark:border-slate-700 p-3 bg-white dark:bg-[#1E293B] shadow-xs">
+                  <div className="flex items-center gap-3 overflow-hidden min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                      <FileText className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-bold text-slate-800 dark:text-slate-200">{file.name}</p>
+                      <p className="text-[10px] text-slate-400 font-semibold">{formatBytes(file.size)}</p>
+                    </div>
                   </div>
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       removeFile(idx);
                     }}
-                    className="rounded-lg p-1 text-slate-400 dark:text-slate-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 hover:text-rose-600 transition"
+                    className="rounded-lg p-1.5 text-slate-400 dark:text-slate-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 hover:text-rose-600 transition cursor-pointer"
                     title="Eliminar"
                   >
                     <X className="h-4 w-4" />
                   </button>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* BANNER PROMOCIONAL PACIENTE PREMIUM AL LLEGAR AL LÍMITE */}
+          {limiteAlcanzado && (
+            <div className="mt-6 p-5 sm:p-6 rounded-3xl border border-amber-300/80 dark:border-amber-500/30 bg-gradient-to-br from-amber-50 via-amber-100/40 to-yellow-50 dark:from-amber-950/40 dark:via-yellow-950/20 dark:to-[#0F172A] shadow-md animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-400 text-white flex items-center justify-center shrink-0 shadow-md shadow-amber-500/20">
+                    <Crown className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-base font-black text-amber-950 dark:text-amber-200 tracking-tight">
+                        ¿Necesitas adjuntar más expedientes? Hazte Paciente Premium
+                      </h4>
+                      <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3" /> Membresía Exclusiva
+                      </span>
+                    </div>
+                    <p className="text-xs text-amber-900/80 dark:text-amber-200/80 mt-1 max-w-xl leading-relaxed">
+                      Has alcanzado el límite de almacenamiento de esta cita ({archivos.length} archivos o 25 MB). Con <strong>NeoClínica Premium</strong>, disfruta de almacenamiento médico ilimitado en la nube para todos tus expedientes y estudios clínicos, atención preferencial y descuentos especiales.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    toast.info('Pronto podrás activar tu suscripción Paciente Premium con almacenamiento ilimitado directamente desde tu perfil.', {
+                      duration: 4000,
+                    });
+                  }}
+                  className="w-full sm:w-auto shrink-0 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 text-white font-bold text-xs shadow-md shadow-amber-600/20 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Crown className="w-3.5 h-3.5" /> Suscribirme como Paciente Premium
+                </button>
+              </div>
             </div>
           )}
         </div>

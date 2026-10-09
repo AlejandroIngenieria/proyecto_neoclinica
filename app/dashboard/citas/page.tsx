@@ -39,6 +39,8 @@ import {
   SlidersHorizontal,
   ArrowLeftRight,
   Activity,
+  Building2,
+  BookOpen,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -172,6 +174,7 @@ interface CustomDropdownProps<T extends string = string> {
   icon?: React.ReactNode;
   placeholder?: string;
   className?: string;
+  align?: 'left' | 'right';
 }
 
 function CustomDropdown<T extends string = string>({
@@ -182,6 +185,7 @@ function CustomDropdown<T extends string = string>({
   icon,
   placeholder = 'Seleccionar...',
   className = '',
+  align = 'left',
 }: CustomDropdownProps<T>) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -261,7 +265,7 @@ function CustomDropdown<T extends string = string>({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.95 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
-            className="absolute left-0 mt-2 min-w-full w-max max-w-[320px] bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-slate-200/90 dark:border-slate-700 p-1.5 z-50 overflow-hidden"
+            className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} mt-2 min-w-full w-max max-w-[320px] bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-slate-200/90 dark:border-slate-700 p-1.5 z-50 overflow-hidden`}
           >
             <div className="max-h-60 overflow-y-auto scrollbar-thin py-0.5 space-y-0.5">
               {options.map((opt) => {
@@ -320,8 +324,6 @@ function CitasContent() {
 
   const { data: citasData, isLoading: loadingCitas } = useAllCitasPacientes(codigosPacientes);
 
-  // Auto-sincronizar en la base de datos las citas pasadas
-  useAutoCompletarCitasPasadas(citasData);
 
   // Sort all citas by date descending
   const citas = useMemo(() => {
@@ -334,6 +336,7 @@ function CitasContent() {
   const [selectedPacienteId, setSelectedPacienteId] = useState<string | null>(null);
   const [medicoSeleccionado, setMedicoSeleccionado] = useState<string>('');
   const [grupoSeleccionado, setGrupoSeleccionado] = useState<string>('');
+  const [modalidadSeleccionada, setModalidadSeleccionada] = useState<string>('');
   const [linkGroupCita, setLinkGroupCita] = useState<CitaListDto | null>(null);
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
   const [quickFilter, setQuickFilter] = useState<'todas' | '24hrs' | 'semana'>('todas');
@@ -473,21 +476,16 @@ function CitasContent() {
   const citasConTemas = useMemo(() => {
     const now = new Date();
     return citas.map((c) => {
-      let estado = c.ctaEstado;
       let isPast = false;
       try {
         const citaDateTime = new Date(`${c.ctaFecha.split('T')[0]}T${c.ctaHora || '00:00:00'}`);
         if (citaDateTime < now) {
           isPast = true;
-          if (estado === 'programada' && now.getTime() - citaDateTime.getTime() >= 60 * 60 * 1000) {
-            estado = 'no_asistio' as CitaEstado;
-          }
         }
       } catch (e) {}
 
       return {
         ...c,
-        ctaEstado: estado,
         isPast,
         grupoTema: c.ctaGrupoId && gruposMap ? gruposMap.get(c.ctaGrupoId.toLowerCase()) || c.grupoTema : c.grupoTema,
       };
@@ -572,6 +570,7 @@ function CitasContent() {
     }
   }, [pacientesTabsList, selectedPacienteId]);
 
+
   const medicosUnicos = useMemo(() => {
     const map = new Map<string, string>();
     citasConTemas.forEach((c) => map.set(c.ctaCoddoc, c.medicoNombre));
@@ -598,9 +597,11 @@ function CitasContent() {
     }));
   }, [citasConTemas, selectedPacienteId]);
 
-  // Limpiar grupo seleccionado al cambiar de paciente
+  // Limpiar filtros al cambiar de paciente
   useEffect(() => {
     setGrupoSeleccionado('');
+    setMedicoSeleccionado('');
+    setModalidadSeleccionada('');
   }, [selectedPacienteId]);
 
   // Citas categorizadas para el Tab actual y Filtros activos
@@ -608,20 +609,36 @@ function CitasContent() {
     const now = new Date();
     const msIn24Hrs = 24 * 60 * 60 * 1000;
     const msInWeek = 7 * 24 * 60 * 60 * 1000;
-    const historialEstados = ['cancelada', 'no_asistio', 'completada', 'rechazada'];
+    const historialEstados = [
+      'cancelada',
+      'no_asistio',
+      'noasistio',
+      'no_asistió',
+      'completada',
+      'finalizada',
+      'atendida',
+      'atendido',
+      'realizada',
+      'rechazada',
+    ];
 
     return citasConTemas.filter((c) => {
       // Filtro de Médico
       if (medicoSeleccionado && c.ctaCoddoc !== medicoSeleccionado) return false;
       // Filtro de Grupo
       if (grupoSeleccionado && c.ctaGrupoId !== grupoSeleccionado) return false;
+      // Filtro de Modalidad
+      if (modalidadSeleccionada) {
+        const modNorm = (c.ctaModalidad || '').toLowerCase().trim();
+        if (modNorm !== modalidadSeleccionada.toLowerCase().trim()) return false;
+      }
 
       const estadoNorm = (c.ctaEstado || '').toLowerCase().trim();
       const isPast = isCitaPasada(c.ctaFecha, c.ctaHora);
       const isHistorial = historialEstados.includes(estadoNorm) || isPast;
       const isUpcoming = !isHistorial;
 
-      const activeTab = selectedPacienteId ? tabActual : 'proximas';
+      const activeTab = tabActual;
       if (activeTab === 'proximas' && !isUpcoming) return false;
       if (activeTab === 'historial' && !isHistorial) return false;
 
@@ -639,7 +656,7 @@ function CitasContent() {
 
       return true;
     });
-  }, [citasConTemas, medicoSeleccionado, grupoSeleccionado, tabActual, selectedPacienteId, quickFilter, viewFilter]);
+  }, [citasConTemas, medicoSeleccionado, grupoSeleccionado, modalidadSeleccionada, tabActual, quickFilter, viewFilter]);
 
   // Secciones de citas agrupadas por paciente (standalone + series)
   const seccionesPorPaciente = useMemo(() => {
@@ -686,7 +703,7 @@ function CitasContent() {
       citasConTemas.forEach((c) => {
         if (c.ctaCodpac !== pac.pacCodigo) return;
         const est = (c.ctaEstado || '').toLowerCase().trim();
-        if (est === 'completada') {
+        if (['completada', 'finalizada', 'atendida', 'atendido', 'realizada'].includes(est)) {
           completadas += 1;
         } else if (est === 'cancelada' || est === 'rechazada') {
           canceladas += 1;
@@ -740,7 +757,18 @@ function CitasContent() {
         pacienteCanceladasCount: 0,
       };
     }
-    const historialEstados = ['cancelada', 'no_asistio', 'completada', 'rechazada'];
+    const historialEstados = [
+      'cancelada',
+      'no_asistio',
+      'noasistio',
+      'no_asistió',
+      'completada',
+      'finalizada',
+      'atendida',
+      'atendido',
+      'realizada',
+      'rechazada',
+    ];
     const pacCitas = citasConTemas.filter((c) => c.ctaCodpac === selectedPacienteId);
     const historial = pacCitas.filter((c) =>
       historialEstados.includes((c.ctaEstado || '').toLowerCase().trim()) || isCitaPasada(c.ctaFecha, c.ctaHora)
@@ -749,7 +777,7 @@ function CitasContent() {
       !historialEstados.includes((c.ctaEstado || '').toLowerCase().trim()) && !isCitaPasada(c.ctaFecha, c.ctaHora)
     ).length;
     const completadas = pacCitas.filter((c) =>
-      (c.ctaEstado || '').toLowerCase().trim() === 'completada'
+      ['completada', 'finalizada', 'atendida', 'atendido', 'realizada'].includes((c.ctaEstado || '').toLowerCase().trim())
     ).length;
     const canceladas = pacCitas.filter((c) =>
       ['cancelada', 'rechazada'].includes((c.ctaEstado || '').toLowerCase().trim())
@@ -761,6 +789,41 @@ function CitasContent() {
       pacienteCanceladasCount: canceladas,
     };
   }, [citasConTemas, selectedPacienteId]);
+
+  // Si el paciente seleccionado no tiene citas próximas pero sí tiene citas en el historial, abrir automáticamente la pestaña de historial
+  useEffect(() => {
+    if (selectedPacienteId && pacienteProximasCount === 0 && pacienteHistorialCount > 0) {
+      setTabActual('historial');
+    }
+  }, [selectedPacienteId, pacienteProximasCount, pacienteHistorialCount]);
+
+  // Conteo global de todas las citas del usuario para el tab bar principal (Próximas vs Historial)
+  const { totalProximasGlobal, totalHistorialGlobal } = useMemo(() => {
+    const historialEstados = [
+      'cancelada',
+      'no_asistio',
+      'noasistio',
+      'no_asistió',
+      'completada',
+      'finalizada',
+      'atendida',
+      'atendido',
+      'realizada',
+      'rechazada',
+    ];
+    let prox = 0;
+    let hist = 0;
+    citasConTemas.forEach((c) => {
+      const est = (c.ctaEstado || '').toLowerCase().trim();
+      const isPast = isCitaPasada(c.ctaFecha, c.ctaHora);
+      if (historialEstados.includes(est) || isPast) {
+        hist += 1;
+      } else {
+        prox += 1;
+      }
+    });
+    return { totalProximasGlobal: prox, totalHistorialGlobal: hist };
+  }, [citasConTemas]);
 
   const totalCitasFiltradas = citasFiltradas.length;
 
@@ -823,16 +886,6 @@ function CitasContent() {
                     <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">
                       Selecciona un paciente para ver sus citas programadas, historial y tratamientos
                     </p>
-                  </div>
-
-                  <div className="flex items-center gap-2.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => router.push('/dashboard/directorio')}
-                      className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm px-4 py-2.5 rounded-2xl shadow-sm hover:shadow transition active:scale-95 cursor-pointer"
-                    >
-                      <Plus className="w-4 h-4" /> Nueva Cita
-                    </button>
                   </div>
                 </div>
 
@@ -1058,7 +1111,9 @@ function CitasContent() {
                           solicitudesCount={solicitudesDelPaciente.length}
                           onSelect={() => {
                             setSelectedPacienteId(pac.pacCodigo);
-                            setTabActual('proximas');
+                            if (totalCitas === 0 && (completadasCount > 0 || canceladasCount > 0)) {
+                              setTabActual('historial');
+                            }
                           }}
                           onAgendar={() => router.push(`/dashboard/directorio?paciente=${pac.pacCodigo}`)}
                         />
@@ -1326,171 +1381,55 @@ function CitasContent() {
                     </button>
                   </nav>
 
-                  {/* Botones de Acción (Extremo Derecho) */}
-                  <div className="flex items-center gap-2.5 pb-2.5 sm:pb-3 shrink-0">
-                    {/* Botón Filtros */}
-                    <button
-                      type="button"
-                      onClick={() => setIsFiltersOpen((prev) => !prev)}
-                      className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl text-xs sm:text-sm font-bold border transition-all duration-200 cursor-pointer select-none active:scale-95 ${
-                        isFiltersOpen
-                          ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 shadow-xs'
-                          : activeFiltersCount > 0
-                          ? 'bg-white dark:bg-slate-850 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 shadow-2xs'
-                          : 'bg-white dark:bg-slate-850 border-slate-200/90 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600 shadow-2xs'
-                      }`}
-                      aria-expanded={isFiltersOpen}
-                      title={isFiltersOpen ? 'Ocultar filtros' : 'Mostrar filtros'}
-                    >
-                      <SlidersHorizontal
-                        className={`w-3.5 h-3.5 ${
-                          isFiltersOpen || activeFiltersCount > 0
-                            ? 'text-blue-600 dark:text-blue-400'
-                            : 'text-slate-500 dark:text-slate-400'
-                        }`}
-                      />
-                      <span>Filtros</span>
-                      {activeFiltersCount > 0 && (
-                        <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-blue-600 text-white text-[10px] font-black shadow-2xs">
-                          {activeFiltersCount}
-                        </span>
-                      )}
-                    </button>
+                  {/* Dropdowns para filtrar Médicos, Grupos y Modalidad */}
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 pb-2.5 sm:pb-3 shrink-0">
+                    {/* 1. Médicos */}
+                    <CustomDropdown
+                      className="w-36 sm:w-44 lg:w-48"
+                      value={medicoSeleccionado}
+                      onChange={setMedicoSeleccionado}
+                      onClear={() => setMedicoSeleccionado('')}
+                      options={[
+                        { value: '', label: 'Todos los médicos' },
+                        ...medicosUnicos.map((m) => ({ value: m.id, label: m.nombre })),
+                      ]}
+                      icon={<User className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
+                    />
 
-                    {/* Botón Nueva Cita (Preseleccionando al paciente actual) */}
-                    {selectedSection.paciente.pacEstado !== 'independizado' && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          router.push(`/dashboard/directorio?paciente=${selectedPacienteId}`)
-                        }
-                        className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm px-4 py-2 rounded-2xl shadow-sm hover:shadow transition active:scale-95 cursor-pointer"
-                      >
-                        <Plus className="w-4 h-4" /> Nueva Cita
-                      </button>
-                    )}
+                    {/* 2. Grupos */}
+                    <CustomDropdown
+                      className="w-36 sm:w-44 lg:w-48"
+                      value={grupoSeleccionado}
+                      onChange={setGrupoSeleccionado}
+                      onClear={() => setGrupoSeleccionado('')}
+                      options={
+                        gruposUnicos.length > 0
+                          ? [
+                              { value: '', label: 'Todos los grupos' },
+                              ...gruposUnicos.map((g) => ({ value: g.id, label: g.tema })),
+                            ]
+                          : [{ value: '', label: 'Sin grupos' }]
+                      }
+                      icon={<FolderPlus className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
+                    />
+
+                    {/* 3. Modalidad */}
+                    <CustomDropdown
+                      className="w-40 sm:w-48"
+                      align="right"
+                      value={modalidadSeleccionada}
+                      onChange={setModalidadSeleccionada}
+                      onClear={() => setModalidadSeleccionada('')}
+                      options={[
+                        { value: '', label: 'Todas las modalidades' },
+                        { value: 'presencial', label: 'Presencial' },
+                        { value: 'virtual', label: 'Virtual' },
+                        { value: 'domicilio', label: 'A Domicilio' },
+                      ]}
+                      icon={<Building2 className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
+                    />
                   </div>
                 </div>
-
-                {/* ── Fila de Filtros Desplegable (específica del paciente seleccionado) ── */}
-                <AnimatePresence>
-                  {(isFiltersOpen || activeFiltersCount > 0) && (
-                    <motion.div
-                      layout
-                      initial={{ opacity: 0, height: 0, y: -6 }}
-                      animate={{ opacity: 1, height: 'auto', y: 0 }}
-                      exit={{ opacity: 0, height: 0, y: -6 }}
-                      transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-                      className="flex flex-wrap items-center gap-2.5 w-full pt-1 pb-1 relative z-20"
-                    >
-                      {/* 1. Tipo de Consulta */}
-                      <AnimatePresence>
-                        {(isFiltersOpen || viewFilter !== 'todas') && (
-                          <motion.div
-                            key="filter-view"
-                            layout
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            transition={{ duration: 0.18 }}
-                          >
-                            <CustomDropdown
-                              className="w-44 sm:w-48"
-                              value={viewFilter}
-                              onChange={(val) => setViewFilter(val as 'todas' | 'unicas' | 'series')}
-                              onClear={() => setViewFilter('todas')}
-                              options={[
-                                { value: 'todas', label: 'Todas las Vistas' },
-                                { value: 'unicas', label: 'Citas Únicas' },
-                                { value: 'series', label: 'Tratamientos / Series' },
-                              ]}
-                              icon={<Layers className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
-                            />
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-
-                      {/* 2. Período de Tiempo (en próximas) */}
-                      <AnimatePresence>
-                        {tabActual === 'proximas' && (isFiltersOpen || quickFilter !== 'todas') && (
-                          <motion.div
-                            key="filter-quick"
-                            layout
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            transition={{ duration: 0.18 }}
-                          >
-                            <CustomDropdown
-                              className="w-44 sm:w-48"
-                              value={quickFilter}
-                              onChange={(val) => setQuickFilter(val as 'todas' | '24hrs' | 'semana')}
-                              onClear={() => setQuickFilter('todas')}
-                              options={[
-                                { value: 'todas', label: 'Cualquier fecha' },
-                                { value: '24hrs', label: 'Próximas 24 horas' },
-                                { value: 'semana', label: 'Próxima semana' },
-                              ]}
-                              icon={<Clock className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
-                            />
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-
-                      {/* 3. Médico Especialista */}
-                      <AnimatePresence>
-                        {(isFiltersOpen || medicoSeleccionado !== '') && (
-                          <motion.div
-                            key="filter-medico"
-                            layout
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            transition={{ duration: 0.18 }}
-                          >
-                            <CustomDropdown
-                              className="w-52 sm:w-56"
-                              value={medicoSeleccionado}
-                              onChange={setMedicoSeleccionado}
-                              onClear={() => setMedicoSeleccionado('')}
-                              options={[
-                                { value: '', label: 'Todos los Médicos' },
-                                ...medicosUnicos.map((m) => ({ value: m.id, label: m.nombre })),
-                              ]}
-                              icon={<User className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
-                            />
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-
-                      {/* 4. Grupos de Citas */}
-                      <AnimatePresence>
-                        {(isFiltersOpen || grupoSeleccionado !== '') && (
-                          <motion.div
-                            key="filter-grupo"
-                            layout
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            transition={{ duration: 0.18 }}
-                          >
-                            <CustomDropdown
-                              className="w-52 sm:w-56"
-                              value={grupoSeleccionado}
-                              onChange={setGrupoSeleccionado}
-                              onClear={() => setGrupoSeleccionado('')}
-                              options={[
-                                { value: '', label: 'Grupos de citas' },
-                                ...gruposUnicos.map((g) => ({ value: g.id, label: g.tema })),
-                              ]}
-                              icon={<FolderPlus className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
-                            />
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
 
                 {/* Banner de Solicitudes de Intercambio Recibidas */}
                 {solicitudesRecibidas.length > 0 && (
@@ -1622,25 +1561,25 @@ function CitasContent() {
                           type="button"
                           onClick={() => setIsConsultasIndividualesOpen(!isConsultasIndividualesOpen)}
                           aria-expanded={isConsultasIndividualesOpen}
-                          className="w-full flex items-center justify-between py-2 px-3 rounded-2xl bg-slate-50/80 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800/70 border border-slate-200/70 dark:border-slate-800 transition-all cursor-pointer group select-none text-left shadow-2xs"
+                          className="w-full flex items-center justify-between py-1.5 px-0.5 bg-transparent select-none text-left cursor-pointer transition-none"
                         >
                           <div className="flex items-center gap-2.5">
-                            <div className="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shadow-2xs">
+                            <div className="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center">
                               <CalendarIcon className="w-4 h-4" />
                             </div>
-                            <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                            <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
                               Consultas Individuales ({selectedSection.standalone.length})
                             </h3>
                           </div>
-                          <div className="flex items-center gap-2 text-xs font-bold text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300">
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-400 dark:text-slate-500">
                             <span className="text-[11px] font-bold hidden sm:inline text-slate-400 dark:text-slate-500">
                               {isConsultasIndividualesOpen ? 'Minimizar' : 'Mostrar'}
                             </span>
-                            <div className="w-6 h-6 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-center shadow-2xs group-hover:border-slate-300 dark:group-hover:border-slate-600 transition">
+                            <div className="w-6 h-6 flex items-center justify-center text-slate-400 dark:text-slate-500">
                               {isConsultasIndividualesOpen ? (
-                                <ChevronUp className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <ChevronUp className="w-4 h-4 stroke-[2.5]" />
                               ) : (
-                                <ChevronDown className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <ChevronDown className="w-4 h-4 stroke-[2.5]" />
                               )}
                             </div>
                           </div>
@@ -1689,25 +1628,25 @@ function CitasContent() {
                           type="button"
                           onClick={() => setIsSeriesSectionOpen(!isSeriesSectionOpen)}
                           aria-expanded={isSeriesSectionOpen}
-                          className="w-full flex items-center justify-between py-2 px-3 rounded-2xl bg-sky-50/50 dark:bg-slate-800/40 hover:bg-sky-100/60 dark:hover:bg-slate-800/70 border border-sky-100 dark:border-slate-800 transition-all cursor-pointer group select-none text-left shadow-2xs"
+                          className="w-full flex items-center justify-between py-1.5 px-0.5 bg-transparent select-none text-left cursor-pointer transition-none"
                         >
                           <div className="flex items-center gap-2.5">
-                            <div className="w-7 h-7 rounded-lg bg-sky-100/80 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 flex items-center justify-center shadow-2xs">
+                            <div className="w-7 h-7 rounded-lg bg-sky-100/80 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 flex items-center justify-center">
                               <RefreshCw className="w-4 h-4" />
                             </div>
-                            <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors">
-                              Temas de Seguimiento / Series ({Object.keys(selectedSection.series).length})
+                            <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                              Grupos ({Object.keys(selectedSection.series).length})
                             </h3>
                           </div>
-                          <div className="flex items-center gap-2 text-xs font-bold text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300">
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-400 dark:text-slate-500">
                             <span className="text-[11px] font-bold hidden sm:inline text-slate-400 dark:text-slate-500">
                               {isSeriesSectionOpen ? 'Minimizar' : 'Mostrar'}
                             </span>
-                            <div className="w-6 h-6 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-center shadow-2xs group-hover:border-slate-300 dark:group-hover:border-slate-600 transition">
+                            <div className="w-6 h-6 flex items-center justify-center text-slate-400 dark:text-slate-500">
                               {isSeriesSectionOpen ? (
-                                <ChevronUp className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <ChevronUp className="w-4 h-4 stroke-[2.5]" />
                               ) : (
-                                <ChevronDown className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <ChevronDown className="w-4 h-4 stroke-[2.5]" />
                               )}
                             </div>
                           </div>
@@ -1766,10 +1705,10 @@ function CitasContent() {
                         <button
                           type="button"
                           onClick={() => router.push(`/dashboard/directorio?paciente=${selectedSection.paciente.pacCodigo}`)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition cursor-pointer"
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 border border-blue-200/60 dark:border-blue-900/40 shadow-2xs transition active:scale-95 cursor-pointer"
                         >
-                          <CalendarPlus className="w-3.5 h-3.5" />
-                          Agendar nueva cita
+                          <BookOpen className="w-3.5 h-3.5" />
+                          <span>Ir al directorio médico</span>
                         </button>
                       ) : (
                         <span className="text-xs text-slate-400 dark:text-slate-500 italic flex items-center gap-1.5 py-1">
@@ -2481,7 +2420,7 @@ function LinkGroupModal({
       let targetGrupoId = selectedGrupoId;
       if (mode === 'create') {
         if (!newTitle.trim()) {
-          toast.error('El nombre del tema es requerido');
+          toast.error('El nombre del grupo es requerido');
           setLoading(false);
           return;
         }
@@ -2599,7 +2538,7 @@ function LinkGroupModal({
           <div className="space-y-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Nombre del tema:
+                Nombre del grupo:
               </label>
               <input
                 type="text"

@@ -213,8 +213,8 @@ export default function GrupoDetailPage() {
                               </div>
                             </div>
                             <div className="flex items-center justify-center w-full sm:w-48 border-t sm:border-t-0 sm:border-l border-[#E5E7EB] dark:border-slate-700">
-                              <button onClick={() => setCitaSeleccionada(cita)} className="w-full h-full bg-[#F9FAFB] dark:bg-[#1E293B] text-[#111827] dark:text-white font-bold text-sm hover:bg-[#E5E7EB] dark:hover:bg-[#0B1120] transition-colors flex items-center justify-center py-4 sm:py-0 border-none">
-                                {isCompleted ? 'Detalle' : 'Información'}
+                              <button onClick={() => setCitaSeleccionada(cita)} className="w-full h-full bg-[#F9FAFB] dark:bg-[#1E293B] text-[#111827] dark:text-white font-bold text-sm hover:bg-[#E5E7EB] dark:hover:bg-[#0B1120] transition-colors flex items-center justify-center py-4 sm:py-0 border-none cursor-pointer">
+                                Información
                               </button>
                             </div>
                           </div>

@@ -140,9 +140,19 @@ export function buildPacienteFullName(p: Paciente): string {
 
 export function calcularEdad(fechaNacimiento: string | null): number | null {
   if (!fechaNacimiento) return null;
-  const hoy = new Date();
-  const nacimiento = new Date(fechaNacimiento);
+  const dateStr = fechaNacimiento.split('T')[0];
+  const parts = dateStr.split('-');
+  let nacimiento: Date;
+  if (parts.length === 3) {
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    nacimiento = new Date(year, month, day);
+  } else {
+    nacimiento = new Date(fechaNacimiento);
+  }
   if (isNaN(nacimiento.getTime())) return null;
+  const hoy = new Date();
   let edad = hoy.getFullYear() - nacimiento.getFullYear();
   const mesActual = hoy.getMonth();
   const mesNacimiento = nacimiento.getMonth();
@@ -152,6 +162,12 @@ export function calcularEdad(fechaNacimiento: string | null): number | null {
   }
 
   return edad;
+}
+
+/** Verifica si la persona es mayor de edad (18 años o más). */
+export function esMayorDeEdad(fechaNacimiento: string | null): boolean {
+  const edad = calcularEdad(fechaNacimiento);
+  return edad !== null && edad >= 18;
 }
 
 /** Verifica si el paciente tiene datos pendientes de llenar. */

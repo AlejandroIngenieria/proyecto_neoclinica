@@ -18,11 +18,13 @@ import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/style.css';
 import { useDropzone } from 'react-dropzone';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { 
   usePacientesSeleccion, useAllCitasPacientes, useCitaByCodigo, useUpdateCita, useCancelarCita, 
   useModalidades, useClinicas, useAreasDomicilio, useHorarios, useGruposCita, useHorasOcupadas,
-  useServiciosMedico, useMetodosPago, useBilletera, useGuardarTarjeta, useGuardarSeguro, usePagarCita
+  useServiciosMedico, useMetodosPago, useBilletera, useGuardarTarjeta, useGuardarSeguro, usePagarCita,
+  useCreateGrupo
 } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import type { 
@@ -69,10 +71,12 @@ export default function EditWizardPage() {
     }
   }, [rawCitaId]);
 
+  const queryClient = useQueryClient();
   const updateCitaMutation = useUpdateCita();
   const cancelarCitaMutation = useCancelarCita();
   const pagarCitaMutation = usePagarCita();
-  const isUpdating = updateCitaMutation.isPending || pagarCitaMutation.isPending;
+  const createGrupoMutation = useCreateGrupo();
+  const isUpdating = updateCitaMutation.isPending || pagarCitaMutation.isPending || createGrupoMutation.isPending;
   const isCanceling = cancelarCitaMutation.isPending;
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
 
@@ -101,7 +105,7 @@ export default function EditWizardPage() {
   const { mutateAsync: saveSeguro } = useGuardarSeguro();
   const { mutateAsync: saveTarjeta } = useGuardarTarjeta();
 
-  // Wizard Step State
+  // Wizard Step State (1: Horario, 2: Paciente, 3: Pago, 4: Confirmar)
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -122,6 +126,8 @@ export default function EditWizardPage() {
   const [referencias, setReferencias] = useState<string>('');
   const [enlace, setEnlace] = useState<string>('');
   const [grupoId, setGrupoId] = useState<string>('');
+  const [creandoNuevoGrupo, setCreandoNuevoGrupo] = useState<boolean>(false);
+  const [nuevoGrupoTema, setNuevoGrupoTema] = useState<string>('');
 
   // Payment difference state
   const [tipoPagoId, setTipoPagoId] = useState<number | null>(null);
@@ -139,6 +145,24 @@ export default function EditWizardPage() {
   const mclCodigo = modalidad === 'presencial' ? clinicaSeleccionada?.mclCodigo || null : 0;
   const { data: horariosClinica = [] } = useHorarios(mclCodigo);
   const { data: gruposList = [] } = useGruposCita(codPaciente || null, codMedico || null);
+
+  // Deduplicación de grupos de citas para vista uniforme
+  const gruposUnicos = useMemo(() => {
+    const seen = new Set<string>();
+    return gruposList.filter((g) => {
+      const key = (g.titulo || g.descripcion || g.grupoId || '').trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [gruposList]);
+
+  const grupoSeleccionado = useMemo(() => {
+    if (!grupoId || !gruposUnicos.length) return null;
+    return gruposUnicos.find(g => String(g.grupoId).toLowerCase() === String(grupoId).toLowerCase()) || null;
+  }, [grupoId, gruposUnicos]);
+
+  const grupoNombre = grupoSeleccionado?.titulo || grupoSeleccionado?.descripcion;
 
   // Previously scheduled date & time for highlighting in purple
   const fechaOriginalStr = citaOriginal?.ctaFecha ? citaOriginal.ctaFecha.split('T')[0] : '';
@@ -178,20 +202,13 @@ export default function EditWizardPage() {
 
   const requierePagoDiferencia = diferenciaAPagar > 0.01;
 
-  // Dynamic Steps definition
-  const stepsList = useMemo(() => {
-    const list = [
-      { id: 'horario', num: 1, label: 'Horario y Modalidad', icon: CalendarClock },
-      { id: 'detalles', num: 2, label: 'Detalles y Paciente', icon: FileText },
-    ];
-    if (requierePagoDiferencia) {
-      list.push({ id: 'pago', num: 3, label: 'Pago de Diferencia', icon: CreditCard });
-      list.push({ id: 'confirmar', num: 4, label: 'Comparar y Confirmar', icon: ShieldCheck });
-    } else {
-      list.push({ id: 'confirmar', num: 3, label: 'Comparar y Confirmar', icon: ShieldCheck });
-    }
-    return list;
-  }, [requierePagoDiferencia]);
+  // Dynamic Steps definition con los mismos nombres del paso de agendar cita original
+  const stepsList = useMemo(() => [
+    { id: 'horario', num: 1, label: 'Horario', icon: CalendarClock },
+    { id: 'paciente', num: 2, label: 'Paciente', icon: User },
+    { id: 'pago', num: 3, label: 'Pago', icon: CreditCard },
+    { id: 'confirmar', num: 4, label: 'Confirmar', icon: ShieldCheck },
+  ], []);
 
   // Total steps count
   const totalSteps = stepsList.length;
@@ -208,9 +225,20 @@ export default function EditWizardPage() {
       }
       setHora(citaOriginal.ctaHora);
       setGrupoId(citaOriginal.ctaGrupoId || '');
-      setEnlace(citaOriginal.enlaceVideollamada || '');
-      setDireccion(citaOriginal.direccionDomicilio || '');
-      setReferencias(citaOriginal.referenciasDomicilio || '');
+      setEnlace(citaOriginal.enlaceVideollamada || citaOriginal.ctaEnlaceVideollamada || '');
+      
+      const dirInit = citaOriginal.direccionDomicilio || 
+                      citaOriginal.ctaDireccionDomicilio || 
+                      (citaOriginal as any).cta_direccion_domicilio || 
+                      (citaOriginal as any).direccion || 
+                      '';
+      const refInit = citaOriginal.referenciasDomicilio || 
+                      citaOriginal.ctaReferenciasDomicilio || 
+                      (citaOriginal as any).cta_referencias_domicilio || 
+                      (citaOriginal as any).referencias || 
+                      '';
+      setDireccion(dirInit);
+      setReferencias(refInit);
 
       // Check if citaOriginal.ctaMotivo matches a known service or if it's general comments
       const rawMotivo = citaOriginal.ctaMotivo?.trim() || '';
@@ -242,6 +270,84 @@ export default function EditWizardPage() {
       if (match) setClinicaSeleccionada(match);
     }
   }, [isInitialized, citaOriginal, clinicasList, clinicaSeleccionada]);
+
+  // Match initial domicilio area once areasList is loaded
+  useEffect(() => {
+    if (isInitialized && citaOriginal?.ctaModalidad === 'domicilio' && areasList.length > 0 && !areaSeleccionada) {
+      const match = areasList.find(a => direccion.toLowerCase().includes(a.municipio.toLowerCase())) || areasList[0];
+      if (match) setAreaSeleccionada(match);
+    }
+  }, [isInitialized, citaOriginal, areasList, areaSeleccionada, direccion]);
+
+  const handleSelectTema = (g: GrupoCitaDto) => {
+    setGrupoId(g.grupoId);
+    setCreandoNuevoGrupo(false);
+    setNuevoGrupoTema('');
+
+    if (g.modalidad && (g.modalidad === 'presencial' || g.modalidad === 'virtual' || g.modalidad === 'domicilio')) {
+      handleSelectModalidad(g.modalidad as any);
+    }
+
+    if (g.codServicio && serviciosMedico.length > 0) {
+      const matchServicio = serviciosMedico.find(s => s.sypCodigo === g.codServicio);
+      if (matchServicio) {
+        setServicioSeleccionado(matchServicio);
+      }
+    }
+
+    if (g.codMetodoPago) {
+      setTipoPagoId(g.codMetodoPago);
+    }
+
+    if (g.consultorioId && clinicasList.length > 0) {
+      const matchClinica = clinicasList.find(c => c.mclCodigo === g.consultorioId || (c as any).cliCodigo === g.consultorioId);
+      if (matchClinica) {
+        setClinicaSeleccionada(matchClinica);
+      }
+    }
+  };
+
+  const handleDesagrupar = () => {
+    setGrupoId('');
+    setCreandoNuevoGrupo(false);
+    setNuevoGrupoTema('');
+  };
+
+  const handleConfirmarNuevoGrupo = async () => {
+    const tema = nuevoGrupoTema.trim();
+    if (!tema) {
+      toast.warning('Por favor ingresa un nombre para el nuevo grupo.');
+      return;
+    }
+
+    if (codPaciente && codMedico) {
+      try {
+        const res = await createGrupoMutation.mutateAsync({
+          codPaciente,
+          codMedico,
+          tema,
+          tituloTema: tema,
+        });
+
+        const createdId = (res as any)?.id || (res as any)?.grupoId || (typeof res === 'string' ? res : '');
+        await queryClient.invalidateQueries({ queryKey: ['gruposCita', codPaciente, codMedico] });
+
+        setGrupoId(createdId || 'temp-' + Date.now());
+        setCreandoNuevoGrupo(false);
+        setNuevoGrupoTema('');
+        toast.success(`Grupo "${tema}" creado y seleccionado exitosamente.`);
+      } catch (err: any) {
+        console.error('Error al persistir nuevo grupo en API:', err);
+        setGrupoId('temp-' + Date.now());
+        setCreandoNuevoGrupo(false);
+        toast.success(`Grupo "${tema}" asignado.`);
+      }
+    } else {
+      setGrupoId('temp-' + Date.now());
+      setCreandoNuevoGrupo(false);
+      toast.success(`Grupo "${tema}" asignado.`);
+    }
+  };
 
   // Match initial service once serviciosMedico is loaded
   useEffect(() => {
@@ -372,6 +478,33 @@ export default function EditWizardPage() {
     fecha && fechaOriginalStr && format(fecha, 'yyyy-MM-dd') === fechaOriginalStr
   );
 
+  const [currentTime, setCurrentTime] = useState<Date>(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 10000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (fecha && hora) {
+      const isToday =
+        fecha.getFullYear() === currentTime.getFullYear() &&
+        fecha.getMonth() === currentTime.getMonth() &&
+        fecha.getDate() === currentTime.getDate();
+      if (isToday) {
+        const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+        const [hH, hM] = hora.slice(0, 5).split(':').map(Number);
+        const selMinutes = (isNaN(hH) ? 0 : hH) * 60 + (isNaN(hM) ? 0 : hM);
+        if (selMinutes <= currentMinutes) {
+          setHora('');
+          toast.warning(`El horario de las ${hora.slice(0, 5)} ha transcurrido y ya no está disponible.`);
+        }
+      }
+    }
+  }, [currentTime, fecha, hora]);
+
   const availableTimeSlots = useMemo(() => {
     if (!fecha || !horarios.length) return [];
     const dayOfWeek = fecha.getDay();
@@ -399,20 +532,19 @@ export default function EditWizardPage() {
     const uniqueSlots = Array.from(new Set(slots)).sort();
     const normOriginal = horaOriginalStr.slice(0, 5);
 
-    const now = new Date();
     const isToday = !!(fecha &&
-      fecha.getFullYear() === now.getFullYear() &&
-      fecha.getMonth() === now.getMonth() &&
-      fecha.getDate() === now.getDate());
-    const currentHour = now.getHours();
-    const currentMinute = now.getMinutes();
-    const currentTimeString = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+      fecha.getFullYear() === currentTime.getFullYear() &&
+      fecha.getMonth() === currentTime.getMonth() &&
+      fecha.getDate() === currentTime.getDate());
+    const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
 
     return uniqueSlots.map(slot => {
       // El horario previo solo se resalta si estamos en la clínica original y fecha original
       const isOriginalSlot = isCurrentSelectionOriginalDate && isOriginalClinicSelected && slot.slice(0, 5) === normOriginal;
       const slotShort = slot.slice(0, 5);
-      const isPastHour = isToday && slotShort <= currentTimeString;
+      const [slotH, slotM] = slotShort.split(':').map(Number);
+      const slotMinutes = (isNaN(slotH) ? 0 : slotH) * 60 + (isNaN(slotM) ? 0 : slotM);
+      const isPastHour = isToday && slotMinutes <= currentMinutes;
       const disabled = (isOriginalSlot && !isPastHour) 
         ? false 
         : horasOcupadas.includes(slot) || horasOcupadas.includes(slotShort) || isPastHour;
@@ -424,7 +556,7 @@ export default function EditWizardPage() {
         isPastHour,
       };
     });
-  }, [fecha, horarios, horasOcupadas, isCurrentSelectionOriginalDate, isOriginalClinicSelected, horaOriginalStr]);
+  }, [fecha, horarios, horasOcupadas, isCurrentSelectionOriginalDate, isOriginalClinicSelected, horaOriginalStr, currentTime]);
 
   // -- 4. File Dropzone with Strict Deduplication --
   const onDropFiles = useCallback((acceptedFiles: File[]) => {
@@ -492,15 +624,17 @@ export default function EditWizardPage() {
 
   // -- 5. Validation Handlers --
   const canGoToStep2 = Boolean(
-    fecha && hora && (modalidad !== 'presencial' || clinicaSeleccionada) && (modalidad !== 'domicilio' || direccion.trim())
+    fecha && hora && (modalidad !== 'presencial' || clinicaSeleccionada)
   );
 
-  const canGoToPaymentOrConfirm = Boolean(
-    canGoToStep2 && (servicioSeleccionado !== null || motivoGenerico.trim().length > 0)
+  const canGoToStep3 = Boolean(
+    canGoToStep2 && 
+    (servicioSeleccionado !== null || motivoGenerico.trim().length > 0) &&
+    (modalidad !== 'domicilio' || direccion.trim().length > 0)
   );
 
-  const canConfirmCita = useMemo(() => {
-    if (!canGoToPaymentOrConfirm) return false;
+  const canGoToStep4 = useMemo(() => {
+    if (!canGoToStep3) return false;
     if (requierePagoDiferencia) {
       if (!tipoPagoId) return false;
       const metodoSel = metodosPagoDisponibles.find(m => m.tipoPagoId === tipoPagoId);
@@ -508,7 +642,9 @@ export default function EditWizardPage() {
       if (isTarjeta && !billeteraItemId) return false;
     }
     return true;
-  }, [canGoToPaymentOrConfirm, requierePagoDiferencia, tipoPagoId, billeteraItemId, metodosPagoDisponibles]);
+  }, [canGoToStep3, requierePagoDiferencia, tipoPagoId, billeteraItemId, metodosPagoDisponibles]);
+
+  const canConfirmCita = canGoToStep4;
 
   // -- 6. Save & Payment Execution --
   const handleSave = async () => {
@@ -518,6 +654,24 @@ export default function EditWizardPage() {
     }
 
     try {
+      let finalGrupoId = grupoId || null;
+
+      // Si el usuario decidió crear un nuevo grupo de citas inline
+      if (creandoNuevoGrupo && nuevoGrupoTema.trim() && codMedico && codPaciente) {
+        try {
+          const resGrupo = await createGrupoMutation.mutateAsync({
+            codPaciente,
+            codMedico,
+            tema: nuevoGrupoTema.trim(),
+            tituloTema: nuevoGrupoTema.trim(),
+          });
+          const createdId = (resGrupo as any)?.id || (resGrupo as any)?.grupoId;
+          if (createdId) finalGrupoId = createdId;
+        } catch (err) {
+          console.error('No se pudo pre-crear el nuevo grupo:', err);
+        }
+      }
+
       const idsConservados = archivosExistentes
         .map(a => a.arcCodigo)
         .filter((id): id is string => Boolean(id));
@@ -537,7 +691,7 @@ export default function EditWizardPage() {
         modalidad,
         precio: Number(precioNuevo) || 0,
         motivo: finalMotivo,
-        grupoId: grupoId || null,
+        grupoId: finalGrupoId,
         codServicio: servicioSeleccionado?.sypCodigo || null,
         consultorioId: modalidad === 'presencial' ? (clinicaSeleccionada?.cliCodigo ?? clinicaSeleccionada?.mclCodigo ?? null) : null,
         direccionDomicilio: modalidad === 'domicilio' ? (direccion.trim() || null) : null,
@@ -662,6 +816,30 @@ export default function EditWizardPage() {
     );
   }
 
+  const estadoCitaOriginal = (citaOriginal?.ctaEstado || '').toLowerCase().trim();
+  const isCitaBloqueada = ['en_proceso', 'en_consulta', 'completada', 'finalizada', 'realizada', 'cancelada', 'rechazada', 'no_asistio'].includes(estadoCitaOriginal);
+
+  if (isCitaBloqueada) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-[#0B1120] flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-16 h-16 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-500 flex items-center justify-center mb-4 mx-auto">
+          <AlertCircle className="w-8 h-8" />
+        </div>
+        <h2 className="text-2xl font-black text-slate-900 dark:text-white">Cita no modificable</h2>
+        <p className="text-slate-500 dark:text-slate-400 mt-2 mb-6 max-w-md">
+          Esta cita médica se encuentra {estadoCitaOriginal === 'en_proceso' || estadoCitaOriginal === 'en_consulta' ? 'en proceso de consulta' : 'finalizada o cancelada'}. No se permite modificar el horario ni cancelar la consulta en este estado.
+        </p>
+        <button
+          type="button"
+          onClick={() => router.push('/dashboard/citas')}
+          className="px-6 py-3 bg-blue-600 text-white font-bold rounded-2xl shadow-md hover:bg-blue-700 transition cursor-pointer"
+        >
+          Volver a Mis Citas
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#0B1120] text-slate-900 dark:text-slate-200 pb-20 pt-4 sm:pt-6 transition-colors">
       <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-6">
@@ -719,7 +897,7 @@ export default function EditWizardPage() {
                 const IconComponent = s.icon;
                 const isCurrent = currentStep === s.num;
                 const isCompleted = currentStep > s.num;
-                const canClick = s.num === 1 || (s.num === 2 && canGoToStep2) || (s.num >= 3 && canGoToPaymentOrConfirm);
+                const canClick = s.num === 1 || (s.num === 2 && canGoToStep2) || (s.num === 3 && canGoToStep3) || (s.num === 4 && canGoToStep4);
 
                 return (
                   <div key={s.id} className="flex items-center gap-1.5 sm:gap-2">
@@ -813,56 +991,297 @@ export default function EditWizardPage() {
                 </div>
               </div>
 
-              {/* 1. SELECCIÓN DE TEMA DE SEGUIMIENTO (Si existe) */}
-              {gruposList.length > 0 && (
-                <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-xs">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                      <FolderPlus className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                      Tema de Seguimiento Asociado
+              {/* 1. AGRUPAR CITA */}
+              <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-2">
+                  <div>
+                    <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <FolderPlus className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                      Agrupar cita
                     </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Asocia esta cita a un tratamiento continuo o crea un nuevo grupo de citas con este especialista.
+                    </p>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  {(grupoId || creandoNuevoGrupo) && (
                     <button
                       type="button"
-                      onClick={() => setGrupoId('')}
-                      className={`p-3 rounded-xl border text-left text-xs font-bold transition cursor-pointer ${
-                        !grupoId
-                          ? 'border-blue-600 bg-blue-50/70 text-blue-900 dark:bg-blue-900/30 dark:border-blue-500 dark:text-blue-200'
-                          : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300'
-                      }`}
+                      onClick={handleDesagrupar}
+                      className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline self-start sm:self-auto cursor-pointer"
                     >
-                      <span>Consulta Individual (Sin tema)</span>
+                      Desagrupar cita
                     </button>
-                    {gruposList.map((g: GrupoCitaDto) => {
-                      const isSelected = grupoId === g.grupoId;
-                      return (
-                        <button
-                          key={g.grupoId}
-                          type="button"
-                          onClick={() => {
-                            setGrupoId(g.grupoId);
-                            if (observacionesAdicionales && (
-                              observacionesAdicionales.toLowerCase().trim() === (g.titulo || '').toLowerCase().trim() ||
-                              observacionesAdicionales.toLowerCase().trim() === (g.descripcion || '').toLowerCase().trim()
-                            )) {
-                              setObservacionesAdicionales('');
-                            }
-                          }}
-                          className={`p-3 rounded-xl border text-left text-xs font-bold transition flex items-center justify-between cursor-pointer ${
-                            isSelected
-                              ? 'border-purple-600 bg-purple-50/80 text-purple-950 dark:bg-purple-950/60 dark:border-purple-500 dark:text-purple-200'
-                              : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          <span className="truncate">{g.titulo || g.descripcion || 'Tema de Seguimiento'}</span>
-                          {isSelected && <Check className="w-3.5 h-3.5 text-purple-600 shrink-0 ml-1" />}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  )}
                 </div>
-              )}
+
+                {gruposUnicos.length > 0 ? (
+                  <div className="space-y-4">
+                    {/* Opciones con grupos existentes */}
+                    <div className="flex flex-wrap gap-2">
+                      {/* Primero: Cita individual */}
+                      <button
+                        type="button"
+                        onClick={handleDesagrupar}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
+                          !grupoId && !creandoNuevoGrupo
+                            ? 'bg-slate-800 text-white dark:bg-slate-700 border-slate-800 dark:border-slate-700 shadow-sm'
+                            : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <span>Cita individual</span>
+                      </button>
+
+                      {/* Segundo: Agrupar cita */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCreandoNuevoGrupo(false);
+                          if (!grupoId && gruposUnicos.length > 0) {
+                            handleSelectTema(gruposUnicos[0]);
+                          }
+                        }}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
+                          !creandoNuevoGrupo && grupoId
+                            ? 'bg-purple-50 dark:bg-purple-950/60 border-purple-500 text-purple-700 dark:text-purple-300 shadow-sm'
+                            : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <FolderPlus className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                        <span>Agrupar cita ({gruposUnicos.length})</span>
+                      </button>
+
+                      {/* Tercero: Crear grupo de citas */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCreandoNuevoGrupo(true);
+                          setGrupoId('');
+                        }}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
+                          creandoNuevoGrupo
+                            ? 'bg-purple-50 dark:bg-purple-950/60 border-purple-500 text-purple-700 dark:text-purple-300 shadow-sm'
+                            : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <Plus className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                        <span>Crear grupo de citas</span>
+                      </button>
+                    </div>
+
+                    {/* Lista de grupos existentes para seleccionar */}
+                    {!creandoNuevoGrupo && (
+                      <div className="space-y-3 pt-1">
+                        {grupoId && (
+                          <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-purple-50/80 dark:bg-purple-950/40 border border-purple-200/80 dark:border-purple-800/50 text-xs font-bold text-purple-800 dark:text-purple-300">
+                            <Check className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                            <span>Grupo seleccionado: <strong>{grupoNombre || 'Seleccionado'}</strong>.</span>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {gruposUnicos.map((g) => {
+                            const isSelected = grupoId === g.grupoId;
+                            const topicTitle = g.titulo || g.descripcion || 'Grupo de Citas';
+                            return (
+                              <button
+                                key={g.grupoId}
+                                type="button"
+                                onClick={() => handleSelectTema(g)}
+                                className={`text-left p-3.5 rounded-2xl border-2 transition-all flex items-start justify-between gap-3 cursor-pointer ${
+                                  isSelected
+                                    ? 'border-purple-500 bg-purple-50/80 dark:bg-purple-950/50 shadow-md text-purple-950 dark:text-purple-200 ring-2 ring-purple-400/20'
+                                    : 'border-slate-200 dark:border-slate-700 hover:border-purple-300 dark:hover:border-purple-600/50 bg-slate-50/50 dark:bg-[#0F172A]'
+                                }`}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5 text-purple-600 dark:text-purple-400 mb-1">
+                                    <FolderPlus className="w-4 h-4 shrink-0" />
+                                    <span className="text-[10px] font-black uppercase tracking-wider">Grupo de Citas</span>
+                                  </div>
+                                  <h4 className="font-bold text-sm truncate text-slate-900 dark:text-white">
+                                    {topicTitle}
+                                  </h4>
+                                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                    {g.modalidad && (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-purple-100/80 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">
+                                        {g.modalidad}
+                                      </span>
+                                    )}
+                                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                                      {g.citaId ? 'Continuidad de citas' : 'Grupo activo'}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center mt-0.5 transition ${
+                                  isSelected ? 'bg-purple-600 text-white shadow-xs' : 'border border-slate-300 dark:border-slate-600'
+                                }`}>
+                                  {isSelected && <Check className="w-3.5 h-3.5" />}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Formulario para ingresar nuevo grupo */}
+                    {creandoNuevoGrupo && (
+                      <div className="pt-2 animate-in fade-in duration-150">
+                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
+                          Nombre del nuevo grupo de citas o tratamiento:
+                        </label>
+                        <div className="flex flex-col sm:flex-row gap-2 max-w-xl">
+                          <input
+                            type="text"
+                            value={nuevoGrupoTema}
+                            onChange={(e) => setNuevoGrupoTema(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleConfirmarNuevoGrupo();
+                              } else if (e.key === 'Escape') {
+                                setCreandoNuevoGrupo(false);
+                                setNuevoGrupoTema('');
+                              }
+                            }}
+                            placeholder="Ej: Control Post-operatorio Rodilla, Tratamiento Acné..."
+                            className="flex-1 bg-white dark:bg-[#0F172A] px-4 py-2.5 rounded-xl border border-purple-300 dark:border-purple-700 outline-none focus:ring-2 focus:ring-purple-500/20 text-sm text-slate-800 dark:text-slate-200"
+                            autoFocus
+                          />
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleConfirmarNuevoGrupo}
+                              disabled={createGrupoMutation.isPending || !nuevoGrupoTema.trim()}
+                              className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-sm transition flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer shrink-0"
+                            >
+                              {createGrupoMutation.isPending ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  <span>Creando...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                  <span>Crear grupo</span>
+                                </>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCreandoNuevoGrupo(false);
+                                setNuevoGrupoTema('');
+                              }}
+                              className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold transition cursor-pointer shrink-0"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1.5">
+                          Presiona <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-mono border border-slate-200 dark:border-slate-700">Enter</kbd> o haz clic en <strong>Crear grupo</strong> para confirmar.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* Si el paciente no tiene grupos previos con este médico (como en Screenshot 2) */
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      {/* Cita individual */}
+                      <button
+                        type="button"
+                        onClick={handleDesagrupar}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
+                          !creandoNuevoGrupo
+                            ? 'bg-slate-800 text-white dark:bg-slate-700 border-slate-800 dark:border-slate-700 shadow-sm'
+                            : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <span>Cita individual</span>
+                      </button>
+
+                      {/* Crear grupo de citas */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCreandoNuevoGrupo(true);
+                          setGrupoId('');
+                        }}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
+                          creandoNuevoGrupo
+                            ? 'bg-purple-50 dark:bg-purple-950/60 border-purple-500 text-purple-700 dark:text-purple-300 shadow-sm'
+                            : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <Plus className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                        <span>Crear grupo de citas</span>
+                      </button>
+                    </div>
+
+                    {creandoNuevoGrupo && (
+                      <div className="pt-2 animate-in fade-in duration-150">
+                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
+                          Nombre del nuevo grupo de citas o tratamiento:
+                        </label>
+                        <div className="flex flex-col sm:flex-row gap-2 max-w-xl">
+                          <input
+                            type="text"
+                            value={nuevoGrupoTema}
+                            onChange={(e) => setNuevoGrupoTema(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleConfirmarNuevoGrupo();
+                              } else if (e.key === 'Escape') {
+                                setCreandoNuevoGrupo(false);
+                                setNuevoGrupoTema('');
+                              }
+                            }}
+                            placeholder="Ej: Control Post-operatorio Rodilla, Tratamiento Acné..."
+                            className="flex-1 bg-white dark:bg-[#0F172A] px-4 py-2.5 rounded-xl border border-purple-300 dark:border-purple-700 outline-none focus:ring-2 focus:ring-purple-500/20 text-sm text-slate-800 dark:text-slate-200"
+                            autoFocus
+                          />
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleConfirmarNuevoGrupo}
+                              disabled={createGrupoMutation.isPending || !nuevoGrupoTema.trim()}
+                              className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-sm transition flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer shrink-0"
+                            >
+                              {createGrupoMutation.isPending ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  <span>Creando...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                  <span>Crear grupo</span>
+                                </>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCreandoNuevoGrupo(false);
+                                setNuevoGrupoTema('');
+                              }}
+                              className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold transition cursor-pointer shrink-0"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1.5">
+                          Presiona <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-mono border border-slate-200 dark:border-slate-700">Enter</kbd> o haz clic en <strong>Crear grupo</strong> para confirmar.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* 2. SERVICIOS Y TARIFAS DEL ESPECIALISTA */}
               {serviciosMedico.length > 0 && (
@@ -1099,37 +1518,63 @@ export default function EditWizardPage() {
 
                     {modalidad === 'domicilio' && (
                       <div className="flex flex-col gap-3">
-                        <div className="max-h-[200px] overflow-y-auto pr-1 space-y-2">
-                          {areasList.map((area) => {
-                            const isSelected = areaSeleccionada?.ladCodigo === area.ladCodigo;
-                            return (
-                              <button
-                                key={area.ladCodigo}
-                                type="button"
-                                onClick={() => setAreaSeleccionada(area)}
-                                className={`w-full text-left p-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
-                                  isSelected
-                                    ? 'bg-blue-50/70 dark:bg-blue-900/30 border-blue-600 dark:border-blue-500'
-                                    : 'bg-white dark:bg-[#1E293B] border-slate-200 dark:border-slate-700'
-                                }`}
-                              >
-                                <span className="font-semibold text-xs text-slate-800 dark:text-slate-200">{area.municipio}</span>
-                                {area.ladZonas && (
-                                  <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 px-2 py-0.5 rounded-full">
-                                    Zonas: {area.ladZonas}
-                                  </span>
-                                )}
-                              </button>
-                            );
-                          })}
+                        {areasList.length > 0 && (
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                              Área / Municipio de Cobertura:
+                            </label>
+                            <div className="max-h-[160px] overflow-y-auto pr-1 space-y-1.5">
+                              {areasList.map((area) => {
+                                const isSelected = areaSeleccionada?.ladCodigo === area.ladCodigo;
+                                return (
+                                  <button
+                                    key={area.ladCodigo}
+                                    type="button"
+                                    onClick={() => setAreaSeleccionada(area)}
+                                    className={`w-full text-left p-2.5 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
+                                      isSelected
+                                        ? 'bg-blue-50/70 dark:bg-blue-900/30 border-blue-600 dark:border-blue-500'
+                                        : 'bg-white dark:bg-[#1E293B] border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                                    }`}
+                                  >
+                                    <span className="font-semibold text-xs text-slate-800 dark:text-slate-200">{area.municipio}</span>
+                                    {area.ladZonas && (
+                                      <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 px-2 py-0.5 rounded-full">
+                                        Zonas: {area.ladZonas}
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                            Dirección exacta del domicilio *
+                          </label>
+                          <input
+                            type="text"
+                            value={direccion}
+                            onChange={(e) => setDireccion(e.target.value)}
+                            placeholder="Calle, avenida, número de casa, colonia..."
+                            className="w-full bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+                          />
                         </div>
-                        <input
-                          type="text"
-                          value={direccion}
-                          onChange={(e) => setDireccion(e.target.value)}
-                          placeholder="Dirección exacta para visita a domicilio..."
-                          className="w-full bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none"
-                        />
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                            Referencias de ubicación (Opcional):
+                          </label>
+                          <input
+                            type="text"
+                            value={referencias}
+                            onChange={(e) => setReferencias(e.target.value)}
+                            placeholder="Frente al parque, portón blanco..."
+                            className="w-full bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+                          />
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1297,15 +1742,7 @@ export default function EditWizardPage() {
               </div>
 
               {/* Botón Siguiente Paso */}
-              <div className="sticky bottom-0 z-30 bg-slate-50/95 dark:bg-[#0B1120]/95 backdrop-blur-md py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => setIsCancelModalOpen(true)}
-                  className="px-4 py-2.5 rounded-xl font-bold text-xs text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition cursor-pointer"
-                >
-                  Cancelar cita definitivamente
-                </button>
-
+              <div className="sticky bottom-0 z-30 bg-slate-50/95 dark:bg-[#0B1120]/95 backdrop-blur-md py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end">
                 <button
                   type="button"
                   onClick={() => setCurrentStep(2)}
@@ -1316,7 +1753,7 @@ export default function EditWizardPage() {
                       : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-70'
                   }`}
                 >
-                  <span>Continuar a Detalles</span> <ArrowRight className="h-4 w-4" />
+                  <span>Continuar al Siguiente Paso</span> <ArrowRight className="h-4 w-4" />
                 </button>
               </div>
             </motion.div>
@@ -1469,12 +1906,17 @@ export default function EditWizardPage() {
                 {/* 3. DIRECCIÓN EXACTA (Solo Domicilio) */}
                 {modalidad === 'domicilio' && (
                   <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                    <h2 className="text-xl font-black text-slate-900 dark:text-white mb-1 tracking-tight">
-                      Dirección de visita
-                    </h2>
-                    <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mb-4">
-                      Proporciona la dirección exacta para que el médico pueda llegar sin problemas.
-                    </p>
+                    <div>
+                      <h2 className="text-xl font-black text-slate-900 dark:text-white mb-1 tracking-tight flex items-center gap-2">
+                        <Home className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                        Dirección de Visita a Domicilio
+                      </h2>
+                      <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+                        {areaSeleccionada?.municipio 
+                          ? `Zona de atención: ${areaSeleccionada.municipio} (Zonas: ${areaSeleccionada.ladZonas || 'Todas'}). Puedes actualizar la dirección exacta y referencias.` 
+                          : 'Proporciona o actualiza la dirección exacta para que el médico pueda acudir a la visita.'}
+                      </p>
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Dirección Exacta *</label>
@@ -1482,12 +1924,12 @@ export default function EditWizardPage() {
                           type="text"
                           value={direccion}
                           onChange={(e) => setDireccion(e.target.value)}
-                          placeholder="Calle, avenida, número de casa, etc..."
+                          placeholder="Calle, avenida, número de casa, colonia..."
                           className="w-full bg-slate-50 dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Referencias *</label>
+                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Referencias de Ubicación *</label>
                         <input
                           type="text"
                           value={referencias}
@@ -1595,22 +2037,20 @@ export default function EditWizardPage() {
                   onClick={() => setCurrentStep(1)}
                   className="px-5 py-3 rounded-2xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition cursor-pointer"
                 >
-                  Volver al Horario
+                  Volver al paso anterior
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setCurrentStep(3)}
-                  disabled={!canGoToPaymentOrConfirm}
+                  disabled={!canGoToStep3}
                   className={`font-bold py-3.5 px-8 rounded-2xl transition-all flex items-center gap-2 text-sm shadow-md ${
-                    canGoToPaymentOrConfirm
+                    canGoToStep3
                       ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
                       : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-70'
                   }`}
                 >
-                  <span>
-                    {requierePagoDiferencia ? 'Continuar a Pago de Diferencia' : 'Revisar Comparación'}
-                  </span> 
+                  <span>Continuar al Siguiente Paso</span> 
                   <ArrowRight className="h-4 w-4" />
                 </button>
               </div>
@@ -1618,9 +2058,9 @@ export default function EditWizardPage() {
           )}
 
           {/* ══════════════════════════════════════════════════════
-              PASO 3 CONDICIONAL: PAGO DE DIFERENCIA (Solo si precioNuevo > precioOriginal)
+              PASO 3: PAGO (Si hay diferencia de tarifa o confirmación de costo)
               ══════════════════════════════════════════════════════ */}
-          {currentStep === 3 && requierePagoDiferencia && (
+          {currentStep === 3 && (
             <motion.div
               key="stepPago"
               initial={{ opacity: 0, y: 12 }}
@@ -1631,158 +2071,193 @@ export default function EditWizardPage() {
             >
               <div className="bg-white dark:bg-[#1E293B] rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-xs space-y-6">
                 
-                {/* Banner de Diferencia Financiera */}
-                <div className="p-5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="flex items-start gap-3.5">
-                    <div className="w-11 h-11 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
-                      <CreditCard className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h3 className="font-extrabold text-base text-amber-950 dark:text-amber-100">
-                        Ajuste de Tarifa por Cambio de Servicio
-                      </h3>
-                      <p className="text-xs sm:text-sm text-amber-800 dark:text-amber-300 mt-0.5">
-                        El nuevo servicio ({servicioSeleccionado?.servicio}) tiene un costo superior al servicio previamente contratado.
-                      </p>
-                      <div className="mt-2 flex items-center gap-4 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                        <span>Costo anterior: Q{precioOriginal.toFixed(2)}</span>
-                        <span>•</span>
-                        <span>Nuevo costo: Q{precioNuevo.toFixed(2)}</span>
+                {requierePagoDiferencia ? (
+                  <>
+                    {/* Banner de Diferencia Financiera */}
+                    <div className="p-5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex items-start gap-3.5">
+                        <div className="w-11 h-11 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
+                          <CreditCard className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <h3 className="font-extrabold text-base text-amber-950 dark:text-amber-100">
+                            Ajuste de Tarifa por Cambio de Servicio
+                          </h3>
+                          <p className="text-xs sm:text-sm text-amber-800 dark:text-amber-300 mt-0.5">
+                            El nuevo servicio ({servicioSeleccionado?.servicio}) tiene un costo superior al servicio previamente contratado.
+                          </p>
+                          <div className="mt-2 flex items-center gap-4 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                            <span>Costo anterior: Q{precioOriginal.toFixed(2)}</span>
+                            <span>•</span>
+                            <span>Nuevo costo: Q{precioNuevo.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="text-left sm:text-right shrink-0 bg-white dark:bg-[#0F172A] p-3.5 rounded-xl border border-amber-200 dark:border-amber-800">
+                        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Diferencia a Cobrar
+                        </span>
+                        <span className="text-2xl font-black text-amber-600 dark:text-amber-400">
+                          Q{diferenciaAPagar.toFixed(2)}
+                        </span>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="text-left sm:text-right shrink-0 bg-white dark:bg-[#0F172A] p-3.5 rounded-xl border border-amber-200 dark:border-amber-800">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Diferencia a Cobrar
-                    </span>
-                    <span className="text-2xl font-black text-amber-600 dark:text-amber-400">
-                      Q{diferenciaAPagar.toFixed(2)}
-                    </span>
-                  </div>
-                </div>
+                    {/* Selección de Método de Pago */}
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2 tracking-tight">
+                        ¿Cómo deseas pagar la diferencia?
+                      </h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">
+                        Selecciona el método con el que deseas abonar la diferencia de Q{diferenciaAPagar.toFixed(2)}.
+                      </p>
 
-                {/* Selección de Método de Pago */}
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2 tracking-tight">
-                    ¿Cómo deseas pagar la diferencia?
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">
-                    Selecciona el método con el que deseas abonar la diferencia de Q{diferenciaAPagar.toFixed(2)}.
-                  </p>
+                      <div className="space-y-3">
+                        {metodosPagoDisponibles.map((metodo) => {
+                          const isSelected = tipoPagoId === metodo.tipoPagoId;
+                          const isTarjeta = metodo.descripcion.toLowerCase().includes('tarjeta');
+                          const isSeguro = metodo.descripcion.toLowerCase().includes('seguro');
+                          const isEfectivo = metodo.descripcion.toLowerCase().includes('efectivo');
+                          const isTransferencia = metodo.descripcion.toLowerCase().includes('transferencia');
 
-                  <div className="space-y-3">
-                    {metodosPagoDisponibles.map((metodo) => {
-                      const isSelected = tipoPagoId === metodo.tipoPagoId;
-                      const isTarjeta = metodo.descripcion.toLowerCase().includes('tarjeta');
-                      const isSeguro = metodo.descripcion.toLowerCase().includes('seguro');
-                      const isEfectivo = metodo.descripcion.toLowerCase().includes('efectivo');
-                      const isTransferencia = metodo.descripcion.toLowerCase().includes('transferencia');
+                          const tarjetasBilletera = billetera.filter(b => b.tipo === 'TARJETA');
 
-                      const tarjetasBilletera = billetera.filter(b => b.tipo === 'TARJETA');
-
-                      return (
-                        <div
-                          key={metodo.tipoPagoId}
-                          className={`rounded-2xl border-2 transition-all overflow-hidden ${
-                            isSelected
-                              ? 'border-blue-600 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/20 shadow-xs'
-                              : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0F172A] hover:border-blue-300'
-                          }`}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setTipoPagoId(metodo.tipoPagoId);
-                              if (isTarjeta && tarjetasBilletera.length > 0 && !billeteraItemId) {
-                                setBilleteraItemId(tarjetasBilletera[0].id_metodo);
-                              }
-                            }}
-                            className="w-full flex items-center p-4 text-left cursor-pointer"
-                          >
-                            <div className={`p-2.5 rounded-xl transition-colors ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
-                              {isTarjeta ? (
-                                <CreditCard className="w-5 h-5" />
-                              ) : isEfectivo ? (
-                                <Banknote className="w-5 h-5" />
-                              ) : isTransferencia ? (
-                                <Landmark className="w-5 h-5" />
-                              ) : (
-                                <Wallet className="w-5 h-5" />
-                              )}
-                            </div>
-                            <div className="flex-1 ml-3.5">
-                              <h4 className={`text-sm font-bold ${isSelected ? 'text-blue-950 dark:text-white' : 'text-slate-800 dark:text-slate-200'}`}>
-                                {metodo.descripcion}
-                              </h4>
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
-                                {metodo.observaciones || (isTarjeta ? 'Paga seguro y al instante' : 'Pago al momento de la cita')}
-                              </p>
-                            </div>
-                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-blue-600' : 'border-slate-300 dark:border-slate-600'}`}>
-                              {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />}
-                            </div>
-                          </button>
-
-                          {/* Opciones de Tarjeta / Billetera */}
-                          {isSelected && isTarjeta && (
-                            <div className="px-5 pb-5 pt-2 border-t border-blue-100 dark:border-blue-900/40 space-y-3">
-                              <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                                Selecciona una tarjeta guardada:
-                              </p>
-                              {tarjetasBilletera.length > 0 ? (
-                                <div className="grid gap-2 sm:grid-cols-2">
-                                  {tarjetasBilletera.map((card) => {
-                                    const isCardSelected = billeteraItemId === card.id_metodo;
-                                    return (
-                                      <button
-                                        key={card.id_metodo}
-                                        type="button"
-                                        onClick={() => setBilleteraItemId(card.id_metodo)}
-                                        className={`p-3 rounded-xl border-2 text-left text-xs font-bold flex items-center justify-between cursor-pointer transition ${
-                                          isCardSelected
-                                            ? 'border-blue-600 bg-white dark:bg-[#1E293B] shadow-xs'
-                                            : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#0B1120]'
-                                        }`}
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          <CreditCard className="w-4 h-4 text-blue-600" />
-                                          <span>{card.descripcion || card.proveedor || 'Tarjeta'}</span>
-                                        </div>
-                                        {isCardSelected && <Check className="w-4 h-4 text-blue-600" />}
-                                      </button>
-                                    );
-                                  })}
+                          return (
+                            <div
+                              key={metodo.tipoPagoId}
+                              className={`rounded-2xl border-2 transition-all overflow-hidden ${
+                                isSelected
+                                  ? 'border-blue-600 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/20 shadow-xs'
+                                  : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0F172A] hover:border-blue-300'
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setTipoPagoId(metodo.tipoPagoId);
+                                  if (isTarjeta && tarjetasBilletera.length > 0 && !billeteraItemId) {
+                                    setBilleteraItemId(tarjetasBilletera[0].id_metodo);
+                                  }
+                                }}
+                                className="w-full flex items-center p-4 text-left cursor-pointer"
+                              >
+                                <div className={`p-2.5 rounded-xl transition-colors ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
+                                  {isTarjeta ? (
+                                    <CreditCard className="w-5 h-5" />
+                                  ) : isEfectivo ? (
+                                    <Banknote className="w-5 h-5" />
+                                  ) : isTransferencia ? (
+                                    <Landmark className="w-5 h-5" />
+                                  ) : (
+                                    <Wallet className="w-5 h-5" />
+                                  )}
                                 </div>
-                              ) : (
-                                <p className="text-xs text-slate-500 italic">No tienes tarjetas registradas en tu billetera.</p>
-                              )}
+                                <div className="flex-1 ml-3.5">
+                                  <h4 className={`text-sm font-bold ${isSelected ? 'text-blue-950 dark:text-white' : 'text-slate-800 dark:text-slate-200'}`}>
+                                    {metodo.descripcion}
+                                  </h4>
+                                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                                    {metodo.observaciones || (isTarjeta ? 'Paga seguro y al instante' : 'Pago al momento de la cita')}
+                                  </p>
+                                </div>
+                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-blue-600' : 'border-slate-300 dark:border-slate-600'}`}>
+                                  {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />}
+                                </div>
+                              </button>
 
-                              {/* Agregar tarjeta rápida */}
-                              <div className="pt-2 flex gap-2">
-                                <input
-                                  type="text"
-                                  placeholder="Número de tarjeta (ej. 4242...)"
-                                  value={newCardNum}
-                                  onChange={(e) => setNewCardNum(e.target.value)}
-                                  className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#0F172A] outline-none"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={handleSaveQuickCard}
-                                  disabled={isSavingCard || !newCardNum.trim()}
-                                  className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition disabled:opacity-50 cursor-pointer"
-                                >
-                                  {isSavingCard ? 'Guardando...' : 'Guardar'}
-                                </button>
-                              </div>
+                              {/* Opciones de Tarjeta / Billetera */}
+                              {isSelected && isTarjeta && (
+                                <div className="px-5 pb-5 pt-2 border-t border-blue-100 dark:border-blue-900/40 space-y-3">
+                                  <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                                    Selecciona una tarjeta guardada:
+                                  </p>
+                                  {tarjetasBilletera.length > 0 ? (
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                      {tarjetasBilletera.map((card) => {
+                                        const isCardSelected = billeteraItemId === card.id_metodo;
+                                        return (
+                                          <button
+                                            key={card.id_metodo}
+                                            type="button"
+                                            onClick={() => setBilleteraItemId(card.id_metodo)}
+                                            className={`p-3 rounded-xl border-2 text-left text-xs font-bold flex items-center justify-between cursor-pointer transition ${
+                                              isCardSelected
+                                                ? 'border-blue-600 bg-white dark:bg-[#1E293B] shadow-xs'
+                                                : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#0B1120]'
+                                            }`}
+                                          >
+                                            <div className="flex items-center gap-2">
+                                              <CreditCard className="w-4 h-4 text-blue-600" />
+                                              <span>{card.descripcion || card.proveedor || 'Tarjeta'}</span>
+                                            </div>
+                                            {isCardSelected && <Check className="w-4 h-4 text-blue-600" />}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <p className="text-xs text-slate-500 italic">No tienes tarjetas registradas en tu billetera.</p>
+                                  )}
+
+                                  {/* Agregar tarjeta rápida */}
+                                  <div className="pt-2 flex gap-2">
+                                    <input
+                                      type="text"
+                                      placeholder="Número de tarjeta (ej. 4242...)"
+                                      value={newCardNum}
+                                      onChange={(e) => setNewCardNum(e.target.value)}
+                                      className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#0F172A] outline-none"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={handleSaveQuickCard}
+                                      disabled={isSavingCard || !newCardNum.trim()}
+                                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition disabled:opacity-50 cursor-pointer"
+                                    >
+                                      {isSavingCard ? 'Guardando...' : 'Guardar'}
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                          )}
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  /* Caso sin diferencia de tarifa */
+                  <div className="p-6 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border-2 border-emerald-300 dark:border-emerald-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-start gap-3.5">
+                      <div className="w-11 h-11 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
+                        <CheckCircle2 className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="font-extrabold text-base text-emerald-950 dark:text-emerald-100">
+                          Sin Cobro Adicional de Tarifa
+                        </h3>
+                        <p className="text-xs sm:text-sm text-emerald-800 dark:text-emerald-300 mt-0.5">
+                          El servicio seleccionado y la modalidad mantienen la misma tarifa de tu cita previa. No es necesario realizar ningún pago adicional.
+                        </p>
+                        <div className="mt-2 flex items-center gap-4 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                          <span>Tarifa de la cita: Q{precioNuevo.toFixed(2)}</span>
+                          <span>•</span>
+                          <span className="text-emerald-600 dark:text-emerald-400 font-bold">Diferencia: Q0.00</span>
                         </div>
-                      );
-                    })}
+                      </div>
+                    </div>
+
+                    <div className="text-left sm:text-right shrink-0 bg-white dark:bg-[#0F172A] p-3.5 rounded-xl border border-emerald-200 dark:border-emerald-800">
+                      <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Total a Cobrar
+                      </span>
+                      <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
+                        Q0.00
+                      </span>
+                    </div>
                   </div>
-                </div>
+                )}
 
               </div>
 
@@ -1793,30 +2268,29 @@ export default function EditWizardPage() {
                   onClick={() => setCurrentStep(2)}
                   className="px-5 py-3 rounded-2xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition cursor-pointer"
                 >
-                  Volver a Detalles
+                  Volver al paso anterior
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setCurrentStep(4)}
-                  disabled={!canConfirmCita}
+                  disabled={!canGoToStep4}
                   className={`font-bold py-3.5 px-8 rounded-2xl transition-all flex items-center gap-2 text-sm shadow-md ${
-                    canConfirmCita
+                    canGoToStep4
                       ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
                       : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-70'
                   }`}
                 >
-                  <span>Revisar Comparación</span> <ArrowRight className="h-4 w-4" />
+                  <span>Continuar al Siguiente Paso</span> <ArrowRight className="h-4 w-4" />
                 </button>
               </div>
             </motion.div>
           )}
 
           {/* ══════════════════════════════════════════════════════
-              PASO FINAL: COMPARAR Y CONFIRMAR CITA
-              (Paso 4 si hubo diferencia de pago, o Paso 3 si no)
+              PASO 4: COMPARAR Y CONFIRMAR CITA
               ══════════════════════════════════════════════════════ */}
-          {((currentStep === 4 && requierePagoDiferencia) || (currentStep === 3 && !requierePagoDiferencia)) && (
+          {currentStep === 4 && (
             <motion.div
               key="stepFinal"
               initial={{ opacity: 0, scale: 0.98 }}
@@ -2056,19 +2530,24 @@ export default function EditWizardPage() {
 
               </div>
 
-              {/* Aviso Final */}
-              <div className="bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 p-4 rounded-2xl flex items-start gap-3 text-blue-950 dark:text-blue-200 text-xs sm:text-sm">
-                <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-                <p>
-                  <strong>Confirmación de Reprogramación:</strong> Al hacer clic en el botón inferior, tu cita anterior se actualizará automáticamente y se enviará la confirmación al especialista.
-                </p>
+              {/* Leyenda Requerida al confirmar */}
+              <div className="bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-800/70 p-4 sm:p-5 rounded-2xl flex items-start gap-3.5 text-amber-950 dark:text-amber-200 text-xs sm:text-sm shadow-xs">
+                <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold text-sm text-amber-900 dark:text-amber-100">
+                    Al momento de confirmar la modificación de esta cita, se cancelará de forma definitiva la cita actual.
+                  </p>
+                  <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                    Tu turno anterior quedará liberado inmediatamente para otros pacientes y tu nueva programación entrará en vigor.
+                  </p>
+                </div>
               </div>
 
               {/* Botones de Acción */}
               <div className="sticky bottom-0 z-30 bg-slate-50/95 dark:bg-[#0B1120]/95 backdrop-blur-md py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
                 <button
                   type="button"
-                  onClick={() => setCurrentStep(requierePagoDiferencia ? 3 : 2)}
+                  onClick={() => setCurrentStep(3)}
                   className="px-5 py-3 rounded-2xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition cursor-pointer"
                 >
                   Volver al paso anterior
@@ -2090,8 +2569,8 @@ export default function EditWizardPage() {
                       <Check className="w-4 h-4 stroke-[3]" />
                       <span>
                         {requierePagoDiferencia 
-                          ? `Pagar Diferencia (Q${diferenciaAPagar.toFixed(2)}) y Modificar Cita`
-                          : 'Confirmar y Modificar Cita'}
+                          ? `Pagar Diferencia (Q${diferenciaAPagar.toFixed(2)}) y Aceptar Modificación`
+                          : 'Aceptar y Confirmar Modificación'}
                       </span>
                     </>
                   )}

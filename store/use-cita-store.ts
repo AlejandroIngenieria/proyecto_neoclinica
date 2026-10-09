@@ -24,6 +24,7 @@ interface CitaState {
   medicoName: string | null;
   
   modalidad: ModalidadCita | null;
+  tipoConsulta: string;
   clinicaSeleccionada: ClinicaCitaDto | null;
   servicioSeleccionado: ServicioMedicoCitaDto | null;
   areaDomicilio: AreaDomicilioDto | null;
@@ -79,6 +80,7 @@ interface CitaState {
   prevStep: () => void;
   
   setMedico: (cod: string, name: string) => void;
+  setTipoConsulta: (tipo: string) => void;
   setModalidad: (modalidad: ModalidadCita) => void;
   setClinica: (clinica: ClinicaCitaDto | null) => void;
   setServicio: (servicio: ServicioMedicoCitaDto | null) => void;
@@ -136,6 +138,7 @@ const initialState = {
   codMedico: null,
   medicoName: null,
   
+  tipoConsulta: 'Primera vez',
   modalidad: null,
   clinicaSeleccionada: null,
   servicioSeleccionado: null,
@@ -219,6 +222,7 @@ export const useCitaStore = create<CitaState>((set, get) => ({
   },
   
   setMedico: (cod, name) => set({ codMedico: cod, medicoName: name }),
+  setTipoConsulta: (tipoConsulta) => set({ tipoConsulta }),
   
   setModalidad: (modalidad) => set({ 
     modalidad, 

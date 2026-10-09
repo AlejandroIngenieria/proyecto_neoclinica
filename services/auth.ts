@@ -53,3 +53,36 @@ export async function reenviarPasswordTemporal(correo?: string, token?: string):
   return typeof data === 'string' ? { mensaje: data } : data;
 }
 
+export type EstadoPasswordResponse = {
+  correo: string;
+  tienePassword: boolean;
+  esUsuarioSocial: boolean;
+  debeCambiarPassword: boolean;
+};
+
+export async function obtenerEstadoPassword(token?: string): Promise<EstadoPasswordResponse> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const res = await fetch('/api/autenticacion/estado-password', {
+    method: 'GET',
+    headers,
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    return {
+      correo: '',
+      tienePassword: true,
+      esUsuarioSocial: false,
+      debeCambiarPassword: false,
+    };
+  }
+
+  return await res.json();
+}
+

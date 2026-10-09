@@ -18,6 +18,7 @@ import {
   VolumeX,
   Megaphone,
   Building2,
+  XCircle,
 } from 'lucide-react';
 import { useColaDelDia } from '@/hooks/use-cola-dia';
 import { useTurnVoice } from '@/hooks/use-turn-voice';
@@ -81,13 +82,14 @@ export function ColaTurnosWidget({ citaHoy, pacienteActualId }: { citaHoy: CitaL
       (t) =>
         t.turnoNumero < miTurno.turnoNumero &&
         (t.ctaEstado || '').toLowerCase() !== 'completada' &&
-        (t.ctaEstado || '').toLowerCase() !== 'no_asistio'
+        !['no_asistio', 'noasistio', 'no_asistió'].includes((t.ctaEstado || '').toLowerCase())
     ).length;
   }, [turnos, miTurno]);
 
   const esMiTurnoEnConsulta = miTurno && (miTurno.ctaEstado || '').toLowerCase() === 'en_proceso';
   const esMiTurnoCompletado = miTurno && (miTurno.ctaEstado || '').toLowerCase() === 'completada';
-  const esSiguienteTurno = miTurno && turnosAntesDeMi === 0 && !esMiTurnoEnConsulta && !esMiTurnoCompletado;
+  const esMiTurnoNoAsistio = miTurno && ['no_asistio', 'noasistio', 'no_asistió'].includes((miTurno.ctaEstado || '').toLowerCase());
+  const esSiguienteTurno = miTurno && turnosAntesDeMi === 0 && !esMiTurnoEnConsulta && !esMiTurnoCompletado && !esMiTurnoNoAsistio;
 
   const horaFormateadaMiTurno = miTurno?.ctaHora ? miTurno.ctaHora.slice(0, 5) : citaHoy.ctaHora?.slice(0, 5) || '--:--';
 
@@ -211,6 +213,16 @@ export function ColaTurnosWidget({ citaHoy, pacienteActualId }: { citaHoy: CitaL
               </p>
             </div>
           </div>
+        ) : esMiTurnoNoAsistio ? (
+          <div className="flex items-center gap-3.5 p-4 rounded-2xl bg-gradient-to-r from-rose-600 to-red-600 text-white shadow-lg shadow-rose-600/20">
+            <XCircle className="h-6 w-6 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm font-black uppercase tracking-wide">Cita Registrada como No Asistió</p>
+              <p className="text-xs text-rose-100 font-medium mt-0.5">
+                Esta consulta fue registrada como no asistida.
+              </p>
+            </div>
+          </div>
         ) : miTurno ? (
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-900/40">
             <div className="flex items-center gap-3">
@@ -273,6 +285,7 @@ export function ColaTurnosWidget({ citaHoy, pacienteActualId }: { citaHoy: CitaL
           <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400 font-semibold flex-wrap">
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Atendidos ({turnosAtendidos})</span>
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-500" /> En Consulta</span>
+            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-rose-500" /> No Asistió</span>
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-teal-500" /> En Clínica</span>
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-slate-400" /> En Espera</span>
           </div>
@@ -290,7 +303,7 @@ export function ColaTurnosWidget({ citaHoy, pacienteActualId }: { citaHoy: CitaL
               const estado = (t.ctaEstado || '').toLowerCase();
               const isEnProceso = estado === 'en_proceso';
               const isCompletada = estado === 'completada';
-              const isNoAsistio = estado === 'no_asistio';
+              const isNoAsistio = estado === 'no_asistio' || estado === 'noasistio' || estado === 'no_asistió';
               const isMine = t.esMiTurno || (miTurno && t.ctaCodigo === miTurno.ctaCodigo);
               const horaTurno = t.ctaHora ? t.ctaHora.slice(0, 5) : '--:--';
 
@@ -304,6 +317,8 @@ export function ColaTurnosWidget({ citaHoy, pacienteActualId }: { citaHoy: CitaL
                       ? 'border-2 border-amber-400 bg-amber-50/50 dark:bg-amber-950/30'
                       : isCompletada
                       ? 'border border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/30 dark:bg-emerald-950/20 opacity-80'
+                      : isNoAsistio
+                      ? 'border border-rose-200 dark:border-rose-900/40 bg-rose-50/30 dark:bg-rose-950/20 opacity-80'
                       : 'border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-800/40'
                   }`}
                 >
@@ -365,7 +380,8 @@ export function ColaTurnosWidget({ citaHoy, pacienteActualId }: { citaHoy: CitaL
                         Atendido
                       </span>
                     ) : isNoAsistio ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md w-full justify-center">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 dark:text-rose-300 bg-rose-100/90 dark:bg-rose-900/50 px-2 py-0.5 rounded-md w-full justify-center">
+                        <XCircle className="h-3 w-3 text-rose-600 dark:text-rose-400" />
                         No Asistió
                       </span>
                     ) : (

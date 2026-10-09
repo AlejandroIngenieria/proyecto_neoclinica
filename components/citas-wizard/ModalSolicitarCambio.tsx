@@ -33,7 +33,13 @@ export function ModalSolicitarCambio({
   citasCandidatas,
   citaPreseleccionadaId,
 }: ModalSolicitarCambioProps) {
-  const [mensaje, setMensaje] = useState('');
+  const MENSAJES_PREDETERMINADOS = [
+    'Buen día, tengo una emergencia y quisiera preguntarte si puedes ceder este horario para mí.',
+    'Podrías cederme tu horario?',
+    'Por favor podrías ceder tu horario? lo necesito de forma urgente.',
+  ] as const;
+
+  const [mensaje, setMensaje] = useState<string>(MENSAJES_PREDETERMINADOS[0]);
   
   // Si hay citas candidatas, inicializar con la preseleccionada o la primera
   const [selectedCitaId, setSelectedCitaId] = useState<string>(() => {
@@ -206,20 +212,40 @@ export function ModalSolicitarCambio({
           </div>
         )}
 
-        {/* Mensaje opcional */}
-        <div className="mb-3">
-          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+        {/* Mensajes predeterminados */}
+        <div className="mb-3.5 space-y-2">
+          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
             <MessageSquare className="w-3.5 h-3.5 text-slate-400" />
-            <span>Mensaje opcional:</span>
+            <span>Mensaje para el paciente:</span>
           </label>
-          <textarea
-            rows={2}
-            value={mensaje}
-            onChange={(e) => setMensaje(e.target.value)}
-            placeholder="Ej. Hola, me sería de gran ayuda si podemos intercambiar turnos. ¡Muchas gracias!"
-            className="w-full text-xs p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/40 resize-none"
-            maxLength={300}
-          />
+          <div className="space-y-1.5">
+            {MENSAJES_PREDETERMINADOS.map((msg, index) => {
+              const isSelected = mensaje === msg;
+              return (
+                <button
+                  key={index}
+                  type="button"
+                  onClick={() => setMensaje(msg)}
+                  className={`w-full text-left p-2.5 rounded-xl border text-xs transition-all flex items-start gap-2.5 cursor-pointer ${
+                    isSelected
+                      ? 'border-orange-500 bg-orange-50/70 dark:bg-orange-950/40 text-slate-900 dark:text-white font-medium shadow-2xs'
+                      : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50/40 dark:bg-slate-800/30 text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  <div
+                    className={`w-3.5 h-3.5 rounded-full border-2 mt-0.5 shrink-0 flex items-center justify-center transition-all ${
+                      isSelected
+                        ? 'border-orange-500 bg-orange-500'
+                        : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900'
+                    }`}
+                  >
+                    {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                  </div>
+                  <span className="leading-relaxed flex-1">{msg}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Nota minimalista de 1 único intento */}

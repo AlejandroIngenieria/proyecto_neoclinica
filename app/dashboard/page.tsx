@@ -414,8 +414,8 @@ function HomeContent() {
   const upcomingCitas = useMemo(() => {
     return citas
       .filter((c) => {
-        const estado = (c.ctaEstado || '').toLowerCase();
-        if (['cancelada', 'rechazada', 'completada', 'no_asistio'].includes(estado)) return false;
+        const estado = (c.ctaEstado || '').toLowerCase().trim();
+        if (['cancelada', 'rechazada', 'completada', 'finalizada', 'atendida', 'atendido', 'realizada', 'no_asistio', 'noasistio'].includes(estado)) return false;
         if (isCitaPasada(c.ctaFecha, c.ctaHora)) return false;
         return true;
       })

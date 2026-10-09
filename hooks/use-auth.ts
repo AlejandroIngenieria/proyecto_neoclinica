@@ -1,6 +1,6 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
-import { cambiarPassword, reenviarPasswordTemporal, type CambiarPasswordPayload } from '@/services/auth';
+import { cambiarPassword, reenviarPasswordTemporal, obtenerEstadoPassword, type CambiarPasswordPayload } from '@/services/auth';
 
 export function useCambiarPassword() {
   const { data: session } = useSession();
@@ -18,6 +18,17 @@ export function useReenviarPasswordTemporal() {
 
   return useMutation({
     mutationFn: (correo?: string) => reenviarPasswordTemporal(correo || userEmail, token),
+  });
+}
+
+export function useEstadoPassword() {
+  const { data: session } = useSession();
+  const token = (session as any)?.accessToken || (session as any)?.user?.token || (session as any)?.token;
+
+  return useQuery({
+    queryKey: ['estado-password', token],
+    queryFn: () => obtenerEstadoPassword(token),
+    enabled: !!token,
   });
 }
 

@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 import { useUIStore } from '@/stores/ui-store';
-import { useCambiarPassword } from '@/hooks/use-auth';
+import { useCambiarPassword, useEstadoPassword } from '@/hooks/use-auth';
 import { useEliminarCuentaPermanente } from '@/hooks/use-pacientes';
 import { toast } from 'sonner';
 
@@ -383,10 +383,10 @@ function EliminarCuentaModal({ isOpen, onClose }: { isOpen: boolean; onClose: ()
                 </div>
                 <div>
                   <h3 className="text-xl font-black text-rose-950 dark:text-rose-200">
-                    Eliminar Cuenta Permanentemente
+                    Eliminar Cuenta
                   </h3>
                   <p className="text-xs text-rose-700/80 dark:text-rose-400/80 mt-0.5">
-                    Acción crítica, destructiva e irreversible.
+                    Acción crítica. Se desactivará tu acceso y tus citas pendientes.
                   </p>
                 </div>
               </div>
@@ -403,13 +403,13 @@ function EliminarCuentaModal({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               <div className="rounded-2xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/70 dark:bg-rose-950/40 p-4 text-xs leading-relaxed text-rose-900 dark:text-rose-200 space-y-2">
                 <p className="font-bold flex items-center gap-1.5">
                   <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
-                  Ten en cuenta las consecuencias de esta acción:
+                  Ten en cuenta los efectos de esta acción:
                 </p>
                 <ul className="list-disc list-inside space-y-1 pl-1 text-slate-600 dark:text-slate-300">
-                  <li>Se eliminarán tus datos de acceso y perfil personal.</li>
-                  <li>Se borrará tu historial de citas, consultas médicas y recetas.</li>
-                  <li>Se eliminarán los pacientes dependientes registrados bajo tu tutela.</li>
-                  <li>Esta operación no se puede revertir bajo ninguna circunstancia.</li>
+                  <li>Tu cuenta pasará a estado Eliminado y se cerrará tu sesión.</li>
+                  <li>Tus citas médicas pendientes serán canceladas automáticamente.</li>
+                  <li>Tus suscripciones y métodos de pago serán desactivados.</li>
+                  <li>Tus registros clínicos e historial se mantendrán en resguardo seguro para fines normativos y posterior respaldo.</li>
                 </ul>
               </div>
 
@@ -457,7 +457,7 @@ function EliminarCuentaModal({ isOpen, onClose }: { isOpen: boolean; onClose: ()
                   ) : (
                     <>
                       <Trash2 className="h-4 w-4" />
-                      Eliminar definitivamente
+                      Confirmar eliminación
                     </>
                   )}
                 </button>
@@ -475,6 +475,8 @@ export default function ConfiguracionPage() {
   const [mounted, setMounted] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+
+  const { data: estadoPassword } = useEstadoPassword();
 
   useEffect(() => {
     setMounted(true);
@@ -515,18 +517,30 @@ export default function ConfiguracionPage() {
       items: [
         {
           label: 'Cambiar Contraseña',
-          description: 'Actualiza tu contraseña periódicamente para proteger el acceso a tu cuenta médica.',
+          description:
+            estadoPassword && estadoPassword.tienePassword === false
+              ? 'Esta opción solo está disponible para usuarios con contraseña registrada. Tu cuenta fue creada mediante Google o Facebook.'
+              : 'Actualiza tu contraseña periódicamente para proteger el acceso a tu cuenta médica.',
           icon: KeyRound,
-          action: (
-            <button
-              type="button"
-              onClick={() => setIsPasswordModalOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-800/60 px-4 py-2 text-xs font-bold text-blue-700 dark:text-blue-300 shadow-2xs transition-all active:scale-95 cursor-pointer"
-            >
-              <KeyRound className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-              Cambiar contraseña
-            </button>
-          ),
+          action:
+            estadoPassword && estadoPassword.tienePassword === false ? (
+              <span
+                title="Esta opción solo está disponible para usuarios con contraseña registrada"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800/80 px-3 py-1.5 text-xs font-medium text-slate-400 dark:text-slate-500 cursor-not-allowed select-none"
+              >
+                <KeyRound className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
+                No disponible
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsPasswordModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-800/60 px-4 py-2 text-xs font-bold text-blue-700 dark:text-blue-300 shadow-2xs transition-all active:scale-95 cursor-pointer"
+              >
+                <KeyRound className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                Cambiar contraseña
+              </button>
+            ),
         },
         {
           label: 'Autenticación de dos factores',
@@ -562,9 +576,9 @@ export default function ConfiguracionPage() {
       danger: true,
       items: [
         {
-          label: 'Eliminar Cuenta Permanentemente',
+          label: 'Eliminar Cuenta',
           description:
-            'Elimina de forma definitiva e irreversible tu cuenta, citas, historial médico y pacientes dependientes afiliados.',
+            'Desactiva tu cuenta pasando su estado a Eliminado. Tu historial médico y registros permanecerán resguardados de forma segura.',
           icon: Trash2,
           action: (
             <button
@@ -574,7 +588,7 @@ export default function ConfiguracionPage() {
               className="inline-flex items-center gap-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200/80 dark:border-rose-800/60 px-4 py-2 text-xs font-bold text-rose-700 dark:text-rose-300 shadow-2xs transition-all active:scale-95 cursor-pointer"
             >
               <Trash2 className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
-              Eliminar cuenta permanentemente
+              Eliminar cuenta
             </button>
           ),
         },

@@ -91,6 +91,19 @@ export function PacienteForm({
   const createDep = useCreateDependiente();
   const updatePac = useUpdatePaciente();
 
+  const isTitular = Boolean(
+    paciente?.pac_titular ||
+    (paciente && titular && (paciente.pac_codigo === titular.pac_codigo || paciente.pac_codigo === titularCodigo)) ||
+    (paciente && paciente.pac_codigo === titularCodigo)
+  );
+
+  const today = new Date();
+  const maxBirthDateTitular = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate())
+    .toISOString()
+    .split('T')[0];
+  const maxBirthDateAny = today.toISOString().split('T')[0];
+  const maxBirthDate = isTitular ? maxBirthDateTitular : maxBirthDateAny;
+
   const {
     register,
     handleSubmit,
@@ -226,7 +239,30 @@ export function PacienteForm({
     
     const fechaNac = data.pac_fecha_nacimiento || paciente?.pac_fecha_nacimiento;
     if (fechaNac) {
+      const parts = fechaNac.split('T')[0].split('-');
+      if (parts.length === 3) {
+        const birthDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        const now = new Date();
+        if (birthDate > now) {
+          toast.error('La fecha de nacimiento no puede ser una fecha futura.');
+          return;
+        }
+        if (isTitular) {
+          let age = now.getFullYear() - birthDate.getFullYear();
+          const m = now.getMonth() - birthDate.getMonth();
+          if (m < 0 || (m === 0 && now.getDate() < birthDate.getDate())) {
+            age--;
+          }
+          if (age < 18) {
+            toast.error('El paciente titular debe ser mayor de edad (18 años o más).');
+            return;
+          }
+        }
+      }
       appendSeguro('FechaNacimiento', fechaNac.split('T')[0]);
+    } else if (isTitular) {
+      toast.error('La fecha de nacimiento es obligatoria para el paciente titular.');
+      return;
     }
 
     appendSeguro('Genero', data.pac_genero || paciente?.pac_genero);
@@ -408,10 +444,35 @@ export function PacienteForm({
             {/* Date + Gender */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
               <div>
-                <label className={labelClasses}>Fecha de nacimiento *</label>
+                <label className={labelClasses}>
+                  Fecha de nacimiento {isTitular ? '(Mayor de 18 años)' : ''} *
+                </label>
                 <input
                   type="date"
-                  {...register('pac_fecha_nacimiento', { required: 'Campo requerido' })}
+                  max={maxBirthDate}
+                  {...register('pac_fecha_nacimiento', {
+                    required: 'Campo requerido',
+                    validate: (val) => {
+                      if (!val) return 'Campo requerido';
+                      const parts = val.split('-');
+                      if (parts.length !== 3) return 'Fecha inválida';
+                      const birthDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+                      if (isNaN(birthDate.getTime())) return 'Fecha inválida';
+                      const now = new Date();
+                      if (birthDate > now) return 'La fecha de nacimiento no puede ser futura';
+                      if (isTitular) {
+                        let age = now.getFullYear() - birthDate.getFullYear();
+                        const m = now.getMonth() - birthDate.getMonth();
+                        if (m < 0 || (m === 0 && now.getDate() < birthDate.getDate())) {
+                          age--;
+                        }
+                        if (age < 18) {
+                          return 'El paciente titular debe ser mayor de 18 años';
+                        }
+                      }
+                      return true;
+                    },
+                  })}
                   className={inputClasses}
                 />
                 {errors.pac_fecha_nacimiento && (

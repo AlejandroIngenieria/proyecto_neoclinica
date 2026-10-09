@@ -97,7 +97,9 @@ export interface CrearCitaRequest {
   rcpCodigo?: number | null;
   tipoPagoId?: number | null;
   referenciaPago?: string | null;
+  tipoConsulta?: string | null;
   archivos?: File[];
+  comprobanteTransferencia?: File | null;
 }
 
 export type CitaEstado = 'programada' | 'confirmada' | 'pospuesta' | 'en_proceso' | 'completada' | 'cancelada' | 'rechazada' | 'no_asistio';
@@ -183,8 +185,11 @@ export interface CitaListDto {
   ctaPrecio: number;
   ctaMotivo?: string | null;
   direccionDomicilio?: string | null;
+  ctaDireccionDomicilio?: string | null;
   referenciasDomicilio?: string | null;
+  ctaReferenciasDomicilio?: string | null;
   enlaceVideollamada?: string | null;
+  ctaEnlaceVideollamada?: string | null;
   ctaEtapaActual: number;
   ctaTotalEtapas: number;
   ctaCalificacion?: number | null;
@@ -290,6 +295,7 @@ export interface ColaTurnoDto {
   ctaEstado: string; // "programada", "en_proceso", "completada", "no_asistio", "cancelada"
   ctaModalidad: string;
   esMiTurno: boolean;
+  esTurnoActual?: boolean;
   pacienteNombre?: string | null;
   medicoNombre: string;
   medicoEspecialidad: string;

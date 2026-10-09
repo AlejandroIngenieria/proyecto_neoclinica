@@ -33,6 +33,7 @@ import {
   ArrowLeftRight,
   User,
   CheckCircle2,
+  ClipboardList,
 } from 'lucide-react';
 import type { CrearCitaRequest } from '@/types/citas';
 import { format } from 'date-fns';
@@ -43,7 +44,7 @@ export function Step4Confirmacion() {
   const { data: session } = useSession();
   const {
     codMedico, medicoName, modalidad, clinicaSeleccionada, areaDomicilio,
-    servicioSeleccionado,
+    servicioSeleccionado, tipoConsulta,
     fecha, hora, pacienteSeleccionado, grupoId, grupoNombre, creandoNuevoGrupo, nuevoGrupoTema, motivo,
     archivos, prevStep, tipoPagoId, billeteraItemId,
     comprobanteTransferencia, referenciaTransferencia,
@@ -197,9 +198,11 @@ export function Step4Confirmacion() {
             enlaceVideollamada: null,
             recompensaCodigo: i === 0 ? rcpCod : undefined,
             rcpCodigo: i === 0 ? rcpCod : undefined,
+            tipoConsulta: tipoConsulta || 'Primera vez',
             tipoPagoId: tipoPagoId ? Number(tipoPagoId) : undefined,
             referenciaPago: referenciaTransferencia?.trim() || billeteraItemId || undefined,
-            archivos: [...archivos, ...(comprobanteTransferencia ? [comprobanteTransferencia] : [])],
+            archivos: archivos,
+            comprobanteTransferencia: comprobanteTransferencia || undefined,
           };
 
           const idCitaCreada = await createCita(request);
@@ -323,9 +326,11 @@ export function Step4Confirmacion() {
         enlaceVideollamada: null,
         recompensaCodigo: rcpCod,
         rcpCodigo: rcpCod,
+        tipoConsulta: tipoConsulta || 'Primera vez',
         tipoPagoId: tipoPagoId ? Number(tipoPagoId) : undefined,
         referenciaPago: referenciaTransferencia?.trim() || billeteraItemId || undefined,
-        archivos: [...archivos, ...(comprobanteTransferencia ? [comprobanteTransferencia] : [])],
+        archivos: archivos,
+        comprobanteTransferencia: comprobanteTransferencia || undefined,
       };
 
       // 2. Crear Cita
@@ -519,6 +524,17 @@ export function Step4Confirmacion() {
                 </div>
               </div>
             )}
+
+            {/* Tipo de Consulta */}
+            <div className="flex items-start gap-3">
+              <ClipboardList className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Tipo de Consulta</p>
+                <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  {tipoConsulta || 'Primera vez'}
+                </p>
+              </div>
+            </div>
 
             {/* Modalidad y Ubicación */}
             <div className="flex items-start gap-3">
@@ -834,6 +850,23 @@ export function Step4Confirmacion() {
               </div>
             </div>
           )}
+
+          {/* Tipo de Consulta */}
+          <div className="flex gap-4">
+            <div className="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
+              <ClipboardList className="h-6 w-6 text-[#0B3B60] dark:text-blue-400" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Tipo de Consulta</p>
+              <p className="font-bold text-slate-900 dark:text-slate-100 leading-tight">
+                {tipoConsulta || 'Primera vez'}
+              </p>
+              <span className="inline-flex items-center gap-1 mt-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#0B3B60] text-white shadow-2xs">
+                <Check className="w-3 h-3 stroke-[3]" />
+                {tipoConsulta || 'Primera vez'}
+              </span>
+            </div>
+          </div>
 
           {/* Grupo de Citas */}
           {(grupoId || creandoNuevoGrupo) && (

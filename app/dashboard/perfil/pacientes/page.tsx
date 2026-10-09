@@ -632,6 +632,14 @@ function IndependizarModal({
   const pacienteName = buildPacienteFullName(paciente);
 
   const onSubmit = async (data: { nuevoCorreo: string }) => {
+    const edad = calcularEdad(paciente.pac_fecha_nacimiento);
+    if (edad !== null && edad < 18) {
+      toast.error('Paciente menor de edad', {
+        description: 'Un paciente menor de edad no puede independizarse como titular de una cuenta.',
+      });
+      return;
+    }
+
     try {
       const res = await independizarMutation.mutateAsync({
         pacCodigo: paciente.pac_codigo,

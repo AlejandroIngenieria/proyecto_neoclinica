@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useCitaStore } from '@/store/use-cita-store';
 import {
     useMetodosPago,
@@ -40,6 +40,7 @@ import {
 import { NeoLoader } from '@/components/neo-loader';
 import { toast } from 'sonner';
 import type { BilleteraMetodoDto } from '@/types/citas';
+import { compressImageFile, formatBytes } from '@/utils/image-compression';
 
 export function Step3MetodoPago() {
     const queryClient = useQueryClient();
@@ -64,6 +65,15 @@ export function Step3MetodoPago() {
         setOmitirPago,
         servicioSeleccionado,
     } = useCitaStore();
+
+    const isPresencial = modalidad === 'presencial';
+
+    // Si la modalidad no es presencial (virtual o a domicilio), nunca permitir omitir pago (pagar en clínica)
+    useEffect(() => {
+        if (!isPresencial && omitirPago) {
+            setOmitirPago(false);
+        }
+    }, [isPresencial, omitirPago, setOmitirPago]);
 
     const { data: metodosTotales = [], isLoading } = useMetodosPago(codMedico);
     const { data: cuentasBancariasApi = [] } = useCuentasBancariasMedico(codMedico);
@@ -96,10 +106,11 @@ export function Step3MetodoPago() {
 
     const metodosPago = metodosTotales.filter(m => {
         const desc = m.descripcion.toLowerCase();
-        if (modalidad === 'virtual' && desc.includes('efectivo')) {
+        // Si no es presencial (virtual o domicilio), no permitir efectivo
+        if (!isPresencial && desc.includes('efectivo')) {
             return false;
         }
-        // "Efectivo" se gestiona de forma destacada en la tarjeta principal superior "Pagar en consultorio / clínica"
+        // En presencial, "Efectivo" se gestiona de forma destacada en la tarjeta principal superior "Pagar en consultorio / clínica"
         if (desc.includes('efectivo')) {
             return false;
         }
@@ -166,9 +177,60 @@ export function Step3MetodoPago() {
         });
     };
 
-    const handleComprobanteChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const [isOptimizingComprobante, setIsOptimizingComprobante] = useState(false);
+
+    const handleComprobanteChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0] || null;
-        setComprobanteTransferencia(file);
+        if (!file) {
+            setComprobanteTransferencia(null);
+            return;
+        }
+
+        const MAX_COMPROBANTE_BYTES = 3 * 1024 * 1024; // 3 MB máximo
+
+        if (file.type.startsWith('image/')) {
+            setIsOptimizingComprobante(true);
+            const toastId = toast.loading('Optimizando comprobante de transferencia...');
+            try {
+                const optimized = await compressImageFile(file, {
+                    maxDimension: 1920,
+                    quality: 0.82,
+                    maxSizeBytes: 1024 * 1024,
+                });
+                toast.dismiss(toastId);
+
+                if (optimized.size > MAX_COMPROBANTE_BYTES) {
+                    toast.error(`El comprobante (${formatBytes(optimized.size)}) excede el límite máximo de 3 MB.`);
+                    e.target.value = '';
+                    setComprobanteTransferencia(null);
+                    return;
+                }
+
+                setComprobanteTransferencia(optimized);
+                toast.success(`Comprobante adjuntado (${formatBytes(optimized.size)}).`);
+            } catch {
+                toast.dismiss(toastId);
+                if (file.size > MAX_COMPROBANTE_BYTES) {
+                    toast.error(`El comprobante (${formatBytes(file.size)}) excede el límite máximo de 3 MB.`);
+                    e.target.value = '';
+                    setComprobanteTransferencia(null);
+                    return;
+                }
+                setComprobanteTransferencia(file);
+            } finally {
+                setIsOptimizingComprobante(false);
+            }
+        } else {
+            // PDF
+            if (file.size > MAX_COMPROBANTE_BYTES) {
+                toast.error(`El comprobante (${formatBytes(file.size)}) excede el límite máximo de 3 MB.`);
+                e.target.value = '';
+                setComprobanteTransferencia(null);
+                return;
+            }
+            setComprobanteTransferencia(file);
+            toast.success(`Comprobante PDF adjuntado (${formatBytes(file.size)}).`);
+        }
     };
 
     // Guardar nueva Tarjeta
@@ -202,7 +264,7 @@ export function Step3MetodoPago() {
 
     // Validación para continuar
     let isComplete = false;
-    if (omitirPago) {
+    if (isPresencial && omitirPago) {
         isComplete = true;
     } else {
         isComplete = tipoPagoId !== null;
@@ -224,9 +286,11 @@ export function Step3MetodoPago() {
                         ¿Cómo prefieres pagar?
                     </h2>
                     <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
-                        {isMultiMode
-                            ? 'Puedes asignar un método de pago en línea para todo el grupo o elegir pagar directamente en consultorio.'
-                            : 'Elige si deseas pagar en línea mediante transferencia, tarjeta o seguro, o abonar directamente en recepción.'}
+                        {!isPresencial
+                            ? 'Selecciona un método de pago en línea para continuar con tu consulta.'
+                            : isMultiMode
+                                ? 'Puedes asignar un método de pago en línea para todo el grupo o elegir pagar directamente en consultorio.'
+                                : 'Elige si deseas pagar en línea mediante transferencia, tarjeta o seguro, o abonar directamente en recepción.'}
                     </p>
 
                     {/* Banner de Grupo de Citas */}
@@ -251,84 +315,88 @@ export function Step3MetodoPago() {
                         </div>
                     )}
 
-                    {/* TARJETA DESTACADA: PAGAR EN CONSULTORIO / CLÍNICA (OMITIR PAGO EN LÍNEA) */}
-                    <div
-                        onClick={handleSelectOmitirPago}
-                        className={`mb-6 p-4 sm:p-5 rounded-2xl border-2 transition-all cursor-pointer ${
-                            omitirPago
-                                ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20 ring-1 ring-emerald-500/30 shadow-sm'
-                                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] hover:border-emerald-300 dark:hover:border-emerald-600/50'
-                        }`}
-                    >
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                            <div className="flex items-start gap-3.5">
-                                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 transition-colors ${
+                    {/* TARJETA DESTACADA: PAGAR EN CONSULTORIO / CLÍNICA (OMITIR PAGO EN LÍNEA) - SOLO PRESENCIAL */}
+                    {isPresencial && (
+                        <>
+                            <div
+                                onClick={handleSelectOmitirPago}
+                                className={`mb-6 p-4 sm:p-5 rounded-2xl border-2 transition-all cursor-pointer ${
                                     omitirPago
-                                        ? 'bg-emerald-600 text-white shadow-md'
-                                        : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'
-                                }`}>
-                                    <Banknote className="w-5 h-5" />
-                                </div>
-                                <div>
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                        <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                                            Pagar en consultorio / clínica
-                                        </h3>
-                                        <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                                            Efectivo en recepción
-                                        </span>
-                                    </div>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xl leading-relaxed">
-                                        Omite el proceso de pago digital y abona tu consulta en efectivo o en recepción al asistir a la clínica o cuando el médico te visite.
-                                    </p>
-                                </div>
-                            </div>
-
-                            <button
-                                type="button"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleSelectOmitirPago();
-                                }}
-                                className={`shrink-0 px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                                    omitirPago
-                                        ? 'bg-emerald-600 text-white shadow-sm'
-                                        : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
+                                        ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20 ring-1 ring-emerald-500/30 shadow-sm'
+                                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] hover:border-emerald-300 dark:hover:border-emerald-600/50'
                                 }`}
                             >
-                                {omitirPago ? (
-                                    <>
-                                        <Check className="w-4 h-4 stroke-[3]" />
-                                        <span>Seleccionado</span>
-                                    </>
-                                ) : (
-                                    <span>Elegir pagar en clínica</span>
-                                )}
-                            </button>
-                        </div>
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                    <div className="flex items-start gap-3.5">
+                                        <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 transition-colors ${
+                                            omitirPago
+                                                ? 'bg-emerald-600 text-white shadow-md'
+                                                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'
+                                        }`}>
+                                            <Banknote className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                                                    Pagar en consultorio / clínica
+                                                </h3>
+                                                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                                                    Efectivo en recepción
+                                                </span>
+                                            </div>
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xl leading-relaxed">
+                                                Omite el proceso de pago digital y abona tu consulta en efectivo o en recepción al asistir a la clínica o cuando el médico te visite.
+                                            </p>
+                                        </div>
+                                    </div>
 
-                        {omitirPago && (
-                            <div className="mt-4 pt-3 border-t border-emerald-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-emerald-700 dark:text-emerald-300 font-medium">
-                                <span className="flex items-center gap-1.5">
-                                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                                    No se te solicitará pago previo. Puedes continuar al paso de confirmación directamente.
-                                </span>
-                                <span className="text-[11px] text-slate-400">
-                                    O selecciona un método en línea abajo si prefieres
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleSelectOmitirPago();
+                                        }}
+                                        className={`shrink-0 px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                                            omitirPago
+                                                ? 'bg-emerald-600 text-white shadow-sm'
+                                                : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
+                                        }`}
+                                    >
+                                        {omitirPago ? (
+                                            <>
+                                                <Check className="w-4 h-4 stroke-[3]" />
+                                                <span>Seleccionado</span>
+                                            </>
+                                        ) : (
+                                            <span>Elegir pagar en clínica</span>
+                                        )}
+                                    </button>
+                                </div>
+
+                                {omitirPago && (
+                                    <div className="mt-4 pt-3 border-t border-emerald-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-emerald-700 dark:text-emerald-300 font-medium">
+                                        <span className="flex items-center gap-1.5">
+                                            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                                            No se te solicitará pago previo. Puedes continuar al paso de confirmación directamente.
+                                        </span>
+                                        <span className="text-[11px] text-slate-400">
+                                            O selecciona un método en línea abajo si prefieres
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* DIVIDER SI DESEA PAGAR CON OTRO MÉTODO */}
+                            <div className="relative my-6 text-center">
+                                <div className="absolute inset-0 flex items-center">
+                                    <div className="w-full border-t border-slate-200 dark:border-slate-800" />
+                                </div>
+                                <span className="relative bg-slate-50 dark:bg-[#0B1120] px-3 text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                                    O selecciona un método de pago en línea
                                 </span>
                             </div>
-                        )}
-                    </div>
-
-                    {/* DIVIDER SI DESEA PAGAR CON OTRO MÉTODO */}
-                    <div className="relative my-6 text-center">
-                        <div className="absolute inset-0 flex items-center">
-                            <div className="w-full border-t border-slate-200 dark:border-slate-800" />
-                        </div>
-                        <span className="relative bg-slate-50 dark:bg-[#0B1120] px-3 text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                            O selecciona un método de pago en línea
-                        </span>
-                    </div>
+                        </>
+                    )}
 
                     {/* LISTA DE MÉTODOS DE PAGO EN LÍNEA / CONFIGURADOS */}
                     <div className="flex flex-col gap-3">
@@ -458,45 +526,63 @@ export function Step3MetodoPago() {
                                                                             </div>
                                                                         </div>
 
-                                                                        {item.foto_carne_url ? (
-                                                                            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
-                                                                                <div className="flex items-center gap-2">
-                                                                                    <div
-                                                                                        onClick={(e) => {
-                                                                                            e.stopPropagation();
-                                                                                            setZoomCarnet(item.foto_carne_url!);
-                                                                                        }}
-                                                                                        className="relative group w-14 h-9 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-slate-100 dark:bg-slate-800 cursor-pointer shadow-2xs"
-                                                                                        title="Clic para ampliar carné"
-                                                                                    >
-                                                                                        <img src={item.foto_carne_url} alt="Carné" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                                                                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
-                                                                                            <Eye className="w-3 h-3" />
+                                                                        {(item.foto_carne_url || item.foto_carne_reverso_url) ? (
+                                                                            <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                                                                                <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                                                                    Valida las caras de tu carné:
+                                                                                </p>
+                                                                                <div className="flex items-center gap-2 flex-wrap">
+                                                                                    {item.foto_carne_url && (
+                                                                                        <div
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                setZoomCarnet(item.foto_carne_url!);
+                                                                                            }}
+                                                                                            className="relative group w-16 h-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 cursor-pointer shadow-2xs"
+                                                                                            title="Clic para ampliar frente"
+                                                                                        >
+                                                                                            <img src={item.foto_carne_url} alt="Frente" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                                                                            <span className="absolute bottom-0 inset-x-0 bg-black/60 text-[8px] text-white text-center font-bold">Frente</span>
                                                                                         </div>
-                                                                                    </div>
-                                                                                    <div>
+                                                                                    )}
+                                                                                    {item.foto_carne_reverso_url && (
+                                                                                        <div
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                setZoomCarnet(item.foto_carne_reverso_url!);
+                                                                                            }}
+                                                                                            className="relative group w-16 h-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 cursor-pointer shadow-2xs"
+                                                                                            title="Clic para ampliar reverso"
+                                                                                        >
+                                                                                            <img src={item.foto_carne_reverso_url} alt="Reverso" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                                                                            <span className="absolute bottom-0 inset-x-0 bg-black/60 text-[8px] text-white text-center font-bold">Reverso</span>
+                                                                                        </div>
+                                                                                    )}
+                                                                                    <div className="flex-1 min-w-0">
                                                                                         <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                                                                                            <FileCheck2 className="w-3 h-3" /> Carné adjunto
+                                                                                            <FileCheck2 className="w-3.5 h-3.5" /> Carné válido
                                                                                         </span>
-                                                                                        <p className="text-[10px] text-slate-400">Verificado para esta póliza</p>
+                                                                                        <p className="text-[10px] text-slate-400">
+                                                                                            {item.foto_carne_url && item.foto_carne_reverso_url ? 'Frente y reverso vinculados' : '1 cara vinculada'}
+                                                                                        </p>
                                                                                     </div>
                                                                                 </div>
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={(e) => {
-                                                                                        e.stopPropagation();
-                                                                                        setZoomCarnet(item.foto_carne_url!);
-                                                                                    }}
-                                                                                    className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-0.5 cursor-pointer"
-                                                                                >
-                                                                                    <Eye className="w-3 h-3" /> Ver carné
-                                                                                </button>
                                                                             </div>
                                                                         ) : (
                                                                             <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-amber-600 dark:text-amber-400">
                                                                                 <span className="flex items-center gap-1">
-                                                                                    <AlertCircle className="w-3 h-3" /> Sin foto de carné adjunta
+                                                                                    <AlertCircle className="w-3 h-3" /> Sin imágenes de carné vinculadas
                                                                                 </span>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        setIsConfiguringSeguro(true);
+                                                                                    }}
+                                                                                    className="font-bold underline text-blue-600 dark:text-blue-400 cursor-pointer"
+                                                                                >
+                                                                                    Subir carné
+                                                                                </button>
                                                                             </div>
                                                                         )}
                                                                     </div>
@@ -738,26 +824,63 @@ export function Step3MetodoPago() {
                                                     </div>
 
                                                     <div>
-                                                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                                                            Adjuntar comprobante de transferencia (Opcional)
-                                                        </label>
-                                                        <div className="relative border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-4 text-center bg-slate-50/50 dark:bg-[#0F172A] hover:border-blue-400 transition-colors cursor-pointer">
-                                                            <input
-                                                                type="file"
-                                                                accept="image/*,application/pdf"
-                                                                onChange={handleComprobanteChange}
-                                                                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                                                            />
-                                                            <div className="flex flex-col items-center justify-center gap-1.5">
-                                                                <UploadCloud className="w-6 h-6 text-slate-400" />
-                                                                <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                                                                    {comprobanteTransferencia ? comprobanteTransferencia.name : 'Subir imagen o PDF del comprobante'}
-                                                                </p>
-                                                                <p className="text-[10px] text-slate-400">
-                                                                    {comprobanteTransferencia ? `${(comprobanteTransferencia.size / 1024).toFixed(1)} KB` : 'Puedes continuar sin adjuntarlo ahora'}
-                                                                </p>
-                                                            </div>
+                                                        <div className="flex items-center justify-between mb-1">
+                                                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                                                                Comprobante de transferencia (Opcional)
+                                                            </label>
+                                                            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">
+                                                                Máx. 3 MB · JPG, PNG, WebP o PDF
+                                                            </span>
                                                         </div>
+
+                                                        {isOptimizingComprobante ? (
+                                                            <div className="p-4 rounded-xl border border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-950/20 flex items-center justify-center gap-2.5 text-xs font-bold text-blue-600 dark:text-blue-400">
+                                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                                <span>Optimizando y comprimiendo imagen...</span>
+                                                            </div>
+                                                        ) : comprobanteTransferencia ? (
+                                                            <div className="p-3.5 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/50 dark:bg-emerald-950/20 flex items-center justify-between gap-3">
+                                                                <div className="flex items-center gap-3 min-w-0">
+                                                                    <div className="w-9 h-9 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                                                                        <FileCheck2 className="w-5 h-5" />
+                                                                    </div>
+                                                                    <div className="min-w-0">
+                                                                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                                                                            {comprobanteTransferencia.name}
+                                                                        </p>
+                                                                        <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                                                                            {formatBytes(comprobanteTransferencia.size)} / 3 MB · Listo para adjuntar
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setComprobanteTransferencia(null)}
+                                                                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors shrink-0 cursor-pointer"
+                                                                    title="Eliminar comprobante"
+                                                                >
+                                                                    <X className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="relative border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-4 text-center bg-slate-50/50 dark:bg-[#0F172A] hover:border-blue-400 transition-colors cursor-pointer group">
+                                                                <input
+                                                                    type="file"
+                                                                    accept="image/*,application/pdf"
+                                                                    onChange={handleComprobanteChange}
+                                                                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                                                                />
+                                                                <div className="flex flex-col items-center justify-center gap-1.5">
+                                                                    <UploadCloud className="w-6 h-6 text-slate-400 group-hover:text-blue-500 transition-colors" />
+                                                                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                                                                        Subir imagen o PDF del comprobante
+                                                                    </p>
+                                                                    <p className="text-[10px] text-slate-400">
+                                                                        Máximo 3 MB · Se comprime automáticamente si es foto
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
@@ -766,6 +889,28 @@ export function Step3MetodoPago() {
                                 </div>
                             );
                         })}
+
+                        {/* Banner informativo si el médico no está asociado a ningún seguro */}
+                        {!metodosTotales.some(m => m.descripcion.toLowerCase().includes('seguro')) && (
+                            <div className="rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-[#1E293B]/40 p-4 sm:p-5 flex items-start gap-3.5">
+                                <div className="shrink-0 p-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400">
+                                    <ShieldCheck className="w-5 h-5" />
+                                </div>
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                                            Pago con Seguro Médico
+                                        </h4>
+                                        <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-300/60 dark:border-slate-700">
+                                            No disponible con este médico
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                                        Este especialista no está asociado a ningún seguro médico ni convenios de aseguradoras. Por favor, selecciona otro método de pago (transferencia, tarjeta o directamente en recepción).
+                                    </p>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
 

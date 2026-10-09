@@ -1,7 +1,7 @@
 'use client';
 
 import { useCitaStore } from '@/store/use-cita-store';
-import { CalendarDays, Clock, MapPin, User, Stethoscope, FileText, CheckCircle2, Activity } from 'lucide-react';
+import { CalendarDays, Clock, MapPin, User, Stethoscope, FileText, CheckCircle2, Activity, ClipboardList } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -9,6 +9,7 @@ export function CitaSummarySidebar() {
   const {
     step,
     medicoName,
+    tipoConsulta,
     modalidad,
     clinicaSeleccionada,
     servicioSeleccionado,
@@ -102,6 +103,19 @@ export function CitaSummarySidebar() {
             <p className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Médico</p>
             <p className="truncate text-sm font-bold text-slate-900 dark:text-white">
               {medicoName || 'Cargando...'}
+            </p>
+          </div>
+        </div>
+
+        {/* Tipo de Consulta */}
+        <div className="flex gap-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+            <ClipboardList className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Tipo de Consulta</p>
+            <p className="text-sm font-bold text-slate-900 dark:text-white">
+              {tipoConsulta || 'Primera vez'}
             </p>
           </div>
         </div>

@@ -934,11 +934,6 @@ function DashboardContent() {
         }).filter(Boolean) as (typeof resolvedDoctors[0] & { matchedSpecialty?: string; matchedLocation?: string; searchHighlight?: string[]; selectedInsurances?: string[] })[];
 
         return filteredDoctors.sort((leftDoctor, rightDoctor) => {
-            if (selectedDoctorId) {
-                if (leftDoctor.doctor.exp_codigo === selectedDoctorId) return -1;
-                if (rightDoctor.doctor.exp_codigo === selectedDoctorId) return 1;
-            }
-
             if (sortBy === 'name-asc') {
                 return leftDoctor.fullName.localeCompare(rightDoctor.fullName, 'es');
             }
@@ -965,17 +960,8 @@ function DashboardContent() {
             // Por defecto: Presentación aleatoria (única y diferente en cada inicio de sesión)
             return getDoctorHash(leftDoctor.doctor.exp_codigo, sessionSeed) - getDoctorHash(rightDoctor.doctor.exp_codigo, sessionSeed);
         });
-    }, [locationTerm, activeModalities, availability, priceLimit, resolvedDoctors, deferredSearchTerm, showOnlyActive, showOnlyFavorites, favoritos, sortBy, activeSpecialties, searchTags, selectedLanguages, selectedInsurances, isNearMeActive, searchedLocation, getDistanceToDoctorCustom, selectedDoctorId, sessionSeed, gender, radarRadiusKm]);
+    }, [locationTerm, activeModalities, availability, priceLimit, resolvedDoctors, deferredSearchTerm, showOnlyActive, showOnlyFavorites, favoritos, sortBy, activeSpecialties, searchTags, selectedLanguages, selectedInsurances, isNearMeActive, searchedLocation, getDistanceToDoctorCustom, sessionSeed, gender, radarRadiusKm]);
 
-    const matchingRecentDoctors = useMemo(() => {
-        const query = normalizeText(searchTerm.trim());
-        if (!query) return [];
-        return recentDoctors.filter(doc => 
-            normalizeText(doc.fullName).includes(query) ||
-            normalizeText(doc.specialty).includes(query) ||
-            normalizeText(doc.locationLabel).includes(query)
-        );
-    }, [recentDoctors, searchTerm]);
 
     const catalogLocationSuggestions = useMemo(() => {
         const query = normalizeText(locationSearchTerm.trim());
@@ -1215,6 +1201,17 @@ function DashboardContent() {
 
                             <input
                                 id="searchTerm"
+                                name="doctor-search-input"
+                                type="text"
+                                autoComplete="off"
+                                autoCorrect="off"
+                                autoCapitalize="off"
+                                spellCheck={false}
+                                role="combobox"
+                                aria-autocomplete="list"
+                                aria-expanded={isSearchFocused}
+                                data-lpignore="true"
+                                data-1p-ignore="true"
                                 value={searchTerm}
                                 onClick={() => {
                                     setRecentDoctors(readRecentDoctors());
@@ -1354,51 +1351,6 @@ function DashboardContent() {
                                         </div>
                                     ) : (
                                         <div className="p-3 space-y-4 max-h-[380px] overflow-y-auto">
-                                            {recentDoctors.length > 0 && (
-                                                <div>
-                                                    <p className="text-[11px] font-bold uppercase tracking-wider text-primary px-3 py-1 flex items-center gap-1.5">
-                                                        <Users className="w-3.5 h-3.5 text-primary" /> Médicos Vistos Recientemente
-                                                    </p>
-                                                    <div className="mt-1 space-y-1">
-                                                        {(matchingRecentDoctors.length > 0 ? matchingRecentDoctors : recentDoctors.slice(0, 3)).map((doc) => (
-                                                            <button
-                                                                key={`rec_${doc.exp_codigo}`}
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    handleDoctorVisit({
-                                                                        doctor: resolvedDoctors.find(d => d.doctor.exp_codigo === doc.exp_codigo)?.doctor || ({} as any),
-                                                                        fullName: doc.fullName,
-                                                                        specialtyPreview: [doc.specialty],
-                                                                        modalityPreview: [],
-                                                                        locationPreview: [doc.locationLabel],
-                                                                    });
-                                                                    router.push(`/dashboard/${doc.exp_codigo}`);
-                                                                    setIsSearchFocused(false);
-                                                                }}
-                                                                className="flex w-full items-center justify-between px-3 py-2 rounded-xl bg-primary/5 dark:bg-primary/10 hover:bg-primary/10 dark:hover:bg-primary/20 transition text-left group border border-primary/20"
-                                                            >
-                                                                <div className="flex items-center gap-3 min-w-0">
-                                                                    <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden relative border border-primary/20">
-                                                                        {doc.image ? (
-                                                                            <Image src={doc.image} alt={doc.fullName} fill sizes="36px" className="object-cover" />
-                                                                        ) : (
-                                                                            doc.fullName.charAt(0)
-                                                                        )}
-                                                                    </div>
-                                                                    <div className="min-w-0">
-                                                                        <div className="flex items-center gap-2">
-                                                                            <p className="text-sm font-bold text-on-surface dark:text-white leading-tight truncate group-hover:text-primary transition-colors">{doc.fullName}</p>
-                                                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-primary/20 text-primary uppercase shrink-0">Reciente</span>
-                                                                        </div>
-                                                                        <p className="text-xs text-outline dark:text-slate-400 truncate">{doc.specialty} · {doc.locationLabel}</p>
-                                                                    </div>
-                                                                </div>
-                                                                <ChevronRight className="w-4 h-4 text-primary shrink-0 group-hover:translate-x-0.5 transition-transform" />
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
                                             <div>
                                                 <p className="text-[11px] font-bold uppercase tracking-wider text-outline dark:text-slate-400 px-3 py-1 flex items-center gap-1.5">
                                                     <Sparkles className="w-3.5 h-3.5 text-primary" /> Sugerencias para "{searchTerm}"
@@ -1463,6 +1415,17 @@ function DashboardContent() {
 
                             <input
                                 id="locationSearchInput"
+                                name="location-search-input"
+                                type="text"
+                                autoComplete="off"
+                                autoCorrect="off"
+                                autoCapitalize="off"
+                                spellCheck={false}
+                                role="combobox"
+                                aria-autocomplete="list"
+                                aria-expanded={isLocationSearchFocused}
+                                data-lpignore="true"
+                                data-1p-ignore="true"
                                 value={locationSearchTerm}
                                 onClick={() => setIsLocationSearchFocused(true)}
                                 onFocus={() => setIsLocationSearchFocused(true)}

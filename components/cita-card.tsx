@@ -5,10 +5,10 @@ import Link from 'next/link';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
-import { CalendarDays, Clock, MapPin, Video, Home, Edit2, XCircle, Loader2, MoreVertical, FileText, Navigation, Paperclip, ExternalLink, X, Star, ChevronDown, CalendarPlus, FolderPlus, FolderMinus, ClipboardList, Stethoscope, Pill, FlaskConical, Activity, Info, Lock, Play, CheckCircle2, UserCheck, CreditCard, Upload, AlertCircle, ArrowLeftRight, Building2 } from 'lucide-react';
+import { BadgeCheck, CalendarDays, Calendar, Clock, MapPin, Video, Home, Edit2, XCircle, Loader2, MoreVertical, FileText, Navigation, Paperclip, ExternalLink, X, Star, ChevronDown, ChevronRight, CalendarPlus, FolderPlus, FolderMinus, ClipboardList, Stethoscope, Pill, FlaskConical, Activity, Info, Lock, Play, CheckCircle2, UserCheck, CreditCard, Upload, AlertCircle, ArrowLeftRight, Building2, Printer, Copy, Check, User, QrCode } from 'lucide-react';
 import type { CitaListDto, SolicitudCambioDto } from '@/types/citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
-import { useCambiarEstadoCita, usePagarCita, isCitaPasada, useMarcarLlegadaClinica } from '@/hooks/use-flujo-citas';
+import { usePagarCita, isCitaPasada, useMarcarLlegadaClinica } from '@/hooks/use-flujo-citas';
 import { useDropzone } from 'react-dropzone';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -46,7 +46,6 @@ export function CitaCard({
 }: CitaCardProps) {
   const router = useRouter();
   const { data: doctor, isLoading } = useDoctorByCode(cita.ctaCoddoc);
-  const cambiarEstadoMutation = useCambiarEstadoCita();
   const pagarCitaMutation = usePagarCita();
   const marcarLlegadaMutation = useMarcarLlegadaClinica();
   const [isNavMenuOpen, setIsNavMenuOpen] = useState(false);
@@ -56,8 +55,20 @@ export function CitaCard({
   const [mostrarModalPago, setMostrarModalPago] = useState(false);
   const [archivoPago, setArchivoPago] = useState<File | null>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [idCopiado, setIdCopiado] = useState(false);
   const navButtonRef = useRef<HTMLButtonElement | null>(null);
   const navMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const handleCopiarId = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!cita.ctaCodigo) return;
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(cita.ctaCodigo);
+      setIdCopiado(true);
+      toast.success('ID de la cita copiado al portapapeles');
+      setTimeout(() => setIdCopiado(false), 2000);
+    }
+  };
 
   const listaArchivos = useMemo(() => {
     const raw = cita.archivos || cita.documentos || [];
@@ -70,6 +81,30 @@ export function CitaCard({
   }, [cita.archivos, cita.documentos]);
 
   const tieneArchivos = listaArchivos.length > 0;
+
+  const handleNuevaCita = () => {
+    const doctorId = cita.ctaCoddoc || doctor?.exp_codigo;
+    if (doctorId) {
+      const params = new URLSearchParams();
+      if (cita.ctaCodpac) {
+        params.set('pacCodigo', cita.ctaCodpac);
+        params.set('pacienteId', cita.ctaCodpac);
+      }
+      if (cita.ctaGrupoId) {
+        params.set('grupoId', cita.ctaGrupoId);
+      }
+      if (cita.grupoTema) {
+        params.set('tema', cita.grupoTema);
+      }
+      if (cita.ctaModalidad) {
+        params.set('modalidad', cita.ctaModalidad);
+      }
+      const qs = params.toString();
+      router.push(`/dashboard/agendar/${doctorId}${qs ? `?${qs}` : ''}`);
+    } else {
+      router.push('/dashboard/directorio');
+    }
+  };
 
   const handleToggleNavMenu = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -200,9 +235,19 @@ export function CitaCard({
   const isPospuesta = estadoLower === 'pospuesta';
   const isIndependizado = (cita.pacienteEstado || '').toLowerCase() === 'independizado';
   const isPastCita = isPast || isCitaPasada(cita.ctaFecha, cita.ctaHora);
-  const canModify = !isIndependizado && !isPastCita && ['programada', 'confirmada', 'pospuesta', 'en_proceso'].includes(estadoLower);
 
+  // Estados normalizados
   const isCompletedState = ['completada', 'finalizada', 'realizada'].includes(estadoLower);
+  const isNoAsistio = ['no_asistio', 'noasistio'].includes(estadoLower);
+  const isCancelada = ['cancelada', 'rechazada'].includes(estadoLower);
+  const isEnProceso = estadoLower === 'en_proceso' || estadoLower === 'en_consulta';
+  // Citas vigentes y pendientes (activas)
+  const isActiva = ['programada', 'confirmada', 'pospuesta'].includes(estadoLower) && !isPastCita;
+
+  // Bloqueo estricto: Bloquear botón de "Modificar" y "Cancelar" cuando la cita ya esté en proceso o finalizada
+  const isBloqueadaParaCambios = isEnProceso || isCompletedState || isCancelada || isNoAsistio || isPastCita;
+  const canModify = !isIndependizado && isActiva && !isBloqueadaParaCambios;
+  const canCancel = canModify;
 
   // Verificación estricta: ÚNICAMENTE el día de la cita (no antes, ni después)
   const isTodayCita = useMemo(() => {
@@ -218,85 +263,204 @@ export function CitaCard({
 
   const isPresencial = (cita.ctaModalidad || '').toLowerCase() === 'presencial';
   const ctaEnClinica = Boolean(cita.ctaEnClinica);
-  const canMarcarLlegada = isTodayCita && isPresencial && !['cancelada', 'rechazada', 'no_asistio', 'completada'].includes(estadoLower);
+  const canMarcarLlegada = isTodayCita && isPresencial && isActiva;
   const fechaQuery = cita.ctaFecha ? cita.ctaFecha.split('T')[0] : '';
   const colaUrl = `/dashboard/citas/sala-espera?citaId=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}&fecha=${fechaQuery}`;
-  const puedeVerCola = !isCompletedState && !isPast && !['cancelada', 'rechazada', 'no_asistio'].includes(estadoLower);
+  const puedeVerCola = !isPastCita && (isEnProceso || (isActiva && isTodayCita));
+
+  // "Cómo llegar": EXCLUSIVO para presencial Y cita activa no vencida (NUNCA domicilio, virtual, no_asistio, cancelada, completada)
+  const canShowComoLlegar = isPresencial && isActiva;
+
+  const citaCodigoDisplay = useMemo(() => {
+    if (!cita.ctaCodigo) return '';
+    const str = String(cita.ctaCodigo).trim();
+    return str.length > 12 ? `${str.slice(0, 8).toUpperCase()}...` : str.toUpperCase();
+  }, [cita.ctaCodigo]);
+
+  const fechaLargaCap = useMemo(() => {
+    try {
+      const fStr = format(dateObj, "EEEE, d 'de' MMMM", { locale: es });
+      return fStr.charAt(0).toUpperCase() + fStr.slice(1);
+    } catch {
+      return format(dateObj, "EEE d MMM", { locale: es });
+    }
+  }, [dateObj]);
+
+  const mesAbrev = useMemo(() => {
+    try {
+      return format(dateObj, 'MMM', { locale: es }).replace('.', '').toUpperCase();
+    } catch {
+      return 'CITA';
+    }
+  }, [dateObj]);
+
+  const diaNum = useMemo(() => {
+    try {
+      return format(dateObj, 'd');
+    } catch {
+      return '';
+    }
+  }, [dateObj]);
+
+  const turnoTexto = useMemo(() => {
+    if (!cita.ctaHora) return 'Turno Clínico';
+    const horaNum = parseInt(cita.ctaHora.slice(0, 2), 10);
+    if (isNaN(horaNum)) return 'Turno Clínico';
+    if (horaNum < 12) return 'Turno Matutino';
+    if (horaNum < 18) return 'Turno Vespertino';
+    return 'Turno Nocturno';
+  }, [cita.ctaHora]);
+
+  const horarioString = useMemo(() => {
+    if (!cita.ctaHora) return '';
+    return `${cita.ctaHora.slice(0, 5)} hrs`;
+  }, [cita.ctaHora]);
+
+  const clinicaNombreReal = useMemo(() => {
+    return cita.clinicaNombre?.trim() || doctor?.clinicas?.[0]?.cli_descripcion?.trim() || null;
+  }, [cita.clinicaNombre, doctor?.clinicas]);
+
+  const ubicacionTexto = useMemo(() => {
+    if (cita.ctaModalidad === 'domicilio') {
+      return cita.direccionDomicilio?.trim()
+        ? `Dirección: ${cita.direccionDomicilio}`
+        : 'Visita médica a domicilio';
+    }
+    if (cita.ctaModalidad === 'presencial') {
+      return clinicaNombreReal
+        ? `Sede: ${clinicaNombreReal}`
+        : 'Consulta en clínica';
+    }
+    return cita.enlaceVideollamada?.trim()
+      ? 'Videollamada disponible'
+      : 'Consulta virtual en línea';
+  }, [cita.ctaModalidad, cita.direccionDomicilio, clinicaNombreReal, cita.enlaceVideollamada]);
+
+  const ubicacionCompletaTexto = useMemo(() => {
+    if (cita.ctaModalidad === 'domicilio') {
+      const parts = [
+        cita.direccionDomicilio?.trim(),
+        cita.referenciasDomicilio?.trim() ? `(${cita.referenciasDomicilio.trim()})` : null,
+      ].filter(Boolean);
+      return parts.length > 0 ? parts.join(' ') : 'Visita médica a domicilio';
+    }
+    if (cita.ctaModalidad === 'virtual') {
+      return cita.enlaceVideollamada?.trim()
+        ? `Videollamada: ${cita.enlaceVideollamada.trim()}`
+        : 'Consulta virtual en línea';
+    }
+    const clinica = clinicaNombreReal;
+    const dir = doctor?.clinicas?.[0]?.cli_direccion_completa?.trim();
+    if (clinica && dir && !dir.toLowerCase().includes(clinica.toLowerCase())) {
+      return `${clinica} • ${dir}`;
+    }
+    return dir || clinica || 'Consulta en clínica presencial';
+  }, [cita.ctaModalidad, cita.direccionDomicilio, cita.referenciasDomicilio, cita.enlaceVideollamada, clinicaNombreReal, doctor?.clinicas]);
+
+  const direccionDetallada = useMemo(() => {
+    if (cita.ctaModalidad === 'domicilio') {
+      const parts = [
+        cita.direccionDomicilio?.trim(),
+        cita.referenciasDomicilio?.trim() ? `(${cita.referenciasDomicilio.trim()})` : null,
+      ].filter(Boolean);
+      return parts.length > 0 ? parts.join(' ') : 'Visita médica a domicilio';
+    }
+    if (cita.ctaModalidad === 'virtual') {
+      return cita.enlaceVideollamada?.trim()
+        ? 'Consulta médica digital en línea'
+        : 'Enlace en sala de espera';
+    }
+    const dir = doctor?.clinicas?.[0]?.cli_direccion_completa?.trim();
+    if (dir) return dir;
+    return 'Consulta presencial en clínica';
+  }, [cita.ctaModalidad, cita.direccionDomicilio, cita.referenciasDomicilio, cita.enlaceVideollamada, doctor?.clinicas]);
+
+  const servicioNombreTexto = useMemo(() => {
+    if (cita.servicioNombre?.trim()) return cita.servicioNombre;
+    if (cita.ctaMotivo?.trim()) return cita.ctaMotivo;
+    return 'Consulta Médica General';
+  }, [cita.servicioNombre, cita.ctaMotivo]);
+
+  const servicioSubDetalle = useMemo(() => {
+    if (cita.grupoTema?.trim()) return `Serie: ${cita.grupoTema}`;
+    if (cita.ctaPrecio && cita.ctaPrecio > 0) {
+      return `Q${cita.ctaPrecio.toFixed(2)}${cita.tipoPagoDescripcion ? ` • ${cita.tipoPagoDescripcion}` : ''}`;
+    }
+    if (cita.ctaModalidad === 'domicilio') return 'Atención médica domiciliaria';
+    if (cita.ctaModalidad === 'virtual') return 'Telemedicina y consulta virtual';
+    return 'Atención médica presencial';
+  }, [cita.grupoTema, cita.ctaPrecio, cita.tipoPagoDescripcion, cita.ctaModalidad]);
+
+  const getModalityLabelHeader = (mod: string) => {
+    const m = (mod || '').toLowerCase();
+    if (m === 'domicilio') return 'Atención a Domicilio';
+    if (m === 'virtual') return 'Consulta Virtual';
+    return 'Consulta Presencial';
+  };
+
+  const getModalityIconSmall = (mod: string) => {
+    const m = (mod || '').toLowerCase();
+    if (m === 'domicilio') return <Home className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />;
+    if (m === 'virtual') return <Video className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />;
+    return <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />;
+  };
+
+  const getStatusStripeColor = (estado: string) => {
+    switch (estado?.toLowerCase()) {
+      case 'confirmada': return 'bg-emerald-600 dark:bg-emerald-500';
+      case 'programada': return 'bg-blue-600 dark:bg-blue-500';
+      case 'pospuesta': return 'bg-amber-500 dark:bg-amber-400';
+      case 'en_proceso': return 'bg-indigo-600 dark:bg-indigo-400 animate-pulse';
+      case 'completada': return 'bg-slate-500 dark:bg-slate-400';
+      case 'cancelada':
+      case 'rechazada':
+      case 'no_asistio':
+        return 'bg-rose-500 dark:bg-rose-400';
+      default:
+        return 'bg-blue-600 dark:bg-blue-500';
+    }
+  };
+
+  const getStatusPillStyle = (estado: string) => {
+    switch (estado?.toLowerCase()) {
+      case 'confirmada':
+        return 'bg-emerald-50 text-emerald-700 border-emerald-200/80 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800/60';
+      case 'programada':
+        return 'bg-blue-50 text-blue-700 border-blue-200/80 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800/60';
+      case 'pospuesta':
+        return 'bg-amber-50 text-amber-700 border-amber-200/80 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800/60';
+      case 'en_proceso':
+        return 'bg-indigo-50 text-indigo-700 border-indigo-200/80 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-800/60 animate-pulse';
+      case 'completada':
+        return 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
+      case 'cancelada':
+      case 'rechazada':
+      case 'no_asistio':
+        return 'bg-rose-50 text-rose-700 border-rose-200/80 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800/60';
+      default:
+        return 'bg-blue-50 text-blue-700 border-blue-200/80 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800/60';
+    }
+  };
+
+  const getStatusDotBg = (estado: string) => {
+    switch (estado?.toLowerCase()) {
+      case 'confirmada': return 'bg-emerald-500';
+      case 'programada': return 'bg-blue-600';
+      case 'pospuesta': return 'bg-amber-500';
+      case 'en_proceso': return 'bg-indigo-600';
+      case 'completada': return 'bg-slate-500';
+      case 'cancelada':
+      case 'rechazada':
+      case 'no_asistio':
+        return 'bg-rose-500';
+      default:
+        return 'bg-blue-600';
+    }
+  };
 
   const handleMarcarLlegada = (e: React.MouseEvent) => {
     e.stopPropagation();
     marcarLlegadaMutation.mutate(cita.ctaCodigo);
-  };
-
-  // Manejador para simulación de acciones del médico (iniciar / finalizar consulta)
-  const handleSimularEstado = (e: React.MouseEvent, nuevoEstado: 'en_proceso' | 'completada') => {
-    e.stopPropagation();
-    cambiarEstadoMutation.mutate(
-      { citaId: cita.ctaCodigo, nuevoEstado },
-      {
-        onSuccess: () => {
-          if (nuevoEstado === 'en_proceso') {
-            toast.success('Simulación Dr: Consulta iniciada (en_proceso). Base de datos actualizada.');
-          } else {
-            toast.success('Simulación Dr: Consulta finalizada (completada). Base de datos actualizada.');
-          }
-        },
-      }
-    );
-  };
-
-  const renderBotonesSimulacionDoctor = (compact: boolean = false) => {
-    const estadoActual = (cita.ctaEstado || '').toLowerCase();
-    const esCanceladaORechazada = ['cancelada', 'rechazada'].includes(estadoActual);
-    if (esCanceladaORechazada) return null;
-
-    const estaEnProceso = estadoActual === 'en_proceso';
-    const estaCompletada = estadoActual === 'completada';
-    const isPending = cambiarEstadoMutation.isPending;
-
-    return (
-      <div className={`inline-flex items-center gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 shadow-xs ${compact ? 'text-[11px]' : 'text-xs'}`}>
-        {/* Botón 1: Iniciar consulta */}
-        <button
-          type="button"
-          disabled={isPending}
-          onClick={(e) => handleSimularEstado(e, 'en_proceso')}
-          title="Simular que el médico inicia la consulta (actualiza estado a en_proceso en BD)"
-          className={`inline-flex items-center gap-1.5 font-bold rounded-lg px-2.5 py-1.5 transition-all cursor-pointer ${
-            estaEnProceso
-              ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-400/50'
-              : 'bg-white dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700 active:scale-95'
-          }`}
-        >
-          {isPending ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          ) : (
-            <Play className={`w-3.5 h-3.5 ${estaEnProceso ? 'fill-white text-white' : 'fill-emerald-600 dark:fill-emerald-400 text-emerald-600 dark:text-emerald-400'}`} />
-          )}
-          <span>{estaEnProceso ? 'En consulta' : 'Iniciar consulta'}</span>
-        </button>
-
-        {/* Botón 2: Finalizar consulta */}
-        <button
-          type="button"
-          disabled={isPending}
-          onClick={(e) => handleSimularEstado(e, 'completada')}
-          title="Simular que el médico finaliza la consulta (actualiza estado a completada en BD)"
-          className={`inline-flex items-center gap-1.5 font-bold rounded-lg px-2.5 py-1.5 transition-all cursor-pointer ${
-            estaCompletada
-              ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-400/50'
-              : 'bg-white dark:bg-slate-900 hover:bg-blue-50 dark:hover:bg-blue-950/40 text-blue-700 dark:text-blue-400 border border-blue-300 dark:border-blue-700 active:scale-95'
-          }`}
-        >
-          {isPending ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          ) : (
-            <CheckCircle2 className="w-3.5 h-3.5" />
-          )}
-          <span>{estaCompletada ? 'Completada' : 'Finalizar consulta'}</span>
-        </button>
-      </div>
-    );
   };
 
   const yaTieneResena = typeof cita.ctaCalificacion === 'number' && cita.ctaCalificacion > 0;
@@ -342,6 +506,367 @@ export function CitaCard({
         },
       }
     );
+  };
+
+  const handleImprimirRecetaPdf = () => {
+    if (typeof window === 'undefined') return;
+
+    const fechaFormateada = cita.ctaFecha
+      ? (() => {
+          try {
+            return format(parseISO(cita.ctaFecha.split('T')[0]), "d 'de' MMMM 'de' yyyy", { locale: es });
+          } catch {
+            return cita.ctaFecha.split('T')[0];
+          }
+        })()
+      : 'Fecha no registrada';
+
+    const horaFormateada = cita.ctaHora ? cita.ctaHora.slice(0, 5) + ' hrs' : '';
+    const paciente = cita.pacienteNombre || 'Paciente Registrado';
+    const medico = cita.medicoNombre ? `Dr(a). ${cita.medicoNombre}` : 'Médico Tratante';
+    const especialidad = cita.medicoEspecialidad || 'Medicina General';
+    const clinica = cita.clinicaNombre || 'Centro Médico SaludYa';
+    const esCompletada = isCompletedState;
+    const diagnostico = cita.ctaDiagnostico?.trim() || (esCompletada ? 'Consulta médica realizada y finalizada. Diagnóstico registrado en el expediente clínico.' : '');
+    const tratamiento = cita.ctaTratamiento?.trim() || (esCompletada ? 'Indicaciones médicas y prescripción registrada en la consulta.' : '');
+    const examenes = cita.ctaExamenesSolicitados?.trim() || '';
+    const notas = cita.ctaNotasMedicas?.trim() || '';
+    const codigoCita = cita.ctaCodigo || '';
+    const modalidad = (cita.ctaModalidad || 'Presencial').toUpperCase();
+    const motivo = cita.ctaMotivo?.trim() || cita.servicioNombre?.trim() || 'Consulta Médica';
+    const precio = cita.ctaPrecio ? `Q${cita.ctaPrecio.toFixed(2)}` : 'Q0.00';
+    const tipoPago = cita.tipoPagoDescripcion || 'En clínica';
+    const tituloDoc = esCompletada ? `Informe Clínico y Receta Médica` : `Comprobante Oficial de Cita Médica`;
+    const subtituloDoc = esCompletada ? `Red Médica & Expediente Clínico Digital` : `Constancia de Agendamiento y Turno`;
+
+    const printHtml = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>${tituloDoc} - ${paciente}</title>
+  <style>
+    @page {
+      size: letter;
+      margin: 15mm;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #1e293b;
+      background: #ffffff;
+      padding: 24px;
+      line-height: 1.5;
+      font-size: 13px;
+    }
+    .no-print-bar {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px dashed #cbd5e1;
+    }
+    .btn-print {
+      background: #2563eb;
+      color: #ffffff;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-weight: 800;
+      font-size: 13px;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(37,99,235,0.2);
+    }
+    .btn-close {
+      background: #f1f5f9;
+      color: #475569;
+      border: 1px solid #cbd5e1;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 2px solid #2563eb;
+      padding-bottom: 16px;
+      margin-bottom: 20px;
+    }
+    .brand h1 {
+      font-size: 24px;
+      font-weight: 900;
+      color: #2563eb;
+      letter-spacing: -0.5px;
+    }
+    .brand p {
+      font-size: 11px;
+      font-weight: 600;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 2px;
+    }
+    .meta {
+      text-align: right;
+      font-size: 11px;
+      color: #475569;
+    }
+    .meta strong {
+      color: #0f172a;
+    }
+    .badge-folio {
+      display: inline-block;
+      background: #f1f5f9;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-weight: 700;
+      color: #334155;
+      margin-top: 4px;
+      border: 1px solid #e2e8f0;
+    }
+    .grid-info {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 22px;
+    }
+    .info-group h4 {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #64748b;
+      margin-bottom: 4px;
+      font-weight: 800;
+    }
+    .info-group p {
+      font-size: 13px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .info-group span {
+      font-size: 11px;
+      color: #64748b;
+    }
+    .section {
+      margin-bottom: 18px;
+    }
+    .section-title {
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #1e293b;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 6px;
+      margin-bottom: 8px;
+    }
+    .section-box {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-size: 13px;
+      color: #1e293b;
+      white-space: pre-wrap;
+      line-height: 1.6;
+    }
+    .box-prescripcion {
+      border-left: 4px solid #10b981;
+      background: #f0fdf4;
+    }
+    .box-diagnostico {
+      border-left: 4px solid #2563eb;
+      background: #eff6ff;
+    }
+    .box-examenes {
+      border-left: 4px solid #f59e0b;
+      background: #fffbeb;
+    }
+    .box-notas {
+      border-left: 4px solid #64748b;
+      background: #f8fafc;
+    }
+    .signature-container {
+      margin-top: 40px;
+      display: flex;
+      justify-content: flex-end;
+    }
+    .signature-box {
+      text-align: center;
+      width: 260px;
+    }
+    .signature-line {
+      border-top: 1px solid #0f172a;
+      margin-bottom: 6px;
+    }
+    .signature-name {
+      font-weight: 800;
+      font-size: 13px;
+      color: #0f172a;
+    }
+    .signature-role {
+      font-size: 11px;
+      color: #64748b;
+    }
+    .footer {
+      margin-top: 36px;
+      padding-top: 12px;
+      border-top: 1px dashed #cbd5e1;
+      text-align: center;
+      font-size: 10px;
+      color: #94a3b8;
+    }
+    @media print {
+      body {
+        padding: 0;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print no-print-bar">
+    <button class="btn-print" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
+    <button class="btn-close" onclick="window.close()">Cerrar</button>
+  </div>
+
+  <div class="header">
+    <div class="brand">
+      <h1>SaludYa</h1>
+      <p>${subtituloDoc}</p>
+    </div>
+    <div class="meta">
+      <div><strong>Fecha:</strong> ${fechaFormateada}</div>
+      <div><strong>Hora:</strong> ${horaFormateada}</div>
+      <div><strong>Modalidad:</strong> ${modalidad}</div>
+      ${codigoCita ? `<div class="badge-folio">Folio: #${codigoCita}</div>` : ''}
+    </div>
+  </div>
+
+  <div class="grid-info">
+    <div class="info-group">
+      <h4>Paciente</h4>
+      <p>${paciente}</p>
+      <span>Atención Médica Ambulatoria</span>
+    </div>
+    <div class="info-group">
+      <h4>Médico Tratante</h4>
+      <p>${medico}</p>
+      <span>${especialidad} · ${clinica}</span>
+    </div>
+  </div>
+
+  ${esCompletada ? `
+    <div class="section">
+      <div class="section-title">1. Diagnóstico Clínico</div>
+      <div class="section-box box-diagnostico">${diagnostico}</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">2. Receta Médica / Prescripción e Indicaciones</div>
+      <div class="section-box box-prescripcion">${tratamiento}</div>
+    </div>
+
+    ${examenes ? `
+    <div class="section">
+      <div class="section-title">3. Exámenes y Pruebas Solicitadas</div>
+      <div class="section-box box-examenes">${examenes}</div>
+    </div>
+    ` : ''}
+
+    ${notas ? `
+    <div class="section">
+      <div class="section-title">4. Observaciones Médicas</div>
+      <div class="section-box box-notas">${notas}</div>
+    </div>
+    ` : ''}
+  ` : `
+    <div class="section">
+      <div class="section-title">1. Motivo de Consulta y Servicio</div>
+      <div class="section-box box-diagnostico">${motivo}</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">2. Estado y Sede de Atención</div>
+      <div class="section-box box-notas">
+        <strong>Estado:</strong> ${formatCitaEstado(cita.ctaEstado)}<br/>
+        <strong>Lugar / Modalidad:</strong> ${ubicacionTexto}
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">3. Detalle de Honorarios y Pago</div>
+      <div class="section-box box-prescripcion">
+        <strong>Arancel de Consulta:</strong> ${precio}<br/>
+        <strong>Forma de Pago:</strong> ${tipoPago} (${cita.estadoPago === 'pagado' ? 'Pagado' : 'Pago presencial/pendiente'})
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">4. Instrucciones para la Consulta</div>
+      <div class="section-box box-examenes">
+        Por favor preséntate 10 a 15 minutos antes de la hora programada en la sede indicada. Si la consulta es por telemedicina/virtual, ingresa a la sala de espera minutos antes de la cita.
+      </div>
+    </div>
+  `}
+
+  <div class="signature-container">
+    <div class="signature-box">
+      <div class="signature-line"></div>
+      <div class="signature-name">${medico}</div>
+      <div class="signature-role">${especialidad}</div>
+      <div class="signature-role">${esCompletada ? 'Colegiado / Médico Autorizado' : 'Firma de Conformidad / SaludYa'}</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    Documento oficial generado por el sistema SaludYa. Validez para fines clínicos y administrativos.
+  </div>
+
+  <script>
+    window.addEventListener('load', function() {
+      setTimeout(function() {
+        window.focus();
+        window.print();
+      }, 300);
+    });
+  </script>
+</body>
+</html>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.open();
+      printWindow.document.write(printHtml);
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => {
+        try {
+          printWindow.print();
+        } catch (e) {
+          console.error(e);
+        }
+      }, 500);
+    } else {
+      toast.error('Por favor, permite ventanas emergentes en tu navegador para generar el PDF.');
+    }
   };
 
   const renderModalPortal = () => {
@@ -565,7 +1090,7 @@ export function CitaCard({
                   </div>
                   <div>
                     <h3 className="text-xl font-black text-slate-900 dark:text-white leading-tight">
-                      {isCompletedState ? 'Resumen Clínico de la Consulta' : 'Detalle de la Cita Médica'}
+                      Información
                     </h3>
                     <div className="flex flex-wrap items-center gap-2 mt-1.5">
                       {/* Badge dinámico con el estado real */}
@@ -601,6 +1126,24 @@ export function CitaCard({
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/70 dark:border-indigo-800/60">
                           <FolderPlus className="w-3 h-3" /> {cita.grupoTema}
                         </span>
+                      )}
+
+                      {/* ID CITA con botón de copiar */}
+                      {cita.ctaCodigo && (
+                        <button
+                          type="button"
+                          onClick={handleCopiarId}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition cursor-pointer group"
+                          title={`Copiar ID: ${cita.ctaCodigo}`}
+                        >
+                          <span className="text-[10px] uppercase font-sans text-slate-400">ID:</span>
+                          <span>#{citaCodigoDisplay}</span>
+                          {idCopiado ? (
+                            <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                          ) : (
+                            <Copy className="w-3 h-3 text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" />
+                          )}
+                        </button>
                       )}
                     </div>
                   </div>
@@ -716,6 +1259,36 @@ export function CitaCard({
 
                 {/* 2. Ficha de Datos Conectados de la Cita */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 text-xs">
+                  {/* ID de la Cita Médica */}
+                  {cita.ctaCodigo && (
+                    <div className="sm:col-span-2 pb-2.5 mb-0.5 border-b border-slate-200/70 dark:border-slate-700/60 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 block">ID de la Cita (Código Único)</span>
+                        <p className="font-mono text-xs font-bold text-slate-800 dark:text-slate-200 truncate select-all" title={cita.ctaCodigo}>
+                          {cita.ctaCodigo}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleCopiarId}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 transition shadow-2xs shrink-0 cursor-pointer active:scale-95"
+                        title="Copiar ID al portapapeles"
+                      >
+                        {idCopiado ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            <span className="text-emerald-600 dark:text-emerald-400">¡Copiado!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span>Copiar ID</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+
                   {/* Paciente */}
                   <div className="space-y-1">
                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Paciente</span>
@@ -815,7 +1388,36 @@ export function CitaCard({
                 {/* 4. Expediente Clínico: ÚNICAMENTE para citas completadas */}
                 {isCompletedState && (
                   <div className="space-y-3 pt-1">
-                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 px-1">
+                    {/* Banner de descarga e impresión de diagnóstico y receta en PDF */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/40 border border-blue-200/80 dark:border-blue-800/80 shadow-2xs">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 rounded-xl bg-blue-600 text-white shadow-xs shrink-0">
+                          <FileText className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="font-extrabold text-xs text-slate-900 dark:text-white">
+                            Expediente y Receta Médica Oficial
+                          </h4>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                            Diagnóstico y prescripción emitida por el médico tratante
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleImprimirRecetaPdf();
+                        }}
+                        className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs hover:shadow transition active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
+                        title="Descargar o imprimir diagnóstico y receta en PDF"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        <span>Descargar PDF</span>
+                      </button>
+                    </div>
+
+                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 px-1 pt-1">
                       Expediente Clínico de la Consulta
                     </h4>
 
@@ -895,32 +1497,101 @@ export function CitaCard({
                   </div>
                 )}
 
-                {/* 5. Documentos Adjuntos (Acceso rápido) */}
-                {tieneArchivos && (
-                  <div className="p-4 rounded-2xl bg-sky-50/60 dark:bg-sky-950/30 border border-sky-200/70 dark:border-sky-800/60 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2.5">
+                {/* 5. Documentos y Archivos Adjuntos */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60">
+                  <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
+                    <div className="flex items-center gap-2">
                       <Paperclip className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
-                      <div>
-                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                          Documentos Adjuntos ({listaArchivos.length})
-                        </p>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                          Órdenes médicas, recetas o archivos subidos
-                        </p>
-                      </div>
+                      <h4 className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wider">
+                        Archivos y Documentos Adjuntos
+                      </h4>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => { setMostrarModalInfo(false); setMostrarModalArchivos(true); }}
-                      className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
-                    >
-                      Ver archivos
-                    </button>
+                    {tieneArchivos && (
+                      <span className="text-[10px] font-bold text-sky-600 dark:text-sky-400 bg-sky-100/70 dark:bg-sky-950/60 px-2 py-0.5 rounded-md">
+                        {listaArchivos.length} {listaArchivos.length === 1 ? 'archivo' : 'archivos'}
+                      </span>
+                    )}
                   </div>
-                )}
+
+                  {tieneArchivos ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      {listaArchivos.map((archivo) => {
+                        const esImagen = String(archivo.arcTipoArchivo).includes('image') || String(archivo.arcUrl).match(/\.(png|jpg|jpeg|webp)$/i);
+                        return (
+                          <div
+                            key={archivo.arcCodigo}
+                            className="flex flex-col bg-white dark:bg-[#1E293B] rounded-2xl p-3 border border-slate-200 dark:border-slate-700 shadow-2xs hover:border-sky-300 dark:hover:border-sky-600 transition group"
+                          >
+                            {esImagen ? (
+                              <div className="relative w-full h-28 rounded-xl overflow-hidden mb-2.5 bg-slate-100 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+                                <img src={archivo.arcUrl} alt={archivo.arcNombre} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                              </div>
+                            ) : (
+                              <div className="w-full h-28 rounded-xl mb-2.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400">
+                                <FileText className="w-8 h-8 text-sky-500 mb-1" />
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Documento PDF / Archivo</span>
+                              </div>
+                            )}
+
+                            <p className="font-bold text-xs text-slate-800 dark:text-slate-100 truncate mb-2.5" title={archivo.arcNombre}>
+                              {archivo.arcNombre}
+                            </p>
+
+                            <a
+                              href={archivo.arcUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-auto inline-flex items-center justify-center gap-1.5 w-full py-1.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition active:scale-95"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              <span>Ver Documento</span>
+                            </a>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="py-6 text-center flex flex-col items-center justify-center">
+                      <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 mb-2">
+                        <Paperclip className="w-4 h-4" />
+                      </div>
+                      <p className="text-xs font-bold text-slate-600 dark:text-slate-300">No se adjuntaron documentos</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">Esta cita no cuenta con órdenes médicas o archivos adjuntos.</p>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div className="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+              <div className="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMostrarModalInfo(false);
+                      router.push(colaUrl);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-bold transition active:scale-95 cursor-pointer"
+                    title="Ver cola y turnos de atención en la fecha de esta cita"
+                  >
+                    <Activity className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <span>Ver cola de esta fecha</span>
+                  </button>
+                  {isCompletedState && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleImprimirRecetaPdf();
+                      }}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition active:scale-95 cursor-pointer"
+                      title="Descargar o imprimir informe clínico y receta médica en PDF"
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>Descargar PDF</span>
+                    </button>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={() => setMostrarModalInfo(false)}
@@ -1068,29 +1739,57 @@ export function CitaCard({
       ? "h-8 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer w-full text-center"
       : "h-9 px-2.5 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer w-full flex items-center justify-center gap-1.5 text-center";
 
+    const hasGroupAction = Boolean(cita.ctaGrupoId ? onUnlinkGroup : onLinkGroup);
+
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full">
-        {/* 1. Información de toda la cita (Diagnóstico, síntomas, tratamiento, exámenes) */}
+      <div className={`grid grid-cols-2 ${hasGroupAction ? 'sm:grid-cols-5' : 'sm:grid-cols-4'} gap-2 w-full`}>
+        {/* 1. Ver cola de atención de esa fecha */}
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); router.push(colaUrl); }}
+          className={`${btnBaseClass} bg-sky-50 dark:bg-sky-950/50 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800/80`}
+          title="Ver cola y turnos de atención en la fecha de esta cita"
+        >
+          <Activity className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+          <span className="truncate">Ver cola</span>
+        </button>
+
+        {/* 2. Información de toda la cita (Diagnóstico, síntomas, tratamiento, exámenes y archivos adjuntos) */}
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); setMostrarModalInfo(true); }}
           className={`${btnBaseClass} bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/80`}
-          title="Ver detalle completo: diagnóstico, síntomas iniciales, tratamiento y exámenes"
+          title="Ver información de la cita, diagnóstico, exámenes y expediente"
         >
           <ClipboardList className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-          <span className="truncate">Detalle</span>
+          <span className="truncate">Información</span>
         </button>
 
-        {/* 2. Documentos adjuntos */}
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); setMostrarModalArchivos(true); }}
-          className={`${btnBaseClass} bg-sky-50 dark:bg-sky-950/50 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800/80`}
-          title="Ver archivos y documentos adjuntos de la cita"
-        >
-          <Paperclip className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
-          <span className="truncate">Documentos {tieneArchivos ? `(${listaArchivos.length})` : ''}</span>
-        </button>
+        {/* 2. En lugar de Documentos -> Nueva Cita */}
+        {isIndependizado ? (
+          <button
+            type="button"
+            disabled
+            className={`${btnBaseClass} bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-60`}
+            title="Este paciente fue independizado y gestiona su propia cuenta"
+          >
+            <UserCheck className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span className="truncate">Independizado</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleNuevaCita();
+            }}
+            className={`${btnBaseClass} bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80`}
+            title="Agendar una nueva cita con este médico"
+          >
+            <CalendarPlus className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span className="truncate">Nueva Cita</span>
+          </button>
+        )}
 
         {/* 3. Ver Reseña (Solo Lectura) o Escribir Reseña */}
         {yaTieneResena ? (
@@ -1126,497 +1825,526 @@ export function CitaCard({
           </div>
         )}
 
-        {/* 4. Nueva Cita (Reagendar directo) */}
-        {isIndependizado ? (
-          <button
-            type="button"
-            disabled
-            className={`${btnBaseClass} bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-60`}
-            title="Este paciente fue independizado y gestiona su propia cuenta"
-          >
-            <UserCheck className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span className="truncate">Independizado</span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              const doctorId = cita.ctaCoddoc || doctor?.exp_codigo;
-              if (doctorId) {
-                router.push(`/dashboard/agendar/${doctorId}`);
-              } else {
-                router.push('/dashboard/directorio');
-              }
-            }}
-            className={`${btnBaseClass} bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80`}
-            title="Agendar una nueva cita con este médico"
-          >
-            <CalendarPlus className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-            <span className="truncate">Nueva Cita</span>
-          </button>
+        {/* 4. Opción de Agrupar / Desagrupar si aplica */}
+        {hasGroupAction && (
+          cita.ctaGrupoId ? (
+            onUnlinkGroup ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onUnlinkGroup(cita);
+                }}
+                className={`${btnBaseClass} bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/80`}
+                title={`Quitar del grupo: ${cita.grupoTema || 'Grupo'}`}
+              >
+                <FolderMinus className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                <span className="truncate">Desagrupar</span>
+              </button>
+            ) : null
+          ) : (
+            onLinkGroup ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onLinkGroup(cita);
+                }}
+                className={`${btnBaseClass} bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 border border-purple-200/80 dark:border-purple-800/80`}
+                title="Incluir cita en un grupo"
+              >
+                <FolderPlus className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                <span className="truncate">Agrupar</span>
+              </button>
+            ) : null
+          )
         )}
       </div>
     );
   };
 
-  if (layout === 'row') {
+  const renderBentoCard = () => {
+    const hasEightButtons = Boolean(solicitudCambio && solicitudCambio.estado === 'pendiente');
+    const cancelColSpan = hasEightButtons
+      ? 'col-span-1'
+      : 'col-span-2 sm:col-span-3 md:col-span-2 xl:col-span-1';
     return (
       <div
         onClick={() => setMostrarModalInfo(true)}
-        className={`group relative flex flex-col rounded-2xl border transition-all overflow-visible cursor-pointer ${
+        className={`group relative flex flex-col rounded-3xl border transition-all duration-200 overflow-hidden cursor-pointer ${
           isIndependizado
-            ? 'bg-slate-50/80 dark:bg-slate-900/60 border-slate-300 dark:border-slate-700 opacity-90 shadow-none'
-            : 'bg-white dark:bg-[#0B1120] border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md hover:border-sky-300 dark:hover:border-sky-600'
+            ? 'bg-slate-50/80 dark:bg-slate-900/60 border-slate-300 dark:border-slate-700 opacity-90 shadow-sm'
+            : 'bg-white dark:bg-[#0B1120] border-slate-200/90 dark:border-slate-800 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-700/60'
         }`}
       >
-        {/* Franja lateral de estado reducida a 3px */}
-        <div className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-l-2xl ${isIndependizado ? 'bg-slate-400' : getStatusDotColor(cita.ctaEstado)}`} />
+        {/* Orilla izquierda de color representativo del estado de la cita */}
+        <div className={`absolute left-0 top-0 bottom-0 w-2 ${getStatusStripeColor(cita.ctaEstado)} z-20`} />
 
-        <div className="flex flex-col p-4 sm:p-5 pl-5 sm:pl-6">
+        {/* ─── FILA SUPERIOR: INFORMACIÓN MÉDICA & BENTO DATOS ─── */}
+        <div className="p-5 sm:p-6 pl-6 sm:pl-7 flex flex-col xl:flex-row xl:items-center justify-between gap-5 sm:gap-6">
           
-          {/* Fila principal de datos y acciones */}
-          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 sm:gap-6">
-            
-            {/* Columnas de datos de la cita (Cuándo, Quién, Dónde) */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 flex-1 min-w-0">
-              {/* Col 1: Cuándo & Indicador de Estado en Píldora (Badge) */}
-              <div className="flex flex-col min-w-[125px] shrink-0">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-0.5">Fecha y Hora</p>
-                <p className="text-sm font-black text-slate-900 dark:text-white capitalize leading-tight break-words">
-                  {format(dateObj, "EEE d MMM", { locale: es })}
-                </p>
-                <p className={`text-sm font-bold ${isIndependizado ? 'text-slate-600 dark:text-slate-400' : 'text-sky-600 dark:text-sky-400'}`}>
-                  {cita.ctaHora.slice(0, 5)}
-                </p>
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                    isIndependizado
-                      ? 'bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
-                      : cita.ctaEstado?.toLowerCase() === 'programada'
-                      ? 'bg-sky-50 text-sky-700 border border-sky-200/80 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-800/60'
-                      : cita.ctaEstado?.toLowerCase() === 'confirmada'
-                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800/60'
-                      : cita.ctaEstado?.toLowerCase() === 'pospuesta'
-                      ? 'bg-amber-50 text-amber-700 border border-amber-200/80 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800/60'
-                      : cita.ctaEstado?.toLowerCase() === 'completada'
-                      ? 'bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
-                      : 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800/60'
-                  }`}>
-                    <span className={`h-1.5 w-1.5 rounded-full ${isIndependizado ? 'bg-slate-400' : getStatusDotColor(cita.ctaEstado)}`} />
-                    <span>{formatCitaEstado(cita.ctaEstado)}</span>
-                  </span>
-
-                  {isIndependizado && (
-                    <span
-                      data-cy="badge-paciente-independizado"
-                      className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-200/90 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 shadow-2xs"
-                      title="Este paciente fue independizado y ahora gestiona su propia cuenta"
-                    >
-                      <UserCheck className="w-3.5 h-3.5 text-slate-500" />
-                      <span>Paciente Independizado</span>
-                    </span>
-                  )}
-
-                  {canMarcarLlegada && ctaEnClinica && (
-                    <span
-                      className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950/70 dark:text-emerald-200 dark:border-emerald-700 shadow-2xs"
-                      title="Llegada confirmada a la clínica para la cita de hoy"
-                    >
-                      <Building2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                      <span>En la clínica</span>
-                    </span>
-                  )}
-
-
-                  {solicitudCambio && solicitudCambio.estado === 'pendiente' && (
-                    solicitudCambio.tipoRelacion === 'enviada' ? (
-                      <span
-                        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-950 border border-amber-300 dark:bg-amber-950/70 dark:text-amber-200 dark:border-amber-700 shadow-2xs cursor-pointer hover:bg-amber-200 transition"
-                        onClick={(e) => { e.stopPropagation(); onCancelarSolicitud?.(solicitudCambio); }}
-                        title="Has solicitado intercambiar esta cita por otro turno. Haz clic si deseas cancelarlo."
-                      >
-                        <Clock className="w-3 h-3 text-amber-600 dark:text-amber-400 animate-pulse" />
-                        <span>Cambio Solicitado</span>
-                      </span>
-                    ) : (
-                      <span
-                        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-orange-100 text-orange-950 border border-orange-300 dark:bg-orange-950/70 dark:text-orange-200 dark:border-orange-700 shadow-2xs cursor-pointer hover:bg-orange-200 transition animate-pulse"
-                        onClick={(e) => { e.stopPropagation(); onResponderSolicitud?.(solicitudCambio); }}
-                        title="¡Otro paciente ha solicitado intercambiar turno contigo! Haz clic para responder"
-                      >
-                        <ArrowLeftRight className="w-3 h-3 text-orange-600 dark:text-orange-400" />
-                        <span>Intercambio Solicitado</span>
-                      </span>
-                    )
-                  )}
-                </div>
-              </div>
-
-              {/* Col 2: Quién (Médico) */}
-              <div className="flex items-center gap-3 flex-1 min-w-[170px]">
-                <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shrink-0 overflow-hidden relative flex items-center justify-center">
-                  {doctor?.exp_foto_perfil ? (
-                    <Image src={doctor.exp_foto_perfil} alt={cita.medicoNombre} fill sizes="40px" className="object-cover" />
-                  ) : (
-                    <span className="text-xs font-black text-slate-500 dark:text-slate-400">{initials}</span>
-                  )}
-                </div>
-                <div className="flex flex-col min-w-0">
-                  <p className="text-sm font-bold text-slate-900 dark:text-white leading-tight break-words">Dr. {cita.medicoNombre.split(' ').slice(0,2).join(' ')}</p>
-                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400 break-words leading-tight mt-0.5">{cita.medicoEspecialidad}</p>
-                  {cita.ctaMotivo && (
-                    <p className="text-[11px] text-slate-400 truncate max-w-[200px]" title={cita.ctaMotivo}>
-                      {cita.grupoTema ? `[${cita.grupoTema}] ` : ''}{cita.ctaMotivo}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* Col 3: Dónde & Modalidad con Botón explícito Cómo llegar */}
-              <div className="flex items-center gap-3 flex-1 min-w-[180px]">
-                <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 border border-blue-200/60 dark:border-blue-800/40 shadow-2xs">
-                  {cita.ctaModalidad === 'presencial' && <MapPin className="h-5 w-5" />}
-                  {cita.ctaModalidad === 'virtual' && <Video className="h-5 w-5" />}
-                  {cita.ctaModalidad === 'domicilio' && <Home className="h-5 w-5" />}
-                </div>
-
-                <div className="flex flex-col min-w-0 flex-1">
-                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200 capitalize leading-tight break-words">
-                    {cita.ctaModalidad}
-                  </p>
-                  {cita.ctaModalidad === 'presencial' && cita.clinicaNombre && (
-                    <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 break-words leading-tight mt-0.5">
-                      {cita.clinicaNombre}
-                    </p>
-                  )}
-                  {cita.ctaModalidad === 'virtual' && (
-                    <p className="text-[11px] font-medium text-sky-600 dark:text-sky-400 break-words leading-tight mt-0.5">
-                      Consulta por videollamada
-                    </p>
-                  )}
-                  {cita.ctaModalidad === 'domicilio' && (
-                    <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 break-words leading-tight mt-0.5">
-                      Visita a domicilio
-                    </p>
-                  )}
-
-                  {(cita.ctaModalidad === 'presencial' || cita.ctaModalidad === 'domicilio') && (
-                    <div className="relative mt-1.5">
-                      <button
-                        ref={navButtonRef}
-                        type="button"
-                        onClick={handleToggleNavMenu}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/80 text-[11px] font-bold transition-all duration-150 active:scale-95 cursor-pointer shadow-2xs w-fit group"
-                        title="Ver opciones de navegación (Google Maps / Waze)"
-                      >
-                        <Navigation className="h-3 w-3 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform shrink-0" />
-                        <span>Cómo llegar</span>
-                        <ChevronDown className="h-3 w-3 opacity-60 group-hover:opacity-100 transition-opacity shrink-0" />
-                      </button>
-
-                      {isNavMenuOpen && menuPos && typeof window !== 'undefined' && createPortal(
-                        <motion.div
-                          ref={navMenuRef}
-                          initial={{ opacity: 0, scale: 0.94, y: 4 }}
-                          animate={{ opacity: 1, scale: 1, y: 0 }}
-                          exit={{ opacity: 0, scale: 0.94, y: 4 }}
-                          transition={{ duration: 0.15 }}
-                          style={{
-                            position: 'absolute',
-                            top: `${menuPos.top}px`,
-                            left: `${menuPos.left}px`,
-                            zIndex: 999999,
-                          }}
-                          className="min-w-[160px] overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-1.5 shadow-2xl shadow-slate-900/30 dark:shadow-black/70 text-slate-800 dark:text-slate-100"
-                        >
-                          <p className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                            ¿Cómo llegar?
-                          </p>
-                          <a
-                            href={gmapsUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setIsNavMenuOpen(false);
-                            }}
-                            className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-950/50 hover:text-blue-600 dark:hover:text-blue-400 transition cursor-pointer"
-                          >
-                            <span className="flex h-5 w-5 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400">
-                              <MapPin className="h-3 w-3" />
-                            </span>
-                            Google Maps
-                          </a>
-                          <a
-                            href={wazeUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setIsNavMenuOpen(false);
-                            }}
-                            className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-sky-50 dark:hover:bg-sky-950/50 hover:text-sky-600 dark:hover:text-sky-400 transition cursor-pointer"
-                          >
-                            <span className="flex h-5 w-5 items-center justify-center rounded-lg bg-sky-100 dark:bg-sky-900/50 text-sky-600 dark:text-sky-400">
-                              <Navigation className="h-3 w-3" />
-                            </span>
-                            Waze
-                          </a>
-                        </motion.div>,
-                        document.body
-                      )}
-                    </div>
-                  )}
-                </div>
+          {/* Bloque Izquierdo: Doctor Avatar & Datos */}
+          <div className="flex items-center gap-4 min-w-0 max-w-xl">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden object-cover border border-slate-200/80 dark:border-slate-700 shadow-xs shrink-0 relative bg-slate-200 dark:bg-slate-700 flex items-center justify-center">
+              {isLoading ? (
+                <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+              ) : doctor?.exp_foto_perfil ? (
+                <Image src={doctor.exp_foto_perfil} alt={cita.medicoNombre} fill sizes="80px" className="object-cover" />
+              ) : (
+                <span className="text-base sm:text-lg font-black text-slate-500 dark:text-slate-400">{initials}</span>
+              )}
+              {/* Badge azul con ícono en la esquina inferior derecha de la foto */}
+              <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center border-2 border-white dark:border-slate-800 shadow-xs">
+                <Stethoscope className="w-2.5 h-2.5" />
               </div>
             </div>
 
-            {/* Acciones para citas activas / programadas */}
-            {!isCompletedState && (
-              <div className="flex flex-col items-start sm:items-end justify-center shrink-0 sm:ml-auto w-full sm:w-auto pt-3 sm:pt-0 border-t sm:border-0 border-slate-100 dark:border-slate-800">
-                {isIndependizado ? (
-                  <div className="flex flex-col items-start sm:items-end gap-1.5">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-semibold border border-slate-200 dark:border-slate-700 shadow-2xs">
-                      <Lock className="w-3.5 h-3.5 text-slate-400" />
-                      <span>Solo lectura</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setMostrarModalInfo(true); }}
-                      className="h-8 px-3.5 inline-flex items-center justify-center gap-1.5 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/80 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer whitespace-nowrap"
-                      title={isCompletedState ? "Ver detalle de la cita" : "Ver información de la cita"}
-                    >
-                      <ClipboardList className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                      <span>{isCompletedState ? 'Detalle' : 'Información'}</span>
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    {canMarcarLlegada && (
-                      ctaEnClinica ? (
-                        <div className="mb-2 w-full flex justify-end">
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-bold shadow-2xs">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                            <span>Llegada confirmada</span>
-                          </span>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={marcarLlegadaMutation.isPending}
-                          onClick={handleMarcarLlegada}
-                          className="mb-2 w-full h-8.5 px-3.5 inline-flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-black transition-all shadow-md active:scale-95 cursor-pointer whitespace-nowrap"
-                          title="Confirmar que ya llegaste a la clínica para tu cita de hoy"
-                        >
-                          {marcarLlegadaMutation.isPending ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <Building2 className="w-3.5 h-3.5 text-white shrink-0" />
-                          )}
-                          <span>Ya estoy en la clínica</span>
-                        </button>
-                      )
-                    )}
-                    {puedeVerCola && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          router.push(colaUrl);
-                        }}
-                        className="mb-2 w-full h-8.5 px-3.5 inline-flex items-center justify-center gap-1.5 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/80 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer whitespace-nowrap"
-                        title="Ver sala de espera y cola de atención"
-                      >
-                        <Activity className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                        <span>Ver cola</span>
-                      </button>
-                    )}
-                    <div className="grid grid-cols-2 gap-2 w-full sm:w-auto min-w-[220px]">
-                  {/* Fila 1, Col 1: Detalles */}
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setMostrarModalInfo(true); }}
-                    className="h-8.5 px-3.5 inline-flex items-center justify-center gap-1.5 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/80 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer whitespace-nowrap"
-                    title={isCompletedState ? "Ver detalle de la cita" : "Ver información de la cita"}
-                  >
-                    <ClipboardList className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                    <span>{isCompletedState ? 'Detalle' : 'Información'}</span>
-                  </button>
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h4 className="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-tight truncate" title={`Dr. ${cita.medicoNombre}`}>
+                  Dr. {cita.medicoNombre}
+                </h4>
+                <BadgeCheck className="w-4 h-4 text-blue-600 fill-blue-50 dark:fill-blue-950 shrink-0" />
+              </div>
+              <p className="text-xs sm:text-sm font-medium text-slate-500 dark:text-slate-400 mt-0.5 truncate" title={cita.medicoEspecialidad || doctor?.exp_profesion || 'Médico y Cirujano'}>
+                {cita.medicoEspecialidad || doctor?.exp_profesion || 'Médico y Cirujano'}
+              </p>
 
-                  {/* Fila 1, Col 2: Modificar */}
-                  {canModify ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onModify(cita);
-                      }}
-                      className="h-8.5 px-3.5 inline-flex items-center justify-center gap-1.5 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer whitespace-nowrap"
-                      title="Modificar fecha u hora de la cita"
-                    >
-                      <Edit2 className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 shrink-0" />
-                      <span>Modificar</span>
-                    </button>
-                  ) : (
-                    <div />
-                  )}
-
-                  {/* Fila 2, Col 1: Agrupar (o Desagrupar si ya tiene grupo) */}
-                  {cita.ctaGrupoId ? (
-                    onUnlinkGroup ? (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onUnlinkGroup(cita);
-                        }}
-                        className="h-8.5 px-3.5 inline-flex items-center justify-center gap-1.5 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/80 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer whitespace-nowrap"
-                        title={`Quitar del grupo: ${cita.grupoTema || 'Grupo'}`}
-                      >
-                        <FolderMinus className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-                        <span>Desagrupar</span>
-                      </button>
-                    ) : (
-                      <div />
-                    )
-                  ) : (
-                    onLinkGroup ? (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onLinkGroup(cita);
-                        }}
-                        className="h-8.5 px-3.5 inline-flex items-center justify-center gap-1.5 bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 border border-purple-200/80 dark:border-purple-800/80 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer whitespace-nowrap"
-                        title="Incluir cita en un grupo"
-                      >
-                        <FolderPlus className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
-                        <span>Agrupar</span>
-                      </button>
-                    ) : (
-                      <div />
-                    )
-                  )}
-
-                  {/* Fila 2, Col 2: Cancelar */}
-                  {canModify ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onCancel(cita);
-                      }}
-                      className="h-8.5 px-3.5 inline-flex items-center justify-center gap-1.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 border border-rose-200/80 dark:border-rose-800/80 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer whitespace-nowrap"
-                      title="Cancelar cita médica"
-                    >
-                      <XCircle className="w-3.5 h-3.5 text-rose-500 dark:text-rose-400 shrink-0" />
-                      <span>Cancelar</span>
-                    </button>
-                  ) : (
-                    <div />
-                  )}
+              {/* Fila de Tags / Píldoras: Modalidad (con ícono) + Servicio + Estado */}
+              <div className="flex items-center gap-2 flex-wrap mt-2.5">
+                {/* Modalidad con ícono */}
+                <div className="inline-flex items-center gap-1.5 bg-blue-50/80 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 rounded-xl px-2.5 py-1 text-xs font-bold border border-blue-100 dark:border-blue-900/50 shadow-2xs">
+                  {getModalityIconSmall(cita.ctaModalidad)}
+                  <span>{getModalityLabelHeader(cita.ctaModalidad)}</span>
                 </div>
 
+                {/* Tipo de Servicio */}
+                <div className="inline-flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl px-2.5 py-1 border border-slate-200/80 dark:border-slate-700/60 text-xs shadow-2xs">
+                  <span className="text-slate-400 dark:text-slate-500 font-medium">Servicio:</span>
+                  <span className="font-bold text-slate-800 dark:text-slate-200">{servicioNombreTexto}</span>
+                </div>
 
-                {/* Botón Responder o Cancelar Solicitud de Intercambio */}
-                {solicitudCambio && solicitudCambio.estado === 'pendiente' && (
-                  solicitudCambio.tipoRelacion === 'enviada' ? (
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); onCancelarSolicitud?.(solicitudCambio); }}
-                      className="mt-2 w-full h-8.5 px-3 inline-flex items-center justify-between gap-2 bg-amber-50 dark:bg-amber-950/40 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-amber-800 dark:text-amber-200 hover:text-rose-600 dark:hover:text-rose-400 border border-amber-200 dark:border-amber-800/80 hover:border-rose-300 rounded-xl text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer whitespace-nowrap"
-                      title="Cancelar solicitud de intercambio de horario"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-                        <span>Cambio en trámite</span>
-                      </div>
-                      <span className="text-[10px] text-rose-600 dark:text-rose-400 font-extrabold uppercase">
-                        Cancelar
-                      </span>
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); onResponderSolicitud?.(solicitudCambio); }}
-                      className="mt-2 w-full h-8.5 px-3 inline-flex items-center justify-between gap-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-xl text-xs font-black transition-all shadow-md active:scale-95 cursor-pointer whitespace-nowrap"
-                      title="Responder a solicitud de intercambio de horario"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <ArrowLeftRight className="w-3.5 h-3.5 shrink-0 animate-pulse" />
-                        <span>Solicitud de intercambio</span>
-                      </div>
-                      <span className="bg-white/25 px-2 py-0.5 rounded-md text-[10px] uppercase tracking-wider font-extrabold">
-                        Responder
-                      </span>
-                    </button>
-                  )
-                )}
-
-                {/* Botón Documentos adjuntos (si la cita los tiene) */}
-                {tieneArchivos && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setMostrarModalArchivos(true); }}
-                    className="mt-2 w-full h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-sky-50 dark:bg-sky-950/50 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800/80 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer whitespace-nowrap"
-                    title="Ver documentos adjuntos de la cita"
-                  >
-                    <Paperclip className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
-                    <span>Documentos ({listaArchivos.length})</span>
-                  </button>
-                )}
-
-                {canReview && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      router.push(`/paciente/resenas/nueva?cita=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}`);
-                    }}
-                    className="mt-2 w-full h-8 px-3.5 inline-flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 whitespace-nowrap cursor-pointer"
-                  >
-                    <Star className="w-3.5 h-3.5 fill-white text-white" />
-                    <span>Escribir reseña</span>
-                  </button>
-                )}
-
-                {yaTieneResena && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setMostrarModalResena(true); }}
-                    className="mt-2 w-full h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/80 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition active:scale-95"
-                  >
-                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                    <span>Calificada ({cita.ctaCalificacion}/5)</span>
-                  </button>
-                )}
-                  </>
-                )}
+                {/* Estado con punto de color */}
+                <div className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1 text-xs font-bold border shadow-2xs ${getStatusPillStyle(cita.ctaEstado)}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${getStatusDotBg(cita.ctaEstado)}`} />
+                  <span className="capitalize">{formatCitaEstado(cita.ctaEstado)}</span>
+                </div>
               </div>
-            )}
-
-            {/* Si es cita completada y tiene opción de vincular/desvincular */}
-            {isCompletedState && (onLinkGroup || onUnlinkGroup) && (
-              <div className="flex items-center justify-end shrink-0 sm:ml-auto mb-2 sm:mb-0">
-                {renderPinButton(false)}
-              </div>
-            )}
-
+            </div>
           </div>
 
-          {/* Grid de 4 botones para citas completadas */}
-          {isCompletedState && (
-            <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800/80 w-full">
-              {renderCompletedActionsGrid(false)}
-            </div>
-          )}
+          {/* Bloque Derecho: Bento de Horario/Sede & Arancel */}
+          <div className="flex flex-col md:flex-row md:items-center gap-4 sm:gap-6 shrink-0">
+            {/* Caja de Fecha, Horario y Sede */}
+            <div className="bg-[#F8FAFC] dark:bg-slate-800/40 rounded-2xl p-4 sm:p-5 border border-slate-100 dark:border-slate-800/80 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6 shadow-2xs shrink-0">
+              {/* Fecha y Hora con Calendario Azul */}
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-blue-600 text-white flex flex-col items-center justify-center font-black shrink-0 shadow-xs">
+                  <span className="text-[9px] uppercase tracking-wider leading-none opacity-90">{mesAbrev}</span>
+                  <span className="text-base sm:text-lg font-black leading-none mt-0.5">{diaNum}</span>
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                    FECHA Y HORA
+                  </span>
+                  <span className="text-sm sm:text-base font-black text-slate-900 dark:text-white capitalize leading-snug">
+                    {fechaLargaCap}
+                  </span>
+                  <span className="text-xs font-bold text-blue-600 dark:text-blue-400 mt-0.5">
+                    {horarioString} · {turnoTexto}
+                  </span>
+                </div>
+              </div>
 
+              {/* Separador vertical */}
+              <div className="w-px h-10 bg-slate-200 dark:bg-slate-700 mx-1 hidden sm:block shrink-0" />
+
+              {/* Sede Hospitalaria / Ubicación Única Completa */}
+              <div className="flex flex-col min-w-[140px] max-w-[210px] sm:max-w-[240px] justify-center">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <MapPin className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                    {cita.ctaModalidad === 'domicilio'
+                      ? 'UBICACIÓN A DOMICILIO'
+                      : cita.ctaModalidad === 'virtual'
+                      ? 'CONSULTA VIRTUAL'
+                      : 'SEDE HOSPITALARIA'}
+                  </span>
+                </div>
+                <span className="text-sm sm:text-base font-black text-slate-900 dark:text-white leading-snug break-normal line-clamp-2" title={clinicaNombreReal || ubicacionTexto}>
+                  {clinicaNombreReal || ubicacionTexto}
+                </span>
+                {direccionDetallada && (
+                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed break-normal line-clamp-1" title={direccionDetallada}>
+                    {direccionDetallada}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Arancel de Consulta */}
+            <div className="flex flex-col shrink-0 md:min-w-[130px] pl-1 justify-center">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                ARANCEL CONSULTA
+              </span>
+              <span className="text-xl sm:text-2xl font-black text-blue-600 dark:text-blue-400 tracking-tight leading-tight mt-0.5">
+                Q{(cita.ctaPrecio ?? 0).toFixed(2)}
+              </span>
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5 truncate" title={cita.tipoPagoDescripcion || 'En clínica'}>
+                <CreditCard className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span className="truncate">{cita.tipoPagoDescripcion || 'En clínica'}</span>
+              </span>
+            </div>
+          </div>
+
+        </div>
+
+        {/* ─── FILA INFERIOR DE BOTONES (ACTION RAIL INTEGRADO RESPONSIVE CON GRID) ─── */}
+        <div className="border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-[#0B1120] grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-7 auto-rows-fr">
+            {/* 2. Información */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMostrarModalInfo(true);
+              }}
+              className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition cursor-pointer group"
+            >
+              <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1 group-hover:scale-110 transition-transform shrink-0" />
+              <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 leading-tight whitespace-nowrap">
+                Información
+              </span>
+            </button>
+
+            {/* 3. Reprogramar / Reseña */}
+            {canModify ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onModify(cita);
+                }}
+                className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition cursor-pointer group"
+              >
+                <Calendar className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1 group-hover:scale-110 transition-transform shrink-0" />
+                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 leading-tight whitespace-nowrap">
+                  Reprogramar
+                </span>
+              </button>
+            ) : canReview ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  router.push(`/paciente/resenas/nueva?cita=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}`);
+                }}
+                className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-amber-600 dark:text-amber-400 transition cursor-pointer group"
+              >
+                <Star className="w-4 h-4 fill-amber-400 text-amber-400 mb-1 group-hover:scale-110 transition-transform shrink-0" />
+                <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
+                  Calificar
+                </span>
+              </button>
+            ) : yaTieneResena ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMostrarModalResena(true);
+                }}
+                className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-amber-600 dark:text-amber-400 transition cursor-pointer group"
+              >
+                <Star className="w-4 h-4 fill-amber-400 text-amber-400 mb-1 shrink-0" />
+                <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
+                  Reseña ({cita.ctaCalificacion}/5)
+                </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMostrarModalInfo(true);
+                }}
+                className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-400 dark:text-slate-500 transition cursor-pointer group"
+              >
+                <Calendar className="w-4 h-4 text-slate-400 mb-1 shrink-0" />
+                <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
+                  Reprogramar
+                </span>
+              </button>
+            )}
+
+            {/* 4. Nueva Cita */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleNuevaCita();
+              }}
+              className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition cursor-pointer group"
+            >
+              <CalendarPlus className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1 group-hover:scale-110 transition-transform shrink-0" />
+              <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 leading-tight whitespace-nowrap">
+                Nueva cita
+              </span>
+            </button>
+
+            {/* 5. Cómo Llegar */}
+            {canShowComoLlegar ? (
+              <div className="relative h-full flex flex-col border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80">
+                <button
+                  ref={navButtonRef}
+                  type="button"
+                  onClick={handleToggleNavMenu}
+                  className="w-full h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center hover:bg-slate-50 dark:hover:bg-slate-800/60 transition cursor-pointer group"
+                >
+                  <div className="flex items-center gap-0.5 mb-1">
+                    <Navigation className="w-4 h-4 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform shrink-0" />
+                    <ChevronDown className="w-3 h-3 text-slate-400" />
+                  </div>
+                  <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 leading-tight whitespace-nowrap">
+                    Cómo llegar
+                  </span>
+                </button>
+
+                {/* Popover Menú Cómo llegar */}
+                {isNavMenuOpen && menuPos && typeof window !== 'undefined' && createPortal(
+                  <motion.div
+                    ref={navMenuRef}
+                    initial={{ opacity: 0, scale: 0.94, y: 4 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.94, y: 4 }}
+                    transition={{ duration: 0.15 }}
+                    style={{
+                      position: 'absolute',
+                      top: `${menuPos.top}px`,
+                      left: `${menuPos.left}px`,
+                      zIndex: 999999,
+                    }}
+                    className="min-w-[160px] overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-1.5 shadow-2xl text-slate-800 dark:text-slate-100"
+                  >
+                    <p className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                      ¿Cómo llegar?
+                    </p>
+                    <a
+                      href={gmapsUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsNavMenuOpen(false);
+                      }}
+                      className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-950/50 hover:text-blue-600 dark:hover:text-blue-400 transition cursor-pointer"
+                    >
+                      <MapPin className="h-3.5 w-3.5 text-blue-600" />
+                      Google Maps
+                    </a>
+                    <a
+                      href={wazeUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsNavMenuOpen(false);
+                      }}
+                      className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-sky-50 dark:hover:bg-sky-950/50 hover:text-sky-600 dark:hover:text-sky-400 transition cursor-pointer"
+                    >
+                      <Navigation className="h-3.5 w-3.5 text-sky-600" />
+                      Waze
+                    </a>
+                  </motion.div>,
+                  document.body
+                )}
+              </div>
+            ) : cita.ctaModalidad === 'virtual' && cita.enlaceVideollamada ? (
+              <a
+                href={cita.enlaceVideollamada}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition cursor-pointer group"
+              >
+                <Video className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1 group-hover:scale-110 transition-transform shrink-0" />
+                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 leading-tight whitespace-nowrap">
+                  Videollamada
+                </span>
+              </a>
+            ) : tieneArchivos ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMostrarModalArchivos(true);
+                }}
+                className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition cursor-pointer group"
+              >
+                <Paperclip className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1 group-hover:scale-110 transition-transform shrink-0" />
+                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 leading-tight whitespace-nowrap">
+                  Archivos
+                </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMostrarModalInfo(true);
+                }}
+                className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-400 dark:text-slate-500 transition cursor-pointer group"
+              >
+                <Navigation className="w-4 h-4 text-slate-400 mb-1 shrink-0" />
+                <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
+                  Cómo llegar
+                </span>
+              </button>
+            )}
+
+            {/* 6. Agrupar / Desagrupar */}
+            {cita.ctaGrupoId ? (
+              onUnlinkGroup ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUnlinkGroup(cita);
+                  }}
+                  className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-rose-50 text-slate-700 hover:text-rose-600 dark:text-slate-200 transition cursor-pointer group"
+                >
+                  <FolderMinus className="w-4 h-4 text-purple-600 dark:text-purple-400 mb-1 group-hover:scale-110 transition-transform shrink-0" />
+                  <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
+                    Desagrupar
+                  </span>
+                </button>
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 bg-purple-50/50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300">
+                  <FolderMinus className="w-4 h-4 text-purple-600 mb-1 shrink-0" />
+                  <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
+                    En Serie
+                  </span>
+                </div>
+              )
+            ) : onLinkGroup ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onLinkGroup(cita);
+                }}
+                className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition cursor-pointer group"
+              >
+                <FolderPlus className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1 group-hover:scale-110 transition-transform shrink-0" />
+                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 leading-tight whitespace-nowrap">
+                  Agrupar
+                </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMostrarModalInfo(true);
+                }}
+                className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-400 dark:text-slate-500 transition cursor-pointer group"
+              >
+                <FolderPlus className="w-4 h-4 text-slate-400 mb-1 shrink-0" />
+                <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
+                  Agrupar
+                </span>
+              </button>
+            )}
+
+            {/* 7. Imprimir PDF */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleImprimirRecetaPdf();
+              }}
+              className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition cursor-pointer group"
+            >
+              <Printer className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1 group-hover:scale-110 transition-transform shrink-0" />
+              <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 leading-tight whitespace-nowrap">
+                Imprimir PDF
+              </span>
+            </button>
+
+            {/* 8. Botón Cancelar (donde corresponda según estado, adaptado responsive) */}
+            {canCancel ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCancel(cita);
+                }}
+                className={`h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 transition cursor-pointer group ${cancelColSpan}`}
+                title="Cancelar cita médica"
+              >
+                <XCircle className="w-4 h-4 text-rose-500 dark:text-rose-400 mb-1 group-hover:scale-110 transition-transform shrink-0" />
+                <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
+                  Cancelar
+                </span>
+              </button>
+            ) : isCompletedState ? (
+              <div className={`h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 bg-emerald-50/40 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300 ${cancelColSpan}`}>
+                <CheckCircle2 className="w-4 h-4 text-emerald-500 mb-1 shrink-0" />
+                <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
+                  Completada
+                </span>
+              </div>
+            ) : isCancelada ? (
+              <div className={`h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 bg-rose-50/40 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 ${cancelColSpan}`}>
+                <XCircle className="w-4 h-4 text-rose-500 mb-1 shrink-0" />
+                <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
+                  Cancelada
+                </span>
+              </div>
+            ) : isNoAsistio ? (
+              <div className={`h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 bg-slate-50 dark:bg-slate-800/40 text-slate-500 dark:text-slate-400 ${cancelColSpan}`}>
+                <AlertCircle className="w-4 h-4 text-slate-400 mb-1 shrink-0" />
+                <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
+                  No asistió
+                </span>
+              </div>
+            ) : null}
+
+            {/* 9. Botón Intercambio de turno si existe solicitud */}
+            {solicitudCambio && solicitudCambio.estado === 'pendiente' && (
+              solicitudCambio.tipoRelacion === 'enviada' ? (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onCancelarSolicitud?.(solicitudCambio); }}
+                  className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-rose-50 text-amber-700 dark:text-amber-300 transition cursor-pointer group"
+                  title="Cancelar solicitud de intercambio de horario"
+                >
+                  <Clock className="w-4 h-4 text-amber-500 mb-1 group-hover:scale-110 transition-transform shrink-0" />
+                  <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
+                    Cancelar Cambio
+                  </span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onResponderSolicitud?.(solicitudCambio); }}
+                  className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 bg-orange-50 hover:bg-orange-100 text-orange-700 dark:text-orange-300 font-black transition cursor-pointer group animate-pulse"
+                  title="Responder solicitud de intercambio de horario"
+                >
+                  <ArrowLeftRight className="w-4 h-4 text-orange-600 mb-1 shrink-0" />
+                  <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
+                    Responder
+                  </span>
+                </button>
+              )
+            )}
         </div>
 
         {renderModalPortal()}
       </div>
     );
+  };
+
+  if (layout === 'row') {
+    return renderBentoCard();
   }
 
   if (layout === 'series-child') {
@@ -1691,110 +2419,192 @@ export function CitaCard({
               )}
 
 
-              {solicitudCambio && solicitudCambio.estado === 'pendiente' && (
-                solicitudCambio.tipoRelacion === 'enviada' ? (
+              {isNoAsistio || isCancelada ? (
+                <>
                   <button
                     type="button"
-                    onClick={(e) => { e.stopPropagation(); onCancelarSolicitud?.(solicitudCambio); }}
-                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-lg bg-amber-500 hover:bg-rose-600 text-white shadow-sm transition active:scale-95 cursor-pointer"
-                    title="Cancelar solicitud de intercambio de horario"
+                    onClick={(e) => { e.stopPropagation(); router.push(colaUrl); }}
+                    className="px-2 py-1 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 hover:bg-blue-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-blue-200/50 dark:border-blue-800/40 cursor-pointer"
+                    title="Ver cola y turnos de atención en la fecha de esta cita"
                   >
-                    <Clock className="w-3 h-3 text-white" />
-                    <span>Cancelar cambio</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); onResponderSolicitud?.(solicitudCambio); }}
-                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-lg bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition active:scale-95 cursor-pointer animate-pulse"
-                    title="Responder solicitud de intercambio de horario"
-                  >
-                    <ArrowLeftRight className="w-3 h-3 text-white" />
-                    <span>Intercambio</span>
-                  </button>
-                )
-              )}
-
-              {puedeVerCola && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    router.push(colaUrl);
-                  }}
-                  className="px-2 py-1 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 hover:bg-blue-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-blue-200/50 dark:border-blue-800/40 cursor-pointer"
-                  title="Ver sala de espera y cola de atención"
-                >
-                  <Activity className="w-3 h-3 text-blue-600 dark:text-blue-400" /> Ver cola
-                </button>
-              )}
-
-              {/* Botón Detalles */}
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setMostrarModalInfo(true); }}
-                className="px-2 py-1 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 hover:bg-blue-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-blue-200/50 dark:border-blue-800/40 cursor-pointer"
-                title={isCompletedState ? "Ver detalle de la cita" : "Ver información de la cita"}
-              >
-                <ClipboardList className="w-3 h-3 text-blue-600 dark:text-blue-400" /> {isCompletedState ? 'Detalle' : 'Información'}
-              </button>
-
-              {/* Botón Documentos adjuntos */}
-              {tieneArchivos && (
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setMostrarModalArchivos(true); }}
-                  className="px-2 py-1 bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300 hover:bg-sky-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-sky-200/50 dark:border-sky-800/40 cursor-pointer"
-                  title="Ver documentos adjuntos"
-                >
-                  <Paperclip className="w-3 h-3 text-sky-600 dark:text-sky-400" /> Docs ({listaArchivos.length})
-                </button>
-              )}
-
-              {canReview && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    router.push(`/paciente/resenas/nueva?cita=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}`);
-                  }}
-                  className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-sm cursor-pointer"
-                >
-                  <Star className="w-3 h-3 fill-white text-white" /> Escribir reseña
-                </button>
-              )}
-              {yaTieneResena && (
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setMostrarModalResena(true); }}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 cursor-pointer"
-                >
-                  <Star className="w-3 h-3 fill-amber-400 text-amber-400" /> Calificada ({cita.ctaCalificacion}/5)
-                </button>
-              )}
-              {canModify && (
-                <div className="grid grid-flow-col auto-cols-max items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); onModify(cita); }}
-                    className="px-2 py-1 bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300 hover:bg-sky-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-sky-200/50 dark:border-sky-800/40 cursor-pointer"
-                  >
-                    <Edit2 className="w-3 h-3" /> Modificar
+                    <Activity className="w-3 h-3 text-blue-600 dark:text-blue-400" /> Ver cola
                   </button>
                   <button
                     type="button"
-                    onClick={(e) => { e.stopPropagation(); onCancel(cita); }}
-                    className="px-2 py-1 bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 hover:bg-rose-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-rose-200/50 dark:border-rose-800/40 cursor-pointer"
+                    onClick={(e) => { e.stopPropagation(); setMostrarModalInfo(true); }}
+                    className="px-2 py-1 bg-slate-50 text-slate-700 dark:bg-slate-800 dark:text-slate-300 hover:bg-slate-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-slate-200/50 dark:border-slate-700/50 cursor-pointer"
+                    title="Ver información de la cita"
                   >
-                    <XCircle className="w-3 h-3" /> Cancelar
+                    <ClipboardList className="w-3 h-3 text-slate-500 dark:text-slate-400" /> Detalle
                   </button>
-                </div>
-              )}
-              {renderBotonesSimulacionDoctor(true)}
-              {bottomActions && (
-                <div className="flex gap-2">
-                  {bottomActions}
-                </div>
+                  {!isIndependizado && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); handleNuevaCita(); }}
+                      className="px-2 py-1 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 hover:bg-emerald-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-emerald-200/50 dark:border-emerald-800/40 cursor-pointer"
+                      title="Agendar nueva cita con este médico"
+                    >
+                      <CalendarPlus className="w-3 h-3 text-emerald-600 dark:text-emerald-400" /> Nueva cita
+                    </button>
+                  )}
+                </>
+              ) : isCompletedState ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); router.push(colaUrl); }}
+                    className="px-2 py-1 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 hover:bg-blue-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-blue-200/50 dark:border-blue-800/40 cursor-pointer"
+                    title="Ver cola y turnos de atención en la fecha de esta cita"
+                  >
+                    <Activity className="w-3 h-3 text-blue-600 dark:text-blue-400" /> Ver cola
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setMostrarModalInfo(true); }}
+                    className="px-2 py-1 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 hover:bg-blue-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-blue-200/50 dark:border-blue-800/40 cursor-pointer"
+                    title="Ver detalle de la cita"
+                  >
+                    <ClipboardList className="w-3 h-3 text-blue-600 dark:text-blue-400" /> Detalle
+                  </button>
+                  {!isIndependizado && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); handleNuevaCita(); }}
+                      className="px-2 py-1 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 hover:bg-emerald-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-emerald-200/50 dark:border-emerald-800/40 cursor-pointer"
+                      title="Agendar nueva cita con este médico"
+                    >
+                      <CalendarPlus className="w-3 h-3 text-emerald-600 dark:text-emerald-400" /> Nueva cita
+                    </button>
+                  )}
+                  {canReview && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        router.push(`/paciente/resenas/nueva?cita=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}`);
+                      }}
+                      className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-sm cursor-pointer"
+                    >
+                      <Star className="w-3 h-3 fill-white text-white" /> Escribir reseña
+                    </button>
+                  )}
+                  {yaTieneResena && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setMostrarModalResena(true); }}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 cursor-pointer"
+                    >
+                      <Star className="w-3 h-3 fill-amber-400 text-amber-400" /> Calificada ({cita.ctaCalificacion}/5)
+                    </button>
+                  )}
+                </>
+              ) : isEnProceso ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); router.push(colaUrl); }}
+                    className="px-2 py-1 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-xs cursor-pointer animate-pulse"
+                    title="Ver sala de espera y consulta en progreso"
+                  >
+                    <Activity className="w-3 h-3 text-white" /> En consulta
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setMostrarModalInfo(true); }}
+                    className="px-2 py-1 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 hover:bg-blue-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-blue-200/50 dark:border-blue-800/40 cursor-pointer"
+                    title="Ver información de la cita"
+                  >
+                    <ClipboardList className="w-3 h-3 text-blue-600 dark:text-blue-400" /> Detalle
+                  </button>
+                </>
+              ) : (
+                <>
+                  {solicitudCambio && solicitudCambio.estado === 'pendiente' && (
+                    solicitudCambio.tipoRelacion === 'enviada' ? (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onCancelarSolicitud?.(solicitudCambio); }}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-lg bg-amber-500 hover:bg-rose-600 text-white shadow-sm transition active:scale-95 cursor-pointer"
+                        title="Cancelar solicitud de intercambio de horario"
+                      >
+                        <Clock className="w-3 h-3 text-white" />
+                        <span>Cancelar cambio</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onResponderSolicitud?.(solicitudCambio); }}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-lg bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition active:scale-95 cursor-pointer animate-pulse"
+                        title="Responder solicitud de intercambio de horario"
+                      >
+                        <ArrowLeftRight className="w-3 h-3 text-white" />
+                        <span>Intercambio</span>
+                      </button>
+                    )
+                  )}
+
+                  {puedeVerCola && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        router.push(colaUrl);
+                      }}
+                      className="px-2 py-1 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 hover:bg-blue-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-blue-200/50 dark:border-blue-800/40 cursor-pointer"
+                      title="Ver sala de espera y cola de atención"
+                    >
+                      <Activity className="w-3 h-3 text-blue-600 dark:text-blue-400" /> Ver cola
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setMostrarModalInfo(true); }}
+                    className="px-2 py-1 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 hover:bg-blue-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-blue-200/50 dark:border-blue-800/40 cursor-pointer"
+                    title="Ver información de la cita"
+                  >
+                    <ClipboardList className="w-3 h-3 text-blue-600 dark:text-blue-400" /> Detalle
+                  </button>
+
+                  {!isIndependizado && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleNuevaCita();
+                      }}
+                      className="px-2 py-1 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 hover:bg-emerald-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-emerald-200/50 dark:border-emerald-800/40 cursor-pointer"
+                      title="Agendar nueva cita con este médico"
+                    >
+                      <CalendarPlus className="w-3 h-3 text-emerald-600 dark:text-emerald-400" /> Nueva cita
+                    </button>
+                  )}
+
+                  {canModify && (
+                    <div className="grid grid-flow-col auto-cols-max items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onModify(cita); }}
+                        className="px-2 py-1 bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300 hover:bg-sky-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-sky-200/50 dark:border-sky-800/40 cursor-pointer"
+                      >
+                        <Edit2 className="w-3 h-3" /> Modificar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onCancel(cita); }}
+                        className="px-2 py-1 bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 hover:bg-rose-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-rose-200/50 dark:border-rose-800/40 cursor-pointer"
+                      >
+                        <XCircle className="w-3 h-3" /> Cancelar
+                      </button>
+                    </div>
+                  )}
+
+                  {bottomActions && (
+                    <div className="flex gap-2">
+                      {bottomActions}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -1810,268 +2620,6 @@ export function CitaCard({
     );
   }
 
-  // === CARD LAYOUT (Original) ===
-  return (
-    <div className={`group relative block overflow-hidden rounded-3xl transition-all duration-300 border ${
-      isIndependizado
-        ? 'bg-slate-50/80 dark:bg-slate-900/60 border-slate-300 dark:border-slate-700 opacity-90 shadow-md'
-        : 'bg-white shadow-xl shadow-slate-900/5 hover:shadow-2xl border-slate-100'
-    } ${
-      size === 'small' ? 'opacity-95 hover:opacity-100' : ''
-    }`}>
-      {/* Botón de anclar en la esquina superior derecha con hover suave */}
-      {renderPinButton()}
-
-      <div className="flex flex-row h-full">
-        
-        {/* === IMAGEN === */}
-        <div className={`relative overflow-hidden shrink-0 bg-slate-900 min-h-[140px] ${
-          size === 'small' ? 'w-[30%] sm:w-[25%] lg:w-[30%]' : 'w-[40%] sm:w-[35%] lg:w-[35%]'
-        }`}>
-          {isLoading ? (
-            <div className="flex h-full w-full items-center justify-center bg-slate-100">
-              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-            </div>
-          ) : doctor?.exp_foto_perfil ? (
-            <Image
-              src={doctor.exp_foto_perfil}
-              alt={cita.medicoNombre}
-              fill
-              sizes="(max-width: 640px) 30vw, 25vw"
-              className={`object-cover object-center transition-transform duration-700 group-hover:scale-105 ${cita.ctaEstado === 'cancelada' ? 'grayscale opacity-80' : ''}`}
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-800 to-slate-950 text-3xl sm:text-5xl font-black text-slate-600">
-              {initials}
-            </div>
-          )}
-          
-          <div className="absolute top-3 left-3 hidden sm:flex flex-col gap-1.5">
-            <span className={`inline-flex px-2 py-0.5 sm:px-3 sm:py-1 text-[10px] sm:text-xs font-black uppercase tracking-wider rounded-full shadow-sm ${getEstadoColor(cita.ctaEstado)}`}>
-              {formatCitaEstado(cita.ctaEstado)}
-            </span>
-            {isIndependizado && (
-              <span
-                data-cy="badge-paciente-independizado"
-                className="inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] font-bold rounded-full bg-slate-200/95 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 shadow-sm"
-              >
-                <UserCheck className="w-3 h-3 text-slate-500" />
-                <span>Independizado</span>
-              </span>
-            )}
-            {solicitudCambio && solicitudCambio.estado === 'pendiente' && (
-              solicitudCambio.tipoRelacion === 'enviada' ? (
-                <span
-                  onClick={(e) => { e.stopPropagation(); onCancelarSolicitud?.(solicitudCambio); }}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] font-bold rounded-full bg-amber-500 hover:bg-rose-600 text-white shadow-sm cursor-pointer transition"
-                  title="Has solicitado cambiar esta consulta. Clic para cancelar"
-                >
-                  <Clock className="w-3 h-3 text-white" />
-                  <span>Cambio en trámite</span>
-                </span>
-              ) : (
-                <span
-                  onClick={(e) => { e.stopPropagation(); onResponderSolicitud?.(solicitudCambio); }}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] font-bold rounded-full bg-orange-500 text-white shadow-sm cursor-pointer hover:bg-orange-600 transition animate-pulse"
-                  title="¡Solicitud de cambio recibida! Haz clic para responder"
-                >
-                  <ArrowLeftRight className="w-3 h-3 text-white" />
-                  <span>Intercambio</span>
-                </span>
-              )
-            )}
-          </div>
-        </div>
-
-        {/* === DETALLES === */}
-        <div className={`flex flex-1 flex-col justify-between ${
-          size === 'small' ? 'p-4 sm:p-5' : 'p-5 sm:p-7'
-        }`}>
-          <div className="flex items-start justify-between mb-1 pr-10">
-            <div>
-              <h3 className={`font-black text-slate-900 ${size === 'small' ? 'text-lg sm:text-xl' : 'text-xl sm:text-2xl'}`}>{cita.medicoNombre}</h3>
-            </div>
-            
-            {canModify && !isCompletedState && (
-              <div className="flex items-center gap-2">
-                <button 
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onModify(cita); }}
-                  className="h-9 px-3.5 inline-flex items-center justify-center gap-1.5 bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-900/60 rounded-xl text-xs font-bold transition-all border border-sky-200/70 dark:border-sky-800/50 whitespace-nowrap shadow-2xs active:scale-95"
-                  title="Modificar Cita"
-                >
-                  <Edit2 className="w-4 h-4 text-sky-600 dark:text-sky-400" /> Modificar
-                </button>
-                <button 
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onCancel(cita); }}
-                  className="h-9 px-3.5 inline-flex items-center justify-center gap-1.5 bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl text-xs font-bold transition-all border border-rose-200/70 dark:border-rose-800/50 whitespace-nowrap shadow-2xs active:scale-95"
-                  title="Cancelar Cita"
-                >
-                  <XCircle className="w-4 h-4 text-rose-600 dark:text-rose-400" /> Cancelar
-                </button>
-              </div>
-            )}
-          </div>
-          <p className={`font-semibold text-sky-600 mb-3 sm:mb-4 uppercase tracking-wider ${size === 'small' ? 'text-[10px] sm:text-xs' : 'text-xs sm:text-sm'}`}>
-            {cita.medicoEspecialidad}
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3 sm:gap-y-4 gap-x-4 sm:gap-x-6">
-            <div className="flex items-start gap-2.5 sm:gap-3">
-              <div className={`mt-0.5 rounded-xl bg-sky-50 text-sky-600 shrink-0 ${size === 'small' ? 'p-1.5' : 'p-2'}`}>
-                <CalendarDays className={`${size === 'small' ? 'h-4 w-4' : 'h-5 w-5'}`} />
-              </div>
-              <div>
-                <p className={`font-bold uppercase tracking-widest text-slate-400 ${size === 'small' ? 'text-[9px]' : 'text-[10px] sm:text-xs'}`}>Fecha</p>
-                <p className={`font-semibold text-slate-700 capitalize ${size === 'small' ? 'text-xs' : 'text-sm'}`}>
-                  {format(dateObj, "EEEE d 'de' MMMM", { locale: es })}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-2.5 sm:gap-3">
-              <div className={`mt-0.5 rounded-xl bg-sky-50 text-sky-600 shrink-0 ${size === 'small' ? 'p-1.5' : 'p-2'}`}>
-                <Clock className={`${size === 'small' ? 'h-4 w-4' : 'h-5 w-5'}`} />
-              </div>
-              <div>
-                <p className={`font-bold uppercase tracking-widest text-slate-400 ${size === 'small' ? 'text-[9px]' : 'text-[10px] sm:text-xs'}`}>Hora</p>
-                <p className={`font-semibold text-slate-700 ${size === 'small' ? 'text-xs' : 'text-sm'}`}>
-                  {cita.ctaHora.slice(0, 5)}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-2.5 sm:gap-3 sm:col-span-2">
-              <div className={`mt-0.5 rounded-xl bg-sky-50 text-sky-600 shrink-0 ${size === 'small' ? 'p-1.5' : 'p-2'}`}>
-                {getModalityIcon(cita.ctaModalidad)}
-              </div>
-              <div>
-                <p className={`font-bold uppercase tracking-widest text-slate-400 ${size === 'small' ? 'text-[9px]' : 'text-[10px] sm:text-xs'}`}>Modalidad</p>
-                <p className={`font-semibold text-slate-700 capitalize ${size === 'small' ? 'text-xs' : 'text-sm'}`}>
-                  Consulta {cita.ctaModalidad} {cita.ctaModalidad === 'presencial' && cita.clinicaNombre ? `- ${cita.clinicaNombre}` : ''}
-                </p>
-              </div>
-            </div>
-
-            {/* Desplegable interactivo para Waze y Google Maps */}
-            {cita.ctaModalidad === 'presencial' && (
-              <div className="sm:col-span-2 flex items-center gap-2 pt-1">
-                <a
-                  href={gmapsUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/60 px-3 py-1.5 rounded-xl text-xs font-bold transition border border-blue-200/70 dark:border-blue-800/50 active:scale-95"
-                >
-                  <MapPin className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" /> Google Maps
-                </a>
-                <a
-                  href={wazeUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className="inline-flex items-center gap-1.5 bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-900/60 px-3 py-1.5 rounded-xl text-xs font-bold transition border border-sky-200/70 dark:border-blue-800/50 active:scale-95"
-                >
-                  <Navigation className="w-3.5 h-3.5 text-sky-500" /> Waze
-                </a>
-              </div>
-            )}
-
-            {cita.ctaMotivo && (
-              <div className={`sm:col-span-2 border-t border-slate-100 ${size === 'small' ? 'pt-3 mt-1' : 'pt-4 mt-2'}`}>
-                <p className={`font-bold uppercase tracking-widest text-slate-400 mb-0.5 sm:mb-1 ${size === 'small' ? 'text-[9px]' : 'text-[10px] sm:text-xs'}`}>Motivo / Tema</p>
-                <p className={`font-medium text-slate-600 line-clamp-2 ${size === 'small' ? 'text-xs' : 'text-sm'}`}>
-                  {cita.grupoTema ? `[${cita.grupoTema}] ` : ''}{cita.ctaMotivo}
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center gap-2">
-            {isCompletedState ? (
-              renderCompletedActionsGrid(false)
-            ) : (
-              <>
-                {puedeVerCola && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      router.push(colaUrl);
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-800/60 transition active:scale-95 shadow-2xs cursor-pointer"
-                    title="Ver sala de espera y cola de atención"
-                  >
-                    <Activity className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                    <span>Ver cola</span>
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setMostrarModalInfo(true); }}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-800/60 transition active:scale-95 shadow-2xs cursor-pointer"
-                  title={isCompletedState ? "Ver detalle de la cita" : "Ver información de la cita"}
-                >
-                  <ClipboardList className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                  <span>{isCompletedState ? 'Detalle' : 'Información'}</span>
-                </button>
-
-                {canReview && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      router.push(`/paciente/resenas/nueva?cita=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}`);
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-md transition active:scale-95 cursor-pointer"
-                  >
-                    <Star className="w-3.5 h-3.5 fill-white text-white" />
-                    <span>Escribir reseña</span>
-                  </button>
-                )}
-                {yaTieneResena && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setMostrarModalResena(true); }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/80 cursor-pointer transition active:scale-95"
-                  >
-                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                    <span>Calificada ({cita.ctaCalificacion}/5)</span>
-                  </button>
-                )}
-                {tieneArchivos && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setMostrarModalArchivos(true); }}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-900/60 border border-sky-200/80 dark:border-sky-800/60 transition active:scale-95 shadow-2xs cursor-pointer"
-                    title="Ver archivos adjuntos de la cita"
-                  >
-                    <Paperclip className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-                    <span>Documentos ({listaArchivos.length})</span>
-                  </button>
-                )}
-                {tienePagoPendiente && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setMostrarModalPago(true); }}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-md transition active:scale-95 cursor-pointer"
-                    title="Subir comprobante de pago"
-                  >
-                    <CreditCard className="w-3.5 h-3.5" />
-                    <span>Pagar</span>
-                  </button>
-                )}
-                {renderBotonesSimulacionDoctor(false)}
-                {bottomActions}
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {renderModalPortal()}
-    </div>
-  );
+  // === CARD LAYOUT (Bento Action Rail) ===
+  return renderBentoCard();
 }

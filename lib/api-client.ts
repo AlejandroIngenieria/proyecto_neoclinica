@@ -23,8 +23,8 @@ export const expedientesApi = axios.create({
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-export const getAuthHeaders = (token: string) => ({
-  headers: { Authorization: `Bearer ${token}` },
+export const getAuthHeaders = (token?: string | null) => ({
+  headers: token ? { Authorization: `Bearer ${token}` } : {},
 });
 
 // ─── Servicios geográficos (a través del proxy Next.js) ─────────────────────

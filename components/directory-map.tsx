@@ -313,8 +313,11 @@ export function DirectoryMap({
               cli.cli_url_google_maps ||
               `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 
+            const cleanClinicId = clinicName.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
+            const stableId = `bld_${coordKey.replace(/\./g, '_')}_${cleanClinicId}`;
+
             buildingMap.set(buildingKey, {
-              id: `bld-${buildingMap.size + 1}-${coordKey}`,
+              id: stableId,
               name: clinicName,
               address,
               zona: zonaLabel,
@@ -361,7 +364,7 @@ export function DirectoryMap({
           }
         } else {
           buildingMap.set(buildingKey, {
-            id: `bld-default-${coordKey}`,
+            id: `bld_default_${coordKey.replace(/\./g, '_')}`,
             name: 'Centro Médico NeoClínica',
             address: 'Zona 10, Ciudad de Guatemala',
             zona: 'Zona 10',
@@ -372,6 +375,18 @@ export function DirectoryMap({
           });
         }
       }
+    });
+
+    // Garantizar un orden determinista y estable para los médicos en cada edificio
+    // para que la navegación y los indicadores (ej. 1/2, 2/2) no se desfasen ni reordenen
+    buildingMap.forEach((building) => {
+      building.doctors.sort((a, b) => {
+        const nameA = a.doctorData.fullName || a.expCodigo;
+        const nameB = b.doctorData.fullName || b.expCodigo;
+        const cmp = nameA.localeCompare(nameB, 'es');
+        if (cmp !== 0) return cmp;
+        return a.clinicIndex - b.clinicIndex;
+      });
     });
 
     return Array.from(buildingMap.values());
@@ -400,10 +415,16 @@ export function DirectoryMap({
   // mostrar todos los punteros de las ubicaciones.
   const displayedBuildings = useMemo(() => {
     if (selectedDoctorId) {
+      if (activeBuildingId) {
+        const activeBld = buildings.find((b) => b.id === activeBuildingId);
+        if (activeBld && !selectedDoctorBuildings.some((b) => b.id === activeBuildingId)) {
+          return [...selectedDoctorBuildings, activeBld];
+        }
+      }
       return selectedDoctorBuildings;
     }
     return buildings;
-  }, [selectedDoctorId, selectedDoctorBuildings, buildings]);
+  }, [selectedDoctorId, selectedDoctorBuildings, buildings, activeBuildingId]);
 
   // Edificio más cercano a la ubicación del usuario
   const closestBuilding = useMemo(() => {
@@ -436,12 +457,16 @@ export function DirectoryMap({
 
   // Edificio asociado al doctor y clínica seleccionada en la lista lateral
   const selectedDoctorBuilding = useMemo(() => {
-    if (!selectedDoctorId || selectedClinicIndex === null || selectedClinicIndex === undefined) return null;
+    if (!selectedDoctorId) return null;
     return (
       displayedBuildings.find((b) =>
-        b.doctors.some(
-          (d) => d.expCodigo === selectedDoctorId && d.clinicIndex === selectedClinicIndex
-        )
+        b.doctors.some((d) => {
+          if (d.expCodigo !== selectedDoctorId) return false;
+          if (selectedClinicIndex !== null && selectedClinicIndex !== undefined) {
+            return d.clinicIndex === selectedClinicIndex;
+          }
+          return true;
+        })
       ) || null
     );
   }, [selectedDoctorId, selectedClinicIndex, displayedBuildings]);
@@ -464,37 +489,88 @@ export function DirectoryMap({
 
   // Sincronización: Al seleccionar una sede específica del doctor, abrir el edificio y posicionar el carrusel
   useEffect(() => {
-    if (selectedDoctorId && selectedDoctorBuilding) {
-      setActiveBuildingId(selectedDoctorBuilding.id);
-
-      const docIndexInBuilding = selectedDoctorBuilding.doctors.findIndex(
-        (d) => d.expCodigo === selectedDoctorId && d.clinicIndex === selectedClinicIndex
+    if (selectedDoctorId) {
+      const currentActiveBuilding = activeBuildingId
+        ? displayedBuildings.find((b) => b.id === activeBuildingId)
+        : null;
+      const isDocInCurrentBuilding = currentActiveBuilding?.doctors.some(
+        (d) => d.expCodigo === selectedDoctorId
       );
-      setCarouselDoctorIndex(docIndexInBuilding >= 0 ? docIndexInBuilding : 0);
-    } else if (!selectedDoctorId || selectedClinicIndex === null || selectedClinicIndex === undefined) {
+
+      const targetBld = isDocInCurrentBuilding
+        ? currentActiveBuilding
+        : (selectedDoctorBuilding || displayedBuildings.find((b) => b.doctors.some((d) => d.expCodigo === selectedDoctorId)));
+
+      if (targetBld) {
+        if (activeBuildingId !== targetBld.id) {
+          setActiveBuildingId(targetBld.id);
+        }
+
+        const docIndexInBuilding = targetBld.doctors.findIndex(
+          (d) => d.expCodigo === selectedDoctorId && (selectedClinicIndex === null || selectedClinicIndex === undefined || d.clinicIndex === selectedClinicIndex)
+        );
+        const fallbackIdx = docIndexInBuilding >= 0
+          ? docIndexInBuilding
+          : targetBld.doctors.findIndex((d) => d.expCodigo === selectedDoctorId);
+
+        setCarouselDoctorIndex(fallbackIdx >= 0 ? fallbackIdx : 0);
+      }
+    } else {
       setActiveBuildingId(null);
     }
-  }, [selectedDoctorId, selectedDoctorBuilding, selectedClinicIndex]);
+  }, [selectedDoctorId, selectedDoctorBuilding, selectedClinicIndex, activeBuildingId, displayedBuildings]);
 
   // Manejador para navegar al doctor anterior en el carrusel del edificio
-  const handlePrevDoctor = (e: React.MouseEvent) => {
+  const handlePrevDoctor = (bld: BuildingLocation, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!activeBuilding || activeBuilding.doctors.length <= 1) return;
-    const nextIdx = carouselDoctorIndex === 0 ? activeBuilding.doctors.length - 1 : carouselDoctorIndex - 1;
+    e.nativeEvent?.stopImmediatePropagation?.();
+    if (!bld || bld.doctors.length <= 1) return;
+
+    const currentDocIdx = bld.doctors.findIndex(
+      (d) => d.expCodigo === selectedDoctorId && (selectedClinicIndex === null || selectedClinicIndex === undefined || d.clinicIndex === selectedClinicIndex)
+    );
+    const fallbackCurrentIdx = currentDocIdx >= 0
+      ? currentDocIdx
+      : bld.doctors.findIndex((d) => d.expCodigo === selectedDoctorId);
+
+    const currentIdx = fallbackCurrentIdx >= 0
+      ? fallbackCurrentIdx
+      : Math.max(0, Math.min(carouselDoctorIndex, bld.doctors.length - 1));
+
+    const nextIdx = currentIdx === 0 ? bld.doctors.length - 1 : currentIdx - 1;
+
+    setActiveBuildingId(bld.id);
     setCarouselDoctorIndex(nextIdx);
-    const doc = activeBuilding.doctors[nextIdx];
+
+    const doc = bld.doctors[nextIdx];
     if (doc) {
       onDoctorSelect(doc.expCodigo, doc.clinicIndex);
     }
   };
 
   // Manejador para navegar al siguiente doctor en el carrusel del edificio
-  const handleNextDoctor = (e: React.MouseEvent) => {
+  const handleNextDoctor = (bld: BuildingLocation, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!activeBuilding || activeBuilding.doctors.length <= 1) return;
-    const nextIdx = carouselDoctorIndex === activeBuilding.doctors.length - 1 ? 0 : carouselDoctorIndex + 1;
+    e.nativeEvent?.stopImmediatePropagation?.();
+    if (!bld || bld.doctors.length <= 1) return;
+
+    const currentDocIdx = bld.doctors.findIndex(
+      (d) => d.expCodigo === selectedDoctorId && (selectedClinicIndex === null || selectedClinicIndex === undefined || d.clinicIndex === selectedClinicIndex)
+    );
+    const fallbackCurrentIdx = currentDocIdx >= 0
+      ? currentDocIdx
+      : bld.doctors.findIndex((d) => d.expCodigo === selectedDoctorId);
+
+    const currentIdx = fallbackCurrentIdx >= 0
+      ? fallbackCurrentIdx
+      : Math.max(0, Math.min(carouselDoctorIndex, bld.doctors.length - 1));
+
+    const nextIdx = currentIdx === bld.doctors.length - 1 ? 0 : currentIdx + 1;
+
+    setActiveBuildingId(bld.id);
     setCarouselDoctorIndex(nextIdx);
-    const doc = activeBuilding.doctors[nextIdx];
+
+    const doc = bld.doctors[nextIdx];
     if (doc) {
       onDoctorSelect(doc.expCodigo, doc.clinicIndex);
     }
@@ -639,6 +715,7 @@ export function DirectoryMap({
                 key={building.id}
                 position={{ lat: building.lat, lng: building.lng }}
                 onClick={() => {
+                  if (activeBuildingId === building.id) return;
                   setActiveBuildingId(building.id);
                   if (building.doctors.length > 0) {
                     const docIndex = building.doctors.findIndex((d) => d.expCodigo === selectedDoctorId);
@@ -654,106 +731,166 @@ export function DirectoryMap({
                 <div className="relative flex flex-col items-center select-none group cursor-pointer -translate-y-full pb-1 pointer-events-auto">
                   {isThisBuildingActive ? (
                     /* ─── ESTADO 1: EDIFICIO ACTIVO / SELECCIONADO (Fondo Negro + Contenido Blanco + Fotos) ─── */
-                    <div className="flex flex-col items-center transition-all duration-200 animate-in zoom-in-95 pointer-events-auto">
-                      <div className="p-2.5 rounded-2xl font-black text-xs shadow-2xl border-2 transition-all flex flex-col gap-2 bg-slate-950 text-white border-white ring-4 ring-black/50 min-w-[220px] max-w-[300px]">
-                        {/* Fila 1: Cabecera con Nombre del Sitio + Flechas de navegación */}
-                        <div className="flex items-center justify-between gap-2 border-b border-white/20 pb-1.5">
-                          <div className="flex items-center gap-2 min-w-0 flex-1">
-                            <div className="w-6 h-6 rounded-lg bg-white/15 text-white flex items-center justify-center shrink-0 border border-white/30">
-                              <Building2 className="w-3.5 h-3.5 text-white" />
+                    (() => {
+                      const selectedIdxInBuilding = building.doctors.findIndex(
+                        (d) => d.expCodigo === selectedDoctorId && (selectedClinicIndex === null || selectedClinicIndex === undefined || d.clinicIndex === selectedClinicIndex)
+                      );
+                      const fallbackIdxInBuilding = selectedIdxInBuilding >= 0
+                        ? selectedIdxInBuilding
+                        : building.doctors.findIndex((d) => d.expCodigo === selectedDoctorId);
+
+                      const activeDoctorIdx = fallbackIdxInBuilding >= 0
+                        ? fallbackIdxInBuilding
+                        : Math.max(0, Math.min(carouselDoctorIndex, building.doctors.length - 1));
+                      const currentDoctor = building.doctors[activeDoctorIdx];
+
+                      return (
+                        <div className="flex flex-col items-center transition-all duration-200 animate-in zoom-in-95 pointer-events-auto">
+                          <div className="p-2.5 rounded-2xl font-black text-xs shadow-2xl border-2 transition-all flex flex-col gap-2 bg-slate-950 text-white border-white ring-4 ring-black/50 min-w-[230px] max-w-[310px]">
+                            {/* Fila 1: Cabecera con Nombre del Sitio + Flechas de navegación */}
+                            <div className="flex items-center justify-between gap-2 border-b border-white/20 pb-1.5">
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <div className="w-6 h-6 rounded-lg bg-white/15 text-white flex items-center justify-center shrink-0 border border-white/30">
+                                  <Building2 className="w-3.5 h-3.5 text-white" />
+                                </div>
+                                <div className="flex flex-col min-w-0 text-left">
+                                  <span className="truncate text-xs font-black leading-tight text-white" title={building.name}>
+                                    {building.name}
+                                  </span>
+                                  <span className="text-[10px] text-slate-300 font-bold truncate">
+                                    {hasMultipleDoctors
+                                      ? `${building.doctors.length} especialistas en esta sede`
+                                      : '1 especialista en esta sede'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Flechas para avanzar entre médicos si hay más de 1 */}
+                              {hasMultipleDoctors && (
+                                <div
+                                  className="flex items-center gap-1 shrink-0"
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                >
+                                  <button
+                                    type="button"
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onClick={(e) => handlePrevDoctor(building, e)}
+                                    className="p-1 rounded-md bg-white/10 hover:bg-white/25 text-white transition cursor-pointer border border-white/20 active:scale-95"
+                                    title="Médico anterior"
+                                  >
+                                    <ChevronLeft className="w-3.5 h-3.5" />
+                                  </button>
+                                  <span className="text-[10px] font-black text-white px-0.5 select-none">
+                                    {activeDoctorIdx + 1}/{building.doctors.length}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onClick={(e) => handleNextDoctor(building, e)}
+                                    className="p-1 rounded-md bg-white/10 hover:bg-white/25 text-white transition cursor-pointer border border-white/20 active:scale-95"
+                                    title="Siguiente médico"
+                                  >
+                                    <ChevronRight className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              )}
                             </div>
-                            <div className="flex flex-col min-w-0 text-left">
-                              <span className="truncate text-xs font-black leading-tight text-white" title={building.name}>
-                                {building.name}
-                              </span>
-                              <span className="text-[10px] text-slate-300 font-bold truncate">
-                                {hasMultipleDoctors
-                                  ? `${building.doctors.length} especialistas disponibles`
-                                  : '1 especialista disponible'}
-                              </span>
+
+                            {/* Fila 2: Círculos de fotos de los médicos que trabajan allí */}
+                            <div className="flex items-center gap-2 overflow-x-auto py-0.5 px-0.5 scrollbar-none">
+                              {building.doctors.map((docItem, idx) => {
+                                const isCurrentActive = idx === activeDoctorIdx;
+                                const docName = buildDoctorShortName(docItem.doctorData.doctor) || docItem.doctorData.fullName;
+
+                                return (
+                                  <button
+                                    key={`${docItem.expCodigo}-${idx}`}
+                                    type="button"
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      e.nativeEvent?.stopImmediatePropagation?.();
+                                      setActiveBuildingId(building.id);
+                                      setCarouselDoctorIndex(idx);
+                                      onDoctorSelect(docItem.expCodigo, docItem.clinicIndex);
+                                    }}
+                                    className={`relative w-8.5 h-8.5 rounded-full overflow-hidden shrink-0 border-2 transition-all cursor-pointer ${
+                                      isCurrentActive
+                                        ? 'border-white ring-2 ring-sky-400 scale-110 shadow-lg shadow-black/80 z-10'
+                                        : 'border-white/30 opacity-60 hover:opacity-100 hover:scale-105 hover:border-white'
+                                    }`}
+                                    title={`${docName} (${docItem.doctorData.specialtyPreview[0] || 'Especialista'})`}
+                                  >
+                                    {docItem.doctorData.doctor.exp_foto_perfil ? (
+                                      <Image
+                                        src={docItem.doctorData.doctor.exp_foto_perfil}
+                                        alt={docName}
+                                        fill
+                                        sizes="34px"
+                                        className="object-cover object-top"
+                                      />
+                                    ) : (
+                                      <div className="flex h-full w-full items-center justify-center bg-slate-800 text-[10px] font-black text-white">
+                                        {docName.charAt(0)}
+                                      </div>
+                                    )}
+                                  </button>
+                                );
+                              })}
                             </div>
+
+                            {/* Fila 3: Información detallada del médico activo */}
+                            {currentDoctor && (
+                              <div
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.nativeEvent?.stopImmediatePropagation?.();
+                                  onDoctorSelect(currentDoctor.expCodigo, currentDoctor.clinicIndex);
+                                }}
+                                className="flex items-center justify-between gap-2 pt-1.5 border-t border-white/15 cursor-pointer hover:bg-white/5 rounded-xl px-1.5 py-1 transition text-left"
+                              >
+                                <div className="flex flex-col min-w-0 flex-1">
+                                  <span className="text-xs font-black text-white truncate">
+                                    {buildDoctorShortName(currentDoctor.doctorData.doctor) || currentDoctor.doctorData.fullName}
+                                  </span>
+                                  <span className="text-[10px] text-sky-300 font-semibold truncate">
+                                    {currentDoctor.doctorData.specialtyPreview[0] || 'Especialista'}
+                                  </span>
+                                  <span className="text-[10px] text-emerald-400 font-bold">
+                                    Consulta: {currentDoctor.priceLabel}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    e.nativeEvent?.stopImmediatePropagation?.();
+                                    onNavigateToProfile(currentDoctor.expCodigo);
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-sky-500 hover:bg-sky-400 text-white text-[10px] font-bold shrink-0 transition active:scale-95 cursor-pointer shadow-sm whitespace-nowrap"
+                                  title="Ver perfil completo del médico"
+                                >
+                                  Ver perfil
+                                </button>
+                              </div>
+                            )}
                           </div>
 
-                          {/* Flechas para avanzar entre médicos si hay más de 1 */}
-                          {hasMultipleDoctors && (
-                            <div className="flex items-center gap-1 shrink-0">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handlePrevDoctor(e);
-                                }}
-                                className="p-1 rounded-md bg-white/10 hover:bg-white/25 text-white transition cursor-pointer border border-white/20"
-                                title="Médico anterior"
-                              >
-                                <ChevronLeft className="w-3.5 h-3.5" />
-                              </button>
-                              <span className="text-[10px] font-black text-white px-0.5">
-                                {carouselDoctorIndex + 1}/{building.doctors.length}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleNextDoctor(e);
-                                }}
-                                className="p-1 rounded-md bg-white/10 hover:bg-white/25 text-white transition cursor-pointer border border-white/20"
-                                title="Siguiente médico"
-                              >
-                                <ChevronRight className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          )}
+                          {/* Pico / Punta inferior que apunta al suelo */}
+                          <div className="w-3.5 h-3.5 bg-slate-950 border-r-2 border-b-2 border-white rotate-45 -mt-2 shadow-md" />
+                          {/* Sombra de punto de contacto */}
+                          <div className="w-3.5 h-1 bg-black/60 rounded-full blur-[1px] mt-0.5" />
                         </div>
-
-                        {/* Fila 2: Círculos de fotos de los médicos que trabajan allí */}
-                        <div className="flex items-center gap-2 overflow-x-auto py-0.5 px-0.5 scrollbar-none">
-                          {building.doctors.map((docItem, idx) => {
-                            const isSelectedDoc = docItem.expCodigo === selectedDoctorId;
-                            const isCarouselDoc = idx === carouselDoctorIndex;
-                            const isCurrentActive = isSelectedDoc || isCarouselDoc;
-                            const docName = buildDoctorShortName(docItem.doctorData.doctor) || docItem.doctorData.fullName;
-
-                            return (
-                              <button
-                                key={`${docItem.expCodigo}-${idx}`}
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setCarouselDoctorIndex(idx);
-                                  onDoctorSelect(docItem.expCodigo, docItem.clinicIndex);
-                                }}
-                                className={`relative w-8.5 h-8.5 rounded-full overflow-hidden shrink-0 border-2 transition-all cursor-pointer ${
-                                  isCurrentActive
-                                    ? 'border-white ring-2 ring-sky-400 scale-110 shadow-lg shadow-black/80 z-10'
-                                    : 'border-white/30 opacity-60 hover:opacity-100 hover:scale-105 hover:border-white'
-                                }`}
-                                title={`${docName} (${docItem.doctorData.specialtyPreview[0] || 'Especialista'})`}
-                              >
-                                {docItem.doctorData.doctor.exp_foto_perfil ? (
-                                  <Image
-                                    src={docItem.doctorData.doctor.exp_foto_perfil}
-                                    alt={docName}
-                                    fill
-                                    sizes="34px"
-                                    className="object-cover object-top"
-                                  />
-                                ) : (
-                                  <div className="flex h-full w-full items-center justify-center bg-slate-800 text-[10px] font-black text-white">
-                                    {docName.charAt(0)}
-                                  </div>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Pico / Punta inferior que apunta al suelo */}
-                      <div className="w-3.5 h-3.5 bg-slate-950 border-r-2 border-b-2 border-white rotate-45 -mt-2 shadow-md" />
-                      {/* Sombra de punto de contacto */}
-                      <div className="w-3.5 h-1 bg-black/60 rounded-full blur-[1px] mt-0.5" />
-                    </div>
+                      );
+                    })()
                   ) : isThisBuildingDoctorWorkplace ? (
                     /* ─── ESTADO 2: OTRA SEDE DEL MÉDICO SELECCIONADO (Fondo negro y contenido blanco) ─── */
                     <div className="flex flex-col items-center transition-all duration-200 animate-in zoom-in-95 pointer-events-auto">

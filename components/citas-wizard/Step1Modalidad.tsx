@@ -1,11 +1,13 @@
 import { useRouter } from 'next/navigation';
 import { useState, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
-import { useModalidades, useClinicas, useAreasDomicilio, useHorarios, useHorasOcupadas, useServiciosMedico, useGruposCita, usePacientesSeleccion, useAllCitasPacientes } from '@/hooks/use-flujo-citas';
+import { useModalidades, useClinicas, useAreasDomicilio, useHorarios, useHorasOcupadas, useServiciosMedico, useGruposCita, usePacientesSeleccion, useAllCitasPacientes, useCreateGrupo } from '@/hooks/use-flujo-citas';
+import { useColaDelDia } from '@/hooks/use-cola-dia';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { usePacienteTitular } from '@/hooks/use-pacientes';
 import { useCitaStore } from '@/store/use-cita-store';
-import { ChevronLeft, ChevronRight, Stethoscope, MapPin, Video, Home, ArrowRight, CalendarDays, Clock, Building2, CalendarClock, Check, Sparkles, FolderPlus, Plus, Layers, Info, ArrowLeftRight } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { ChevronLeft, ChevronRight, Stethoscope, MapPin, Video, Home, ArrowRight, CalendarDays, Clock, Building2, CalendarClock, Check, Sparkles, FolderPlus, Plus, Layers, Info, ArrowLeftRight, ClipboardList, Loader2 } from 'lucide-react';
 import { DayPicker } from 'react-day-picker';
 import { es } from 'date-fns/locale';
 import { format } from 'date-fns';
@@ -19,6 +21,7 @@ import { DomicilioSelectorMap } from './DomicilioSelectorMap';
 export function Step1Modalidad() {
   const {
     codMedico, modalidad, setModalidad,
+    tipoConsulta, setTipoConsulta,
     setClinica, setArea, clinicaSeleccionada, areaDomicilio,
     servicioSeleccionado, setServicio, motivo, setMotivo,
     fecha, setFecha, hora, setHora, nextStep, step,
@@ -71,6 +74,48 @@ export function Step1Modalidad() {
   const codPacActivo = pacienteSeleccionado?.pacCodigo || (titular as any)?.pacCodigo || titular?.pac_codigo || pacientes.find(p => p.pacTitular)?.pacCodigo || pacientes[0]?.pacCodigo || null;
   const { data: grupos = [], isLoading: loadingGrupos } = useGruposCita(codPacActivo, codMedico);
 
+  const queryClient = useQueryClient();
+  const { mutateAsync: createGrupoMutation, isPending: isCreatingGrupo } = useCreateGrupo();
+
+  const handleConfirmarNuevoGrupo = async () => {
+    const tema = nuevoGrupoTema.trim();
+    if (!tema) {
+      toast.warning('Por favor ingresa un nombre para el nuevo grupo de citas.');
+      return;
+    }
+
+    if (codPacActivo && codMedico) {
+      try {
+        const res = await createGrupoMutation({
+          codPaciente: codPacActivo,
+          codMedico,
+          tema,
+          tituloTema: tema,
+        });
+
+        const createdId = (res as any)?.id || (res as any)?.grupoId || (typeof res === 'string' ? res : '');
+
+        // Refrescar caché de grupos para que aparezca de inmediato en la lista
+        await queryClient.invalidateQueries({ queryKey: ['gruposCita', codPacActivo, codMedico] });
+
+        // Seleccionar automáticamente el grupo creado
+        setTemaSeguimiento(createdId || 'temp-' + Date.now(), tema);
+        setCreandoNuevoGrupo(false);
+        setNuevoGrupoTema('');
+        toast.success(`Grupo "${tema}" creado y seleccionado exitosamente.`);
+      } catch (err: any) {
+        console.error('Error al persistir nuevo grupo en API:', err);
+        setTemaSeguimiento('temp-' + Date.now(), tema);
+        setCreandoNuevoGrupo(false);
+        toast.success(`Grupo "${tema}" asignado.`);
+      }
+    } else {
+      setTemaSeguimiento('temp-' + Date.now(), tema);
+      setCreandoNuevoGrupo(false);
+      toast.success(`Grupo "${tema}" asignado.`);
+    }
+  };
+
   const gruposUnicos = useMemo<GrupoCitaDto[]>(() => {
     if (!grupos) return [];
     const map = new Map<string, GrupoCitaDto>();
@@ -82,6 +127,30 @@ export function Step1Modalidad() {
     });
     return Array.from(map.values());
   }, [grupos]);
+
+  const listaTiposConsulta = useMemo(() => {
+    const tiposBase = [
+      'Primera vez',
+      'Seguimiento',
+      'Control',
+      'Urgencia',
+      'Interconsulta',
+      'Chequeo preventivo',
+    ];
+    if (doctor?.tipos_consulta && doctor.tipos_consulta.length > 0) {
+      const docTipos = doctor.tipos_consulta
+        .map((tc) => tc.tipo_consulta?.trim())
+        .filter(Boolean) as string[];
+      return Array.from(new Set([...tiposBase, ...docTipos]));
+    }
+    return tiposBase;
+  }, [doctor?.tipos_consulta]);
+
+  useEffect(() => {
+    if (!tipoConsulta) {
+      setTipoConsulta('Primera vez');
+    }
+  }, [tipoConsulta, setTipoConsulta]);
 
   const [currentMonth, setCurrentMonth] = useState<Date>(() => {
     const today = new Date();
@@ -101,31 +170,62 @@ export function Step1Modalidad() {
     horaDisplay: string;
   } | null>(null);
 
-  // Si la fecha seleccionada cambia y es en el pasado o hoy con hora pasada, limpiar cualquier hora de agendamiento
+  const [currentTime, setCurrentTime] = useState<Date>(() => new Date());
+
+  // Ticker en tiempo real cada 10 segundos para bloquear slots con el paso del tiempo
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 10000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Si la fecha seleccionada cambia o si con el transcurso del tiempo la hora seleccionada ya transcurrió hoy, limpiar la hora y avisar
   useEffect(() => {
     if (fecha) {
-      const today = new Date();
+      const today = new Date(currentTime);
       today.setHours(0, 0, 0, 0);
       const f = new Date(fecha);
       f.setHours(0, 0, 0, 0);
       if (f < today) {
-        setHora(null);
+        if (hora) setHora(null);
       } else if (
-        f.getFullYear() === today.getFullYear() &&
-        f.getMonth() === today.getMonth() &&
-        f.getDate() === today.getDate() &&
+        f.getFullYear() === currentTime.getFullYear() &&
+        f.getMonth() === currentTime.getMonth() &&
+        f.getDate() === currentTime.getDate() &&
         hora
       ) {
-        const now = new Date();
-        const currentHour = now.getHours();
-        const currentMinute = now.getMinutes();
-        const currentTimeString = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
-        if (hora <= currentTimeString) {
+        const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+        const [hH, hM] = hora.split(':').map(Number);
+        const selMinutes = (isNaN(hH) ? 0 : hH) * 60 + (isNaN(hM) ? 0 : hM);
+        if (selMinutes <= currentMinutes) {
           setHora(null);
+          toast.warning(`El horario de las ${hora} ha transcurrido y ya no se encuentra disponible.`);
         }
       }
     }
-  }, [fecha, hora, setHora]);
+  }, [fecha, hora, currentTime, setHora]);
+
+  // Si en citas múltiples alguna cita agregada para hoy ya venció con el paso del tiempo, removerla automáticamente
+  useEffect(() => {
+    if (citasMultiples.length > 0) {
+      const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+      citasMultiples.forEach(c => {
+        const isToday =
+          c.fecha.getFullYear() === currentTime.getFullYear() &&
+          c.fecha.getMonth() === currentTime.getMonth() &&
+          c.fecha.getDate() === currentTime.getDate();
+        if (isToday) {
+          const [hH, hM] = c.hora.split(':').map(Number);
+          const selMinutes = (isNaN(hH) ? 0 : hH) * 60 + (isNaN(hM) ? 0 : hM);
+          if (selMinutes <= currentMinutes) {
+            removeCitaMultiple(c.id);
+            toast.warning(`La cita de las ${c.hora.substring(0, 5)} ha transcurrido y fue removida del grupo.`);
+          }
+        }
+      });
+    }
+  }, [currentTime, citasMultiples, removeCitaMultiple]);
 
   const handleSelectTema = (g: GrupoCitaDto) => {
     const topicTitle = g.titulo || g.descripcion || 'Tema de Seguimiento';
@@ -192,7 +292,9 @@ export function Step1Modalidad() {
   const mclCodigo = modalidad === 'presencial' ? clinicaSeleccionada?.mclCodigo || null : 0;
   const { data: horariosClinica = [], isLoading: loadingHorarios } = useHorarios(mclCodigo);
   
-  const { data: horasOcupadas = [] } = useHorasOcupadas(codMedico || null, fecha ? format(fecha, 'yyyy-MM-dd') : null);
+  const fechaStr = fecha ? format(fecha, 'yyyy-MM-dd') : null;
+  const { data: horasOcupadas = [] } = useHorasOcupadas(codMedico || null, fechaStr);
+  const { data: colaDelDia = [] } = useColaDelDia(codMedico || null, fechaStr);
 
   const isLoading = loadingModalidades || loadingDoctor;
 
@@ -348,7 +450,7 @@ export function Step1Modalidad() {
   const availableTimeSlots = useMemo(() => {
     if (!fecha || isPastDateSelected) return [];
 
-    const today = new Date();
+    const today = new Date(currentTime);
     today.setHours(0, 0, 0, 0);
     const selectedDate = new Date(fecha);
     selectedDate.setHours(0, 0, 0, 0);
@@ -365,12 +467,18 @@ export function Step1Modalidad() {
     const slots = new Set<string>();
 
     horariosDia.forEach(horarioDia => {
-      let current = new Date(`1970-01-01T${horarioDia.horHoraInicio}`);
-      const end = new Date(`1970-01-01T${horarioDia.horHoraFin}`);
+      if (!horarioDia.horHoraInicio || !horarioDia.horHoraFin) return;
+      const [startH, startM] = horarioDia.horHoraInicio.slice(0, 5).split(':').map(Number);
+      const [endH, endM] = horarioDia.horHoraFin.slice(0, 5).split(':').map(Number);
+      if (isNaN(startH) || isNaN(startM) || isNaN(endH) || isNaN(endM)) return;
 
-      while (current < end) {
-        slots.add(current.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }));
-        current.setMinutes(current.getMinutes() + 30);
+      const startTotal = startH * 60 + startM;
+      const endTotal = endH * 60 + endM;
+
+      for (let m = startTotal; m < endTotal; m += 30) {
+        const hh = String(Math.floor(m / 60)).padStart(2, '0');
+        const mm = String(m % 60).padStart(2, '0');
+        slots.add(`${hh}:${mm}`);
       }
     });
 
@@ -388,27 +496,39 @@ export function Step1Modalidad() {
 
     const uniqueSlots = Array.from(slots).sort();
 
-    const now = new Date();
     const isToday =
-      selectedDate.getFullYear() === today.getFullYear() &&
-      selectedDate.getMonth() === today.getMonth() &&
-      selectedDate.getDate() === today.getDate();
+      selectedDate.getFullYear() === currentTime.getFullYear() &&
+      selectedDate.getMonth() === currentTime.getMonth() &&
+      selectedDate.getDate() === currentTime.getDate();
 
-    const currentHour = now.getHours();
-    const currentMinute = now.getMinutes();
-    const currentTimeString = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+    const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
 
     return uniqueSlots.map(slot => {
       const slotWithSeconds = `${slot}:00`;
       const isTemaSlot = horasTemaEnFecha.includes(slot);
       const isMiCita = misHorasEnFecha.includes(slot);
       const isOwnSlot = isTemaSlot || isMiCita;
-      const isPastHour = isToday && slot <= currentTimeString;
+
+      const [slotH, slotM] = slot.split(':').map(Number);
+      const slotMinutes = (isNaN(slotH) ? 0 : slotH) * 60 + (isNaN(slotM) ? 0 : slotM);
+      const isPastHour = isToday && slotMinutes <= currentMinutes;
 
       // Ocupado por OTRO paciente: está en horasOcupadas del médico pero NO es cita propia del usuario ni de su tema
       const isOccupiedByOther = (horasOcupadas.includes(slotWithSeconds) || horasOcupadas.includes(slot)) && !isOwnSlot;
       const isBusy = isOccupiedByOther || isOwnSlot;
-      const disabled = isBusy || (isPastHour && !isOwnSlot);
+
+      // Verificar si en la cola del día este horario ya inició consulta o finalizó
+      const citaCola = colaDelDia.find(c => {
+        const cHora = c.ctaHora ? c.ctaHora.slice(0, 5) : '';
+        return cHora === slot;
+      });
+      const estCitaCola = (citaCola?.ctaEstado || '').toLowerCase();
+      const isConsultaIniciada = estCitaCola === 'en_proceso' || estCitaCola === 'en_consulta' || Boolean(citaCola?.esTurnoActual);
+      const isConsultaFinalizada = estCitaCola === 'completada' || estCitaCola === 'no_asistio' || estCitaCola === 'cancelada' || estCitaCola === 'rechazada';
+      const isNoSolicitable = isConsultaIniciada || isConsultaFinalizada;
+
+      // REGLA CRÍTICA: Si la hora ya pasó hoy (isPastHour), está estrictamente deshabilitada (no se puede agendar)
+      const disabled = isPastHour || isBusy;
 
       return {
         time: slot,
@@ -418,9 +538,12 @@ export function Step1Modalidad() {
         isOwnSlot,
         isPastHour,
         isOccupiedByOther,
+        isConsultaIniciada,
+        isConsultaFinalizada,
+        isNoSolicitable,
       };
     });
-  }, [fecha, isPastDateSelected, horarios, horasOcupadas, horasTemaEnFecha, misHorasEnFecha]);
+  }, [fecha, isPastDateSelected, horarios, horasOcupadas, colaDelDia, horasTemaEnFecha, misHorasEnFecha, currentTime]);
 
   useEffect(() => {
     if (!modalidad && modalidades.length === 1) {
@@ -431,20 +554,18 @@ export function Step1Modalidad() {
 
   const isHoraValid = useMemo(() => {
     if (!hora || !fecha) return false;
-    const today = new Date();
     const isToday =
-      fecha.getFullYear() === today.getFullYear() &&
-      fecha.getMonth() === today.getMonth() &&
-      fecha.getDate() === today.getDate();
+      fecha.getFullYear() === currentTime.getFullYear() &&
+      fecha.getMonth() === currentTime.getMonth() &&
+      fecha.getDate() === currentTime.getDate();
     if (isToday) {
-      const now = new Date();
-      const currentHour = now.getHours();
-      const currentMinute = now.getMinutes();
-      const currentTimeString = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
-      return hora > currentTimeString;
+      const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+      const [slotH, slotM] = hora.split(':').map(Number);
+      const selMinutes = (isNaN(slotH) ? 0 : slotH) * 60 + (isNaN(slotM) ? 0 : slotM);
+      return selMinutes > currentMinutes;
     }
     return true;
-  }, [fecha, hora]);
+  }, [fecha, hora, currentTime]);
 
   const isScheduleEnabled =
     (modalidad === 'virtual') ||
@@ -620,20 +741,62 @@ export function Step1Modalidad() {
 
             {/* Formulario para ingresar nuevo grupo */}
             {creandoNuevoGrupo && (
-              <div className="pt-2">
+              <div className="pt-2 animate-in fade-in duration-150">
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
                   Nombre del nuevo grupo de citas o tratamiento:
                 </label>
-                <div className="flex gap-2 max-w-lg">
+                <div className="flex flex-col sm:flex-row gap-2 max-w-xl">
                   <input
                     type="text"
                     value={nuevoGrupoTema}
                     onChange={(e) => setNuevoGrupoTema(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleConfirmarNuevoGrupo();
+                      } else if (e.key === 'Escape') {
+                        setCreandoNuevoGrupo(false);
+                        setNuevoGrupoTema('');
+                      }
+                    }}
                     placeholder="Ej: Control Post-operatorio Rodilla, Tratamiento Acné..."
                     className="flex-1 bg-white dark:bg-[#0F172A] px-4 py-2.5 rounded-xl border border-purple-300 dark:border-purple-700 outline-none focus:ring-2 focus:ring-purple-500/20 text-sm text-slate-800 dark:text-slate-200"
                     autoFocus
                   />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleConfirmarNuevoGrupo}
+                      disabled={isCreatingGrupo || !nuevoGrupoTema.trim()}
+                      className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-sm transition flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer shrink-0"
+                    >
+                      {isCreatingGrupo ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Creando...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3.5 h-3.5 stroke-[3]" />
+                          <span>Crear grupo</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreandoNuevoGrupo(false);
+                        setNuevoGrupoTema('');
+                      }}
+                      className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold transition cursor-pointer shrink-0"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
                 </div>
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1.5">
+                  Presiona <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-mono border border-slate-200 dark:border-slate-700">Enter</kbd> o haz clic en <strong>Crear grupo</strong> para confirmar.
+                </p>
               </div>
             )}
           </div>
@@ -676,20 +839,62 @@ export function Step1Modalidad() {
             </div>
 
             {creandoNuevoGrupo && (
-              <div className="pt-2">
+              <div className="pt-2 animate-in fade-in duration-150">
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
                   Nombre del nuevo grupo de citas o tratamiento:
                 </label>
-                <div className="flex gap-2 max-w-lg">
+                <div className="flex flex-col sm:flex-row gap-2 max-w-xl">
                   <input
                     type="text"
                     value={nuevoGrupoTema}
                     onChange={(e) => setNuevoGrupoTema(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleConfirmarNuevoGrupo();
+                      } else if (e.key === 'Escape') {
+                        setCreandoNuevoGrupo(false);
+                        setNuevoGrupoTema('');
+                      }
+                    }}
                     placeholder="Ej: Control Post-operatorio, Tratamiento Ortodoncia..."
                     className="flex-1 bg-white dark:bg-[#0F172A] px-4 py-2.5 rounded-xl border border-purple-300 dark:border-purple-700 outline-none focus:ring-2 focus:ring-purple-500/20 text-sm text-slate-800 dark:text-slate-200"
                     autoFocus
                   />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleConfirmarNuevoGrupo}
+                      disabled={isCreatingGrupo || !nuevoGrupoTema.trim()}
+                      className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-sm transition flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer shrink-0"
+                    >
+                      {isCreatingGrupo ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Creando...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3.5 h-3.5 stroke-[3]" />
+                          <span>Crear grupo</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreandoNuevoGrupo(false);
+                        setNuevoGrupoTema('');
+                      }}
+                      className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold transition cursor-pointer shrink-0"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
                 </div>
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1.5">
+                  Presiona <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-mono border border-slate-200 dark:border-slate-700">Enter</kbd> o haz clic en <strong>Crear grupo</strong> para confirmar.
+                </p>
               </div>
             )}
           </div>
@@ -770,6 +975,44 @@ export function Step1Modalidad() {
           </div>
         </div>
       )}
+
+      {/* 2.5 TIPOS DE CONSULTA (SECCIÓN DEL PANEL MÉDICO) */}
+      <div className="mb-6 bg-white dark:bg-[#1E293B] rounded-2xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 border border-blue-100 dark:border-blue-900/40 shadow-2xs">
+            <ClipboardList className="w-5 h-5 stroke-[2.2]" />
+          </div>
+          <div>
+            <h3 className="text-sm sm:text-base font-black tracking-wider uppercase text-slate-900 dark:text-white">
+              TIPOS DE CONSULTA
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Selecciona el tipo de consulta médica que requieres
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+          {listaTiposConsulta.map((tipo) => {
+            const isSelected = (tipoConsulta || 'Primera vez') === tipo;
+            return (
+              <button
+                key={tipo}
+                type="button"
+                onClick={() => setTipoConsulta(tipo)}
+                className={`px-4 sm:px-5 py-2 sm:py-2.5 rounded-full text-xs sm:text-sm font-bold transition-all duration-200 cursor-pointer shadow-2xs active:scale-95 flex items-center gap-1.5 ${
+                  isSelected
+                    ? 'bg-[#0B3B60] dark:bg-blue-600 text-white shadow-md shadow-[#0B3B60]/20 ring-2 ring-offset-2 ring-[#0B3B60] dark:ring-blue-400 dark:ring-offset-slate-900'
+                    : 'bg-slate-100 hover:bg-slate-200/90 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700'
+                }`}
+              >
+                {isSelected && <Check className="w-3.5 h-3.5 stroke-[3] shrink-0" />}
+                <span>{tipo}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* 3. MODALIDAD DE ATENCIÓN (BOTONES GRANDES Y CENTRADOS CON ICONO) */}
       <div className="my-6 bg-white dark:bg-[#1E293B] rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
@@ -1093,7 +1336,7 @@ export function Step1Modalidad() {
 
                       {availableTimeSlots.length > 0 ? (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 h-[320px] overflow-y-auto pr-2 pt-7 pb-2 px-1 custom-scrollbar content-start">
-                          {availableTimeSlots.map(({ time: slot, disabled, isTemaSlot, isMiCita, isPastHour, isOccupiedByOther }) => {
+                          {availableTimeSlots.map(({ time: slot, disabled, isTemaSlot, isMiCita, isPastHour, isOccupiedByOther, isNoSolicitable, isConsultaIniciada, isConsultaFinalizada }) => {
                             const isSelected = isMultiMode
                               ? fecha && citasMultiples.some(c => c.fecha.toDateString() === fecha.toDateString() && c.hora.substring(0, 5) === slot.substring(0, 5))
                               : hora === slot;
@@ -1172,6 +1415,31 @@ export function Step1Modalidad() {
 
                             // CASO: HORARIO OCUPADO POR OTRO PACIENTE (fondo naranja, hover con tooltip, click abre modal de intercambio)
                             if (isOccupiedByOther && !isPastHour) {
+                              // Si ya inició la consulta o finalizó, deshabilitar opción de solicitar horario
+                              if (isNoSolicitable) {
+                                return (
+                                  <button
+                                    key={slot}
+                                    type="button"
+                                    disabled
+                                    className="relative group py-3 px-3 sm:px-4 rounded-xl text-center text-xs sm:text-sm font-semibold transition-all cursor-not-allowed border border-slate-200 dark:border-slate-800 bg-slate-100/80 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 opacity-75"
+                                  >
+                                    <span>{displayTime}</span>
+
+                                    {/* Tooltip minimalista sin emojis */}
+                                    <span className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all duration-150 transform group-hover:-translate-y-1 group-focus-within:-translate-y-1 bg-slate-900/95 dark:bg-slate-800/95 text-white text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-xl whitespace-nowrap z-50 flex items-center gap-1.5 backdrop-blur-xs border border-white/10">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
+                                      <span>
+                                        {isConsultaIniciada
+                                          ? 'Consulta iniciada · No disponible para cambio'
+                                          : 'Consulta finalizada · No disponible para cambio'}
+                                      </span>
+                                      <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 border-x-4 border-x-transparent border-t-4 border-t-slate-900/95 dark:border-t-slate-800/95" />
+                                    </span>
+                                  </button>
+                                );
+                              }
+
                               return (
                                 <button
                                   key={slot}
@@ -1191,7 +1459,7 @@ export function Step1Modalidad() {
                                   {/* Tooltip CSS elegante y minimalista */}
                                   <span className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all duration-150 transform group-hover:-translate-y-1 group-focus-within:-translate-y-1 bg-slate-900/95 dark:bg-slate-800/95 text-white text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-xl whitespace-nowrap z-50 flex items-center gap-1.5 backdrop-blur-xs border border-white/10">
                                     <span className="w-1.5 h-1.5 rounded-full bg-orange-400 shrink-0" />
-                                    <span>Horario ocupado · ¿Desea solicitar cambio?</span>
+                                    <span>Horario ocupado · Solicitar cambio</span>
                                     <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 border-x-4 border-x-transparent border-t-4 border-t-slate-900/95 dark:border-t-slate-800/95" />
                                   </span>
                                 </button>

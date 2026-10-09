@@ -74,10 +74,10 @@ interface TurnoCardProps {
   llamarTurno: (data?: { turnoNumero?: number; pacienteNombre?: string | null }) => void;
   cambiarEstadoMutation: any;
   loadingCitaId: string | null;
-  loadingAction: 'en_proceso' | 'completada' | null;
+  loadingAction: 'en_proceso' | 'completada' | 'no_asistio' | null;
   handleCambiarEstado: (
     citaId: string,
-    nuevoEstado: 'en_proceso' | 'completada',
+    nuevoEstado: 'en_proceso' | 'completada' | 'no_asistio',
     turnoNumero: number,
     pacienteNombre?: string | null
   ) => void;
@@ -113,9 +113,10 @@ function TurnoCard({
   isToday = false,
 }: TurnoCardProps) {
   const estado = (t.ctaEstado || '').toLowerCase();
-  const isEnProceso = estado === 'en_proceso';
-  const isCompletada = estado === 'completada';
-  const isNoAsistio = estado === 'no_asistio';
+  const isEnProceso = estado === 'en_proceso' || estado === 'en_consulta' || Boolean(t.esTurnoActual);
+  const isCompletada = ['completada', 'finalizada', 'atendida', 'atendido', 'realizada'].includes(estado);
+  const isNoAsistio = estado === 'no_asistio' || estado === 'noasistio';
+  const isFinalizada = isCompletada || isNoAsistio || estado === 'cancelada' || estado === 'rechazada';
   const isMine = t.esMiTurno || (miTurno && t.ctaCodigo === miTurno.ctaCodigo) || (misCitasCodigos?.has(t.ctaCodigo) ?? false);
   const horaTurno = t.ctaHora ? t.ctaHora.slice(0, 5) : '--:--';
   const modTurno = (t.ctaModalidad || 'presencial').toLowerCase();
@@ -274,8 +275,8 @@ function TurnoCard({
         </div>
       )}
 
-      {/* Botones de simulación médica: Iniciar consulta y Finalizar consulta */}
-      <div className="mt-3 pt-2.5 border-t border-slate-200/60 dark:border-slate-800/80 flex items-center justify-between gap-2">
+      {/* Botones de gestión de consulta: Iniciar, Finalizar y No asistió */}
+      <div className="mt-3 pt-2.5 border-t border-slate-200/60 dark:border-slate-800/80 grid grid-cols-3 gap-1.5 sm:gap-2">
         <button
           type="button"
           disabled={cambiarEstadoMutation.isPending && loadingCitaId === t.ctaCodigo}
@@ -283,19 +284,19 @@ function TurnoCard({
             e.stopPropagation();
             handleCambiarEstado(t.ctaCodigo, 'en_proceso', t.turnoNumero, t.pacienteNombre);
           }}
-          title="Simular que el médico inicia la consulta (actualiza a en_proceso en BD y anuncia turno)"
-          className={`flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer ${
+          title="Iniciar consulta médica (actualiza a en_proceso en BD y anuncia turno)"
+          className={`inline-flex items-center justify-center gap-1 sm:gap-1.5 py-1.5 px-1.5 sm:px-2 rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer whitespace-nowrap ${
             isEnProceso
               ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-400/50'
               : 'bg-white dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700'
           }`}
         >
           {cambiarEstadoMutation.isPending && loadingCitaId === t.ctaCodigo && loadingAction === 'en_proceso' ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
           ) : (
-            <Play className={`w-3.5 h-3.5 ${isEnProceso ? 'fill-white text-white' : 'fill-emerald-600 dark:fill-emerald-400 text-emerald-600 dark:text-emerald-400'}`} />
+            <Play className={`w-3.5 h-3.5 shrink-0 ${isEnProceso ? 'fill-white text-white' : 'fill-emerald-600 dark:fill-emerald-400 text-emerald-600 dark:text-emerald-400'}`} />
           )}
-          <span>{isEnProceso ? 'En consulta' : 'Iniciar consulta'}</span>
+          <span className="truncate">{isEnProceso ? 'En consulta' : 'Iniciar'}</span>
         </button>
 
         <button
@@ -305,19 +306,41 @@ function TurnoCard({
             e.stopPropagation();
             handleCambiarEstado(t.ctaCodigo, 'completada', t.turnoNumero, t.pacienteNombre);
           }}
-          title="Simular que el médico finaliza la consulta (actualiza a completada en BD)"
-          className={`flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer ${
+          title="Finalizar consulta médica (actualiza a completada en BD)"
+          className={`inline-flex items-center justify-center gap-1 sm:gap-1.5 py-1.5 px-1.5 sm:px-2 rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer whitespace-nowrap ${
             isCompletada
               ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-400/50'
               : 'bg-white dark:bg-slate-900 hover:bg-blue-50 dark:hover:bg-blue-950/40 text-blue-700 dark:text-blue-400 border border-blue-300 dark:border-blue-700'
           }`}
         >
           {cambiarEstadoMutation.isPending && loadingCitaId === t.ctaCodigo && loadingAction === 'completada' ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
           ) : (
-            <CheckCircle2 className="w-3.5 h-3.5" />
+            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
           )}
-          <span>{isCompletada ? 'Atendido' : 'Finalizar consulta'}</span>
+          <span className="truncate">{isCompletada ? 'Atendido' : 'Finalizar'}</span>
+        </button>
+
+        <button
+          type="button"
+          disabled={cambiarEstadoMutation.isPending && loadingCitaId === t.ctaCodigo}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleCambiarEstado(t.ctaCodigo, 'no_asistio', t.turnoNumero, t.pacienteNombre);
+          }}
+          title="Marcar cita como no asistida (actualiza a no_asistio en BD y se refleja en el menú de citas)"
+          className={`inline-flex items-center justify-center gap-1 sm:gap-1.5 py-1.5 px-1.5 sm:px-2 rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer whitespace-nowrap ${
+            isNoAsistio
+              ? 'bg-rose-600 text-white shadow-xs ring-2 ring-rose-400/50'
+              : 'bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-700'
+          }`}
+        >
+          {cambiarEstadoMutation.isPending && loadingCitaId === t.ctaCodigo && loadingAction === 'no_asistio' ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+          ) : (
+            <XCircle className="w-3.5 h-3.5 shrink-0" />
+          )}
+          <span className="truncate">{isNoAsistio ? 'No asistió' : 'No asistió'}</span>
         </button>
       </div>
 
@@ -390,21 +413,43 @@ function TurnoCard({
         </div>
       )}
 
-      {/* Botón para solicitar intercambio de horario (solo si no es propio, no hay solicitud enviada, no tiene intento gastado y no ha mandado solicitud en esta cola) */}
-      {!isMine && !solicitudEnviada && !intentoGastado && !yaEnvioSolicitudEnEstaCola && !isCompletada && !isNoAsistio && onSolicitarCambio && (
+      {/* Botón para solicitar intercambio de horario (o deshabilitado si ya inició o finalizó) */}
+      {!isMine && !solicitudEnviada && !intentoGastado && !yaEnvioSolicitudEnEstaCola && onSolicitarCambio && (
         <div className="mt-2.5 pt-2.5 border-t border-slate-200/60 dark:border-slate-800/80">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSolicitarCambio(t);
-            }}
-            title={`Solicitar intercambio de horario con el Turno #${t.turnoNumero}`}
-            className="w-full inline-flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer bg-white dark:bg-slate-900 hover:bg-orange-50 dark:hover:bg-orange-950/40 text-orange-600 dark:text-orange-400 border border-orange-300 dark:border-orange-700/60"
-          >
-            <ArrowLeftRight className="w-3.5 h-3.5" />
-            <span>Solicitar este horario</span>
-          </button>
+          {isEnProceso ? (
+            <button
+              type="button"
+              disabled
+              title="La consulta ya inició, no es posible solicitar este horario"
+              className="w-full inline-flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800/70 text-slate-400 dark:text-slate-500 border border-slate-200/80 dark:border-slate-700/60 cursor-not-allowed opacity-80"
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
+              <span>Consulta iniciada · No disponible</span>
+            </button>
+          ) : isFinalizada ? (
+            <button
+              type="button"
+              disabled
+              title="La consulta ya finalizó, no es posible solicitar este horario"
+              className="w-full inline-flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800/70 text-slate-400 dark:text-slate-500 border border-slate-200/80 dark:border-slate-700/60 cursor-not-allowed opacity-80"
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
+              <span>Consulta finalizada · No disponible</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSolicitarCambio(t);
+              }}
+              title={`Solicitar intercambio de horario con el Turno #${t.turnoNumero}`}
+              className="w-full inline-flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer bg-white dark:bg-slate-900 hover:bg-orange-50 dark:hover:bg-orange-950/40 text-orange-600 dark:text-orange-400 border border-orange-300 dark:border-orange-700/60"
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5" />
+              <span>Solicitar este horario</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -530,68 +575,63 @@ function SalaEsperaContent() {
 
   const isToday = fechaCita === todayStr;
 
-  // Manejo de citas no iniciadas ni finalizadas: al llegar el horario de otro turno, pasan a 'no_asistio'
-  const turnosProcesados = useMemo(() => {
-    const now = new Date();
-    const currentHour = now.getHours();
-    const currentMinute = now.getMinutes();
-    const currentTimeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
-
-    return turnos.map((t) => {
-      const st = (t.ctaEstado || '').toLowerCase();
-      if (st !== 'programada') return t;
-
-      // Si la fecha ya pasó por completo:
-      if (fechaCita < todayStr) {
-        return { ...t, ctaEstado: 'no_asistio' };
-      }
-
-      // Si es hoy, verificar si llegó el horario de otro turno posterior o se inició otro turno posterior:
-      if (fechaCita === todayStr) {
-        const tHora = t.ctaHora ? t.ctaHora.slice(0, 5) : '';
-        const hayTurnoPosteriorActivoOLlegado = turnos.some((otro) => {
-          const otroHora = otro.ctaHora ? otro.ctaHora.slice(0, 5) : '';
-          const otroEstado = (otro.ctaEstado || '').toLowerCase();
-          const esPosterior = otroHora > tHora || otro.turnoNumero > t.turnoNumero;
-          if (!esPosterior) return false;
-          // Si otro turno posterior ya está en consulta o completada, o su hora ya llegó:
-          return otroEstado === 'en_proceso' || otroEstado === 'completada' || currentTimeStr >= otroHora;
-        });
-
-        if (hayTurnoPosteriorActivoOLlegado) {
-          return { ...t, ctaEstado: 'no_asistio' };
-        }
-      }
-
-      return t;
-    });
-  }, [turnos, fechaCita, todayStr]);
+  // Mantener el estado real registrado en la base de datos sin sobreescrituras automáticas
+  const turnosProcesados = turnos;
 
   const turnoEnConsulta = useMemo(() => {
-    return turnosProcesados.find((t) => (t.ctaEstado || '').toLowerCase() === 'en_proceso');
+    return turnosProcesados.find((t) => {
+      const st = (t.ctaEstado || '').toLowerCase().trim();
+      return st === 'en_proceso' || st === 'en_consulta' || Boolean(t.esTurnoActual);
+    });
   }, [turnosProcesados]);
 
   const turnosAtendidos = useMemo(() => {
-    return turnosProcesados.filter((t) => (t.ctaEstado || '').toLowerCase() === 'completada').length;
+    return turnosProcesados.filter((t) => {
+      const st = (t.ctaEstado || '').toLowerCase().trim();
+      return ['completada', 'finalizada', 'atendida', 'atendido', 'realizada'].includes(st);
+    }).length;
   }, [turnosProcesados]);
 
   const turnosNoAsistio = useMemo(() => {
-    return turnosProcesados.filter((t) => (t.ctaEstado || '').toLowerCase() === 'no_asistio').length;
+    return turnosProcesados.filter((t) => {
+      const st = (t.ctaEstado || '').toLowerCase().trim();
+      return st === 'no_asistio' || st === 'noasistio' || st === 'no_asistió';
+    }).length;
   }, [turnosProcesados]);
 
   // Turnos activos en espera (excluye completadas y no asistió)
   const turnosActivos = useMemo(() => {
     return turnosProcesados.filter((t) => {
-      const st = (t.ctaEstado || '').toLowerCase();
-      return st !== 'completada' && st !== 'no_asistio';
+      const st = (t.ctaEstado || '').toLowerCase().trim();
+      return (
+        st !== 'completada' &&
+        st !== 'finalizada' &&
+        st !== 'atendida' &&
+        st !== 'atendido' &&
+        st !== 'realizada' &&
+        st !== 'no_asistio' &&
+        st !== 'noasistio' &&
+        st !== 'no_asistió' &&
+        st !== 'cancelada' &&
+        st !== 'rechazada'
+      );
     });
   }, [turnosProcesados]);
 
-  // Turnos concluídos / historial del día
+  // Turnos concluídos / historial del día (Atendidos + No Asistió)
   const turnosHistorial = useMemo(() => {
     return turnosProcesados.filter((t) => {
-      const st = (t.ctaEstado || '').toLowerCase();
-      return st === 'completada' || st === 'no_asistio';
+      const st = (t.ctaEstado || '').toLowerCase().trim();
+      return (
+        st === 'completada' ||
+        st === 'finalizada' ||
+        st === 'atendida' ||
+        st === 'atendido' ||
+        st === 'realizada' ||
+        st === 'no_asistio' ||
+        st === 'noasistio' ||
+        st === 'no_asistió'
+      );
     });
   }, [turnosProcesados]);
 
@@ -657,7 +697,7 @@ function SalaEsperaContent() {
 
   const cambiarEstadoMutation = useCambiarEstadoCita();
   const [loadingCitaId, setLoadingCitaId] = useState<string | null>(null);
-  const [loadingAction, setLoadingAction] = useState<'en_proceso' | 'completada' | null>(null);
+  const [loadingAction, setLoadingAction] = useState<'en_proceso' | 'completada' | 'no_asistio' | null>(null);
 
   // Estado para modal de solicitud de cambio de horario
   const [turnoParaCambio, setTurnoParaCambio] = useState<ColaTurnoDto | null>(null);
@@ -773,6 +813,17 @@ function SalaEsperaContent() {
       return;
     }
 
+    const est = (turno.ctaEstado || '').toLowerCase();
+    if (est === 'en_proceso' || est === 'en_consulta' || turno.esTurnoActual) {
+      toast.error('La consulta para este horario ya inició y no es posible solicitarla.');
+      return;
+    }
+
+    if (est === 'completada' || est === 'no_asistio' || est === 'cancelada' || est === 'rechazada') {
+      toast.error('La consulta para este horario ya finalizó.');
+      return;
+    }
+
     if (yaEnvioSolicitudEnEstaCola) {
       toast.error('Ya has enviado una solicitud de cambio de horario en esta cola. Solo se permite 1 solicitud por cola.');
       return;
@@ -847,7 +898,7 @@ function SalaEsperaContent() {
 
   const handleCambiarEstado = (
     citaId: string,
-    nuevoEstado: 'en_proceso' | 'completada',
+    nuevoEstado: 'en_proceso' | 'completada' | 'no_asistio',
     turnoNumero: number,
     pacienteNombre?: string | null
   ) => {
@@ -864,6 +915,8 @@ function SalaEsperaContent() {
               pacienteNombre: pacienteNombre || undefined,
             });
             toast.success(`Consulta iniciada: Turno #${turnoNumero}`);
+          } else if (nuevoEstado === 'no_asistio') {
+            toast.success(`Turno #${turnoNumero} marcado como No asistió`);
           } else {
             toast.success(`Consulta finalizada: Turno #${turnoNumero}`);
           }

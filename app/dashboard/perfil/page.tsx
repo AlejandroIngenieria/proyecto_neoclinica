@@ -34,6 +34,7 @@ import { DocumentDropzone } from '@/components/document-dropzone';
 import { ProfileCompletenessWidget } from '@/components/profile-completeness-widget';
 import { BilleteraSegurosSeccion } from '@/components/seguros/BilleteraSegurosSeccion';
 import Link from 'next/link';
+import { toast } from 'sonner';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -159,10 +160,12 @@ function FormField({
   label,
   children,
   required,
+  error,
 }: {
   label: string;
   children: React.ReactNode;
   required?: boolean;
+  error?: string;
 }) {
   return (
     <label className="block">
@@ -171,6 +174,7 @@ function FormField({
         {required && <span className="ml-0.5 text-red-400">*</span>}
       </span>
       {children}
+      {error && <span className="mt-1 block text-xs font-medium text-rose-500">{error}</span>}
     </label>
   );
 }
@@ -192,7 +196,12 @@ function EditProfileForm({
 }) {
   const updateMutation = useUpdatePaciente();
 
-  const { register, handleSubmit, watch, setValue, formState: { isSubmitting } } = useForm<ProfileFormValues>({
+  const today = new Date();
+  const maxBirthDate18 = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate())
+    .toISOString()
+    .split('T')[0];
+
+  const { register, handleSubmit, watch, setValue, formState: { isSubmitting, errors } } = useForm<ProfileFormValues>({
     defaultValues: {
       pac_primer_nombre: titular.pac_primer_nombre || '',
       pac_segundo_nombre: titular.pac_segundo_nombre || '',
@@ -326,7 +335,24 @@ function EditProfileForm({
     
     const fechaNac = values.pac_fecha_nacimiento || titular.pac_fecha_nacimiento;
     if (fechaNac) {
+      const parts = fechaNac.split('T')[0].split('-');
+      if (parts.length === 3) {
+        const birthDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        const now = new Date();
+        let age = now.getFullYear() - birthDate.getFullYear();
+        const m = now.getMonth() - birthDate.getMonth();
+        if (m < 0 || (m === 0 && now.getDate() < birthDate.getDate())) {
+          age--;
+        }
+        if (age < 18) {
+          toast.error('El paciente titular debe ser mayor de edad (18 años o más).');
+          return;
+        }
+      }
       appendSeguro('FechaNacimiento', fechaNac.split('T')[0]);
+    } else {
+      toast.error('La fecha de nacimiento es obligatoria para el paciente titular.');
+      return;
     }
 
     appendSeguro('Genero', values.pac_genero || titular.pac_genero);
@@ -427,8 +453,36 @@ function EditProfileForm({
               <FormField label="Apellido de matrimonio">
                 <input {...register('pac_apellido_casado')} className={inputClass} placeholder="Pérez" />
               </FormField>
-              <FormField label="Fecha de Nacimiento" required>
-                <input type="date" {...register('pac_fecha_nacimiento', { required: true })} className={inputClass} />
+              <FormField
+                label="Fecha de Nacimiento (Mayor de 18 años)"
+                required
+                error={errors.pac_fecha_nacimiento?.message}
+              >
+                <input
+                  type="date"
+                  max={maxBirthDate18}
+                  {...register('pac_fecha_nacimiento', {
+                    required: 'La fecha de nacimiento es obligatoria',
+                    validate: (val) => {
+                      if (!val) return 'La fecha de nacimiento es obligatoria';
+                      const parts = val.split('-');
+                      if (parts.length !== 3) return 'Fecha inválida';
+                      const birthDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+                      if (isNaN(birthDate.getTime())) return 'Fecha inválida';
+                      const now = new Date();
+                      let age = now.getFullYear() - birthDate.getFullYear();
+                      const m = now.getMonth() - birthDate.getMonth();
+                      if (m < 0 || (m === 0 && now.getDate() < birthDate.getDate())) {
+                        age--;
+                      }
+                      if (age < 18) {
+                        return 'El paciente titular debe ser mayor de 18 años';
+                      }
+                      return true;
+                    },
+                  })}
+                  className={inputClass}
+                />
               </FormField>
               <FormField label="Género" required>
                 <select {...register('pac_genero', { required: true })} className={selectClass}>

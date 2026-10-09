@@ -116,12 +116,12 @@ export function useHorarios(mclCodigo: number | null) {
 }
 
 export function useHorasOcupadas(codMedico: string | null, fecha: string | null) {
-  const { token, isAuthenticated } = useAuthInfo();
+  const { token } = useAuthInfo();
   return useQuery({
     queryKey: ['horasOcupadas', codMedico, fecha],
-    queryFn: () => fetchHorasOcupadas(token!, codMedico!, fecha!),
-    enabled: isAuthenticated && !!codMedico && !!fecha,
-    staleTime: 0,
+    queryFn: () => fetchHorasOcupadas(token, codMedico!, fecha!),
+    enabled: !!codMedico && !!fecha,
+    staleTime: 30 * 1000,
   });
 }
 
