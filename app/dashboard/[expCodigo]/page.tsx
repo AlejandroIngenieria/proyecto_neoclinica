@@ -4,6 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Masonry from 'react-masonry-css';
 import {
   MapPin,
@@ -48,7 +49,16 @@ import { es } from 'date-fns/locale';
 import type { DoctorClinica, DoctorClinicaHorario, DoctorResponse } from '@/types';
 import { InsuranceLogoBadge } from '@/components/insurance-logo-badge';
 import { ShareDoctorModal } from '@/components/share-doctor-modal';
-import { buildDoctorFullName, getDoctorPriceDisplay, cleanZonaText } from '@/types/doctor';
+import {
+  buildDoctorFullName,
+  getDoctorPriceDisplay,
+  getDoctorLocationPrice,
+  getDoctorGroupedServices,
+  cleanZonaText,
+  cleanZonaShort,
+  type LocationServicesGroup,
+  type DoctorServicio,
+} from '@/types/doctor';
 import { NeoLoader } from '@/components/neo-loader';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { useHorasOcupadas } from '@/hooks/use-flujo-citas';
@@ -433,6 +443,10 @@ interface BentoGridProps {
   codPac: string | undefined;
   selectedService: DoctorResponse['servicios'][number] | null;
   setSelectedService: React.Dispatch<React.SetStateAction<DoctorResponse['servicios'][number] | null>>;
+  locationServiceGroups: LocationServicesGroup[];
+  activeServiceLocationId: string;
+  setActiveServiceLocationId: (id: string) => void;
+  displayedServices: DoctorServicio[];
 }
 
 function BentoGrid(props: BentoGridProps) {
@@ -448,6 +462,7 @@ function BentoGrid(props: BentoGridProps) {
     handlePrevSede, handleNextSede, isDomicilioActive,
     googleMapsHref, wazeHref, clinicQuery, codPac,
     selectedService, setSelectedService,
+    locationServiceGroups, activeServiceLocationId, setActiveServiceLocationId, displayedServices,
   } = props;
 
   const breakpointColumnsObj = {
@@ -462,6 +477,22 @@ function BentoGrid(props: BentoGridProps) {
   const cardInnerLg = 'p-5 sm:p-6 lg:p-7 xl:p-8 flex flex-col justify-between';
 
   const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  // Carousel de ubicaciones en la tarjeta de Servicios & Tarifas
+  const [serviceLocationIndex, setServiceLocationIndex] = useState(0);
+
+  const handlePrevServiceLocation = () => {
+    if (locationServiceGroups.length <= 1) return;
+    setServiceLocationIndex((prev) => (prev > 0 ? prev - 1 : locationServiceGroups.length - 1));
+  };
+
+  const handleNextServiceLocation = () => {
+    if (locationServiceGroups.length <= 1) return;
+    setServiceLocationIndex((prev) => (prev < locationServiceGroups.length - 1 ? prev + 1 : 0));
+  };
+
+  const currentServiceLocationGroup = locationServiceGroups[serviceLocationIndex % (locationServiceGroups.length || 1)] || null;
+  const currentCardServices = currentServiceLocationGroup ? currentServiceLocationGroup.services : displayedServices;
 
   const handleCopyContact = (text: string, fieldId: string) => {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
@@ -1147,23 +1178,97 @@ function BentoGrid(props: BentoGridProps) {
           <div>
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-blue-50 dark:bg-blue-950/40 text-blue-500 flex items-center justify-center"><Stethoscope className="w-5 h-5" /></div>
-                <h2 className="text-[18px] text-slate-900 dark:text-white font-bold tracking-tight">Servicios &amp; Tarifas</h2>
+                <div className="w-9 h-9 rounded-full bg-blue-50 dark:bg-blue-950/40 text-blue-500 flex items-center justify-center">
+                  <Stethoscope className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-[18px] text-slate-900 dark:text-white font-bold tracking-tight">Servicios &amp; Tarifas</h2>
+                  <span className="text-[11px] text-slate-400 block font-normal">Precios por ubicación y sede</span>
+                </div>
               </div>
-              <span className="text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 font-medium px-3 py-0.5 rounded-full flex items-center gap-1 border border-emerald-500/10">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Sin cobros ocultos
-              </span>
+
+              {/* Controles del Carousel de Ubicaciones con Flechas */}
+              {locationServiceGroups.length > 1 ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
+                    {serviceLocationIndex + 1} de {locationServiceGroups.length}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={locationServiceGroups.length <= 1}
+                      onClick={handlePrevServiceLocation}
+                      aria-label="Ubicación anterior"
+                      className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center transition-all cursor-pointer shadow-2xs active:scale-90 disabled:opacity-30"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={locationServiceGroups.length <= 1}
+                      onClick={handleNextServiceLocation}
+                      aria-label="Siguiente ubicación"
+                      className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center transition-all cursor-pointer shadow-2xs active:scale-90 disabled:opacity-30"
+                    >
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <span className="text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 font-medium px-3 py-0.5 rounded-full flex items-center gap-1 border border-emerald-500/10">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Sin cobros ocultos
+                </span>
+              )}
             </div>
+
+            {/* Ficha destacada del establecimiento activo en el Carousel (nombre y zona completos, sin botones ni 'Desde Q...') */}
+            {currentServiceLocationGroup && (
+              <div className="flex items-start gap-3 bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-900/40 rounded-2xl p-3.5 mt-3.5">
+                <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-2xs mt-0.5">
+                  {currentServiceLocationGroup.type === 'domicilio' ? <Home className="w-4 h-4" /> : <Building2 className="w-4 h-4" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-sm sm:text-[15px] font-bold text-slate-900 dark:text-white leading-snug">
+                      {currentServiceLocationGroup.name}
+                    </h3>
+                    {currentServiceLocationGroup.zona && (
+                      <span className="text-xs text-blue-700 dark:text-blue-300 bg-white dark:bg-slate-800 border border-blue-200/60 dark:border-blue-900/60 px-2 py-0.5 rounded-md font-semibold">
+                        {cleanZonaText(currentServiceLocationGroup.zona)}
+                      </span>
+                    )}
+                  </div>
+                  {currentServiceLocationGroup.address && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                      {currentServiceLocationGroup.address}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Listado de Servicios de la Sede Activa */}
             <div className="space-y-2.5 mt-3.5">
-              {realServices.length > 0 ? (
-                (realServices.length > 3 ? realServices.slice(0, 3) : realServices).map((srv, idx) => (
-                  <div key={idx} onClick={() => handleSelectServiceAndOpenDrawer(srv)} className="flex justify-between items-center bg-slate-50 dark:bg-slate-800/40 rounded-xl p-3.5 sm:p-4 mb-3 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer" title="Ver detalles en el panel lateral">
+              {currentCardServices.length > 0 ? (
+                (currentCardServices.length > 3 ? currentCardServices.slice(0, 3) : currentCardServices).map((srv, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => handleSelectServiceAndOpenDrawer(srv)}
+                    className="flex justify-between items-center bg-slate-50 dark:bg-slate-800/40 rounded-xl p-3.5 sm:p-4 mb-3 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                    title="Ver detalles en el panel lateral"
+                  >
                     <div className="flex-1 min-w-0 pr-3">
-                      <span className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white block leading-snug">{srv.servicio}</span>
-                      {srv.syp_observaciones && <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">{srv.syp_observaciones}</p>}
+                      <span className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white leading-snug block">
+                        {srv.servicio}
+                      </span>
+                      {srv.syp_observaciones && (
+                        <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">{srv.syp_observaciones}</p>
+                      )}
                     </div>
                     <div className="flex items-center gap-2.5 flex-shrink-0">
-                      <span className="font-black text-slate-900 dark:text-white text-[15px] sm:text-base">{srv.syp_costo_total ? `Q${formatMoney(srv.syp_costo_total)}` : 'Q0.00'}</span>
+                      <span className="font-black text-slate-900 dark:text-white text-[15px] sm:text-base">
+                        {srv.syp_costo_total ? `Q${formatMoney(srv.syp_costo_total)}` : 'Q0.00'}
+                      </span>
                       <ChevronRight className="w-4 h-4 text-slate-400" />
                     </div>
                   </div>
@@ -1172,23 +1277,28 @@ function BentoGrid(props: BentoGridProps) {
                 <div onClick={() => setActiveDrawer('servicios')} className="flex justify-between items-center bg-slate-50 dark:bg-slate-800/40 rounded-xl p-4 mb-3 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer">
                   <div>
                     <span className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white block">Consulta Médica General / Especializada</span>
-                    <span className="text-xs text-slate-500 mt-0.5 block">Atención médica según tarifa base de la clínica seleccionada.</span>
+                    <span className="text-xs text-slate-500 mt-0.5 block">Atención médica según tarifa de la clínica seleccionada.</span>
                   </div>
-                  <div className="flex items-center gap-2.5 flex-shrink-0">
-                    <span className="font-black text-slate-900 dark:text-white text-[15px]">{validStartingPrice !== null && validStartingPrice > 0 ? `Desde Q${formatMoney(validStartingPrice)}` : 'A consultar'}</span>
-                    <ChevronRight className="w-4 h-4 text-slate-400" />
-                  </div>
+                  <ChevronRight className="w-4 h-4 text-slate-400" />
                 </div>
               )}
             </div>
           </div>
-          {realServices.length > 3 && (
-            <div className="pt-3.5 mt-auto border-t border-slate-100 dark:border-slate-800 flex items-center justify-end text-xs text-slate-500">
-              <button type="button" onClick={() => setActiveDrawer('servicios')} className="text-xs font-bold text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1 cursor-pointer">
-                <span>Ver Catálogo de Servicios ({realServices.length})</span><ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
+          <div className="pt-3.5 mt-auto border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
+            <span className="text-[11px] text-slate-400">
+              {locationServiceGroups.length > 1
+                ? `${locationServiceGroups.length} sedes disponibles`
+                : 'Tarifas oficiales'}
+            </span>
+            <button
+              type="button"
+              onClick={() => setActiveDrawer('servicios')}
+              className="text-xs font-bold text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1 cursor-pointer"
+            >
+              <span>Ver Catálogo Completo ({locationServiceGroups.reduce((acc, g) => acc + g.services.length, 0)})</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1402,6 +1512,35 @@ function DoctorProfileContent() {
   const [selectedLightboxImage, setSelectedLightboxImage] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [activeServiceLocationId, setActiveServiceLocationId] = useState<string>('all');
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Prevent body scroll when activeDrawer modal is open
+  useEffect(() => {
+    if (activeDrawer) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [activeDrawer]);
+
+  // Handle escape key to close activeDrawer modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && activeDrawer) {
+        setActiveDrawer(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeDrawer]);
 
 
   const { titular } = usePacienteTitular();
@@ -1642,6 +1781,28 @@ function DoctorProfileContent() {
   const clinicQuery = activeClinic ? buildClinicQuery(activeClinic, fullName) : '';
   const { googleMapsHref, wazeHref } = buildMapsLinks(activeClinic, clinicQuery);
   const activeClinicSchedule = activeClinic ? formatClinicSchedule(activeClinic.horarios_atencion) : null;
+
+  // Separación y adaptación de servicios por ubicación (clínicas y atención a domicilio)
+  const locationServiceGroups = getDoctorGroupedServices(doctor);
+
+  const displayedServices: DoctorServicio[] = (() => {
+    if (activeServiceLocationId === 'all') {
+      const all: DoctorServicio[] = [];
+      const seen = new Set<string>();
+      locationServiceGroups.forEach((g) => {
+        g.services.forEach((s) => {
+          const key = `${s.syp_codigo}_${s.cli_descripcion || ''}_${s.syp_costo_total}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            all.push(s);
+          }
+        });
+      });
+      return all.length > 0 ? all : (doctor.servicios || []);
+    }
+    const group = locationServiceGroups.find((g) => g.id === activeServiceLocationId);
+    return group ? group.services : [];
+  })();
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 antialiased pb-24 lg:pb-12 relative overflow-hidden">
@@ -1969,6 +2130,10 @@ clinicas={clinicas}
           codPac={codPac}
           selectedService={selectedService}
           setSelectedService={setSelectedService}
+          locationServiceGroups={locationServiceGroups}
+          activeServiceLocationId={activeServiceLocationId}
+          setActiveServiceLocationId={setActiveServiceLocationId}
+          displayedServices={displayedServices}
         />
       </div>
 
@@ -2001,107 +2166,154 @@ clinicas={clinicas}
       </div>
 
       {/* ========================================================================= */}
-      {/* INTERACTIVE SLIDE-OVER SHEET / DRAWER (100% Datos Reales)                  */}
+      {/* INTERACTIVE MODAL (100% Minimalista y Centrado)                           */}
       {/* ========================================================================= */}
-      <AnimatePresence>
-        {activeDrawer && (
-          <div className="fixed inset-0 z-50 flex justify-end">
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setActiveDrawer(null)}
-              className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm"
-            />
-
-            {/* Slide-over Panel */}
-            <motion.div
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              transition={{ type: 'spring', damping: 28, stiffness: 280 }}
-              className="relative w-full max-w-xl bg-white dark:bg-slate-900 shadow-2xl flex flex-col justify-between overflow-y-auto z-10 border-l border-slate-200 dark:border-slate-800"
+      {mounted && createPortal(
+        <AnimatePresence>
+          {activeDrawer && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              className="fixed inset-0 z-[99999] flex items-center justify-center p-4 sm:p-6"
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveDrawer(null);
+              }}
             >
-              {/* Drawer Sticky Header */}
-              <div className="px-6 py-4 bg-slate-50/90 dark:bg-slate-800/90 backdrop-blur-md flex items-center justify-between sticky top-0 z-20 border-b border-slate-200 dark:border-slate-800">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-xs">
-                    {activeDrawer === 'servicios' && <Stethoscope className="w-5 h-5" />}
-                    {activeDrawer === 'resenas' && <Star className="w-5 h-5 fill-white" />}
-                    {activeDrawer === 'trayectoria' && <GraduationCap className="w-5 h-5" />}
-                    {activeDrawer === 'seguros' && <ShieldCheck className="w-5 h-5" />}
-                    {activeDrawer === 'galeria' && <Sparkles className="w-5 h-5" />}
+              {/* Backdrop */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                onClick={() => setActiveDrawer(null)}
+                className="fixed inset-0 bg-slate-950/60 dark:bg-slate-950/80 backdrop-blur-sm"
+              />
+
+              {/* Modal Dialog Centrado Minimalista */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 12 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 12 }}
+                transition={{ type: 'spring', damping: 26, stiffness: 320 }}
+                onClick={(e) => e.stopPropagation()}
+                className="relative w-full max-w-2xl bg-white dark:bg-[#0F172A] rounded-3xl shadow-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col max-h-[88vh] overflow-hidden z-10"
+              >
+                {/* Modal Header */}
+                <div className="px-6 py-4.5 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md flex items-center justify-between shrink-0 border-b border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                      {activeDrawer === 'servicios' && <Stethoscope className="w-5 h-5" />}
+                      {activeDrawer === 'resenas' && <Star className="w-5 h-5 fill-white" />}
+                      {activeDrawer === 'trayectoria' && <GraduationCap className="w-5 h-5" />}
+                      {activeDrawer === 'seguros' && <ShieldCheck className="w-5 h-5" />}
+                      {activeDrawer === 'galeria' && <Sparkles className="w-5 h-5" />}
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-tight truncate">
+                        {activeDrawer === 'servicios' && 'Servicios & Tarifas'}
+                        {activeDrawer === 'resenas' && 'Reseñas de Pacientes'}
+                        {activeDrawer === 'trayectoria' && 'Formación y Trayectoria'}
+                        {activeDrawer === 'seguros' && 'Seguros y Formas de Pago'}
+                        {activeDrawer === 'galeria' && 'Instalaciones y Consultorio'}
+                      </h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                        {fullName} · SaludYa
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-[17px] font-extrabold text-slate-900 dark:text-white leading-tight">
-                      {activeDrawer === 'servicios' && 'Servicios & Tarifas'}
-                      {activeDrawer === 'resenas' && 'Reseñas de Pacientes'}
-                      {activeDrawer === 'trayectoria' && 'Formación y Trayectoria'}
-                      {activeDrawer === 'seguros' && 'Seguros y Formas de Pago'}
-                      {activeDrawer === 'galeria' && 'Instalaciones y Consultorio'}
-                    </h3>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                      {fullName} · SaludYa
-                    </p>
-                  </div>
+
+                  <button
+                    type="button"
+                    aria-label="Cerrar modal"
+                    onClick={() => setActiveDrawer(null)}
+                    className="w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  aria-label="Cerrar panel"
-                  onClick={() => setActiveDrawer(null)}
-                  className="w-9 h-9 rounded-full bg-white dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-500 dark:text-slate-300 flex items-center justify-center transition-colors cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+                {/* Modal Dynamic Body */}
+                <div className="p-5 sm:p-6 flex-1 overflow-y-auto space-y-5 text-slate-900 dark:text-slate-100 scrollbar-gutter-stable">
 
-              {/* Drawer Dynamic Body */}
-              <div className="p-6 flex-1 space-y-5 text-slate-900 dark:text-slate-100">
-
-                {/* 2. SERVICIOS DRAWER (Click-to-Select) */}
+                {/* 2. SERVICIOS DRAWER (Click-to-Select) - DIVIDIDO EN SECCIONES POR UBICACIÓN */}
                 {activeDrawer === 'servicios' && (
-                  <div className="space-y-2.5">
-                    {realServices.length > 0 ? (
-                      realServices.map((srv, idx) => {
-                        const isSelected = selectedService?.syp_codigo === srv.syp_codigo;
-                        return (
-                          <div
-                            key={idx}
-                            onClick={() => setSelectedService(prev => prev?.syp_codigo === srv.syp_codigo ? null : srv)}
-                            className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
-                              isSelected
-                                ? 'border-blue-600 bg-blue-50/70 dark:bg-blue-950/40 shadow-xs ring-1 ring-blue-600/30'
-                                : 'border-slate-200/80 dark:border-slate-700/60 bg-slate-50/60 dark:bg-slate-800/40 hover:border-slate-300'
-                            }`}
-                          >
-                            <div className="flex-1 min-w-0">
-                              <span className="text-[13px] font-bold text-slate-900 dark:text-white block truncate">
-                                {srv.servicio}
-                              </span>
-                              {srv.syp_observaciones && (
-                                <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5 line-clamp-1">
-                                  {srv.syp_observaciones}
+                  <div className="space-y-6">
+                    {/* LISTADO DIVIDIDO EN SECCIONES POR UBICACIÓN (SIN BOTONES DE FILTRO Y SIN 'DESDE Q...') */}
+                    {locationServiceGroups.map((group) => (
+                      <div key={group.id} className="space-y-3 pb-5 border-b last:border-b-0 border-slate-100 dark:border-slate-800">
+                        {/* Cabecera de la Sección por Ubicación */}
+                        <div className="flex items-start gap-3 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-2xl border border-slate-200/70 dark:border-slate-700/60">
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
+                            group.type === 'domicilio'
+                              ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+                              : 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                          }`}>
+                            {group.type === 'domicilio' ? <Home className="w-4 h-4" /> : <Building2 className="w-4 h-4" />}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-snug">
+                                {group.name}
+                              </h4>
+                              {group.zona && (
+                                <span className="text-xs font-semibold bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-2 py-0.5 rounded-md border border-slate-200/80 dark:border-slate-600">
+                                  {cleanZonaText(group.zona)}
                                 </span>
                               )}
                             </div>
-                            <div className="flex items-center gap-2.5 shrink-0">
-                              <span className="text-[15px] font-black text-blue-600">
-                                {srv.syp_costo_total ? `Q${formatMoney(srv.syp_costo_total)}` : 'Q0.00'}
-                              </span>
-                              {isSelected ? (
-                                <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0" />
-                              ) : (
-                                <div className="w-5 h-5 rounded-full border border-slate-300 dark:border-slate-600 shrink-0" />
-                              )}
-                            </div>
+                            {group.address && (
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                                {group.address}
+                              </p>
+                            )}
                           </div>
-                        );
-                      })
-                    ) : (
-                      <p className="text-slate-500 text-sm">Este especialista no cuenta con catálogo de procedimientos específicos registrados.</p>
-                    )}
+                        </div>
+
+                        {/* Lista de Servicios pertenecientes a esta ubicación */}
+                        <div className="space-y-2">
+                          {group.services.length > 0 ? (
+                            group.services.map((srv, idx) => {
+                              const isSelected = selectedService?.syp_codigo === srv.syp_codigo;
+                              return (
+                                <div
+                                  key={idx}
+                                  onClick={() => setSelectedService(prev => prev?.syp_codigo === srv.syp_codigo ? null : srv)}
+                                  className={`p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                                    isSelected
+                                      ? 'border-blue-600 bg-blue-50/70 dark:bg-blue-950/40 shadow-xs ring-1 ring-blue-600/30'
+                                      : 'border-slate-200/80 dark:border-slate-700/60 bg-white dark:bg-slate-800/40 hover:border-slate-300'
+                                  }`}
+                                >
+                                  <div className="flex-1 min-w-0">
+                                    <span className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white block truncate">
+                                      {srv.servicio}
+                                    </span>
+                                    {srv.syp_observaciones && (
+                                      <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5 line-clamp-2">
+                                        {srv.syp_observaciones}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2.5 shrink-0">
+                                    <span className="text-[14px] sm:text-[15px] font-black text-blue-600">
+                                      {srv.syp_costo_total ? `Q${formatMoney(srv.syp_costo_total)}` : 'Q0.00'}
+                                    </span>
+                                    {isSelected ? (
+                                      <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0" />
+                                    ) : (
+                                      <div className="w-5 h-5 rounded-full border border-slate-300 dark:border-slate-600 shrink-0" />
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <p className="text-slate-500 text-xs px-2">No hay servicios catalogados para esta ubicación.</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
 
@@ -2440,44 +2652,44 @@ clinicas={clinicas}
                   </div>
                 )}
 
-              </div>
+                </div>
 
-              {/* Drawer Persistent Sticky Footer */}
-              <div className="p-5 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 sticky bottom-0 z-20 flex items-center justify-between gap-3 shadow-[0_-4px_16px_rgba(0,0,0,0.04)]">
-                <button
-                  type="button"
-                  onClick={() => setActiveDrawer(null)}
-                  className="px-5 py-2.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[12px] font-semibold transition-all cursor-pointer"
-                >
-                  Cerrar
-                </button>
+                {/* Modal Persistent Sticky Footer */}
+                <div className="p-4 sm:p-5 bg-white dark:bg-[#0F172A] border-t border-slate-100 dark:border-slate-800 shrink-0 flex items-center justify-between gap-3 shadow-[0_-4px_16px_rgba(0,0,0,0.04)]">
+                  <button
+                    type="button"
+                    onClick={() => setActiveDrawer(null)}
+                    className="px-5 py-2.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-all cursor-pointer"
+                  >
+                    Cerrar
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    const isServiceDrawer = activeDrawer === 'servicios';
-                    setActiveDrawer(null);
-                    const query = new URLSearchParams();
-                    if (isServiceDrawer && selectedService) {
-                      if (selectedService.servicio) query.set('motivo', selectedService.servicio);
-                      if (selectedService.syp_codigo) query.set('sypCodigo', String(selectedService.syp_codigo));
-                      if (selectedService.syp_costo_total) query.set('precio', String(selectedService.syp_costo_total));
-                    }
-                    router.push(`/dashboard/agendar/${doctor.exp_codigo}${query.toString() ? `?${query.toString()}` : ''}`);
-                  }}
-                  className="flex-1 py-3 px-5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-[13px] flex items-center justify-center gap-2 shadow-sm transition-all active:scale-98 cursor-pointer"
-                >
-                  <span>
-                    Continuar con consulta
-                  </span>
-                  <CalendarDays className="w-4 h-4" />
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const isServiceDrawer = activeDrawer === 'servicios';
+                      setActiveDrawer(null);
+                      const query = new URLSearchParams();
+                      if (isServiceDrawer && selectedService) {
+                        if (selectedService.servicio) query.set('motivo', selectedService.servicio);
+                        if (selectedService.syp_codigo) query.set('sypCodigo', String(selectedService.syp_codigo));
+                        if (selectedService.syp_costo_total) query.set('precio', String(selectedService.syp_costo_total));
+                      }
+                      router.push(`/dashboard/agendar/${doctor.exp_codigo}${query.toString() ? `?${query.toString()}` : ''}`);
+                    }}
+                    className="flex-1 py-2.5 sm:py-3 px-5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm transition-all active:scale-98 cursor-pointer"
+                  >
+                    <span>Continuar con consulta</span>
+                    <CalendarDays className="w-4 h-4" />
+                  </button>
+                </div>
 
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
 
       {/* Lightbox Modal */}
       <AnimatePresence>

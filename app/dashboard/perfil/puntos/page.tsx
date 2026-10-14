@@ -1,25 +1,26 @@
 'use client';
 
-import { Suspense, useState, useEffect, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useSearchParams } from 'next/navigation';
+import { Suspense, useState, useMemo } from 'react';
+import { motion } from 'framer-motion';
+import Link from 'next/link';
 import {
   Star,
   Gift,
   Clock,
   Sparkles,
-  Award,
-  ArrowUpRight,
   ArrowDownRight,
+  ArrowUpRight,
   Tag,
   CheckCircle2,
   Zap,
-  X,
   Check,
   UserCheck,
   Calendar,
   MessageSquare,
   Users,
+  AlertTriangle,
+  Info,
+  Copy,
 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { toast } from 'sonner';
@@ -35,13 +36,14 @@ import {
   useCanjearRecompensa,
   useHistorialPuntos,
 } from '@/hooks/use-recompensas';
-import { useLealtadEstado, useLealtadTareas, useLealtadNiveles } from '@/hooks/use-lealtad';
+import { useLealtadEstado, useLealtadTareas } from '@/hooks/use-lealtad';
 import type { LealtadTarea } from '@/services/lealtad';
 import type { Recompensa } from '@/types/recompensas';
 
+const MAX_PUNTOS_MENSUALES = 5;
+
 function PuntosContent() {
   const { data: session } = useSession();
-  const searchParams = useSearchParams();
   const { titular, isLoading: isLoadingTitular } = usePacienteTitular();
 
   const pacCodigo = titular?.pac_codigo;
@@ -49,7 +51,6 @@ function PuntosContent() {
   // ─── Queries ───
   const { data: puntosData, isLoading: isLoadingPuntos } = useTotalPuntos(pacCodigo);
   const { data: lealtadEstado, isLoading: isLoadingEstado } = useLealtadEstado();
-  const { data: niveles = [], isLoading: isLoadingNiveles } = useLealtadNiveles();
   const { data: catalogo = [], isLoading: isLoadingCatalogo } = useCatalogoRecompensas();
   const { data: misRecompensas = [], isLoading: isLoadingDisponibles } = useRecompensasDisponibles(pacCodigo);
   const { data: tareas = [], isLoading: isLoadingTareas } = useLealtadTareas();
@@ -58,17 +59,22 @@ function PuntosContent() {
   // ─── Mutations ───
   const canjearMutation = useCanjearRecompensa(pacCodigo);
 
-  // ─── Local State (Exactamente 3 filtros + Modal de Ligas) ───
-  const [selectedTab, setSelectedTab] = useState<'tienda' | 'inventario' | 'historial'>('tienda');
-  const [isNivelesModalOpen, setIsNivelesModalOpen] = useState(false);
+  // ─── Local State ───
+  const [historialFiltro, setHistorialFiltro] = useState<'todos' | 'ganados' | 'canjeados'>('todos');
   const [recompensaACanjear, setRecompensaACanjear] = useState<Recompensa | null>(null);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
-  // Misiones y Tareas deduplicadas por código de acción / título único
+  // Puntos calculados
+  const totalPuntos = lealtadEstado?.puntosActuales ?? puntosData?.totalPuntos ?? 0;
+  const puntosMes = Math.min(totalPuntos, MAX_PUNTOS_MENSUALES);
+  const progresoPorcentaje = Math.min(100, Math.round((puntosMes / MAX_PUNTOS_MENSUALES) * 100));
+
+  // Tareas / Misiones unificadas
   const uniqueTareas = useMemo<LealtadTarea[]>(() => {
     const seen = new Set<string>();
     const result: LealtadTarea[] = [];
 
-    for (const tarea of (tareas || [])) {
+    for (const tarea of tareas || []) {
       const key = (tarea.codigoAccion || tarea.titulo || String(tarea.tareaId || '')).trim().toLowerCase();
       if (!seen.has(key)) {
         seen.add(key);
@@ -79,190 +85,151 @@ function PuntosContent() {
     return result;
   }, [tareas]);
 
-  // Verificar si una misión específica ya fue cumplida (especialmente las de 1 sola vez como Completar Perfil)
-  const isMisionCompletada = (tarea: LealtadTarea) => {
-    // Si la API del backend ya la reporta completada
-    if (tarea.completada) return true;
+  // Formas de ganar puntos (presentación puramente informativa sin botón de participar)
+  const formasDeGanar = useMemo(() => {
+    const defaultMisiones = [
+      {
+        id: 'cita_medica',
+        titulo: 'Asistir a una Consulta Médica',
+        descripcion: 'Agenda y asiste a tu cita médica programada con cualquier especialista en SaludYa.',
+        puntos: 1,
+        icono: 'cita',
+        frecuencia: 'Por cada cita completada',
+      },
+      {
+        id: 'resena_medico',
+        titulo: 'Calificar y Dejar Reseña',
+        descripcion: 'Comparte tu experiencia médica y evalúa al profesional de la salud tras finalizar tu atención.',
+        puntos: 1,
+        icono: 'resena',
+        frecuencia: 'Por cada opinión publicada',
+      },
+      {
+        id: 'completar_perfil',
+        titulo: 'Completar tu Expediente y Perfil',
+        descripcion: 'Llena tus datos personales, antecedentes de salud e información de contacto de emergencia.',
+        puntos: 1,
+        icono: 'perfil',
+        frecuencia: 'Una sola vez',
+      },
+      {
+        id: 'invitar_amigo',
+        titulo: 'Recomendar a un Amigo o Familiar',
+        descripcion: 'Comparte tu código de invitación y gana puntos cuando tu recomendado complete su primera cita.',
+        puntos: 1,
+        icono: 'referido',
+        frecuencia: 'Por cada recomendado',
+      },
+    ];
 
-    const action = (tarea.codigoAccion || '').toUpperCase();
-    const tituloLower = (tarea.titulo || '').toLowerCase();
-
-    // Misión específica: COMPLETAR_PERFIL (solo se cumple 1 vez)
-    const esCompletarPerfil = action === 'COMPLETAR_PERFIL' || tituloLower.includes('perfil');
-    if (esCompletarPerfil) {
-      const enHistorial = (historial || []).some((h) => {
-        const mot = (h.trpMotivo || (h as any).motivo || '').toLowerCase();
-        return mot.includes('perfil');
-      });
-      if (enHistorial) return true;
+    if (uniqueTareas.length > 0) {
+      return uniqueTareas.map((t) => ({
+        id: String(t.tareaId || t.codigoAccion),
+        titulo: t.titulo,
+        descripcion: t.descripcion || t.indicaciones || 'Realiza esta actividad para obtener puntos.',
+        puntos: t.puntosRecompensa || 1,
+        icono: t.codigoAccion?.toLowerCase().includes('perfil')
+          ? 'perfil'
+          : t.codigoAccion?.toLowerCase().includes('resena')
+          ? 'resena'
+          : t.codigoAccion?.toLowerCase().includes('cita')
+          ? 'cita'
+          : 'estrella',
+        frecuencia: t.repetible ? 'Recurrente' : 'Una sola vez',
+      }));
     }
 
-    // Para cualquier misión no repetible, verificar si ya se encuentra en el historial
-    if (!tarea.repetible) {
-      const enHistorial = (historial || []).some((h) => {
-        const mot = (h.trpMotivo || (h as any).motivo || '').toLowerCase();
-        return mot.includes(tituloLower) || (action && mot.includes(action.toLowerCase()));
-      });
-      if (enHistorial) return true;
-    }
+    return defaultMisiones;
+  }, [uniqueTareas]);
 
-    return false;
-  };
-
-  // Misiones disponibles para ganar puntos (filtrando aquellas que son de 1 sola vez y ya se cumplieron)
-  const misionesDisponibles = useMemo<LealtadTarea[]>(() => {
-    return uniqueTareas.filter((tarea) => {
-      // Si la misión es repetible, siempre está disponible para realizar
-      if (tarea.repetible) return true;
-      // Si no es repetible y ya fue cumplida, NO debe aparecer
-      return !isMisionCompletada(tarea);
-    });
-  }, [uniqueTareas, historial]);
-
-  // Obtener detalle explicativo y contexto de qué se hizo en cada movimiento del historial
+  // Contexto detallado de transacciones del historial
   const getDetalleMovimiento = (item: any) => {
     const rawMotivo = item.trpMotivo || item.TrpMotivo || item.motivo || item.hisMotivo || item.hisDescripcion || item.descripcion || item.concepto || '';
     const motivoLower = rawMotivo.toLowerCase();
 
-    const tareaMatch = uniqueTareas.find(
-      (t) => (t.titulo || '').toLowerCase() === motivoLower || (t.codigoAccion || '').toLowerCase() === motivoLower
-    );
-
     if (motivoLower.includes('perfil')) {
       return {
-        tipoEtiqueta: 'Misión Única Cumplida',
+        tipoEtiqueta: 'Expediente Completo',
         categoria: 'Perfil de Paciente',
-        detalle: 'Completaste con éxito todos tus datos personales, de contacto, residencia e información de emergencia en tu expediente.',
+        detalle: 'Completaste con éxito tus antecedentes médicos y datos de contacto en tu expediente.',
         icono: 'perfil',
       };
     }
-
-    if (motivoLower.includes('primera cita')) {
-      return {
-        tipoEtiqueta: 'Misión de Bienvenida',
-        categoria: 'Primera Consulta Médica',
-        detalle: 'Asististe y concluiste satisfactoriamente tu primera consulta médica con especialista en la plataforma.',
-        icono: 'cita',
-      };
-    }
-
     if (motivoLower.includes('cita') || motivoLower.includes('consulta')) {
       return {
-        tipoEtiqueta: 'Misión Recurrente',
-        categoria: 'Consulta Médica Concluida',
-        detalle: 'Asistencia y finalización confirmada de consulta médica con tu doctor especialista.',
+        tipoEtiqueta: 'Consulta Concluida',
+        categoria: 'Atención Médica',
+        detalle: 'Asistencia confirmada a consulta con tu especialista.',
         icono: 'cita',
       };
     }
-
     if (motivoLower.includes('reseña') || motivoLower.includes('resena') || motivoLower.includes('opin')) {
       return {
-        tipoEtiqueta: 'Misión Recurrente',
-        categoria: 'Reseña de Especialista',
-        detalle: 'Publicación de calificación y opinión clínica sobre la atención recibida por tu médico.',
+        tipoEtiqueta: 'Reseña de Atención',
+        categoria: 'Calificación de Médico',
+        detalle: 'Publicaste una valoración y comentario sobre la atención recibida.',
         icono: 'resena',
       };
     }
-
     if (motivoLower.includes('refer') || motivoLower.includes('invit')) {
       return {
-        tipoEtiqueta: 'Misión de Referidos',
-        categoria: 'Recomendación Exitosa',
-        detalle: 'Recomendaste la plataforma a un nuevo paciente y este agendó y completó su cita.',
+        tipoEtiqueta: 'Recomendación Exitosa',
+        categoria: 'Pacientes Invitados',
+        detalle: 'Un paciente referido agendó y concluyó su consulta médica.',
         icono: 'referido',
       };
     }
-
     if (motivoLower.includes('canje') || motivoLower.includes('cupon') || motivoLower.includes('cupón')) {
       return {
-        tipoEtiqueta: 'Canje de Recompensa',
+        tipoEtiqueta: 'Recompensa Canjeada',
         categoria: 'Tienda de Beneficios',
-        detalle: rawMotivo.includes(':') 
-          ? `Canjeaste tus puntos acumulados por el beneficio: ${rawMotivo.split(':')[1]?.trim() || rawMotivo}.`
-          : 'Canjeaste tus puntos acumulados por un cupón activo disponible en tu inventario.',
+        detalle: rawMotivo.includes(':')
+          ? `Canjeaste puntos por el beneficio: ${rawMotivo.split(':')[1]?.trim() || rawMotivo}.`
+          : 'Canjeaste puntos por un cupón activo para consultas o servicios de farmacia.',
         icono: 'canje',
       };
     }
 
     return {
-      tipoEtiqueta: 'Actividad Completada',
-      categoria: 'Programa de Lealtad',
-      detalle: tareaMatch?.descripcion || 'Acción completada con éxito y registrada en tu saldo de fidelidad.',
+      tipoEtiqueta: 'Actividad de Lealtad',
+      categoria: 'Programa SaludYa',
+      detalle: rawMotivo || 'Puntos registrados en tu cuenta.',
       icono: 'estrella',
     };
   };
 
-  useEffect(() => {
-    const tabParam = searchParams.get('tab');
-    if (tabParam === 'inventario' || tabParam === 'mis-recompensas' || tabParam === 'recompensas' || tabParam === 'canjeadas') {
-      setSelectedTab('inventario');
-    } else if (tabParam === 'historial' || tabParam === 'misiones-completadas' || tabParam === 'completadas') {
-      setSelectedTab('historial');
-    } else {
-      setSelectedTab('tienda');
-    }
-  }, [searchParams]);
+  // Recompensas disponibles en inventario
+  const recompensasDisponibles = useMemo(() => {
+    return misRecompensas.filter((r) => {
+      if (!r) return false;
+      const estado = r.praEstado || (r as any).estado || (r as any).pra_estado;
+      if (!estado) return true;
+      const lower = String(estado).toLowerCase();
+      return lower === 'disponible' || lower === 'activa' || lower === 'activo' || lower === 'a';
+    });
+  }, [misRecompensas]);
 
-  // Backend state
-  const totalPuntos = lealtadEstado?.puntosActuales ?? puntosData?.totalPuntos ?? 0;
-  
-  // Sort levels array by nvlPuntosMin
-  const nivelesOrdenados = [...niveles].sort((a, b) => a.nvlPuntosMin - b.nvlPuntosMin);
+  // Historial filtrado
+  const historialFiltrado = useMemo(() => {
+    return (historial || []).filter((item) => {
+      const ptsRaw = item.trpPuntos ?? item.TrpPuntos ?? item.puntos ?? item.hisPuntos ?? item.hspPuntos ?? item.montoPuntos ?? item.cantidadPuntos ?? 0;
+      const pts = Math.abs(ptsRaw);
+      const rawTipo = String(item.trpTipo ?? item.TrpTipo ?? item.tipo ?? item.hisTipo ?? item.hspTipo ?? item.tipoMovimiento ?? '').toLowerCase();
+      const esGanancia = rawTipo === 'ganancia' || rawTipo === 'g' || rawTipo === 'abono' || rawTipo === 'ingreso' || rawTipo === 'entrada' || (pts > 0 && rawTipo !== 'canje' && rawTipo !== 'c' && rawTipo !== 'salida' && rawTipo !== 'egreso');
 
-  // Match current level item by point range first
-  const nivelEncontrado =
-    nivelesOrdenados.find((n) => totalPuntos >= n.nvlPuntosMin && totalPuntos <= n.nvlPuntosMax) ||
-    nivelesOrdenados.find((n) => (lealtadEstado?.nivelActual || '').toLowerCase().includes(n.nvlDescripcion.toLowerCase())) ||
-    (nivelesOrdenados.length > 0 ? nivelesOrdenados[0] : null);
+      if (historialFiltro === 'ganados') return esGanancia;
+      if (historialFiltro === 'canjeados') return !esGanancia;
+      return true;
+    });
+  }, [historial, historialFiltro]);
 
-  // Prioritize range match description over raw backend string if backend says "Sin Nivel"
-  const nivelActual = nivelEncontrado?.nvlDescripcion || lealtadEstado?.nivelActual || 'Sin Nivel';
-
-  // Next level target
-  const siguienteNivel = nivelEncontrado
-    ? nivelesOrdenados[nivelesOrdenados.indexOf(nivelEncontrado) + 1]
-    : null;
-
-  const puntosMinimos = nivelEncontrado?.nvlPuntosMin ?? lealtadEstado?.puntosMinimosNivel ?? 0;
-  const puntosMaximos = nivelEncontrado?.nvlPuntosMax ?? lealtadEstado?.puntosMaximosNivel ?? 0;
-
-  const puntosMetaSiguiente = siguienteNivel
-    ? siguienteNivel.nvlPuntosMin
-    : puntosMaximos;
-
-  const puntosFaltantes = siguienteNivel
-    ? Math.max(0, siguienteNivel.nvlPuntosMin - totalPuntos)
-    : (puntosMaximos > totalPuntos ? puntosMaximos - totalPuntos : 0);
-
-  // Real Progress calculation within current level range
-  let progresoNumerico = 0;
-  const rangoNivel = puntosMaximos - puntosMinimos;
-  if (rangoNivel > 0 && totalPuntos >= puntosMinimos) {
-    const progresoPuntos = totalPuntos - puntosMinimos;
-    progresoNumerico = (progresoPuntos / rangoNivel) * 100;
-  } else if (
-    typeof lealtadEstado?.progresoPorcentaje === 'number' &&
-    puntosMaximos > 0 &&
-    lealtadEstado.progresoPorcentaje < 100
-  ) {
-    progresoNumerico = lealtadEstado.progresoPorcentaje;
-  }
-
-  progresoNumerico = Math.min(100, Math.max(0, progresoNumerico));
-
-  const progresoPorcentajeTexto =
-    progresoNumerico > 0 && progresoNumerico < 1
-      ? progresoNumerico.toFixed(1)
-      : Math.round(progresoNumerico).toString();
-
-  const anchoBarraVisual =
-    progresoNumerico > 0
-      ? Math.max(2, Math.min(100, progresoNumerico))
-      : 0;
-
-  const nombreNivelLimpio = nivelActual.toLowerCase().startsWith('nivel')
-    ? nivelActual
-    : `Nivel ${nivelActual}`;
+  // Copiar código de cupón
+  const handleCopyCode = (codigo: string) => {
+    navigator.clipboard.writeText(codigo);
+    setCopiedCode(codigo);
+    toast.success('¡Código copiado al portapapeles!');
+    setTimeout(() => setCopiedCode(null), 3000);
+  };
 
   const handleCanjear = (recompensa: Recompensa) => {
     if (totalPuntos < recompensa.rcpCostoPuntos) {
@@ -271,20 +238,23 @@ function PuntosContent() {
       });
       return;
     }
-
     setRecompensaACanjear(recompensa);
   };
 
   const confirmCanjeAction = async () => {
     if (!recompensaACanjear) return;
     try {
-      await canjearMutation.mutateAsync({ rcpCodigo: recompensaACanjear.rcpCodigo });
-      toast.success('¡Recompensa Adquirida!', {
-        description: `Has canjeado con éxito "${recompensaACanjear.rcpTitulo}". Revisa la pestaña "Recompensas Canjeadas" para usarla.`,
+      await canjearMutation.mutateAsync({
+        rcpCodigo: recompensaACanjear.rcpCodigo,
+        nombreRecompensa: recompensaACanjear.rcpTitulo,
+        costoPuntos: recompensaACanjear.rcpCostoPuntos,
+      });
+      toast.success('¡Recompensa Adquirida con Éxito!', {
+        description: `Has canjeado "${recompensaACanjear.rcpTitulo}". Revisa la sección "Mis Cupones y Recompensas Canjeadas".`,
       });
       setRecompensaACanjear(null);
     } catch (e: any) {
-      toast.error('Error al canjear', {
+      toast.error('Error al canjear recompensa', {
         description: extractErrorMessage(e),
       });
     }
@@ -294,675 +264,638 @@ function PuntosContent() {
     return <NeoLoader />;
   }
 
-  // Filtrar solo las recompensas disponibles en inventario con tolerancia a distintos formatos de estado del backend
-  const recompensasDisponibles = misRecompensas.filter((r) => {
-    if (!r) return false;
-    const estado = r.praEstado || (r as any).estado || (r as any).pra_estado;
-    if (!estado) return true;
-    const lower = String(estado).toLowerCase();
-    return lower === 'disponible' || lower === 'activa' || lower === 'activo' || lower === 'a';
-  });
-
   return (
-    <div className="min-h-screen px-4 py-6 sm:px-8 lg:px-10 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-7xl mx-auto space-y-8 bg-slate-50 dark:bg-[#0B1120]">
+    <div className="min-h-screen px-4 py-6 sm:px-8 lg:px-10 max-w-7xl mx-auto space-y-10 bg-slate-50 dark:bg-[#0B1120] text-slate-900 dark:text-white">
       
-      {/* Header Principal (Sin botón adicional para máxima limpieza) */}
-      <div className="bg-slate-50 dark:bg-[#0B1120] py-2 mb-1">
-        <h1 className="text-3xl md:text-5xl font-black tracking-tight text-slate-900 dark:text-white">
-          Puntos y Recompensas
-        </h1>
-        <p className="mt-1 text-sm sm:text-base text-slate-500 dark:text-slate-400 font-medium">
-          Acumula puntos por tus citas y misiones, sube de nivel y canjea tus beneficios.
-        </p>
+      {/* ─── Encabezado Principal ─── */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <span className="text-xs font-black uppercase tracking-widest text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-3 py-1 rounded-full border border-blue-200/60 dark:border-blue-900/40 inline-flex items-center gap-1.5 mb-2">
+            <Sparkles className="h-3.5 w-3.5" /> Club de Beneficios
+          </span>
+          <h1 className="text-3xl md:text-5xl font-black tracking-tight text-slate-900 dark:text-white">
+            Puntos y Recompensas
+          </h1>
+          <p className="mt-1.5 text-sm sm:text-base text-slate-500 dark:text-slate-400 max-w-2xl font-medium">
+            Acumula puntos por tus citas y misiones de salud cada mes y canjéalos por consultas gratuitas y descuentos exclusivos.
+          </p>
+        </div>
+
+        <Link
+          href="/dashboard"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition"
+        >
+          ← Volver al Dashboard
+        </Link>
       </div>
 
-      {/* Recuadro Dashboard Principal: Puntos, Avance y Botón para Ver Ligas */}
-      <div className="rounded-3xl bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-800 p-6 sm:p-8 text-slate-900 dark:text-white shadow-sm">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-          {/* Nivel Info */}
-          <div className="flex items-center gap-5">
-            <div className="flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-3xl bg-blue-50 dark:bg-blue-950/50 border border-blue-100 dark:border-blue-900/50 text-blue-600 dark:text-blue-400 shrink-0">
-              {lealtadEstado?.imagenNivelUrl ? (
-                <img src={lealtadEstado.imagenNivelUrl} alt={nivelActual} className="h-12 w-12 object-contain" />
-              ) : (
-                <Award className="h-10 w-10" />
-              )}
-            </div>
-            <div>
-              <div className="flex items-center gap-3">
-                <p className="text-xs font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500">Nivel Actual</p>
-                <button
-                  type="button"
-                  onClick={() => setIsNivelesModalOpen(true)}
-                  className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline cursor-pointer"
-                >
-                  <Award className="h-3.5 w-3.5" />
-                  Ver ligas y niveles
-                </button>
-              </div>
-              <div className="flex items-center gap-2.5 mt-0.5">
-                <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 dark:text-white">
-                  {nombreNivelLimpio}
-                </h2>
-                <Sparkles className="h-6 w-6 text-amber-500 animate-pulse" />
-              </div>
-              <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">
-                {puntosFaltantes > 0 && puntosMaximos > 0
-                  ? `Faltan ${puntosFaltantes} pts para el siguiente nivel`
-                  : `Tienes ${totalPuntos} pts acumulados`}
-              </p>
-            </div>
-          </div>
+      {/* ─── Hero Loyalty Card (Taco Bell / Puma Rewards Style) ─── */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-white p-6 sm:p-8 md:p-10 shadow-xl border border-slate-700/60">
+        
+        {/* Glow de fondo decorativo */}
+        <div className="absolute -right-20 -top-20 h-72 w-72 rounded-full bg-blue-500/20 blur-3xl pointer-events-none" />
+        <div className="absolute -left-20 -bottom-20 h-72 w-72 rounded-full bg-indigo-500/15 blur-3xl pointer-events-none" />
 
-          {/* Total Puntos Highlight & Botón Ligas */}
-          <div className="flex flex-col sm:flex-row lg:flex-col items-start sm:items-center lg:items-end gap-3 shrink-0">
-            <div className="flex flex-col items-start lg:items-end bg-slate-50 dark:bg-slate-900/60 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shrink-0 w-full sm:w-auto">
-              <span className="text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">Puntos Disponibles</span>
-              <div className="flex items-baseline gap-1.5 mt-1">
-                <span className="text-4xl sm:text-5xl font-black tracking-tighter text-blue-600 dark:text-blue-400">
+        <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+          
+          {/* Columna Izquierda: Saldo Grande de Puntos */}
+          <div className="lg:col-span-5 space-y-4">
+            <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 text-xs font-bold text-amber-300">
+              <Star className="h-4 w-4 fill-amber-300 text-amber-300" />
+              <span>SaludYa Rewards</span>
+            </div>
+
+            <div>
+              <p className="text-xs uppercase tracking-widest text-slate-300 font-bold">
+                Tus Puntos Disponibles
+              </p>
+              <div className="flex items-baseline gap-3 mt-1">
+                <span className="text-5xl sm:text-6xl md:text-7xl font-black tracking-tight text-white drop-shadow-sm">
                   {totalPuntos}
                 </span>
-                <span className="text-base font-bold text-slate-500 dark:text-slate-400">pts</span>
+                <span className="text-xl sm:text-2xl font-bold text-amber-400">
+                  pts
+                </span>
               </div>
             </div>
-            
-            <button
-              type="button"
-              onClick={() => setIsNivelesModalOpen(true)}
-              className="inline-flex items-center gap-2 rounded-2xl bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-800/60 px-4 py-2 text-xs font-black uppercase tracking-wider text-blue-700 dark:text-blue-300 shadow-2xs transition-all active:scale-95 cursor-pointer"
-            >
-              <Award className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-              Ver Ligas y Niveles
-            </button>
+
+            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-sm">
+              {totalPuntos >= 5
+                ? '¡Has alcanzado 5 puntos este mes! Aprovéchalos canjeando recompensas antes de fin de mes.'
+                : `Tienes ${totalPuntos} de 5 puntos posibles este mes. ¡Canjéalos por tus beneficios favoritos!`}
+            </p>
           </div>
-        </div>
 
-        {/* Detailed Progress Bar */}
-        <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800">
-          <div className="mb-2 flex justify-between text-xs font-bold text-slate-600 dark:text-slate-400">
-            <span>{totalPuntos} {puntosMaximos > 0 ? `/ ${puntosMaximos}` : ''} pts</span>
-            <span>{progresoPorcentajeTexto}% completado</span>
-          </div>
-          <div className="h-3.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800 p-0.5 border border-slate-200 dark:border-slate-700">
-            <motion.div
-              className="h-full rounded-full bg-blue-600 dark:bg-blue-500"
-              initial={{ width: 0 }}
-              animate={{ width: `${anchoBarraVisual}%` }}
-              transition={{ duration: 0.8, ease: 'easeOut' }}
-            />
-          </div>
-        </div>
-      </div>
+          {/* Columna Derecha: Barra de Puntos del Mes (0 a 5 pts con marcas) */}
+          <div className="lg:col-span-7 bg-white/10 backdrop-blur-md border border-white/15 rounded-3xl p-5 sm:p-7 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                  <Zap className="h-5 w-5 text-amber-400" /> Meta Mensual de Puntos
+                </h3>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Puedes ganar hasta <strong className="text-amber-300 font-black">{MAX_PUNTOS_MENSUALES} puntos</strong> cada mes
+                </p>
+              </div>
 
-      {/* ─── SECCIÓN PRINCIPAL CON LOS 3 FILTROS EXCLUSIVOS ─── */}
-      <div id="seccion-canje-filtros" className="space-y-6 pt-2">
-        
-        {/* Barra de 3 Filtros Exclusivos */}
-        <div className="flex flex-wrap items-center gap-2.5 bg-slate-100/80 dark:bg-[#1E293B]/80 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 w-fit">
-          
-          {/* Filtro 1: Tienda de Canje */}
-          <button
-            type="button"
-            onClick={() => setSelectedTab('tienda')}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
-              selectedTab === 'tienda'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            <Gift className="h-4 w-4" />
-            <span>Tienda de Canje ({catalogo.length})</span>
-          </button>
-
-          {/* Filtro 2: Recompensas Canjeadas */}
-          <button
-            type="button"
-            onClick={() => setSelectedTab('inventario')}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
-              selectedTab === 'inventario'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            <Tag className="h-4 w-4" />
-            <span>Recompensas Canjeadas ({recompensasDisponibles.length})</span>
-          </button>
-
-          {/* Filtro 3: Misiones Completadas */}
-          <button
-            type="button"
-            onClick={() => setSelectedTab('historial')}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
-              selectedTab === 'historial'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            <CheckCircle2 className="h-4 w-4" />
-            <span>Misiones Completadas ({historial.length})</span>
-          </button>
-        </div>
-
-        {/* ─── CONTENIDO DEL FILTRO 1: Tienda de Canje ─── */}
-        {selectedTab === 'tienda' && (
-          <div className="space-y-6">
-            <div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Tienda de Canje</h2>
-              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-                Canjea tus puntos acumulados por descuentos y consultas médicas.
-              </p>
+              <div className="text-right shrink-0">
+                <span className="text-2xl font-black text-amber-300">
+                  {puntosMes} <span className="text-sm font-semibold text-slate-300">/ {MAX_PUNTOS_MENSUALES} pts</span>
+                </span>
+                <p className="text-[11px] text-slate-300 font-medium">
+                  {progresoPorcentaje}% alcanzado este mes
+                </p>
+              </div>
             </div>
 
-            {catalogo.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {catalogo.map((item, idx) => {
-                  const costo = item.rcpCostoPuntos ?? (item as any).costoPuntos ?? (item as any).rcp_costo_puntos ?? 0;
-                  const titulo = item.rcpTitulo || (item as any).titulo || (item as any).rcp_titulo || (item as any).nombre || 'Recompensa';
-                  const desc = item.descripcion || (item as any).rcpDescripcion || (item as any).rcp_descripcion;
-                  const canAfford = totalPuntos >= costo;
-                  const keyId = item.rcpCodigo || (item as any).id || (item as any).rcp_codigo || `cat-${idx}`;
+            {/* Barra Visual de Puntos con Marcadores (1 a 5) */}
+            <div className="space-y-3 pt-1">
+              <div className="relative h-4 w-full rounded-full bg-slate-800/90 overflow-hidden border border-white/20 p-0.5">
+                <motion.div
+                  className="h-full rounded-full bg-gradient-to-r from-amber-400 via-yellow-400 to-emerald-400 shadow-md"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${Math.max(progresoPorcentaje, 2)}%` }}
+                  transition={{ duration: 0.9, ease: 'easeOut' }}
+                />
+              </div>
 
+              {/* Marcadores de 1 a 5 puntos (Puma/Taco Bell milestone dots) */}
+              <div className="grid grid-cols-5 gap-1 text-center">
+                {[1, 2, 3, 4, 5].map((punto) => {
+                  const alcanzado = totalPuntos >= punto;
                   return (
-                    <div
-                      key={keyId}
-                      className="flex flex-col justify-between rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] p-6 shadow-sm hover:shadow-md transition-all"
-                    >
-                      <div>
-                        <div className="flex items-center justify-between gap-3 mb-4">
-                          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400">
-                            <Gift className="h-6 w-6" />
-                          </span>
-                          <span className="inline-flex items-center gap-1 font-extrabold text-xs bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 px-3 py-1.5 rounded-full border border-amber-200 dark:border-amber-900/40">
-                            <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
-                            {costo} pts
-                          </span>
-                        </div>
-
-                        <h3 className="text-lg font-black text-slate-900 dark:text-white leading-tight">
-                          {titulo}
-                        </h3>
-                        {desc && (
-                          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                            {desc}
-                          </p>
-                        )}
+                    <div key={punto} className="flex flex-col items-center gap-1">
+                      <div
+                        className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-black transition-all ${
+                          alcanzado
+                            ? 'bg-amber-400 text-slate-900 ring-2 ring-amber-300/60 shadow-sm'
+                            : 'bg-white/10 text-slate-400 border border-white/20'
+                        }`}
+                      >
+                        {alcanzado ? '✓' : punto}
                       </div>
-
-                      <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
-                        <button
-                          type="button"
-                          onClick={() => handleCanjear(item)}
-                          disabled={!canAfford || canjearMutation.isPending}
-                          className={`w-full py-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
-                            canAfford
-                              ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-md active:scale-95'
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'
-                          }`}
-                        >
-                          {canAfford ? 'Canjear Recompensa' : 'Puntos Insuficientes'}
-                        </button>
-                      </div>
+                      <span className={`text-[10px] font-semibold ${alcanzado ? 'text-amber-300 font-bold' : 'text-slate-400'}`}>
+                        {punto === 5 ? '5 pts (Máx)' : `${punto} pt`}
+                      </span>
                     </div>
                   );
                 })}
               </div>
-            ) : (
-              <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 p-12 text-center bg-white dark:bg-[#1E293B]">
-                <Gift className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-                <h3 className="text-base font-bold text-slate-700 dark:text-slate-300">No hay recompensas configuradas</h3>
-                <p className="mt-1 text-xs text-slate-400 max-w-md mx-auto">
-                  Próximamente habrá nuevas opciones disponibles en el catálogo.
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ─── CONTENIDO DEL FILTRO 2: Recompensas Canjeadas + Misiones a la Derecha ─── */}
-        {selectedTab === 'inventario' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-            
-            {/* Columna Izquierda (2 Cols): Recompensas Canjeadas (Cupones) */}
-            <div className="lg:col-span-2 space-y-6">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Recompensas Canjeadas</h2>
-                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-                  Cupones activos y disponibles en tu cuenta para aplicar en tus citas.
-                </p>
-              </div>
-
-              {recompensasDisponibles.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                  {recompensasDisponibles.map((r, idx) => {
-                    const titulo = r.tituloRecompensa || (r as any).titulo || (r as any).rcpTitulo || (r as any).rcp_titulo || (r as any).nombre || 'Recompensa';
-                    const codigo = r.codigoCanje || (r as any).codigo || (r as any).codigo_canje || (r as any).praCodigoCanje || (r.praCodigo ? `CUPON-${r.praCodigo.slice(0, 6).toUpperCase()}` : `CUPON-${idx + 1}`);
-                    const fechaExp = r.praFechaExpiracion || (r as any).fechaExpiracion || (r as any).pra_fecha_expiracion;
-                    const keyId = r.praCodigo || (r as any).id || (r as any).pra_codigo || `rec-${idx}`;
-
-                    return (
-                      <div
-                        key={keyId}
-                        className="flex flex-col justify-between rounded-3xl border border-emerald-500/20 bg-white dark:bg-[#1E293B] p-6 shadow-sm hover:shadow-md transition-all"
-                      >
-                        <div>
-                          <div className="flex items-center justify-between gap-3 mb-4">
-                            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400">
-                              <Tag className="h-5 w-5" />
-                            </span>
-                            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-1 rounded-lg">
-                              Disponible
-                            </span>
-                          </div>
-
-                          <h3 className="text-lg font-black text-slate-900 dark:text-white leading-tight">
-                            {titulo}
-                          </h3>
-
-                          {fechaExp && (
-                            <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1">
-                              <Clock className="h-3.5 w-3.5" /> Vence: {new Date(fechaExp).toLocaleDateString()}
-                            </p>
-                          )}
-
-                          <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
-                            <span className="text-xs font-semibold text-slate-500">Código de Cupón:</span>
-                            <code className="bg-slate-900 text-amber-300 px-3 py-1 rounded-xl text-xs font-mono font-bold tracking-wider">
-                              {codigo}
-                            </code>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 p-12 text-center bg-white dark:bg-[#1E293B]">
-                  <Gift className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-                  <h3 className="text-base font-bold text-slate-700 dark:text-slate-300">Aún no tienes recompensas en inventario</h3>
-                  <p className="mt-1 text-xs text-slate-400 max-w-md mx-auto">
-                    Acumula puntos completando misiones y canjéalos en la tienda de canje.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Columna Derecha (1 Col): Misiones Disponibles para Ganar Puntos */}
-            <div className="space-y-4 bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-                    <Zap className="h-5 w-5 text-amber-500" />
-                    Misiones Disponibles
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Completa estas actividades para acumular puntos automáticamente.
-                  </p>
-                </div>
-                <span className="text-xs font-black bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 px-2.5 py-1 rounded-xl border border-amber-200/80 dark:border-amber-900/40 shrink-0">
-                  {misionesDisponibles.length} activas
-                </span>
-              </div>
-
-              <div className="space-y-3 pt-2">
-                {misionesDisponibles.length > 0 ? (
-                  misionesDisponibles.map((tarea: LealtadTarea) => (
-                    <div
-                      key={tarea.tareaId || tarea.codigoAccion}
-                      className="flex items-center justify-between p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all gap-3"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200/50">
-                          <Star className="h-4 w-4 fill-amber-400" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{tarea.titulo}</p>
-                            {!tarea.repetible && (
-                              <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 bg-slate-200/60 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-                                1 vez
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{tarea.descripcion}</p>
-                        </div>
-                      </div>
-
-                      <span className="shrink-0 text-amber-700 dark:text-amber-300 font-black text-xs bg-amber-50 dark:bg-amber-950/50 px-2.5 py-1 rounded-lg border border-amber-200 dark:border-amber-800/60">
-                        +{tarea.puntosRecompensa} pts
-                      </span>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center p-6 bg-slate-50/60 dark:bg-slate-900/40 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-2">
-                    <CheckCircle2 className="h-9 w-9 text-emerald-500 mx-auto" />
-                    <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                      ¡Todas las misiones disponibles completadas!
-                    </p>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Has completado todas tus misiones únicas pendientes. Consulta el detalle en la pestaña de Misiones Completadas.
-                    </p>
-                  </div>
-                )}
-              </div>
             </div>
           </div>
-        )}
 
-        {/* ─── CONTENIDO DEL FILTRO 3: Misiones Completadas ─── */}
-        {selectedTab === 'historial' && (
-          <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <CheckCircle2 className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                  Misiones Completadas e Historial
-                </h2>
-                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-                  Detalle descriptivo de misiones realizadas, requisitos cumplidos y puntos acreditados a tu cuenta.
-                </p>
-              </div>
+        </div>
 
-              {historial.length > 0 && (
-                <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800/80 px-3.5 py-1.5 rounded-2xl border border-slate-200 dark:border-slate-700 w-fit">
-                  <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                    Total registros:
-                  </span>
-                  <span className="text-xs font-black text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-lg">
-                    {historial.length}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Bloque de tamaño fijo con overflow-y */}
-            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] shadow-sm flex flex-col overflow-hidden">
-              {/* Encabezado del bloque de historial */}
-              <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-xs font-black uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                    Registro de Actividades y Puntos
-                  </span>
-                </div>
-                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  Mostrando <strong className="text-slate-800 dark:text-white font-bold">{historial.length}</strong> {historial.length === 1 ? 'actividad' : 'actividades'}
-                </span>
-              </div>
-
-              {historial.length > 0 ? (
-                <div className="h-[490px] max-h-[490px] overflow-y-auto p-3 sm:p-5 space-y-3.5 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-700">
-                  {historial.map((item, idx) => {
-                    const ptsRaw = item.trpPuntos ?? item.TrpPuntos ?? item.puntos ?? item.hisPuntos ?? item.hspPuntos ?? item.montoPuntos ?? item.cantidadPuntos ?? 0;
-                    const pts = Math.abs(ptsRaw);
-                    const rawTipo = String(item.trpTipo ?? item.TrpTipo ?? item.tipo ?? item.hisTipo ?? item.hspTipo ?? item.tipoMovimiento ?? '').toLowerCase();
-                    const esGanancia = rawTipo === 'ganancia' || rawTipo === 'g' || rawTipo === 'abono' || rawTipo === 'ingreso' || rawTipo === 'entrada' || (pts > 0 && rawTipo !== 'canje' && rawTipo !== 'c' && rawTipo !== 'salida' && rawTipo !== 'egreso');
-                    const motivoStr = item.trpMotivo || item.TrpMotivo || item.motivo || item.hisMotivo || item.hisDescripcion || item.descripcion || item.concepto || (esGanancia ? 'Abono de puntos' : 'Canje de recompensa');
-                    const rawFecha = item.fechaGrabacion || item.FechaGrabacion || item.fecha || item.hisFecha || item.hspFecha || item.fechaMovimiento;
-                    const fechaObj = rawFecha ? new Date(rawFecha) : null;
-                    const fechaValida = fechaObj && !isNaN(fechaObj.getTime());
-                    const fechaFormateada = fechaValida
-                      ? fechaObj.toLocaleDateString('es-ES', {
-                          weekday: 'long',
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                        })
-                      : 'Fecha no especificada';
-                    const horaFormateada = fechaValida
-                      ? fechaObj.toLocaleTimeString('es-ES', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: true,
-                        })
-                      : '';
-
-                    const detalleInfo = getDetalleMovimiento(item);
-
-                    const renderIcon = () => {
-                      if (detalleInfo.icono === 'perfil') {
-                        return <UserCheck className="h-5 w-5" />;
-                      }
-                      if (detalleInfo.icono === 'cita') {
-                        return <Calendar className="h-5 w-5" />;
-                      }
-                      if (detalleInfo.icono === 'resena') {
-                        return <MessageSquare className="h-5 w-5" />;
-                      }
-                      if (detalleInfo.icono === 'referido') {
-                        return <Users className="h-5 w-5" />;
-                      }
-                      if (detalleInfo.icono === 'canje') {
-                        return <Tag className="h-5 w-5" />;
-                      }
-                      return esGanancia ? <CheckCircle2 className="h-5 w-5" /> : <ArrowDownRight className="h-5 w-5" />;
-                    };
-
-                    return (
-                      <div
-                        key={item.trpCodigo || item.TrpCodigo || item.id || item.hisCodigo || idx}
-                        className="p-4 sm:p-5 rounded-2xl bg-slate-50/60 dark:bg-slate-900/40 hover:bg-slate-100/70 dark:hover:bg-slate-900/80 border border-slate-100/80 dark:border-slate-800 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xs"
-                      >
-                        {/* Izquierda: Icono contextual + Detalles de lo que se hizo */}
-                        <div className="flex items-start gap-3.5 min-w-0 flex-1">
-                          <div
-                            className={`h-11 w-11 rounded-2xl flex items-center justify-center shrink-0 mt-0.5 ${
-                              esGanancia
-                                ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-800/40'
-                                : 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200/50 dark:border-rose-800/40'
-                            }`}
-                          >
-                            {renderIcon()}
-                          </div>
-
-                          <div className="space-y-1.5 min-w-0 flex-1">
-                            {/* Badges de Categoría y Tipo */}
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span
-                                className={`text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-md ${
-                                  esGanancia
-                                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50'
-                                    : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/50'
-                                }`}
-                              >
-                                {detalleInfo.tipoEtiqueta}
-                              </span>
-                              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                                {detalleInfo.categoria}
-                              </span>
-                            </div>
-
-                            {/* Título de la acción */}
-                            <h4 className="text-sm sm:text-base font-black text-slate-900 dark:text-white leading-snug">
-                              {motivoStr}
-                            </h4>
-
-                            {/* Más detalle de qué se hizo */}
-                            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-normal">
-                              {detalleInfo.detalle}
-                            </p>
-
-                            {/* Fecha y Hora formateadas */}
-                            <div className="flex items-center gap-1.5 text-[11px] text-slate-400 dark:text-slate-500 pt-0.5 font-medium capitalize">
-                              <Clock className="h-3.5 w-3.5" />
-                              <span>
-                                {fechaFormateada} {horaFormateada ? `• ${horaFormateada}` : ''}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Derecha: Puntos y Estado */}
-                        <div className="flex md:flex-col items-center md:items-end justify-between md:justify-center gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-slate-800">
-                          <span
-                            className={`text-lg sm:text-xl font-black px-3.5 py-1 rounded-xl flex items-center gap-1 ${
-                              esGanancia
-                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                                : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
-                            }`}
-                          >
-                            {esGanancia ? `+${pts}` : `-${pts}`} <span className="text-xs font-bold uppercase">pts</span>
-                          </span>
-
-                          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 flex items-center gap-1">
-                            <Check className="h-3 w-3 text-emerald-500" />
-                            {esGanancia ? 'Acreditado a tu saldo' : 'Descontado de tu saldo'}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="h-[380px] flex flex-col items-center justify-center p-8 text-center bg-white dark:bg-[#1E293B]">
-                  <Award className="h-12 w-12 text-slate-300 dark:text-slate-600 mb-3" />
-                  <h3 className="text-base font-bold text-slate-700 dark:text-slate-300">
-                    No hay misiones completadas aún
-                  </h3>
-                  <p className="mt-1 text-xs text-slate-400 max-w-sm mx-auto">
-                    A medida que completes tu perfil, asistas a consultas y compartas reseñas, aparecerá aquí el historial detallado de tus logros.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* ─── MODAL MINIMALISTA Y BLANCO: LIGAS Y NIVELES (Lista Vertical con Puntos Faltantes) ─── */}
-      <AnimatePresence>
-        {isNivelesModalOpen && (
-          <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-          >
-            {/* Backdrop con blur */}
-            <motion.div
-              className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm"
-              onClick={() => setIsNivelesModalOpen(false)}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            />
+      {/* ─── IMPORTANTE: AVISO DESTACADO (LOS PUNTOS NO SON ACUMULABLES) ─── */}
+      <div className="rounded-2xl border-2 border-amber-400/80 bg-amber-50 dark:bg-amber-950/40 p-4 sm:p-5 text-amber-950 dark:text-amber-100 shadow-sm flex flex-col sm:flex-row items-start sm:items-center gap-4">
+        <div className="h-11 w-11 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 shadow-sm">
+          <AlertTriangle className="h-6 w-6 stroke-[2.5]" />
+        </div>
 
-            {/* Contenedor Blanco Minimalista */}
-            <motion.div
-              role="dialog"
-              aria-modal="true"
-              onClick={(e) => e.stopPropagation()}
-              className="relative w-full max-w-xl overflow-hidden rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] shadow-2xl z-10"
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              transition={{ duration: 0.25, ease: 'easeOut' }}
-            >
-              {/* Header Minimalista y Blanco */}
-              <div className="flex items-start justify-between p-6 sm:p-7 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-[#1E293B]">
+        <div className="flex-1 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-black uppercase tracking-wider bg-amber-200 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200 px-2 py-0.5 rounded">
+              Aviso Obligatorio
+            </span>
+            <h4 className="text-sm sm:text-base font-black text-amber-950 dark:text-amber-100">
+              Los puntos no son acumulables para meses posteriores
+            </h4>
+          </div>
+          <p className="text-xs sm:text-sm text-amber-900/90 dark:text-amber-200/90 leading-relaxed">
+            En SaludYa puedes ganar hasta un <strong>máximo de 5 puntos por mes</strong>. Si superas esos 5 puntos o no los canjeas dentro del mes, <strong>no se acumulan para el siguiente mes y se pierden</strong>. Te recomendamos canjear tus recompensas antes de que comience el nuevo mes.
+          </p>
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          SECCIÓN 1: CATÁLOGO DE RECOMPENSAS PARA CANJEAR
+      ══════════════════════════════════════════════════════════════════════ */}
+      <section className="space-y-6 pt-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-4">
+          <div>
+            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white flex items-center gap-2.5">
+              <Gift className="h-7 w-7 text-blue-600 dark:text-blue-400" />
+              Recompensas Disponibles
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+              Canjea tus puntos por descuentos y consultas médicas gratuitas.
+            </p>
+          </div>
+          <span className="text-xs font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full w-fit">
+            {catalogo.length} {catalogo.length === 1 ? 'recompensa' : 'recompensas'} en catálogo
+          </span>
+        </div>
+
+        {catalogo.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {catalogo.map((item, idx) => {
+              const costo = item.rcpCostoPuntos ?? (item as any).costoPuntos ?? (item as any).rcp_costo_puntos ?? 0;
+              const titulo = item.rcpTitulo || (item as any).titulo || (item as any).rcp_titulo || (item as any).nombre || 'Recompensa';
+              const desc = item.descripcion || (item as any).rcpDescripcion || (item as any).rcp_descripcion;
+              const canAfford = totalPuntos >= costo;
+              const puntosFaltantes = Math.max(0, costo - totalPuntos);
+              const keyId = item.rcpCodigo || (item as any).id || (item as any).rcp_codigo || `cat-${idx}`;
+              const progresoCanje = Math.min(100, Math.round((totalPuntos / (costo || 1)) * 100));
+
+              return (
+                <div
+                  key={keyId}
+                  className={`flex flex-col justify-between rounded-3xl p-6 transition-all border ${
+                    canAfford
+                      ? 'bg-white dark:bg-[#1E293B] border-blue-200 dark:border-blue-900/60 shadow-md hover:border-blue-400'
+                      : 'bg-white/80 dark:bg-[#1E293B]/80 border-slate-200 dark:border-slate-800 shadow-sm opacity-95'
+                  }`}
+                >
+                  <div>
+                    {/* Cabecera de la tarjeta: Icono + Costo */}
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                      <span className={`flex h-12 w-12 items-center justify-center rounded-2xl ${
+                        canAfford
+                          ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                      }`}>
+                        <Gift className="h-6 w-6" />
+                      </span>
+
+                      <span className={`inline-flex items-center gap-1 font-black text-xs px-3 py-1.5 rounded-full border ${
+                        canAfford
+                          ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                      }`}>
+                        <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
+                        {costo} {costo === 1 ? 'punto' : 'puntos'}
+                      </span>
+                    </div>
+
+                    {/* Título y descripción */}
+                    <h3 className="text-lg font-black text-slate-900 dark:text-white leading-tight">
+                      {titulo}
+                    </h3>
+                    {desc && (
+                      <p className="mt-2 text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-normal">
+                        {desc}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Estado de puntos y botón de canjear */}
+                  <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between text-xs font-bold">
+                      {canAfford ? (
+                        <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                          <Check className="h-3.5 w-3.5" /> Puntos suficientes ({totalPuntos}/{costo})
+                        </span>
+                      ) : (
+                        <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                          <Info className="h-3.5 w-3.5" /> Te faltan {puntosFaltantes} pts ({totalPuntos}/{costo})
+                        </span>
+                      )}
+                      <span className="text-slate-400 text-[11px]">{progresoCanje}%</span>
+                    </div>
+
+                    {/* Barra individual hacia esta recompensa */}
+                    <div className="h-2 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden border border-slate-200 dark:border-slate-700">
+                      <div
+                        className={`h-full rounded-full ${
+                          canAfford ? 'bg-emerald-500' : 'bg-amber-400'
+                        }`}
+                        style={{ width: `${progresoCanje}%` }}
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleCanjear(item)}
+                      disabled={!canAfford || canjearMutation.isPending}
+                      className={`w-full py-3 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                        canAfford
+                          ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-md active:scale-95'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'
+                      }`}
+                    >
+                      {canAfford ? (
+                        <>
+                          <Gift className="h-4 w-4" /> Canjear por {costo} pts
+                        </>
+                      ) : (
+                        `Necesitas ${costo} pts para canjear`
+                      )}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 p-12 text-center bg-white dark:bg-[#1E293B]">
+            <Gift className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+            <h3 className="text-base font-bold text-slate-700 dark:text-slate-300">No hay recompensas configuradas</h3>
+            <p className="mt-1 text-xs text-slate-400 max-w-md mx-auto">
+              Próximamente habrá nuevas opciones disponibles en el catálogo de beneficios.
+            </p>
+          </div>
+        )}
+      </section>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          SECCIÓN 2: MIS CUPONES Y RECOMPENSAS CANJEADAS
+      ══════════════════════════════════════════════════════════════════════ */}
+      <section className="space-y-6 pt-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-4">
+          <div>
+            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white flex items-center gap-2.5">
+              <Tag className="h-7 w-7 text-emerald-600 dark:text-emerald-400" />
+              Mis Cupones y Recompensas Canjeadas
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+              Cupones activos y disponibles en tu cuenta para aplicar en el pago de tus citas médicas o servicios.
+            </p>
+          </div>
+          <span className="text-xs font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full w-fit">
+            {recompensasDisponibles.length} {recompensasDisponibles.length === 1 ? 'cupón activo' : 'cupones activos'}
+          </span>
+        </div>
+
+        {recompensasDisponibles.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {recompensasDisponibles.map((r, idx) => {
+              const titulo = r.tituloRecompensa || (r as any).titulo || (r as any).rcpTitulo || (r as any).rcp_titulo || (r as any).nombre || 'Recompensa';
+              const codigo = r.codigoCanje || (r as any).codigo || (r as any).codigo_canje || (r as any).praCodigoCanje || (r.praCodigo ? `CUPON-${r.praCodigo.slice(0, 6).toUpperCase()}` : `CUPON-${idx + 1}`);
+              const fechaExp = r.praFechaExpiracion || (r as any).fechaExpiracion || (r as any).pra_fecha_expiracion;
+              const keyId = r.praCodigo || (r as any).id || (r as any).pra_codigo || `rec-${idx}`;
+              const isCopied = copiedCode === codigo;
+
+              return (
+                <div
+                  key={keyId}
+                  className="flex flex-col justify-between rounded-3xl border-2 border-emerald-500/30 bg-white dark:bg-[#1E293B] p-6 shadow-sm hover:shadow-md transition-all"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                      <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400">
+                        <Tag className="h-5 w-5" />
+                      </span>
+                      <span className="text-xs font-black text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/80 px-3 py-1 rounded-full border border-emerald-200 dark:border-emerald-800">
+                        Cupón Activo
+                      </span>
+                    </div>
+
+                    <h3 className="text-lg font-black text-slate-900 dark:text-white leading-tight">
+                      {titulo}
+                    </h3>
+
+                    {fechaExp && (
+                      <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5" /> Vence: {new Date(fechaExp).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Código de Cupón con botón copiar */}
+                  <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 block">
+                      Código para aplicar en tu cita:
+                    </span>
+                    
+                    <div className="flex items-center justify-between gap-2 bg-slate-900 text-amber-300 p-2.5 rounded-2xl border border-slate-800">
+                      <code className="text-sm font-mono font-bold tracking-wider px-2">
+                        {codigo}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyCode(codigo)}
+                        title="Copiar código"
+                        className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 transition active:scale-90 cursor-pointer"
+                      >
+                        {isCopied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 p-8 sm:p-10 text-center bg-white dark:bg-[#1E293B]">
+            <Tag className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+            <h3 className="text-base font-bold text-slate-700 dark:text-slate-300">Aún no tienes cupones canjeados</h3>
+            <p className="mt-1 text-xs text-slate-400 max-w-md mx-auto">
+              Cuando canjees recompensas en el catálogo superior, tus códigos de cupón aparecerán aquí listos para ser usados.
+            </p>
+          </div>
+        )}
+      </section>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          SECCIÓN 3: CÓMO CONSEGUIR PUNTOS (INFORMATIVO, SIN BOTÓN PARTICIPAR)
+      ══════════════════════════════════════════════════════════════════════ */}
+      <section className="space-y-6 pt-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-4">
+          <div>
+            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white flex items-center gap-2.5">
+              <Zap className="h-7 w-7 text-amber-500" />
+              Formas de Conseguir Puntos
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+              Completa cualquiera de estas acciones de salud para acumular hasta 5 puntos este mes.
+            </p>
+          </div>
+
+          <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 px-3.5 py-1.5 rounded-2xl text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5 w-fit">
+            <Clock className="h-4 w-4 text-amber-600" />
+            <span>Máximo 5 puntos por mes</span>
+          </div>
+        </div>
+
+        {/* Grid de Formas de Ganar Puntos */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {formasDeGanar.map((mision) => {
+            const renderIcon = () => {
+              if (mision.icono === 'perfil') return <UserCheck className="h-6 w-6" />;
+              if (mision.icono === 'cita') return <Calendar className="h-6 w-6" />;
+              if (mision.icono === 'resena') return <MessageSquare className="h-6 w-6" />;
+              if (mision.icono === 'referido') return <Users className="h-6 w-6" />;
+              return <Star className="h-6 w-6" />;
+            };
+
+            return (
+              <div
+                key={mision.id}
+                className="flex flex-col justify-between rounded-3xl bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all gap-4"
+              >
                 <div>
-                  <span className="text-[11px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
-                    Programa de Fidelidad
-                  </span>
-                  <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">
-                    Ligas y Niveles
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <div className="h-12 w-12 rounded-2xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center border border-amber-200/60 dark:border-amber-800/40">
+                      {renderIcon()}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">
+                        {mision.frecuencia}
+                      </span>
+                      <span className="text-xs font-black bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60 px-3 py-1 rounded-xl">
+                        +{mision.puntos} {mision.puntos === 1 ? 'punto' : 'puntos'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                    {mision.titulo}
                   </h3>
-                  <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 font-medium">
-                    Acumula puntos para ascender de liga y desbloquear beneficios exclusivos.
+                  <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
+                    {mision.descripcion}
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setIsNivelesModalOpen(false)}
-                  className="rounded-full p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                  aria-label="Cerrar modal"
-                >
-                  <X className="h-5 w-5" />
-                </button>
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-400">
+                    Acreditación automática
+                  </span>
+                  <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                    <Sparkles className="h-3 w-3" /> SaludYa Rewards
+                  </span>
+                </div>
               </div>
+            );
+          })}
+        </div>
 
-              {/* Body con Lista Vertical */}
-              <div className="p-6 sm:p-7 max-h-[68vh] overflow-y-auto space-y-3 bg-slate-50/50 dark:bg-slate-900/30">
-                {nivelesOrdenados.length > 0 ? (
-                  nivelesOrdenados.map((n) => {
-                    const esActual =
-                      nivelEncontrado?.nvlCodigo === n.nvlCodigo ||
-                      (totalPuntos >= n.nvlPuntosMin && totalPuntos <= n.nvlPuntosMax);
-                    
-                    const esSuperado = totalPuntos > n.nvlPuntosMax;
-                    const esProximo = totalPuntos < n.nvlPuntosMin;
-                    const puntosFaltantesLiga = Math.max(0, n.nvlPuntosMin - totalPuntos);
+        {/* Card Explicativa de Reglas del Programa */}
+        <div className="rounded-3xl bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-6 space-y-3">
+          <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+            <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" /> Reglas del Programa de Puntos SaludYa
+          </h4>
+          <ul className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 space-y-2 list-disc list-inside">
+            <li>
+              <strong>Límite Mensual:</strong> Puedes ganar hasta un máximo de 5 puntos durante cada mes calendario.
+            </li>
+            <li>
+              <strong>Puntos no acumulables:</strong> Los puntos obtenidos deben canjearse en el mes en curso. Si no se usan, <strong>no se acumulan para el mes posterior y se reinician</strong>.
+            </li>
+            <li>
+              <strong>Cupones generados:</strong> Una vez canjeada una recompensa, el cupón generado conserva su propia fecha de expiración para su uso en consulta.
+            </li>
+          </ul>
+        </div>
+      </section>
 
-                    return (
+      {/* ══════════════════════════════════════════════════════════════════════
+          SECCIÓN 4: HISTORIAL DE PUNTOS OBTENIDOS Y CANJEADOS
+      ══════════════════════════════════════════════════════════════════════ */}
+      <section className="space-y-6 pt-2 pb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
+          <div>
+            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white flex items-center gap-2.5">
+              <CheckCircle2 className="h-7 w-7 text-blue-600 dark:text-blue-400" />
+              Historial de Puntos
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+              Movimientos registrados de puntos obtenidos por actividades y puntos canjeados por beneficios.
+            </p>
+          </div>
+
+          {/* Filtro Rápido: Todos, Ganados, Canjeados */}
+          <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-2xl border border-slate-200 dark:border-slate-700 w-fit">
+            <button
+              type="button"
+              onClick={() => setHistorialFiltro('todos')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                historialFiltro === 'todos'
+                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Todos ({historial.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setHistorialFiltro('ganados')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                historialFiltro === 'ganados'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Obtenidos (+)
+            </button>
+            <button
+              type="button"
+              onClick={() => setHistorialFiltro('canjeados')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                historialFiltro === 'canjeados'
+                  ? 'bg-rose-600 text-white shadow-xs'
+                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Canjeados (-)
+            </button>
+          </div>
+        </div>
+
+        {/* Lista del Historial */}
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 flex items-center justify-between">
+            <span className="text-xs font-black uppercase tracking-wider text-slate-600 dark:text-slate-300">
+              Transacciones ({historialFiltrado.length})
+            </span>
+            <span className="text-xs text-slate-400">
+              Orden cronológico
+            </span>
+          </div>
+
+          {historialFiltrado.length > 0 ? (
+            <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[550px] overflow-y-auto">
+              {historialFiltrado.map((item, idx) => {
+                const ptsRaw = item.trpPuntos ?? item.TrpPuntos ?? item.puntos ?? item.hisPuntos ?? item.hspPuntos ?? item.montoPuntos ?? item.cantidadPuntos ?? 0;
+                const pts = Math.abs(ptsRaw);
+                const rawTipo = String(item.trpTipo ?? item.TrpTipo ?? item.tipo ?? item.hisTipo ?? item.hspTipo ?? item.tipoMovimiento ?? '').toLowerCase();
+                const esGanancia = rawTipo === 'ganancia' || rawTipo === 'g' || rawTipo === 'abono' || rawTipo === 'ingreso' || rawTipo === 'entrada' || (pts > 0 && rawTipo !== 'canje' && rawTipo !== 'c' && rawTipo !== 'salida' && rawTipo !== 'egreso');
+                const motivoStr = item.trpMotivo || item.TrpMotivo || item.motivo || item.hisMotivo || item.hisDescripcion || item.descripcion || item.concepto || (esGanancia ? 'Abono de puntos' : 'Canje de recompensa');
+                const rawFecha = item.fechaGrabacion || item.FechaGrabacion || item.fecha || item.hisFecha || item.hspFecha || item.fechaMovimiento;
+                const fechaObj = rawFecha ? new Date(rawFecha) : null;
+                const fechaValida = fechaObj && !isNaN(fechaObj.getTime());
+                const fechaFormateada = fechaValida
+                  ? fechaObj.toLocaleDateString('es-ES', {
+                      weekday: 'short',
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                    })
+                  : 'Fecha no especificada';
+                const horaFormateada = fechaValida
+                  ? fechaObj.toLocaleTimeString('es-ES', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: true,
+                    })
+                  : '';
+
+                const detalleInfo = getDetalleMovimiento(item);
+
+                return (
+                  <div
+                    key={item.trpCodigo || item.TrpCodigo || item.id || item.hisCodigo || idx}
+                    className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-50/80 dark:hover:bg-slate-900/40 transition"
+                  >
+                    <div className="flex items-start gap-3.5 min-w-0 flex-1">
                       <div
-                        key={n.nvlCodigo}
-                        className={`flex flex-col sm:flex-row sm:items-center justify-between p-4 sm:p-4.5 rounded-2xl border transition-all gap-3.5 ${
-                          esActual
-                            ? 'bg-blue-50/70 dark:bg-blue-950/40 border-blue-300 dark:border-blue-700 ring-2 ring-blue-500/20 shadow-xs'
-                            : 'bg-white dark:bg-[#1E293B] border-slate-200/80 dark:border-slate-800 shadow-2xs'
+                        className={`h-11 w-11 rounded-2xl flex items-center justify-center shrink-0 mt-0.5 ${
+                          esGanancia
+                            ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400'
+                            : 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
                         }`}
                       >
-                        <div className="flex items-center gap-3.5">
-                          <div
-                            className={`flex h-11 w-11 items-center justify-center rounded-2xl shrink-0 ${
-                              esActual
-                                ? 'bg-blue-600 text-white shadow-sm'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                        {esGanancia ? <ArrowUpRight className="h-5 w-5" /> : <ArrowDownRight className="h-5 w-5" />}
+                      </div>
+
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded ${
+                              esGanancia
+                                ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                                : 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
                             }`}
                           >
-                            {n.nvlImagenUrl ? (
-                              <img src={n.nvlImagenUrl} alt={n.nvlDescripcion} className="h-6 w-6 object-contain" />
-                            ) : (
-                              <Award className="h-5 w-5" />
-                            )}
-                          </div>
-
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h4 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
-                                Nivel {n.nvlDescripcion}
-                              </h4>
-                              {esActual && (
-                                <span className="text-[10px] font-black uppercase tracking-wider text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/60 px-2 py-0.5 rounded-md">
-                                  Actual
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">
-                              Rango: <span className="font-bold text-slate-700 dark:text-slate-300">{n.nvlPuntosMin} - {n.nvlPuntosMax} pts</span>
-                            </p>
-                          </div>
+                            {esGanancia ? 'Punto Obtenido' : 'Punto Canjeado'}
+                          </span>
+                          <span className="text-[11px] font-semibold text-slate-400">
+                            {detalleInfo.categoria}
+                          </span>
                         </div>
 
-                        <div className="sm:text-right shrink-0">
-                          {esActual ? (
-                            <span className="inline-flex items-center gap-1.5 text-xs font-black text-blue-700 dark:text-blue-300 bg-blue-100/80 dark:bg-blue-900/50 px-3 py-1.5 rounded-xl border border-blue-200 dark:border-blue-800">
-                              <Sparkles className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                              Tu Nivel Actual
-                            </span>
-                          ) : esProximo ? (
-                            <span className="inline-flex items-center text-xs font-bold text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/50 px-3 py-1.5 rounded-xl border border-amber-200 dark:border-amber-800/60">
-                              Te faltan <strong className="mx-1 text-amber-900 dark:text-amber-100 font-black">{puntosFaltantesLiga} pts</strong> para esta liga
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1 rounded-xl">
-                              <Check className="h-3.5 w-3.5 text-emerald-600" /> Nivel superado
-                            </span>
-                          )}
+                        <h4 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
+                          {motivoStr}
+                        </h4>
+
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {detalleInfo.detalle}
+                        </p>
+
+                        <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium pt-0.5">
+                          <Clock className="h-3 w-3" />
+                          <span>{fechaFormateada} {horaFormateada ? `• ${horaFormateada}` : ''}</span>
                         </div>
                       </div>
-                    );
-                  })
-                ) : (
-                  <p className="text-xs text-slate-400 text-center py-6">No hay niveles configurados en el sistema.</p>
-                )}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+                    </div>
 
+                    {/* Derecha: Puntos */}
+                    <div className="flex md:flex-col items-center md:items-end justify-between md:justify-center gap-1 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-slate-800">
+                      <span
+                        className={`text-lg sm:text-xl font-black px-3.5 py-1 rounded-xl flex items-center gap-1 ${
+                          esGanancia
+                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                            : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                        }`}
+                      >
+                        {esGanancia ? `+${pts}` : `-${pts}`} <span className="text-xs font-bold uppercase">pts</span>
+                      </span>
+
+                      <span className="text-[10px] font-bold text-slate-400">
+                        {esGanancia ? 'Acreditado a tu cuenta' : 'Descontado para canje'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="p-12 text-center">
+              <CheckCircle2 className="h-12 w-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+              <h3 className="text-base font-bold text-slate-700 dark:text-slate-300">
+                No hay movimientos en este filtro
+              </h3>
+              <p className="mt-1 text-xs text-slate-400 max-w-sm mx-auto">
+                Los puntos que obtengas o canjees aparecerán aquí detallados cronológicamente.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ─── Modal de Confirmación de Canje ─── */}
       <ConfirmModal
         isOpen={!!recompensaACanjear}
         onClose={() => setRecompensaACanjear(null)}
@@ -971,15 +904,24 @@ function PuntosContent() {
         title="¿Confirmar Canje de Recompensa?"
         description={
           recompensaACanjear ? (
-            <>
-              Se descontarán <strong>{recompensaACanjear.rcpCostoPuntos} puntos</strong> de tu saldo para obtener <strong>"{recompensaACanjear.rcpTitulo}"</strong>.
-            </>
+            <div className="space-y-2">
+              <p>
+                Se descontarán <strong>{recompensaACanjear.rcpCostoPuntos} puntos</strong> de tu saldo para obtener:
+              </p>
+              <p className="p-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-900 dark:text-white">
+                "{recompensaACanjear.rcpTitulo}"
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Al canjear, se creará un cupón en tu inventario listo para usarse.
+              </p>
+            </div>
           ) : undefined
         }
         confirmText="Sí, Canjear Ahora"
         cancelText="Cancelar"
         isLoading={canjearMutation.isPending}
       />
+
     </div>
   );
 }

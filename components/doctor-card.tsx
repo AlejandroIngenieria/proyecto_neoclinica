@@ -21,14 +21,18 @@ import {
   Building2,
   Home,
   Calendar,
+  CalendarDays,
+  Map as MapIcon,
   X,
   User,
+  Stethoscope,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   type DoctorResponse,
   type DoctorClinica,
   getDoctorPriceDisplay,
+  getDoctorLocationPrice,
   buildDoctorFullName,
   buildDoctorShortName,
   cleanZonaText,
@@ -40,6 +44,12 @@ import { usePacienteTitular } from '@/hooks/use-pacientes';
 import { useUserLocation } from '@/hooks/use-user-location';
 import { ShareDoctorModal } from '@/components/share-doctor-modal';
 import { InsuranceLogoBadge } from '@/components/insurance-logo-badge';
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from '@/components/ui/tooltip';
 
 export type DoctorCardData = {
   doctor: DoctorResponse;
@@ -359,8 +369,14 @@ export function DoctorCard({
   // VARIANT 1: EXPANDED (COMPACT, HIGH-DENSITY VIEW FOR SELECTED DOCTOR)
   // ═════════════════════════════════════════════════════════════════════════════════
   if (variant === 'expanded' || isSelected) {
-    const hasSelectedClinic = typeof selectedClinicIndex === 'number' && selectedClinicIndex >= 0 && !!doctor.clinicas?.[selectedClinicIndex];
+    const hasClinicas = (doctor.clinicas || []).length > 0;
+    const hasDomicilio = !!(doctor.atencion_domicilio && doctor.atencion_domicilio.length > 0);
+    const isDomicilioSelected = selectedClinicIndex === -1 || (!hasClinicas && hasDomicilio);
+    const hasSelectedClinic = !isDomicilioSelected && typeof selectedClinicIndex === 'number' && selectedClinicIndex >= 0 && !!doctor.clinicas?.[selectedClinicIndex];
     const activeClinic: DoctorClinica | undefined = hasSelectedClinic ? doctor.clinicas?.[selectedClinicIndex] : undefined;
+    
+    // Precio dinámico adaptado a la sede física o modalidad a domicilio seleccionada
+    const locationPrice = getDoctorLocationPrice(doctor, selectedClinicIndex);
     
     // Coordenadas y enlaces de navegación
     const hasCoords = activeClinic && typeof activeClinic.cli_latitud === 'number' && typeof activeClinic.cli_longitud === 'number';
@@ -389,9 +405,9 @@ export function DoctorCard({
       <>
         <div
           id={`doctor-card-${doctor.exp_codigo}`}
-          className="w-full bg-white rounded-3xl overflow-hidden border-2 border-sky-500 shadow-xl p-4 sm:p-5 relative transition-all duration-300 text-slate-900"
+          className="scroll-mt-24 sm:scroll-mt-28 w-full bg-white rounded-3xl overflow-hidden border-2 border-[#11698E] shadow-xl p-4 sm:p-5 relative transition-all duration-300 text-slate-900"
         >
-          {/* Botón flotante X para cerrar detalle */}
+          {/* Botón flotante X para cerrar detalle en la esquina izquierda */}
           <button
             type="button"
             onClick={(e) => {
@@ -402,55 +418,55 @@ export function DoctorCard({
                 onSelect?.(data);
               }
             }}
-            className="absolute top-3.5 right-3.5 z-20 p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 transition-colors shadow-xs cursor-pointer"
+            className="absolute top-3.5 left-3.5 z-30 p-2 rounded-full bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 transition-all shadow-md backdrop-blur-xs cursor-pointer"
             title="Cerrar detalle"
             aria-label="Cerrar detalle"
           >
             <X className="w-4 h-4" />
           </button>
 
-          <div className="flex flex-col sm:flex-row gap-4 sm:gap-5 items-stretch sm:items-start">
+          {/* Botones de acción flotantes en la esquina superior derecha (donde estaba la X) */}
+          <div className="absolute top-3.5 right-3.5 z-20 flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleShare}
+              className="p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 transition-colors shadow-xs cursor-pointer"
+              title="Compartir perfil"
+              aria-label="Compartir perfil"
+            >
+              <Share2 className="w-4 h-4" />
+            </button>
+
+            {titular && (
+              <button
+                type="button"
+                onClick={toggleFavorite}
+                className="p-2 rounded-full bg-slate-100 hover:bg-slate-200 transition-colors shadow-xs cursor-pointer"
+                aria-label={isFavorito ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+                title={isFavorito ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+              >
+                <Heart
+                  className={`w-4 h-4 transition-colors ${
+                    isFavorito
+                      ? 'fill-rose-500 text-rose-500'
+                      : 'text-slate-500 hover:text-rose-500'
+                  }`}
+                />
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-4 sm:gap-5 items-stretch">
             {/* Columna Izquierda: Foto compacta + Botones de Acción */}
-            <div className="w-full sm:w-[150px] md:w-[160px] shrink-0 flex flex-col gap-2.5">
+            <div className="w-full sm:w-[175px] md:w-[185px] shrink-0 flex flex-col gap-2 self-stretch">
               {/* Foto con overlays */}
               <div className="w-full aspect-[4/3] sm:aspect-square relative rounded-2xl overflow-hidden bg-slate-100 shadow-inner">
                 {doctor.exp_anios_experiencia ? (
-                  <div className="absolute top-2 left-2 z-10 flex items-center gap-1 bg-white/90 backdrop-blur-xs text-slate-800 px-2 py-0.5 rounded-full text-[10px] font-bold shadow-xs">
+                  <div className="absolute bottom-2 left-2 z-10 flex items-center gap-1 bg-white/90 backdrop-blur-xs text-slate-800 px-2 py-0.5 rounded-full text-[10px] font-bold shadow-xs">
                     <Award className="w-3 h-3 text-amber-500 shrink-0" />
                     <span>{doctor.exp_anios_experiencia}a exp.</span>
                   </div>
                 ) : null}
-
-                {/* Floating Action Buttons Top-Right (Share + Favorite) */}
-                <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={handleShare}
-                    className="p-1.5 rounded-full bg-black/30 backdrop-blur-xs text-white hover:text-sky-300 transition-transform hover:scale-110 focus:outline-none cursor-pointer"
-                    title="Compartir perfil"
-                    aria-label="Compartir perfil"
-                  >
-                    <Share2 className="w-4 h-4 drop-shadow-md" />
-                  </button>
-
-                  {titular && (
-                    <button
-                      type="button"
-                      onClick={toggleFavorite}
-                      className="p-1.5 rounded-full bg-black/30 backdrop-blur-xs transition-transform hover:scale-110 focus:outline-none cursor-pointer"
-                      aria-label={isFavorito ? 'Quitar de favoritos' : 'Guardar en favoritos'}
-                      title={isFavorito ? 'Quitar de favoritos' : 'Guardar en favoritos'}
-                    >
-                      <Heart
-                        className={`w-4 h-4 transition-colors drop-shadow-md ${
-                          isFavorito
-                            ? 'fill-rose-500 text-rose-500'
-                            : 'text-white fill-white/20 hover:text-rose-400'
-                        }`}
-                      />
-                    </button>
-                  )}
-                </div>
 
                 {doctor.exp_foto_perfil ? (
                   <Image
@@ -458,7 +474,7 @@ export function DoctorCard({
                     alt={fullName}
                     fill
                     priority
-                    sizes="(max-width: 640px) 100vw, 160px"
+                    sizes="(max-width: 640px) 100vw, 185px"
                     className="object-cover object-top"
                   />
                 ) : (
@@ -468,36 +484,52 @@ export function DoctorCard({
                 )}
               </div>
 
-              {/* Botones de acción directos */}
-              <button
-                type="button"
-                onClick={handleBookAppointment}
-                className="w-full py-2 px-3 rounded-xl bg-sky-600 hover:bg-sky-700 active:scale-98 text-white font-bold text-xs shadow-sm shadow-sky-600/20 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-              >
-                <Calendar className="w-3.5 h-3.5" />
-                <span>Agendar Cita</span>
-              </button>
-
+              {/* 1. Primero: Botón Ver Perfil Completo */}
               <button
                 type="button"
                 onClick={handleVisitProfile}
-                className="w-full py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] flex items-center justify-center gap-1 transition-all cursor-pointer"
+                className="text-[#11698E] bg-blue-50 hover:bg-blue-100 rounded-xl px-4 py-2 text-sm font-bold w-full transition-colors flex items-center justify-center gap-1 cursor-pointer mt-1"
               >
                 <span>Ver Perfil Completo</span>
-                <ChevronRight className="w-3 h-3" />
+                <ChevronRight className="w-3.5 h-3.5" />
               </button>
+
+              {/* 2. Segundo: Botón Agendar Cita */}
+              <button
+                type="button"
+                onClick={handleBookAppointment}
+                className="w-full py-2.5 px-3 rounded-xl bg-[#19456B] hover:bg-[#10304a] active:scale-98 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer mt-0.5"
+              >
+                <CalendarDays className="w-3.5 h-3.5 shrink-0 text-white" />
+                <span>Agendar Cita</span>
+              </button>
+
+              {/* 3. Abajo del botón agendar: "Desde Q XX.XX" responsive con el alto disponible (sin fondo ni bordes) */}
+              {locationPrice.hasPrice ? (
+                <div className="w-full flex-1 flex items-center justify-center gap-1.5 py-1 text-center min-h-[28px]">
+                  <span className="text-[11px] font-medium text-slate-500">Consulta</span>
+                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-tight">Desde</span>
+                  <span className="text-xs sm:text-sm font-black text-[#19456B] dark:text-sky-400">Q{locationPrice.price}</span>
+                </div>
+              ) : (
+                <div className="w-full flex-1 flex items-center justify-center py-1 text-center min-h-[28px]">
+                  <span className="text-[11px] font-medium text-slate-400">
+                    {isAvailableToday ? 'Atención disponible hoy' : 'Consulta previa cita'}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Columna Derecha: Información Compacta y Sedes */}
             <div className="flex-1 min-w-0 flex flex-col gap-3">
-              {/* Header: Nombre arriba (ancho completo) + Metadatos/Precio abajo */}
+              {/* Header: Nombre arriba + Metadatos limpios (sin precio flotante) */}
               <div className="flex flex-col gap-2 border-b border-slate-100 pb-2.5">
-                {/* Fila 1: Nombre completo y Profesión / Colegiado */}
-                <div className="min-w-0 pr-8 sm:pr-10">
+                {/* Fila 1: Nombre completo y Profesión / Colegiado (pr-20 para dejar espacio a compartir/favorito) */}
+                <div className="min-w-0 pr-16 sm:pr-20">
                   <h3 className="text-lg md:text-xl font-black text-slate-900 leading-snug break-words">
                     <HighlightText text={fullDetailedName} highlight={searchHighlight} />
                   </h3>
-                  <p className="text-xs font-semibold text-sky-700 mt-0.5 break-words leading-snug">
+                  <p className="text-xs font-semibold text-[#11698E] mt-0.5 break-words leading-snug">
                     {doctor.exp_profesion || specialtyPreview[0] || 'Médico y Cirujano'}
                     {doctor.exp_colegiado_gt && (
                       <span className="text-slate-500 font-normal ml-1.5">
@@ -507,70 +539,63 @@ export function DoctorCard({
                   </p>
                 </div>
 
-                {/* Fila 2: Items secundarios (Distancia, Rating, Precio) */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {activeClinicDistanceFormatted && (
-                      <div className="flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200/80 px-2 py-0.5 rounded-lg text-xs font-bold shadow-2xs">
-                        <Navigation className="w-3 h-3 text-emerald-600 shrink-0" />
-                        <span>{activeClinicDistanceFormatted}</span>
-                      </div>
-                    )}
+                {/* Fila 2: Items secundarios (Distancia, Rating) */}
+                <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                  {activeClinicDistanceFormatted && (
+                    <div className="flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200/80 px-2 py-0.5 rounded-lg text-xs font-bold shadow-2xs">
+                      <Navigation className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>{activeClinicDistanceFormatted}</span>
+                    </div>
+                  )}
 
-                    {doctor.total_resenas > 0 && doctor.promedio_valoracion > 0 ? (
-                      <div className="flex items-center gap-1 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg text-xs font-bold text-slate-900">
-                        <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                        <span>{doctor.promedio_valoracion.toFixed(1)}</span>
-                        <span className="text-[10px] text-slate-500">({doctor.total_resenas})</span>
-                      </div>
-                    ) : (
-                      <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
-                        Nuevo
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="shrink-0 flex items-center gap-1">
-                    <span className="text-xs text-slate-500 font-medium">Consulta:</span>
-                    <span className="text-sm font-black text-slate-900">
-                      {priceInfo.hasPrice ? priceInfo.label : (
-                        <span className="text-[11px] text-slate-400 font-semibold">Sin precio base</span>
-                      )}
+                  {doctor.total_resenas > 0 && doctor.promedio_valoracion > 0 ? (
+                    <div className="flex items-center gap-1 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg text-xs font-bold text-slate-900">
+                      <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                      <span>{doctor.promedio_valoracion.toFixed(1)}</span>
+                      <span className="text-[10px] text-slate-500">({doctor.total_resenas})</span>
+                    </div>
+                  ) : (
+                    <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                      Nuevo
                     </span>
-                  </div>
+                  )}
                 </div>
               </div>
 
-              {/* Fila de Insignias: Modalidades + Idiomas + Aseguradoras */}
-              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              {/* Fila de Insignias Limpias y Unificadas: Especialidad + Modalidades + Idiomas + Seguros */}
+              <div className="flex flex-wrap items-center gap-2 text-xs">
                 {specialtyPreview.slice(0, 2).map((spec, i) => (
                   <span
                     key={i}
-                    className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-sky-50 text-sky-700 border border-sky-200/60"
+                    className="bg-slate-50 border border-slate-200 text-slate-600 px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5"
                   >
-                    {spec}
+                    <Stethoscope className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span>{spec}</span>
                   </span>
                 ))}
 
-                <div className="flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200/70 text-[11px] text-slate-700">
-                  <Video className="w-3 h-3 text-indigo-600 shrink-0" />
+                <div className="bg-slate-50 border border-slate-200 text-slate-600 px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5">
+                  <Video className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                   <span>
                     {[hasPresencial && 'Presencial', hasVirtual && 'Virtual', hasDomicilio && 'Domicilio'].filter(Boolean).join(' · ') || 'Consultar'}
                   </span>
                 </div>
 
-                <div className="flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200/70 text-[11px] text-slate-700" title={languages.join(', ')}>
-                  <Globe className="w-3 h-3 text-sky-600 shrink-0" />
-                  <span className="truncate max-w-[90px]">{languages[0] || 'Español'}</span>
+                <div
+                  className="bg-slate-50 border border-slate-200 text-slate-600 px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5"
+                  title={languages.join(', ')}
+                >
+                  <Globe className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="truncate max-w-[100px]">{languages.slice(0, 2).join(', ') || 'Español'}</span>
                 </div>
 
                 {sortedAseguradoras.length > 0 && (
                   <div
-                    className="flex items-center gap-1.5 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200/70 text-[11px] text-slate-700"
+                    className="bg-slate-50 border border-slate-200 text-slate-600 px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5"
                     title={`Aseguradoras aceptadas: ${sortedAseguradoras.map((a) => a.aseguradora).join(', ')}`}
                   >
-                    <ShieldCheck className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                    <span className="text-[10.5px] font-medium text-slate-500 hidden sm:inline">Seguros:</span>
+                    <ShieldCheck className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="hidden sm:inline">Seguros:</span>
                     <div className="flex items-center gap-1">
                       {sortedAseguradoras.slice(0, 4).map((asg, idx) => (
                         <InsuranceLogoBadge
@@ -581,10 +606,7 @@ export function DoctorCard({
                         />
                       ))}
                       {sortedAseguradoras.length > 4 && (
-                        <span
-                          className="text-[10px] font-bold text-slate-500 ml-0.5"
-                          title={sortedAseguradoras.slice(4).map((a) => a.aseguradora).join(', ')}
-                        >
+                        <span className="text-[10px] font-bold text-slate-500 ml-0.5">
                           +{sortedAseguradoras.length - 4}
                         </span>
                       )}
@@ -593,13 +615,14 @@ export function DoctorCard({
                 )}
               </div>
 
-              {/* Sedes de Atención con Botones de Navegación y Ver Horarios en 3 Filas */}
-              {doctor.clinicas && doctor.clinicas.length > 0 ? (
-                <div className="bg-sky-50/70 p-3 rounded-2xl border border-sky-200/70 space-y-2.5">
-                  {/* Selector de Sedes de Atención */}
-                  <div className="flex flex-wrap gap-1.5">
-                    {doctor.clinicas.map((cli, idx) => {
-                      const isCliSelected = (selectedClinicIndex === idx);
+              {/* Sedes de Atención y Atención a Domicilio */}
+              {(hasClinicas || hasDomicilio) && (
+                <div className="w-full mt-1">
+                  {/* Selector de Sedes (Tabs Modernos) */}
+                  <div className="flex flex-wrap gap-2 items-center">
+                    {/* Tabs de clínicas físicas */}
+                    {hasClinicas && doctor.clinicas.map((cli, idx) => {
+                      const isCliSelected = !isDomicilioSelected && (selectedClinicIndex === idx);
                       const name = cli.cli_descripcion || `Sede ${idx + 1}`;
 
                       return (
@@ -608,12 +631,12 @@ export function DoctorCard({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onSelectClinic?.(isCliSelected ? null : idx);
+                            onSelectClinic?.(idx);
                           }}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                          className={`flex items-center gap-1.5 cursor-pointer shrink-0 transition-all ${
                             isCliSelected
-                              ? 'bg-sky-600 text-white shadow-xs ring-2 ring-sky-300'
-                              : 'bg-white text-slate-700 border border-slate-200 hover:bg-sky-50 hover:text-sky-700'
+                              ? 'bg-[#11698E] text-white shadow-sm rounded-xl px-4 py-2 text-sm font-bold'
+                              : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-50 rounded-xl px-4 py-2 text-sm font-medium'
                           }`}
                         >
                           <MapPin className="w-3.5 h-3.5 shrink-0" />
@@ -621,29 +644,150 @@ export function DoctorCard({
                         </button>
                       );
                     })}
+
+                    {/* Tab de Atención a Domicilio */}
+                    {hasDomicilio && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectClinic?.(-1);
+                        }}
+                        className={`flex items-center gap-1.5 cursor-pointer shrink-0 transition-all ${
+                          isDomicilioSelected
+                            ? 'bg-emerald-600 text-white shadow-sm rounded-xl px-4 py-2 text-sm font-bold'
+                            : 'bg-white border border-slate-200 text-emerald-800 hover:bg-emerald-50 rounded-xl px-4 py-2 text-sm font-medium'
+                        }`}
+                      >
+                        <Home className="w-3.5 h-3.5 shrink-0" />
+                        <span>A Domicilio</span>
+                        {doctor.atencion_domicilio[0]?.lad_zonas && (
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${
+                            isDomicilioSelected ? 'bg-emerald-700/60 text-white' : 'bg-emerald-100 text-emerald-800'
+                          }`}>
+                            {cleanZonasDomicilio(doctor.atencion_domicilio[0]?.lad_zonas).replace(/[()]/g, '') || 'Zonas'}
+                          </span>
+                        )}
+                      </button>
+                    )}
                   </div>
 
-                  {/* Tarjeta de la Clínica Activa: 3 Filas Bien Definidas */}
-                  {activeClinic ? (
-                    <div className="flex flex-col gap-2 bg-white p-3 rounded-xl border border-sky-100 w-full shadow-2xs">
-                      {/* Fila 1: Nombre de la clínica (Izq) + Chip de distancia (Der) */}
+                  {/* Tarjeta de Ubicación Seleccionada (Sólida y Premium) */}
+                  {isDomicilioSelected && hasDomicilio ? (
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mt-4 space-y-3">
+                      {/* Fila 1: Título y badge interactivo de zona en mapa */}
+                      <div className="flex items-center justify-between gap-2 w-full flex-wrap">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-8 h-8 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-700 shrink-0">
+                            <Home className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-bold text-slate-900">
+                              Servicio de Atención a Domicilio
+                            </h4>
+                            <p className="text-xs text-slate-500">
+                              El médico se traslada a tu ubicación o residencia
+                            </p>
+                          </div>
+                        </div>
+
+                        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-800 bg-emerald-100/70 px-3 py-1 rounded-full border border-emerald-200 shrink-0">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                          <span>Zona resaltada en mapa</span>
+                        </span>
+                      </div>
+
+                      {/* Fila 2: Cobertura desglosada por municipio y zonas */}
+                      <div className="space-y-2 pt-2 border-t border-slate-200/80">
+                        {doctor.atencion_domicilio.map((dom, dIdx) => {
+                          const zonasList = (dom.lad_zonas || '')
+                            .split(/[,;\n]+/)
+                            .map((z) => z.trim())
+                            .filter(Boolean);
+
+                          return (
+                            <div key={dIdx} className="space-y-1.5">
+                              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                                <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                <span>{dom.mun_descripcion || 'Ciudad de Guatemala'}</span>
+                                {dom.dep_descripcion && dom.dep_descripcion !== dom.mun_descripcion && (
+                                  <span className="text-[11px] text-slate-400 font-normal">
+                                    ({dom.dep_descripcion})
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Chips de Zonas */}
+                              <div className="flex flex-wrap gap-1.5 pl-5">
+                                {zonasList.length > 0 ? (
+                                  zonasList.map((zona, zIdx) => {
+                                    const cleanZ = zona.toLowerCase().startsWith('zona') ? zona : `Zona ${zona}`;
+                                    return (
+                                      <span
+                                        key={zIdx}
+                                        className="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-bold bg-white text-emerald-800 border border-emerald-200 shadow-2xs"
+                                      >
+                                        {cleanZ}
+                                      </span>
+                                    );
+                                  })
+                                ) : (
+                                  <span className="text-xs text-slate-500 italic">
+                                    Cobertura en todo el municipio
+                                  </span>
+                                )}
+                              </div>
+
+                              {dom.lad_observaciones && (
+                                <p className="text-xs text-slate-500 pl-5 italic">
+                                  Nota: {dom.lad_observaciones}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Fila 3: Botón directo para Agendar a Domicilio */}
+                      <div className="pt-2 flex items-center justify-between gap-2 border-t border-slate-200/80 flex-wrap">
+                        <span className="text-xs text-slate-500">
+                          Previa confirmación de dirección y disponibilidad
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onVisit?.(data);
+                            router.push(`/dashboard/agendar/${doctor.exp_codigo}?modalidad=domicilio`);
+                          }}
+                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-bold text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                        >
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span>Agendar a Domicilio</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : activeClinic ? (
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mt-4 space-y-3">
+                      {/* Fila 1: Nombre de la clínica + Chip de distancia */}
                       <div className="flex items-center justify-between gap-2 w-full">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <MapPin className="w-4 h-4 text-sky-600 shrink-0" />
-                          <h4 className="text-xs sm:text-sm font-bold text-slate-900 break-words whitespace-normal">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <MapPin className="w-4 h-4 text-[#11698E] shrink-0" />
+                          <h4 className="text-sm font-bold text-slate-900 break-words whitespace-normal">
                             {activeClinic.cli_descripcion || 'Clínica Principal'}
                           </h4>
                         </div>
 
                         {activeClinicDistanceFormatted && (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/60 shrink-0">
-                            <Navigation className="w-2.5 h-2.5 text-emerald-600" />
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200/70 shrink-0">
+                            <Navigation className="w-3 h-3 text-emerald-600" />
                             <span>{activeClinicDistanceFormatted}</span>
                           </span>
                         )}
                       </div>
 
-                      {/* Fila 2: Dirección completa y limpia abarcando todo el ancho */}
+                      {/* Fila 2: Dirección completa y limpia */}
                       {(() => {
                         const cleanZona = cleanZonaText(activeClinic.cli_zona);
                         const rawAddress = (activeClinic.cli_direccion_completa || '').trim();
@@ -653,14 +797,14 @@ export function DoctorCard({
                         }
 
                         return fullAddress ? (
-                          <p className="text-xs text-slate-600 break-words whitespace-normal leading-relaxed pl-5.5 w-full">
+                          <p className="text-xs text-slate-600 break-words whitespace-normal leading-relaxed pl-6 w-full">
                             {fullAddress}
                           </p>
                         ) : null;
                       })()}
 
-                      {/* Fila 3: Tres botones de acción en fila inferior exclusiva */}
-                      <div className="grid grid-cols-3 gap-1.5 w-full pt-1">
+                      {/* Fila 3: Tres botones de acción unificados */}
+                      <div className="grid grid-cols-3 gap-2 w-full pt-1">
                         {/* Botón Ver Horarios */}
                         {activeClinic.horarios_atencion && activeClinic.horarios_atencion.length > 0 ? (
                           <button
@@ -669,76 +813,71 @@ export function DoctorCard({
                               e.stopPropagation();
                               setIsHorariosModalOpen(true);
                             }}
-                            className="w-full h-8 px-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 active:scale-98 text-sky-700 text-[11px] font-bold transition-all border border-sky-200/80 cursor-pointer shadow-2xs flex items-center justify-center gap-1 whitespace-nowrap min-w-0"
+                            className="w-full h-9 px-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 active:scale-98 text-slate-700 text-xs font-bold transition-all shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer min-w-0"
                             title="Ver horarios de atención"
                           >
-                            <Clock className="w-3 h-3 text-sky-600 shrink-0" />
+                            <Clock className="w-3.5 h-3.5 text-[#11698E] shrink-0" />
                             <span className="truncate">Horarios ({activeClinic.horarios_atencion.length})</span>
                           </button>
                         ) : (
-                          <div className="w-full h-8 px-1.5 rounded-xl bg-slate-50 text-slate-400 text-[11px] font-medium border border-slate-100 flex items-center justify-center gap-1 whitespace-nowrap min-w-0">
-                            <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                          <div className="w-full h-9 px-2 rounded-xl bg-white/60 text-slate-400 text-xs font-medium border border-slate-200 flex items-center justify-center gap-1 min-w-0">
+                            <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                             <span className="truncate">Previa cita</span>
                           </div>
                         )}
 
-                        {/* Botón Google Maps */}
+                        {/* Botón Google Maps (Unificado) */}
                         {googleMapsUrl ? (
                           <a
                             href={googleMapsUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="w-full h-8 px-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-98 text-white text-[11px] font-bold shadow-2xs transition-all flex items-center justify-center gap-1 whitespace-nowrap min-w-0"
+                            className="w-full h-9 px-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 active:scale-98 text-xs font-bold transition-all shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer min-w-0"
                             title="Abrir en Google Maps"
                           >
-                            <Navigation className="w-2.5 h-2.5 fill-white text-white shrink-0" />
+                            <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none">
+                              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#EA4335" />
+                              <circle cx="12" cy="9" r="2.5" fill="#FFFFFF" />
+                            </svg>
                             <span className="truncate">Google Maps</span>
-                            <ExternalLink className="w-2.5 h-2.5 opacity-60 shrink-0" />
+                            <ExternalLink className="w-3 h-3 text-slate-400 shrink-0" />
                           </a>
                         ) : (
-                          <div className="w-full h-8 px-1.5 rounded-xl bg-slate-50 text-slate-400 text-[11px] font-medium border border-slate-100 flex items-center justify-center whitespace-nowrap min-w-0">
+                          <div className="w-full h-9 px-2 rounded-xl bg-white/60 text-slate-400 text-xs font-medium border border-slate-200 flex items-center justify-center min-w-0">
                             <span className="truncate">Sin Maps</span>
                           </div>
                         )}
 
-                        {/* Botón Waze */}
+                        {/* Botón Waze (Unificado en #eef2f6 text-[#11698E]) */}
                         {wazeUrl ? (
                           <a
                             href={wazeUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="w-full h-8 px-1.5 rounded-xl bg-[#33ccff] hover:bg-[#2bb8e6] active:scale-98 text-slate-900 text-[11px] font-bold shadow-2xs transition-all flex items-center justify-center gap-1 whitespace-nowrap min-w-0"
+                            className="w-full h-9 px-2 rounded-xl bg-[#eef2f6] text-[#11698E] hover:bg-blue-100 active:scale-98 text-xs font-bold transition-all shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer min-w-0"
                             title="Abrir en Waze"
                           >
-                            <Navigation className="w-2.5 h-2.5 text-slate-900 shrink-0" />
+                            <Navigation className="w-3.5 h-3.5 text-[#11698E] shrink-0" />
                             <span className="truncate">Waze</span>
-                            <ExternalLink className="w-2.5 h-2.5 opacity-60 shrink-0" />
+                            <ExternalLink className="w-3 h-3 text-[#11698E]/60 shrink-0" />
                           </a>
                         ) : (
-                          <div className="w-full h-8 px-1.5 rounded-xl bg-slate-50 text-slate-400 text-[11px] font-medium border border-slate-100 flex items-center justify-center whitespace-nowrap min-w-0">
+                          <div className="w-full h-9 px-2 rounded-xl bg-white/60 text-slate-400 text-xs font-medium border border-slate-200 flex items-center justify-center min-w-0">
                             <span className="truncate">Sin Waze</span>
                           </div>
                         )}
                       </div>
                     </div>
                   ) : (
-                    <div className="flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl bg-white border border-dashed border-sky-200 text-xs text-sky-800 font-medium text-center">
-                      <MapPin className="w-4 h-4 text-sky-500 shrink-0" />
-                      <span>Selecciona una sede arriba o en el mapa para ver horarios y ubicación</span>
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mt-3 flex items-center justify-center gap-2 text-xs text-slate-600 font-medium text-center">
+                      <MapPin className="w-4 h-4 text-[#11698E] shrink-0" />
+                      <span>Selecciona una sede o atención a domicilio para ver los detalles</span>
                     </div>
                   )}
                 </div>
-              ) : doctor.atencion_domicilio && doctor.atencion_domicilio.length > 0 ? (
-                <div className="bg-emerald-50/60 p-2.5 rounded-xl border border-emerald-200/80 flex items-start gap-2 text-xs">
-                  <Home className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                  <span className="font-bold text-emerald-900 shrink-0">Atención a Domicilio:</span>
-                  <span className="text-emerald-800 break-words whitespace-normal leading-relaxed">
-                    {doctor.atencion_domicilio.map((d) => [d.mun_descripcion, cleanZonasDomicilio(d.lad_zonas)].filter(Boolean).join(' - ')).join(' · ')}
-                  </span>
-                </div>
-              ) : null}
+              )}
             </div>
           </div>
         </div>
@@ -833,93 +972,135 @@ export function DoctorCard({
       </>
     );
   }
+  // ═════════════════════════════════════════════════════════════════════════════════
+  // VARIANT 2: PREMIUM LIGHT GLASSMORPHISM CARD
+  // ═════════════════════════════════════════════════════════════════════════════════
+  const isCardActive = isSelected || isHovered;
 
-  // ═════════════════════════════════════════════════════════════════════════════════
-  // VARIANT 2: COMPACT (MODERN UI FROM MARS REFACTORED CARD)
-  // ═════════════════════════════════════════════════════════════════════════════════
   return (
     <div
       id={`doctor-card-${data.doctor.exp_codigo}`}
       onClick={handleCardClick}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      className={`doctor-card group relative w-full max-w-[365px] mx-auto h-[480px] max-md:h-auto overflow-hidden bg-white rounded-2xl shadow-sm hover:shadow-md border border-slate-200 cursor-pointer flex flex-col md:block ${
-        isHovered ? 'ring-2 ring-blue-400/30 border-blue-400' : ''
-      }`}
+      className={`doctor-card group relative overflow-hidden rounded-3xl bg-white shadow-xl transition-all duration-150 ease-out z-0 w-full max-w-[365px] mx-auto cursor-pointer flex flex-col ${
+        isSelected
+          ? 'ring-2 ring-blue-500 shadow-blue-500/20'
+          : 'ring-1 ring-slate-200/80 hover:ring-2 hover:ring-blue-400 hover:shadow-2xl'
+      } ${isHovered && !isSelected ? 'ring-2 ring-blue-400 shadow-2xl' : ''}`}
     >
-      {/* 2. Imagen (Capa Fondo Arriba): h-[280px] */}
-      <div className="relative max-md:h-[280px] md:absolute md:top-0 md:left-0 w-full h-[280px] z-0 overflow-hidden bg-slate-100 shrink-0">
-        {/* Floating Experience Badge Top-Left */}
-        {doctor.exp_anios_experiencia ? (
-          <div className="absolute top-3 left-3 z-20 flex items-center gap-1 bg-white/95 backdrop-blur-md text-slate-800 px-2.5 py-0.5 rounded-full text-xs font-semibold shadow-xs">
-            <Award className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-            <span>{doctor.exp_anios_experiencia} años exp.</span>
+      {/* ── 1. FOTOGRAFÍA CON DEGRADADO SUAVE EN BASE ── */}
+      <div
+        className={`relative w-full shrink-0 overflow-hidden will-change-transform transition-all duration-150 ease-out ${
+          isCardActive ? 'h-52' : 'h-[254px] group-hover:h-52'
+        }`}
+      >
+
+        {/* Fotografía */}
+        {doctor.exp_foto_perfil ? (
+          <img
+            src={doctor.exp_foto_perfil}
+            alt={fullName}
+            className="absolute inset-0 w-full h-full object-cover object-top will-change-transform"
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-100">
+            <span className="text-6xl font-black text-slate-400">{initials}</span>
           </div>
-        ) : null}
+        )}
 
-        {/* Floating Actions Top-Right (Share + Favorite) */}
-        <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={handleShare}
-            className="p-1.5 rounded-full bg-black/40 backdrop-blur-xs text-white hover:text-sky-300 hover:bg-black/60 transition-all hover:scale-110 focus:outline-none cursor-pointer shadow-xs"
-            title="Compartir perfil"
-            aria-label="Compartir perfil"
-          >
-            <Share2 className="w-3.5 h-3.5 drop-shadow-xs" />
-          </button>
-
-          {titular && (
-            <button
-              type="button"
-              onClick={toggleFavorite}
-              className="p-1.5 rounded-full bg-black/40 backdrop-blur-xs transition-all hover:scale-110 focus:outline-none cursor-pointer shadow-xs hover:bg-black/60"
-              aria-label={isFavorito ? 'Quitar de favoritos' : 'Guardar en favoritos'}
-              title={isFavorito ? 'Quitar de favoritos' : 'Guardar en favoritos'}
-            >
-              <Heart
-                className={`w-3.5 h-3.5 transition-colors drop-shadow-xs ${
-                  isFavorito
-                    ? 'fill-rose-500 text-rose-500'
-                    : 'text-white fill-white/20 hover:text-rose-400'
-                }`}
-              />
-            </button>
+        {/* ── Badge Rating (Superior Izquierda) ── */}
+        <div className="absolute top-3 left-3 z-10">
+          {doctor.total_resenas > 0 && doctor.promedio_valoracion > 0 ? (
+            <div className="flex items-center gap-1 bg-black/50 backdrop-blur-md px-2.5 py-1 rounded-full text-xs font-semibold border border-white/10 shadow-lg">
+              <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400 shrink-0" />
+              <span className="font-bold text-white">{doctor.promedio_valoracion.toFixed(1)}</span>
+              <span className="text-[10px] text-white/80 font-normal">({doctor.total_resenas})</span>
+            </div>
+          ) : (
+            <div className="flex items-center text-xs font-semibold text-white/90 bg-black/50 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 shadow-lg">
+              Nuevo
+            </div>
           )}
         </div>
 
-        {/* Fotografía (w-full h-full object-cover) */}
-        {doctor.exp_foto_perfil ? (
-          <Image
-            src={doctor.exp_foto_perfil}
-            alt={fullName}
-            fill
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
-            className="w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-4xl font-black text-slate-300">
-            {initials}
-          </div>
-        )}
+        {/* ── Acciones Flotantes (Superior Derecha): Compartir + Favorito ── */}
+        <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={handleShare}
+                className="p-1.5 rounded-full bg-black/50 backdrop-blur-md border border-white/10 text-white/80 hover:text-sky-300 hover:bg-black/70 hover:border-sky-400/30 transition-colors focus:outline-none cursor-pointer shadow-md"
+                aria-label="Compartir perfil"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="left" className="text-xs">
+              Compartir perfil
+            </TooltipContent>
+          </Tooltip>
+
+          {titular && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={toggleFavorite}
+                  className="p-1.5 rounded-full bg-black/50 backdrop-blur-md border border-white/10 hover:bg-black/70 transition-colors focus:outline-none cursor-pointer shadow-md"
+                  aria-label={isFavorito ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+                >
+                  <Heart
+                    className={`w-3.5 h-3.5 transition-colors ${
+                      isFavorito
+                        ? 'fill-rose-500 text-rose-500'
+                        : 'text-white/80 fill-transparent hover:text-rose-400 hover:fill-rose-400/20'
+                    }`}
+                  />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="left" className="text-xs">
+                {isFavorito ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+
+        {/* ── Badge Precio (Inferior Derecha de la Foto) ── */}
+        <div className="absolute bottom-3 right-3 z-10">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-1 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full text-white border border-white/15 shadow-lg cursor-default select-none">
+                <span className="text-[10px] text-white/80 font-normal">Desde</span>
+                <span className="text-xs font-black text-white tracking-tight">
+                  {priceInfo.hasPrice ? `Q${priceInfo.price}` : 'Consultar'}
+                </span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              <span className="font-semibold block">Tarifa de consulta</span>
+              <span className="text-[10px] text-slate-400 block mt-0.5">
+                {priceInfo.hasPrice ? `Precio base desde Q${priceInfo.price}` : 'Precio a consultar con el médico'}
+              </span>
+            </TooltipContent>
+          </Tooltip>
+        </div>
       </div>
 
-      {/* 3. Contenedor de Textos (Capa Media - Animada) */}
-      <div className="relative md:absolute md:top-[280px] md:left-0 w-full h-auto md:h-[200px] bg-white p-5 flex flex-col justify-between transition-transform duration-300 md:group-hover:-translate-y-[64px] max-md:transform-none z-10">
-        {/* Viñeta de Ubicación arriba del bloque de contenido (aparece en hover) */}
-        <div className="absolute -top-3.5 left-4 sm:left-5 z-20 pointer-events-none opacity-0 group-hover:opacity-100 translate-y-1 group-hover:translate-y-0 transition-all duration-300">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-600 text-white shadow-md shadow-blue-500/25 border border-blue-500/30 text-xs font-bold backdrop-blur-md">
-            <MapPin className="w-3.5 h-3.5 text-white shrink-0" />
-            <span>Haz clic para ver la ubicación</span>
-          </span>
-        </div>
-        <div>
-          {/* Header: Nombre + Calificación */}
-          <div className="flex items-center justify-between gap-2 min-w-0">
-            <div className="min-w-0 flex-1">
+      {/* ── 2. SECCIÓN BLANCA: Información del doctor ── */}
+      <div
+        className={`px-4 pt-2.5 flex flex-col flex-1 justify-between transition-all duration-150 ease-out ${
+          isCardActive ? 'pb-1' : 'pb-2.5 group-hover:pb-1'
+        }`}
+      >
+
+        {/* Nombre + Indicador disponibilidad */}
+        <div className="flex items-center gap-2 min-w-0">
+          <Tooltip>
+            <TooltipTrigger asChild>
               <h3
-                className="text-base font-bold text-slate-900 leading-snug truncate hover:text-slate-700 transition-colors cursor-pointer"
-                title={fullDetailedName}
+                className="text-[16px] font-bold text-slate-900 leading-snug truncate hover:text-blue-600 transition-colors cursor-pointer"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleVisitProfile(e);
@@ -927,166 +1108,201 @@ export function DoctorCard({
               >
                 <HighlightText text={shortName} highlight={searchHighlight} />
               </h3>
-            </div>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              <span className="font-semibold block">{fullDetailedName}</span>
+              <span className="text-[10px] text-slate-400 block mt-0.5">Clic para ver perfil médico</span>
+            </TooltipContent>
+          </Tooltip>
 
-            {doctor.total_resenas > 0 && doctor.promedio_valoracion > 0 ? (
-              <div className="inline-flex items-center gap-1 shrink-0 bg-amber-50/90 px-2 py-0.5 rounded-lg border border-amber-200/60 text-xs">
-                <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400 shrink-0" />
-                <span className="font-bold text-slate-900">
-                  {doctor.promedio_valoracion.toFixed(1)}
-                </span>
-                <span className="text-[10px] text-slate-500">({doctor.total_resenas})</span>
-              </div>
-            ) : (
-              <span className="inline-flex items-center text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg shrink-0">
-                Nuevo
-              </span>
-            )}
-          </div>
-
-          {/* Fila 2: Especialidad */}
-          <div className="mt-0.5">
-            <p className="text-xs sm:text-sm font-semibold text-blue-600 leading-tight truncate">
-              <HighlightText
-                text={data.matchedSpecialty || specialtyPreview[0] || 'Médico Especialista'}
-                highlight={searchHighlight}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className={`w-2 h-2 rounded-full shrink-0 ring-2 cursor-pointer transition-transform hover:scale-125 ${
+                  isAvailableToday
+                    ? 'bg-emerald-500 ring-emerald-500/20'
+                    : 'bg-slate-400 ring-slate-400/20'
+                }`}
               />
-              {doctor.exp_colegiado_gt && (
-                <span className="text-slate-400 font-normal ml-1.5 text-xs">
-                  · Col. {doctor.exp_colegiado_gt}
-                </span>
-              )}
-            </p>
-          </div>
-
-          {/* Ubicación: Ícono + Clínica/Sede */}
-          {sedes.length > 0 && (
-            <div className="flex items-center gap-1.5 text-xs text-slate-500 truncate mt-1">
-              {sedes[0].isDomicilio ? (
-                <Home className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              ) : (
-                <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              )}
-              <span className="truncate" title={sedes[0].nombre}>
-                <HighlightText text={sedes[0].nombre} highlight={searchHighlight} />
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              <span className="font-semibold flex items-center gap-1.5">
+                <span className={`w-1.5 h-1.5 rounded-full ${isAvailableToday ? 'bg-emerald-400' : 'bg-slate-400'}`} />
+                {isAvailableToday ? 'Disponible para atención hoy' : 'Atención con cita previa'}
               </span>
-              {sedes.length > 1 && (
-                <span
-                  className="text-blue-600 font-medium shrink-0 ml-0.5"
-                  title={sedes.slice(1).map((s) => s.nombre).join(' • ')}
-                >
-                  +{sedes.length - 1} sedes
-                </span>
-              )}
-            </div>
-          )}
+            </TooltipContent>
+          </Tooltip>
         </div>
 
-        <div>
-          {/* Fila de Seguros y Precio */}
-          <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-            <span className="text-sm font-bold text-slate-900">
-              {priceInfo.hasPrice ? priceInfo.label : 'Consultar precio'}
-            </span>
+        {/* Especialidad */}
+        <p className="text-xs font-semibold text-blue-600 leading-tight truncate mt-0.5">
+          <HighlightText
+            text={data.matchedSpecialty || specialtyPreview[0] || 'Médico Especialista'}
+            highlight={searchHighlight}
+          />
+        </p>
 
+        {/* Fila intermedia: Idiomas + Aseguradoras (Izquierda) | Modalidades (Derecha) */}
+        <div className="flex items-center justify-between mt-2 h-5">
+          {/* Izquierda: Idiomas + Aseguradoras */}
+          <div className="flex items-center gap-2">
+            {/* Idiomas */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-1 text-[10px] text-slate-500 font-semibold cursor-default hover:text-slate-700 transition-colors">
+                  <Globe className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span>{languagesLabel}</span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">
+                <span className="font-semibold block">Idiomas de atención</span>
+                <span className="text-[10px] text-slate-400 block mt-0.5">
+                  {languages.length > 0 ? languages.join(', ') : 'Español'}
+                </span>
+              </TooltipContent>
+            </Tooltip>
+
+            {/* Aseguradoras */}
             {sortedAseguradoras.length > 0 && (
-              <div
-                className="flex -space-x-2 items-center"
-                title={`Aseguradoras: ${sortedAseguradoras.map((a) => a.aseguradora).join(', ')}`}
-              >
-                {sortedAseguradoras.slice(0, 4).map((asg, idx) => (
-                  <div
-                    key={idx}
-                    className="w-6 h-6 border-2 border-white rounded-full bg-white flex items-center justify-center shrink-0 shadow-xs overflow-hidden"
-                  >
-                    {asg.imagen ? (
-                      <img
-                        src={asg.imagen}
-                        alt={asg.aseguradora}
-                        className="w-full h-full object-contain p-0.5"
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-1 cursor-default">
+                    {sortedAseguradoras.slice(0, 3).map((asg, idx) => (
+                      <InsuranceLogoBadge
+                        key={idx}
+                        asg={asg}
+                        isHighlighted={selectedInsurances.includes(asg.aseguradora)}
+                        size="xs"
                       />
-                    ) : (
-                      <span className="text-[9px] font-bold text-slate-600">
-                        {(asg.aseguradora || 'A')[0].toUpperCase()}
-                      </span>
+                    ))}
+                    {sortedAseguradoras.length > 3 && (
+                      <div className="w-4.5 h-4.5 border border-slate-200/90 dark:border-slate-700 rounded-[4px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[8px] font-bold flex items-center justify-center shrink-0 shadow-2xs">
+                        +{sortedAseguradoras.length - 3}
+                      </div>
                     )}
                   </div>
-                ))}
-                {sortedAseguradoras.length > 4 && (
-                  <div className="w-6 h-6 border-2 border-white rounded-full bg-slate-100 text-slate-600 text-[9px] font-bold flex items-center justify-center shrink-0 shadow-xs">
-                    +{sortedAseguradoras.length - 4}
-                  </div>
-                )}
-              </div>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs max-w-xs">
+                  <span className="font-semibold block">Aseguradoras aceptadas</span>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">
+                    {sortedAseguradoras.map((a) => a.aseguradora).join(', ')}
+                  </span>
+                </TooltipContent>
+              </Tooltip>
             )}
           </div>
 
-          {/* Modalidades: Solo íconos limpios SIN bordes de colores */}
-          <div className="flex items-center gap-1.5 mt-1.5">
+          {/* Derecha: Modalidades */}
+          <div className="flex items-center gap-1 text-blue-600">
             {hasPresencial && (
-              <span
-                title="Atención Presencial en Clínica"
-                className="inline-flex items-center justify-center p-1 rounded-md bg-sky-50 text-sky-600"
-              >
-                <MapPin className="w-3.5 h-3.5" />
-              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="p-1 rounded-md hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-700 transition-colors flex items-center justify-center cursor-default">
+                    <MapPin className="w-3.5 h-3.5" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  <span className="font-semibold block">Atención Presencial</span>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">Consulta médica en clínica</span>
+                </TooltipContent>
+              </Tooltip>
             )}
             {hasVirtual && (
-              <span
-                title="Consulta Virtual"
-                className="inline-flex items-center justify-center p-1 rounded-md bg-indigo-50 text-indigo-600"
-              >
-                <Video className="w-3.5 h-3.5" />
-              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="p-1 rounded-md hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-700 transition-colors flex items-center justify-center cursor-default">
+                    <Video className="w-3.5 h-3.5" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  <span className="font-semibold block">Consulta Virtual</span>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">Videollamada / Telemedicina</span>
+                </TooltipContent>
+              </Tooltip>
             )}
             {hasDomicilio && (
-              <span
-                title="Atención a Domicilio"
-                className="inline-flex items-center justify-center p-1 rounded-md bg-emerald-50 text-emerald-600"
-              >
-                <Home className="w-3.5 h-3.5" />
-              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="p-1 rounded-md hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-700 transition-colors flex items-center justify-center cursor-default">
+                    <Home className="w-3.5 h-3.5" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  <span className="font-semibold block">Atención a Domicilio</span>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">Visita médica en casa</span>
+                </TooltipContent>
+              </Tooltip>
             )}
-          </div>
-
-          {/* Fila 2 de Detalles: Idiomas a la izquierda y Disponibilidad a la derecha */}
-          <div className="flex items-center justify-between text-xs text-slate-500 mt-1.5">
-            {/* Idiomas a la izquierda */}
-            <div className="flex items-center gap-1.5" title={`Idiomas: ${languages.join(', ') || 'Español'}`}>
-              <Globe className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span>{languagesLabel}</span>
-            </div>
-
-            {/* Disponibilidad a la derecha */}
-            <div className="flex items-center gap-1.5 shrink-0">
-              <div className="w-2 h-2 bg-emerald-500 rounded-full shrink-0" />
-              <span>{isAvailableToday ? 'Disponible Hoy' : 'Con Cita'}</span>
-            </div>
           </div>
         </div>
       </div>
 
-      {/* 4. Contenedor de Botones (Capa Fondo Abajo) */}
-      <div className="relative md:absolute md:bottom-0 md:left-0 w-full h-auto md:h-[64px] px-5 pb-5 pt-1 flex gap-2 z-0 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-300 opacity-100 bg-white">
-        <button
-          type="button"
-          onClick={handleBookAppointment}
-          className="w-[60%] h-9.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
-          title="Agendar Cita con este especialista"
-        >
-          <Calendar className="w-3.5 h-3.5 shrink-0" />
-          <span className="truncate">Agendar Cita</span>
-        </button>
+      {/* ── 3. BARRA DE ACCIONES FULL-BLEED (PROGRESIÓN AZUL) ── */}
+      <div
+        className={`flex w-full overflow-hidden rounded-b-3xl transition-all duration-150 ease-out ${
+          isCardActive
+            ? 'h-11 max-h-11 mt-2 opacity-100 pointer-events-auto'
+            : 'h-0 max-h-0 mt-0 opacity-0 pointer-events-none group-hover:h-11 group-hover:max-h-11 group-hover:mt-2 group-hover:opacity-100 group-hover:pointer-events-auto'
+        }`}
+      >
+        {/* 1. Botón Perfil (Claro/Secundario - Quita peso visual a la izquierda) */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={handleVisitProfile}
+              className="flex-1 bg-blue-200 hover:bg-blue-300 text-[#19456B] border-r border-[#11698E]/20 flex items-center justify-center gap-1.5 text-[11px] font-bold transition-colors cursor-pointer"
+              aria-label="Ver perfil completo"
+            >
+              <User className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">Ver </span>
+              <span>Perfil</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="text-xs">
+            Ver perfil completo del especialista
+          </TooltipContent>
+        </Tooltip>
 
-        <button
-          type="button"
-          onClick={handleVisitProfile}
-          className="w-[40%] h-9.5 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 font-semibold text-xs flex items-center justify-center gap-1 border border-slate-200 transition-all cursor-pointer"
-          title="Ver perfil completo"
-        >
-          <span className="truncate">Ver Perfil</span>
-          <ChevronRight className="w-3.5 h-3.5 shrink-0 text-slate-400" />
-        </button>
+        {/* 2. Botón Sedes (Azul Medio - #11698E) */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleCardClick();
+              }}
+              className="flex-1 bg-[#11698E] hover:bg-[#0f5a7a] text-white border-r border-[#19456B]/20 flex items-center justify-center gap-1.5 text-[11px] font-bold transition-colors cursor-pointer"
+            >
+              <MapPin className="w-3.5 h-3.5 shrink-0" />
+              <span>{sedes.length > 1 ? `${sedes.length} sedes` : '1 sede'}</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="text-xs max-w-xs">
+            <span className="font-semibold block">Ubicaciones y Sedes</span>
+            <span className="text-[10px] text-slate-400 block mt-0.5">
+              {sedes.map((s) => s.nombre).join(' • ')}
+            </span>
+          </TooltipContent>
+        </Tooltip>
+
+        {/* 3. Botón Agendar (Azul Oscuro/Primario - #19456B) */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={handleBookAppointment}
+              className="flex-1 bg-[#19456B] hover:bg-[#10304a] text-white flex items-center justify-center gap-1.5 text-[11px] font-bold transition-colors cursor-pointer"
+            >
+              <CalendarDays className="w-3.5 h-3.5 shrink-0" />
+              <span>Agendar</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="text-xs">
+            Agendar cita con el especialista
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       <ShareDoctorModal

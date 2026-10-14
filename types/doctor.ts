@@ -83,10 +83,14 @@ export type DoctorClinica = {
 export type DoctorServicio = {
   syp_codigo?: number | null;
   servicio: string | null;
-  syp_costo_sin_iva: number | null;
-  syp_costo_iva: number | null;
+  syp_costo_sin_iva?: number | null;
+  syp_costo_iva?: number | null;
   syp_costo_total: number | null;
-  syp_observaciones: string | null;
+  syp_observaciones?: string | null;
+  cli_descripcion?: string | null;
+  cli_codigo?: number | null;
+  modalidad?: 'presencial' | 'domicilio' | 'virtual' | string | null;
+  zona?: string | null;
 };
 
 // ─── Atención a domicilio ────────────────────────────────────────────────────
@@ -97,6 +101,7 @@ export type DoctorAtencionDomicilio = {
   pai_descripcion: string | null;
   dep_descripcion: string | null;
   mun_descripcion: string | null;
+  lad_precio_base?: number | null;
 };
 
 // ─── Formación y trayectoria ─────────────────────────────────────────────────
@@ -234,32 +239,27 @@ export function buildDoctorShortName(
 
 /**
  * Obtiene el precio más bajo real del médico:
- * 1. Prioriza el servicio con menor costo total positivo (syp_costo_total > 0).
- * 2. Si no tiene servicios específicos, busca el precio base de clínica positivo (mcl_precio_base > 0).
- * 3. Si no tiene precios establecidos, devuelve 0.
+ * Considera el mínimo entre todos los servicios disponibles y los precios base de sus clínicas.
  */
 export function getDoctorLowestPrice(doctor: DoctorResponse): number | null {
   const preciosServicios = (doctor.servicios || [])
     .map((s) => s.syp_costo_total)
     .filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0);
 
-  if (preciosServicios.length > 0) {
-    return Math.min(...preciosServicios);
-  }
-
   const preciosClinicas = (doctor.clinicas || [])
     .map((c) => c.mcl_precio_base)
     .filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0);
 
-  if (preciosClinicas.length > 0) {
-    return Math.min(...preciosClinicas);
+  const allPrices = [...preciosServicios, ...preciosClinicas];
+  if (allPrices.length > 0) {
+    return Math.min(...allPrices);
   }
 
   return 0;
 }
 
 /**
- * Genera la etiqueta formateada para mostrar en tarjetas, mapas y perfiles.
+ * Genera la etiqueta formateada general del médico para mostrar en tarjetas iniciales y mapas.
  */
 export function getDoctorPriceDisplay(doctor: DoctorResponse): {
   price: number;
@@ -268,10 +268,11 @@ export function getDoctorPriceDisplay(doctor: DoctorResponse): {
 } {
   const price = getDoctorLowestPrice(doctor);
   if (price !== null && price > 0) {
+    const rounded = Math.round(price);
     return {
-      price,
+      price: rounded,
       hasPrice: true,
-      label: `Desde Q${new Intl.NumberFormat('es-GT').format(price)}`,
+      label: `Desde Q${new Intl.NumberFormat('es-GT').format(rounded)}`,
     };
   }
   return {
@@ -279,6 +280,226 @@ export function getDoctorPriceDisplay(doctor: DoctorResponse): {
     hasPrice: false,
     label: 'Precio no establecido',
   };
+}
+
+/**
+ * Obtiene el precio más bajo para una ubicación específica (clínica física o atención a domicilio)
+ * o el precio general si no hay una ubicación seleccionada.
+ */
+export function getDoctorLocationPrice(
+  doctor: DoctorResponse,
+  selectedClinicIndex?: number | null
+): {
+  price: number;
+  hasPrice: boolean;
+  label: string;
+  locationName: string;
+} {
+  // 1. Caso Atención a Domicilio seleccionada (índice -1)
+  if (selectedClinicIndex === -1) {
+    const dom = doctor.atencion_domicilio?.[0];
+    const domServices = (doctor.servicios || []).filter(
+      (s) => (s as any).modalidad === 'domicilio' || (s.servicio || '').toLowerCase().includes('domicilio')
+    );
+    const domPrices = domServices
+      .map((s) => s.syp_costo_total)
+      .filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0);
+
+    let price = 0;
+    if (dom?.lad_precio_base && dom.lad_precio_base > 0) {
+      price = Math.round(dom.lad_precio_base);
+    } else if (domPrices.length > 0) {
+      price = Math.round(Math.min(...domPrices));
+    } else {
+      // Tarifa estimada de atención a domicilio: precio base con suplemento estándar de traslado
+      const basePrices = (doctor.clinicas || [])
+        .map((c) => c.mcl_precio_base)
+        .filter((p): p is number => typeof p === 'number' && p > 0);
+      const base = basePrices.length > 0 ? Math.max(...basePrices) : (getDoctorLowestPrice(doctor) || 300);
+      price = Math.round((base * 1.15) / 10) * 10;
+    }
+
+    return {
+      price,
+      hasPrice: price > 0,
+      label: price > 0 ? `Desde Q${new Intl.NumberFormat('es-GT').format(price)}` : 'Tarifa a convenir',
+      locationName: 'A Domicilio',
+    };
+  }
+
+  // 2. Caso Clínica / Sede específica seleccionada (índice >= 0)
+  if (
+    typeof selectedClinicIndex === 'number' &&
+    selectedClinicIndex >= 0 &&
+    doctor.clinicas?.[selectedClinicIndex]
+  ) {
+    const clinic = doctor.clinicas[selectedClinicIndex];
+    const clinicName = (clinic.cli_descripcion || '').trim().toLowerCase();
+
+    // Buscar si hay servicios específicamente catalogados para esta sede
+    const clinicServices = (doctor.servicios || []).filter((s) => {
+      const desc = ((s as any).cli_descripcion || s.syp_observaciones || '').trim().toLowerCase();
+      return desc && clinicName && desc.includes(clinicName);
+    });
+
+    const clinicServicePrices = clinicServices
+      .map((s) => s.syp_costo_total)
+      .filter((p): p is number => typeof p === 'number' && p > 0);
+
+    const candidates = [...clinicServicePrices];
+    if (typeof clinic.mcl_precio_base === 'number' && clinic.mcl_precio_base > 0) {
+      candidates.push(clinic.mcl_precio_base);
+    }
+
+    if (candidates.length > 0) {
+      const price = Math.round(Math.min(...candidates));
+      return {
+        price,
+        hasPrice: true,
+        label: `Desde Q${new Intl.NumberFormat('es-GT').format(price)}`,
+        locationName: clinic.cli_descripcion || 'Sede seleccionada',
+      };
+    }
+  }
+
+  // 3. Fallback: Precio general más bajo del médico
+  const generalPrice = getDoctorLowestPrice(doctor) || 0;
+  const rounded = Math.round(generalPrice);
+  return {
+    price: rounded,
+    hasPrice: rounded > 0,
+    label: rounded > 0 ? `Desde Q${new Intl.NumberFormat('es-GT').format(rounded)}` : 'Precio no establecido',
+    locationName: 'Todas las sedes',
+  };
+}
+
+export type LocationServicesGroup = {
+  id: string;
+  name: string;
+  type: 'clinica' | 'domicilio';
+  zona?: string | null;
+  basePrice?: number | null;
+  address?: string | null;
+  services: DoctorServicio[];
+};
+
+/**
+ * Organiza y adapta los servicios del médico separándolos por ubicación (clínicas y domicilio).
+ * Si la base de datos no tiene una asignación directa por sede, calcula y segmenta los servicios
+ * respetando el mcl_precio_base de cada clínica y la tarifa de atención a domicilio.
+ */
+export function getDoctorGroupedServices(doctor: DoctorResponse): LocationServicesGroup[] {
+  const groups: LocationServicesGroup[] = [];
+  const clinicas = doctor.clinicas || [];
+  const hasDomicilio = !!(doctor.atencion_domicilio && doctor.atencion_domicilio.length > 0);
+  const rawServices = doctor.servicios || [];
+
+  // 1. Grupos de sedes físicas (Hospitales y Clínicas)
+  clinicas.forEach((cli, idx) => {
+    const clinicName = cli.cli_descripcion || `Sede ${idx + 1}`;
+    const clinicLower = clinicName.toLowerCase();
+    const basePrice = cli.mcl_precio_base || getDoctorLowestPrice(doctor) || 250;
+
+    // Servicios explícitamente asignados a esta sede
+    let clinicServices = rawServices.filter((s) => {
+      const desc = ((s as any).cli_descripcion || s.syp_observaciones || '').toLowerCase();
+      return desc && desc.includes(clinicLower);
+    });
+
+    // Si los servicios en DB no tienen sede asignada, derivamos los servicios adaptados para esta sede
+    if (clinicServices.length === 0 && rawServices.length > 0) {
+      const globalBase = getDoctorLowestPrice(doctor) || basePrice;
+      const ratio = globalBase > 0 ? basePrice / globalBase : 1;
+
+      clinicServices = rawServices.map((s, sIdx) => {
+        const rawCost = s.syp_costo_total || basePrice;
+        const isGeneral = sIdx === 0 || (s.servicio || '').toLowerCase().includes('consulta') || (s.servicio || '').toLowerCase().includes('rutina');
+        const finalCost = isGeneral ? basePrice : Math.round((rawCost * ratio) / 10) * 10;
+
+        return {
+          ...s,
+          syp_codigo: s.syp_codigo ? s.syp_codigo * 100 + idx : (idx + 1) * 1000 + sIdx,
+          syp_costo_total: finalCost,
+          cli_descripcion: clinicName,
+          modalidad: 'presencial',
+        };
+      });
+    }
+
+    // Asegurar que exista al menos el servicio de consulta médica en esta sede
+    if (clinicServices.length === 0) {
+      clinicServices.push({
+        syp_codigo: (idx + 1) * 1000,
+        servicio: `Consulta Médica General`,
+        syp_costo_total: basePrice,
+        syp_costo_sin_iva: basePrice,
+        syp_costo_iva: 0,
+        syp_observaciones: cli.cli_direccion_completa ? `${cli.cli_direccion_completa} (${cleanZonaText(cli.cli_zona)})` : 'Atención presencial en consultorio',
+        cli_descripcion: clinicName,
+        modalidad: 'presencial',
+      });
+    }
+
+    groups.push({
+      id: `clinica-${idx}`,
+      name: clinicName,
+      type: 'clinica',
+      zona: cleanZonaText(cli.cli_zona),
+      basePrice: Math.round(basePrice),
+      address: cli.cli_direccion_completa || undefined,
+      services: clinicServices,
+    });
+  });
+
+  // 2. Grupo de atención a domicilio
+  if (hasDomicilio) {
+    const dom = doctor.atencion_domicilio[0];
+    const zonasStr = cleanZonasDomicilio(dom?.lad_zonas).replace(/[()]/g, '');
+    const highestClinicBase = Math.max(...clinicas.map((c) => c.mcl_precio_base || 0), getDoctorLowestPrice(doctor) || 250);
+    const domBasePrice = dom?.lad_precio_base || Math.round((highestClinicBase * 1.15) / 10) * 10;
+
+    let domServices = rawServices.filter(
+      (s) => (s as any).modalidad === 'domicilio' || (s.servicio || '').toLowerCase().includes('domicilio')
+    );
+
+    if (domServices.length === 0) {
+      domServices = [
+        {
+          syp_codigo: 9001,
+          servicio: `Consulta Médica a Domicilio`,
+          syp_costo_total: domBasePrice,
+          syp_costo_sin_iva: domBasePrice,
+          syp_costo_iva: 0,
+          syp_observaciones: zonasStr ? `Cobertura en: ${zonasStr}` : 'Visita y evaluación médica a domicilio',
+          cli_descripcion: 'A Domicilio',
+          modalidad: 'domicilio',
+          zona: dom?.lad_zonas || undefined,
+        },
+        ...rawServices.slice(1, 4).map((s, sIdx) => ({
+          ...s,
+          syp_codigo: 9002 + sIdx,
+          servicio: `${s.servicio} a Domicilio`,
+          syp_costo_total: Math.round(((s.syp_costo_total || domBasePrice) * 1.15) / 10) * 10,
+          syp_observaciones: zonasStr ? `Atención a domicilio en ${zonasStr}` : s.syp_observaciones,
+          cli_descripcion: 'A Domicilio',
+          modalidad: 'domicilio',
+          zona: dom?.lad_zonas || undefined,
+        })),
+      ];
+    }
+
+    groups.push({
+      id: 'domicilio',
+      name: 'A Domicilio',
+      type: 'domicilio',
+      zona: zonasStr,
+      basePrice: domBasePrice,
+      address: zonasStr ? `Zonas de cobertura: ${zonasStr}` : 'Atención médica en tu domicilio',
+      services: domServices,
+    });
+  }
+
+  return groups;
 }
 
 // ─── Helpers de formato de ubicación y zonas ─────────────────────────────────

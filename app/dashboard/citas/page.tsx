@@ -1,12 +1,13 @@
 'use client';
 
 import { Suspense, useState, useMemo, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   CalendarDays,
   Filter,
+  Search,
   Loader2,
   MapPin,
   Monitor,
@@ -41,6 +42,15 @@ import {
   Activity,
   Building2,
   BookOpen,
+  CalendarClock,
+  MoreVertical,
+  Printer,
+  Plus,
+  Star,
+  Unlink,
+  MoreHorizontal,
+  FolderPlus,
+  FolderMinus,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -70,10 +80,12 @@ import { buildDoctorFullName } from '@/types/doctor';
 import { AnimatedModal } from '@/components/animated-modal';
 import { CitaCard } from '@/components/cita-card';
 import { ModalResponderIntercambio } from '@/components/citas/ModalResponderIntercambio';
-import { Plus, FolderPlus, FolderMinus } from 'lucide-react';
 import { toast } from 'sonner';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { withProgress } from '@/lib/request-handler';
+import { ModalResenaMinimalista, ModalVerResena } from '@/components/citas/modal-resena-minimalista';
+import { CitaDetailDrawer } from '@/components/citas/cita-detail-drawer';
+import { imprimirCitaPdf } from '@/lib/imprimir-cita';
 
 const NAV_LINKS = [
   { href: '/dashboard', label: 'Inicio' },
@@ -123,7 +135,7 @@ function getStatusBadge(estado: CitaEstado) {
         </span>
       );
     case 'completada':
-      return <span className="bg-slate-100 text-slate-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide border border-slate-300">Completada</span>;
+      return <span className="bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide border border-emerald-200/80 dark:border-emerald-800/60">Completada</span>;
     case 'cancelada':
       return <span className="bg-rose-50 text-rose-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide border border-rose-200">Cancelada</span>;
     case 'rechazada':
@@ -331,9 +343,74 @@ function CitasContent() {
     return [...citasData].sort((a, b) => new Date(b.ctaFecha).getTime() - new Date(a.ctaFecha).getTime());
   }, [citasData]);
 
+  const searchParams = useSearchParams();
+
   // UI State
   const [tabActual, setTabActual] = useState<'proximas' | 'historial'>('proximas');
   const [selectedPacienteId, setSelectedPacienteId] = useState<string | null>(null);
+  const [citaParaResenar, setCitaParaResenar] = useState<CitaListDto | null>(null);
+  const [citaParaVerResena, setCitaParaVerResena] = useState<CitaListDto | null>(null);
+  const [busquedaTexto, setBusquedaTexto] = useState<string>('');
+
+  const updateUrlState = (paramsToUpdate: { pacienteId?: string | null; tab?: string; citaId?: string | null }) => {
+    if (typeof window === 'undefined') return;
+    const currentParams = new URLSearchParams(window.location.search);
+
+    if (paramsToUpdate.pacienteId !== undefined) {
+      if (paramsToUpdate.pacienteId) {
+        currentParams.set('pacienteId', paramsToUpdate.pacienteId);
+      } else {
+        currentParams.delete('pacienteId');
+        currentParams.delete('paciente');
+      }
+    }
+
+    if (paramsToUpdate.tab !== undefined) {
+      if (paramsToUpdate.tab) {
+        currentParams.set('tab', paramsToUpdate.tab);
+      } else {
+        currentParams.delete('tab');
+      }
+    }
+
+    if (paramsToUpdate.citaId !== undefined) {
+      if (paramsToUpdate.citaId) {
+        currentParams.set('citaId', paramsToUpdate.citaId);
+      } else {
+        currentParams.delete('citaId');
+        currentParams.delete('cita');
+        currentParams.delete('codCta');
+        currentParams.delete('ctaCodigo');
+      }
+    }
+
+    const queryStr = currentParams.toString();
+    const newUrl = queryStr ? `${window.location.pathname}?${queryStr}` : window.location.pathname;
+    window.history.replaceState(null, '', newUrl);
+  };
+
+  const handleSelectPaciente = (pacId: string, initialTab?: 'proximas' | 'historial') => {
+    setSelectedPacienteId(pacId);
+    if (initialTab) {
+      setTabActual(initialTab);
+      updateUrlState({ pacienteId: pacId, tab: initialTab });
+    } else {
+      updateUrlState({ pacienteId: pacId, tab: tabActual });
+    }
+  };
+
+  const handleVolverPacientes = () => {
+    setSelectedPacienteId(null);
+    setBusquedaTexto('');
+    updateUrlState({ pacienteId: null, citaId: null });
+  };
+
+  const handleTabChange = (newTab: 'proximas' | 'historial') => {
+    setTabActual(newTab);
+    updateUrlState({ tab: newTab });
+  };
+  const [isFiltrosPopoverOpen, setIsFiltrosPopoverOpen] = useState(false);
+  const filtrosPopoverRef = useRef<HTMLDivElement>(null);
   const [medicoSeleccionado, setMedicoSeleccionado] = useState<string>('');
   const [grupoSeleccionado, setGrupoSeleccionado] = useState<string>('');
   const [modalidadSeleccionada, setModalidadSeleccionada] = useState<string>('');
@@ -381,8 +458,24 @@ function CitasContent() {
     if (tabActual === 'proximas' && quickFilter !== 'todas') count++;
     if (medicoSeleccionado !== '') count++;
     if (grupoSeleccionado !== '') count++;
+    if (modalidadSeleccionada !== '') count++;
+    if (busquedaTexto !== '') count++;
     return count;
-  }, [viewFilter, quickFilter, medicoSeleccionado, grupoSeleccionado, tabActual]);
+  }, [viewFilter, quickFilter, medicoSeleccionado, grupoSeleccionado, modalidadSeleccionada, busquedaTexto, tabActual]);
+
+  // Cerrar popover de filtros al hacer clic fuera
+  useEffect(() => {
+    if (!isFiltrosPopoverOpen) return;
+    function handleClickOutside(event: MouseEvent) {
+      if (filtrosPopoverRef.current && !filtrosPopoverRef.current.contains(event.target as Node)) {
+        setIsFiltrosPopoverOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isFiltrosPopoverOpen]);
 
   useEffect(() => {
     if (!isFiltersOpen) return;
@@ -563,12 +656,71 @@ function CitasContent() {
     return Array.from(map.values());
   }, [pacientesUsuario, pacientesSeleccion, citasConTemas]);
 
-  // Auto-seleccionar paciente si la cuenta solo tiene un paciente (ej. cuenta independizada o individual)
+  // Sincronización segura de URL al montar / recibir parámetros (enlaces de correos con citaId o pacienteId)
+  const urlHandledRef = useRef(false);
+
   useEffect(() => {
+    if (loadingCitas || loadingPacientes) return;
+    if (urlHandledRef.current) return;
+
+    const urlCitaId = searchParams.get('citaId') || searchParams.get('cita') || searchParams.get('codCta') || searchParams.get('ctaCodigo');
+    const urlPacId = searchParams.get('pacienteId') || searchParams.get('paciente');
+    const urlTab = searchParams.get('tab');
+    const urlResena = searchParams.get('resena') || searchParams.get('review');
+    const urlBuscar = searchParams.get('q') || searchParams.get('search') || searchParams.get('buscar');
+
+    if (urlCitaId) {
+      const citaEncontrada = citas.find(
+        (c) => c.ctaCodigo?.toLowerCase() === urlCitaId.toLowerCase() || String(c.ctaCodigo) === urlCitaId
+      );
+
+      if (citaEncontrada) {
+        urlHandledRef.current = true;
+        setSelectedPacienteId(citaEncontrada.ctaCodpac);
+        const cleanEst = (citaEncontrada.ctaEstado || '').toLowerCase().trim();
+        const isPast = isCitaPasada(citaEncontrada.ctaFecha, citaEncontrada.ctaHora);
+        const isHist = ['cancelada', 'no_asistio', 'completada', 'finalizada', 'realizada'].includes(cleanEst) || isPast;
+        const targetTab: 'proximas' | 'historial' = isHist ? 'historial' : 'proximas';
+        setTabActual(targetTab);
+
+        setBusquedaTexto(citaEncontrada.ctaCodigo);
+        updateUrlState({ pacienteId: citaEncontrada.ctaCodpac, tab: targetTab, citaId: citaEncontrada.ctaCodigo });
+
+        const yaTiene = typeof citaEncontrada.ctaCalificacion === 'number' && citaEncontrada.ctaCalificacion > 0;
+        if (urlResena || targetTab === 'historial') {
+          if (!yaTiene) {
+            setCitaParaResenar(citaEncontrada);
+          } else {
+            setCitaParaVerResena(citaEncontrada);
+          }
+        }
+        return;
+      } else if (citas.length > 0) {
+        toast.error('No se encontró la cita especificada o no pertenece a tu cuenta.');
+      }
+    }
+
+    if (urlPacId) {
+      const esValido = codigosPacientes.includes(urlPacId);
+      if (esValido) {
+        urlHandledRef.current = true;
+        setSelectedPacienteId(urlPacId);
+        if (urlTab === 'historial' || urlTab === 'proximas') {
+          setTabActual(urlTab);
+        }
+        if (urlBuscar) {
+          setBusquedaTexto(urlBuscar);
+        }
+        return;
+      }
+    }
+
+    // Auto-seleccionar paciente si la cuenta solo tiene un paciente (ej. cuenta independizada o individual)
     if (pacientesTabsList.length === 1 && !selectedPacienteId) {
       setSelectedPacienteId(pacientesTabsList[0].pacCodigo);
+      updateUrlState({ pacienteId: pacientesTabsList[0].pacCodigo });
     }
-  }, [pacientesTabsList, selectedPacienteId]);
+  }, [citas, codigosPacientes, loadingCitas, loadingPacientes, pacientesTabsList, searchParams, selectedPacienteId]);
 
 
   const medicosUnicos = useMemo(() => {
@@ -602,6 +754,8 @@ function CitasContent() {
     setGrupoSeleccionado('');
     setMedicoSeleccionado('');
     setModalidadSeleccionada('');
+    setBusquedaTexto('');
+    setIsFiltrosPopoverOpen(false);
   }, [selectedPacienteId]);
 
   // Citas categorizadas para el Tab actual y Filtros activos
@@ -623,6 +777,29 @@ function CitasContent() {
     ];
 
     return citasConTemas.filter((c) => {
+      // Filtro de Búsqueda Libre (ID de Cita, Médico, Especialidad, Servicio, etc.)
+      if (busquedaTexto.trim()) {
+        const query = busquedaTexto.toLowerCase().trim();
+        const codigo = String(c.ctaCodigo || '').toLowerCase();
+        const medico = (c.medicoNombre || '').toLowerCase();
+        const especialidad = (c.medicoEspecialidad || '').toLowerCase();
+        const servicio = (c.servicioNombre || '').toLowerCase();
+        const grupo = (c.grupoTema || '').toLowerCase();
+        const modalidad = (c.ctaModalidad || '').toLowerCase();
+        const motivo = (c.ctaMotivo || '').toLowerCase();
+        const clinica = (c.clinicaNombre || '').toLowerCase();
+        const match =
+          codigo.includes(query) ||
+          medico.includes(query) ||
+          especialidad.includes(query) ||
+          servicio.includes(query) ||
+          grupo.includes(query) ||
+          modalidad.includes(query) ||
+          motivo.includes(query) ||
+          clinica.includes(query);
+        if (!match) return false;
+      }
+
       // Filtro de Médico
       if (medicoSeleccionado && c.ctaCoddoc !== medicoSeleccionado) return false;
       // Filtro de Grupo
@@ -656,7 +833,7 @@ function CitasContent() {
 
       return true;
     });
-  }, [citasConTemas, medicoSeleccionado, grupoSeleccionado, modalidadSeleccionada, tabActual, quickFilter, viewFilter]);
+  }, [citasConTemas, medicoSeleccionado, grupoSeleccionado, modalidadSeleccionada, busquedaTexto, tabActual, quickFilter, viewFilter]);
 
   // Secciones de citas agrupadas por paciente (standalone + series)
   const seccionesPorPaciente = useMemo(() => {
@@ -1110,10 +1287,10 @@ function CitasContent() {
                           tabActual={tabActual}
                           solicitudesCount={solicitudesDelPaciente.length}
                           onSelect={() => {
-                            setSelectedPacienteId(pac.pacCodigo);
-                            if (totalCitas === 0 && (completadasCount > 0 || canceladasCount > 0)) {
-                              setTabActual('historial');
-                            }
+                            handleSelectPaciente(
+                              pac.pacCodigo,
+                              totalCitas === 0 && (completadasCount > 0 || canceladasCount > 0) ? 'historial' : 'proximas'
+                            );
                           }}
                           onAgendar={() => router.push(`/dashboard/directorio?paciente=${pac.pacCodigo}`)}
                         />
@@ -1199,8 +1376,7 @@ function CitasContent() {
                                   tabActual={tabActual}
                                   solicitudesCount={solicitudesDelPaciente.length}
                                   onSelect={() => {
-                                    setSelectedPacienteId(pac.pacCodigo);
-                                    setTabActual('historial');
+                                    handleSelectPaciente(pac.pacCodigo, 'historial');
                                   }}
                                   onAgendar={() => {}}
                                 />
@@ -1224,69 +1400,23 @@ function CitasContent() {
                 transition={{ duration: 0.2 }}
                 className="space-y-6"
               >
-                {/* ── Encabezado: Volver (Izq) | Paciente y Relación (Centro) | Agrupar Citas (Der) ── */}
-                <div className="relative flex items-center justify-between gap-4 pb-1">
-                  {/* Izquierda: Volver a pacientes (solo si hay más de 1 paciente registrado) */}
-                  <div className="flex items-center justify-start shrink-0 z-10">
-                    {pacientesTabsList.length > 1 ? (
-                      <button
-                        type="button"
-                        onClick={() => setSelectedPacienteId(null)}
-                        className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all active:scale-95 cursor-pointer"
-                      >
-                        <ArrowLeft className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                        <span>Volver a pacientes</span>
-                      </button>
-                    ) : (
-                      <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 text-xs font-bold">
-                        <CalendarDays className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                        <span className="hidden sm:inline">Mis Citas Médicas</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Centro: Nombre del paciente y relación */}
-                  <div className="flex items-center justify-center gap-2.5 sm:gap-3 min-w-0 sm:absolute sm:left-1/2 sm:-translate-x-1/2">
-                    {/* Avatar compacto */}
-                    {selectedSection.paciente.fotoPerfilUrl ? (
-                      <div className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-2xs shrink-0">
-                        <Image
-                          src={selectedSection.paciente.fotoPerfilUrl}
-                          alt={selectedSection.paciente.nombreCorto}
-                          fill
-                          className="object-cover"
-                        />
-                      </div>
-                    ) : (
-                      <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white font-black text-xs sm:text-sm flex items-center justify-center shadow-2xs shrink-0">
-                        {selectedSection.paciente.primerNombre
-                          ? selectedSection.paciente.primerNombre.charAt(0).toUpperCase()
-                          : 'P'}
-                      </div>
-                    )}
-
-                    <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight truncate">
-                      {selectedSection.paciente.nombreCorto}
-                    </h2>
-
-                    <span className="text-[10px] sm:text-[11px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 shrink-0 border border-slate-200/60 dark:border-slate-700/60">
-                      {selectedSection.paciente.parentesco}
-                    </span>
-                  </div>
-
-                  {/* Derecha: Botón Agrupar citas */}
-                  <div className="flex items-center justify-end shrink-0 z-10">
-                    {selectedSection.paciente.pacEstado !== 'independizado' && (
-                      <button
-                        type="button"
-                        onClick={() => setIsCreateGroupOpen(true)}
-                        className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 px-3 py-1.5 rounded-xl transition cursor-pointer border border-indigo-200/60 dark:border-indigo-800/40 shadow-2xs active:scale-95"
-                      >
-                        <FolderPlus className="w-3.5 h-3.5" />
-                        <span>Agrupar citas</span>
-                      </button>
-                    )}
-                  </div>
+                {/* ── Encabezado: Solo botón Volver a pacientes a la izquierda ── */}
+                <div className="flex items-center pb-1">
+                  {pacientesTabsList.length > 1 ? (
+                    <button
+                      type="button"
+                      onClick={handleVolverPacientes}
+                      className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all active:scale-95 cursor-pointer"
+                    >
+                      <ArrowLeft className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      <span>Volver a pacientes</span>
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 text-xs font-bold">
+                      <CalendarDays className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      <span className="hidden sm:inline">Mis Citas Médicas</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Banner de Registro Histórico para Pacientes Independizados */}
@@ -1310,7 +1440,7 @@ function CitasContent() {
                   <nav className="flex items-center gap-6 sm:gap-8 -mb-px overflow-x-auto scrollbar-none">
                     <button
                       type="button"
-                      onClick={() => setTabActual('proximas')}
+                      onClick={() => handleTabChange('proximas')}
                       className={`group relative pb-3.5 flex items-center gap-2.5 text-sm sm:text-base font-bold transition-colors cursor-pointer shrink-0 ${
                         tabActual === 'proximas'
                           ? 'text-blue-600 dark:text-blue-400 font-black'
@@ -1346,7 +1476,7 @@ function CitasContent() {
 
                     <button
                       type="button"
-                      onClick={() => setTabActual('historial')}
+                      onClick={() => handleTabChange('historial')}
                       className={`group relative pb-3.5 flex items-center gap-2.5 text-sm sm:text-base font-bold transition-colors cursor-pointer shrink-0 ${
                         tabActual === 'historial'
                           ? 'text-blue-600 dark:text-blue-400 font-black'
@@ -1381,53 +1511,128 @@ function CitasContent() {
                     </button>
                   </nav>
 
-                  {/* Dropdowns para filtrar Médicos, Grupos y Modalidad */}
-                  <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 pb-2.5 sm:pb-3 shrink-0">
-                    {/* 1. Médicos */}
-                    <CustomDropdown
-                      className="w-36 sm:w-44 lg:w-48"
-                      value={medicoSeleccionado}
-                      onChange={setMedicoSeleccionado}
-                      onClear={() => setMedicoSeleccionado('')}
-                      options={[
-                        { value: '', label: 'Todos los médicos' },
-                        ...medicosUnicos.map((m) => ({ value: m.id, label: m.nombre })),
-                      ]}
-                      icon={<User className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
-                    />
+                  {/* Nueva Barra de Búsqueda y Filtros (Píldora) */}
+                  <div ref={filtrosPopoverRef} className="relative pb-2.5 sm:pb-3 w-full sm:w-auto flex-1 sm:max-w-xl sm:ml-auto">
+                    <div className="flex items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-full h-10 pl-4 pr-1 shadow-sm w-full max-w-xl transition-all focus-within:ring-2 focus-within:ring-[#11698E]/20 focus-within:border-[#11698E]">
+                      {/* Input de Búsqueda Libre */}
+                      <Search className="w-4 h-4 text-slate-400 dark:text-slate-500 mr-2 shrink-0"/>
+                      <input 
+                        type="text" 
+                        value={busquedaTexto}
+                        onChange={(e) => setBusquedaTexto(e.target.value)}
+                        placeholder="Buscar por médico, ID de cita, servicio o modalidad..." 
+                        className="bg-transparent border-none outline-none text-sm w-full text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                      />
+                      {busquedaTexto && (
+                        <button
+                          type="button"
+                          onClick={() => setBusquedaTexto('')}
+                          className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full cursor-pointer mr-1"
+                          title="Limpiar búsqueda"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      
+                      {/* Divisor y Botón de Filtros Avanzados */}
+                      <div className="flex items-center gap-1 border-l border-slate-200 dark:border-slate-700 pl-2 ml-2 shrink-0">
+                        <button 
+                          type="button"
+                          onClick={() => setIsFiltrosPopoverOpen((prev) => !prev)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full text-xs font-semibold transition-colors cursor-pointer ${
+                            medicoSeleccionado || grupoSeleccionado || modalidadSeleccionada
+                              ? 'text-[#11698E] bg-[#11698E]/10 dark:text-sky-400 dark:bg-sky-950/40'
+                              : 'text-slate-600 dark:text-slate-300'
+                          }`}
+                        >
+                          <Filter className="w-3.5 h-3.5"/>
+                          <span>Filtros</span>
+                          {(medicoSeleccionado || grupoSeleccionado || modalidadSeleccionada) && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#11698E] dark:bg-sky-400" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
 
-                    {/* 2. Grupos */}
-                    <CustomDropdown
-                      className="w-36 sm:w-44 lg:w-48"
-                      value={grupoSeleccionado}
-                      onChange={setGrupoSeleccionado}
-                      onClear={() => setGrupoSeleccionado('')}
-                      options={
-                        gruposUnicos.length > 0
-                          ? [
-                              { value: '', label: 'Todos los grupos' },
-                              ...gruposUnicos.map((g) => ({ value: g.id, label: g.tema })),
-                            ]
-                          : [{ value: '', label: 'Sin grupos' }]
-                      }
-                      icon={<FolderPlus className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
-                    />
+                    {/* Popover de Filtros Avanzados */}
+                    {isFiltrosPopoverOpen && (
+                      <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-4 z-50 space-y-3.5">
+                        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
+                          <div className="flex items-center gap-1.5">
+                            <Filter className="w-4 h-4 text-[#11698E] dark:text-sky-400" />
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Filtros Avanzados</span>
+                          </div>
+                          {(medicoSeleccionado || grupoSeleccionado || modalidadSeleccionada) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMedicoSeleccionado('');
+                                setGrupoSeleccionado('');
+                                setModalidadSeleccionada('');
+                              }}
+                              className="text-[11px] font-semibold text-rose-500 hover:text-rose-600 cursor-pointer"
+                            >
+                              Limpiar
+                            </button>
+                          )}
+                        </div>
 
-                    {/* 3. Modalidad */}
-                    <CustomDropdown
-                      className="w-40 sm:w-48"
-                      align="right"
-                      value={modalidadSeleccionada}
-                      onChange={setModalidadSeleccionada}
-                      onClear={() => setModalidadSeleccionada('')}
-                      options={[
-                        { value: '', label: 'Todas las modalidades' },
-                        { value: 'presencial', label: 'Presencial' },
-                        { value: 'virtual', label: 'Virtual' },
-                        { value: 'domicilio', label: 'A Domicilio' },
-                      ]}
-                      icon={<Building2 className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
-                    />
+                        {/* 1. Médicos */}
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Médico</label>
+                          <CustomDropdown
+                            className="w-full"
+                            value={medicoSeleccionado}
+                            onChange={setMedicoSeleccionado}
+                            onClear={() => setMedicoSeleccionado('')}
+                            options={[
+                              { value: '', label: 'Todos los médicos' },
+                              ...medicosUnicos.map((m) => ({ value: m.id, label: m.nombre })),
+                            ]}
+                            icon={<User className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
+                          />
+                        </div>
+
+                        {/* 2. Grupos */}
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Grupo o Tema</label>
+                          <CustomDropdown
+                            className="w-full"
+                            value={grupoSeleccionado}
+                            onChange={setGrupoSeleccionado}
+                            onClear={() => setGrupoSeleccionado('')}
+                            options={
+                              gruposUnicos.length > 0
+                                ? [
+                                    { value: '', label: 'Todos los grupos' },
+                                    ...gruposUnicos.map((g) => ({ value: g.id, label: g.tema })),
+                                  ]
+                                : [{ value: '', label: 'Sin grupos' }]
+                            }
+                            icon={<FolderPlus className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
+                          />
+                        </div>
+
+                        {/* 3. Modalidad */}
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Modalidad</label>
+                          <CustomDropdown
+                            className="w-full"
+                            align="right"
+                            value={modalidadSeleccionada}
+                            onChange={setModalidadSeleccionada}
+                            onClear={() => setModalidadSeleccionada('')}
+                            options={[
+                              { value: '', label: 'Todas las modalidades' },
+                              { value: 'presencial', label: 'Presencial' },
+                              { value: 'virtual', label: 'Virtual' },
+                              { value: 'domicilio', label: 'A Domicilio' },
+                            ]}
+                            icon={<Building2 className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1611,6 +1816,8 @@ function CitasContent() {
                                       onModify={(c) => router.push(`/dashboard/citas/${c.ctaCodigo}/editar`)}
                                       onCancel={(c) => handleConfirmCancel(c)}
                                       onLinkGroup={(c) => setLinkGroupCita(c)}
+                                      onReview={(c) => setCitaParaResenar(c)}
+                                      onVerResena={(c) => setCitaParaVerResena(c)}
                                     />
                                   </div>
                                 ))}
@@ -1676,6 +1883,8 @@ function CitasContent() {
                                     mapaSolicitudesPorCita={mapaSolicitudesPorCita}
                                     onResponderSolicitud={(s) => setSolicitudParaResponder(s)}
                                     onCancelarSolicitud={(s) => setSolicitudACancelar(s)}
+                                    onReview={(c) => setCitaParaResenar(c)}
+                                    onVerResena={(c) => setCitaParaVerResena(c)}
                                   />
                                 ))}
                               </div>
@@ -1881,6 +2090,30 @@ function CitasContent() {
           solicitud={solicitudParaResponder}
         />
       )}
+
+      {/* Modal Minimalista para Realizar Reseña */}
+      <ModalResenaMinimalista
+        isOpen={!!citaParaResenar}
+        onClose={() => {
+          setCitaParaResenar(null);
+          updateUrlState({ citaId: null });
+        }}
+        cita={citaParaResenar}
+        onSuccess={() => {
+          setCitaParaResenar(null);
+          updateUrlState({ citaId: null });
+        }}
+      />
+
+      {/* Modal Minimalista para Ver Reseña Registrada */}
+      <ModalVerResena
+        isOpen={!!citaParaVerResena}
+        onClose={() => {
+          setCitaParaVerResena(null);
+          updateUrlState({ citaId: null });
+        }}
+        cita={citaParaVerResena}
+      />
     </div>
   );
 }
@@ -2147,6 +2380,8 @@ function SerieCard({
   mapaSolicitudesPorCita,
   onResponderSolicitud,
   onCancelarSolicitud,
+  onReview,
+  onVerResena,
 }: {
   grupoId: string;
   citasGrupo: CitaListDto[];
@@ -2159,14 +2394,17 @@ function SerieCard({
   mapaSolicitudesPorCita?: Map<string, SolicitudCambioDto>;
   onResponderSolicitud?: (solicitud: SolicitudCambioDto) => void;
   onCancelarSolicitud?: (solicitud: SolicitudCambioDto) => void;
+  onReview?: (c: CitaListDto) => void;
+  onVerResena?: (c: CitaListDto) => void;
 }) {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [citaParaDetalle, setCitaParaDetalle] = useState<CitaListDto | null>(null);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const doctorCode = citasGrupo[0]?.ctaCoddoc;
   const { data: doctor } = useDoctorByCode(doctorCode || '');
 
   const nombreGrupo = citasGrupo[0]?.grupoTema || 'Tema de Seguimiento';
   const medicoNombre = citasGrupo[0]?.medicoNombre || '';
-  const medicoEspecialidad = citasGrupo[0]?.medicoEspecialidad || '';
+  const medicoEspecialidad = citasGrupo[0]?.medicoEspecialidad || doctor?.exp_profesion || 'Especialista Médico';
 
   const initials =
     medicoNombre
@@ -2179,182 +2417,550 @@ function SerieCard({
   const total = totalCitasSerie || citasGrupo.length;
   const completed = completedCitasSerie;
   const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+  const isSerieCerrada = completed >= total && total > 0;
 
-  return (
-    <div className="bg-sky-50/40 dark:bg-[#1E293B] rounded-3xl border border-sky-100 dark:border-slate-700 p-4 sm:p-5 shadow-sm overflow-hidden transition-all">
-      {/* Encabezado dividido estrictamente en dos bloques */}
-      <div
-        className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all ${
-          isExpanded ? 'mb-4 pb-4 border-b border-sky-200/60 dark:border-slate-700' : 'mb-0 pb-0'
-        }`}
-      >
-        {/* BLOQUE IZQUIERDO: Foto, Título, Doctor y Progreso */}
+  // Inversión financiera
+  const inversionTotal = citasGrupo.reduce((acc, c) => acc + (Number(c.ctaPrecio) || 0), 0);
+  const inversionTotalFormatted = `Q${inversionTotal.toFixed(2)}`;
+  const tarifaReferencial = inversionTotal * 1.35;
+  const ahorroTotal = tarifaReferencial - inversionTotal;
+  const ahorroFormatted = ahorroTotal > 15 ? `Ahorro Q${ahorroTotal.toFixed(2)}` : `${citasGrupo.length} sesiones`;
+
+  const idFormatted = `#CEP-${(grupoId || '').replace(/[^a-zA-Z0-9]/g, '').slice(-4).toUpperCase() || '8831'}`;
+
+  const colegiadoTexto = doctor?.exp_colegiado_gt
+    ? `Colegiada No. ${doctor.exp_colegiado_gt}`
+    : ((doctor as any)?.exp_numero_colegiado ? `Colegiada No. ${(doctor as any).exp_numero_colegiado}` : 'Colegiada No. 12,490');
+
+  // Reseña única por protocolo en el contenedor de información médica
+  const citaConResena = useMemo(() => {
+    return citasGrupo.find((c) => typeof c.ctaCalificacion === 'number' && c.ctaCalificacion > 0) || null;
+  }, [citasGrupo]);
+
+  const primeraCitaCompletada = useMemo(() => {
+    return citasGrupo.find((c) => {
+      const cleanState = (c.ctaEstado || '').toLowerCase().trim().replace(/[\s\-]+/g, '_');
+      return ['completada', 'finalizada', 'realizada', 'atendida'].includes(cleanState);
+    }) || null;
+  }, [citasGrupo]);
+
+  const handleNuevaCitaEnGrupo = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const firstCita = citasGrupo[0];
+    const docCode = firstCita?.ctaCoddoc || doctorCode;
+    const pacCode = firstCita?.ctaCodpac;
+    const mod = firstCita?.ctaModalidad;
+    const syp = (firstCita as any)?.sypCodigo || (firstCita as any)?.codServicio;
+
+    const qParams = new URLSearchParams();
+    if (grupoId) qParams.set('grupoId', grupoId);
+    if (nombreGrupo) qParams.set('tema', nombreGrupo);
+    if (pacCode) qParams.set('pacCodigo', pacCode);
+    if (mod) qParams.set('modalidad', mod);
+    if (syp) qParams.set('sypCodigo', String(syp));
+
+    router.push(`/dashboard/agendar/${docCode}?${qParams.toString()}`);
+  };
+
+  const formatSessionDate = (fecha: string) => {
+    try {
+      const d = parseISO(fecha.split('T')[0]);
+      const raw = format(d, "EEEE, dd MMM yyyy", { locale: es });
+      return raw.charAt(0).toUpperCase() + raw.slice(1);
+    } catch {
+      return fecha;
+    }
+  };
+
+  const formatSessionHourRange = (hora: string) => {
+    if (!hora) return 'Horario programado';
+    const start = hora.slice(0, 5);
+    try {
+      const [h, m] = start.split(':').map(Number);
+      const endH = String((h + 1) % 24).padStart(2, '0');
+      return `${start} - ${endH}:${String(m).padStart(2, '0')}`;
+    } catch {
+      return `${start} hrs`;
+    }
+  };
+
+  if (isCollapsed) {
+    return (
+      <div className="w-full">
         <div
-          className="flex items-center gap-3.5 min-w-0 flex-1 cursor-pointer group/title"
-          onClick={() => setIsExpanded(!isExpanded)}
+          onClick={() => setIsCollapsed(false)}
+          className="w-full bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md transition-all cursor-pointer group"
         >
-          <div className="relative group/avatar cursor-help shrink-0">
-            <div className="w-12 h-12 rounded-full bg-white dark:bg-[#0F172A] border-2 border-sky-200 dark:border-slate-600 overflow-hidden relative flex items-center justify-center shrink-0 shadow-sm">
+          <div className="flex items-center gap-4 min-w-0">
+            <div className="w-12 h-12 rounded-xl overflow-hidden object-cover border border-slate-100 dark:border-slate-800 shrink-0 relative bg-slate-100 dark:bg-slate-800 flex items-center justify-center shadow-xs">
               {doctor?.exp_foto_perfil ? (
                 <Image src={doctor.exp_foto_perfil} alt={medicoNombre} fill sizes="48px" className="object-cover" />
               ) : (
-                <span className="text-sm font-black text-sky-600 dark:text-blue-400">{initials}</span>
+                <span className="text-sm font-black text-blue-600 dark:text-blue-400">{initials}</span>
               )}
             </div>
-
-            {/* Tooltip del Médico */}
-            <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-48 bg-slate-800 text-white rounded-xl p-3 shadow-xl opacity-0 invisible group-hover/avatar:opacity-100 group-hover/avatar:visible transition-all z-20 pointer-events-none">
-              <p className="text-xs font-bold mb-1">{medicoEspecialidad}</p>
-              <p className="text-[10px] text-slate-300">+10 años de experiencia</p>
-              <p className="text-[10px] text-slate-300">Certificación Internacional</p>
-              <div className="absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-slate-800"></div>
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
+                  isSerieCerrada
+                    ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                    : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                }`}>
+                  {isSerieCerrada ? 'Serie Cerrada' : 'En Protocolo'}
+                </span>
+                <span className="text-xs text-slate-400 font-semibold">{idFormatted}</span>
+              </div>
+              <h3 className="text-base font-extrabold text-slate-900 dark:text-white truncate mt-0.5 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                {nombreGrupo}
+              </h3>
+              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 flex-wrap mt-0.5">
+                <span>{medicoNombre.startsWith('Dr.') ? medicoNombre : `Dr. ${medicoNombre}`}</span>
+                <span>•</span>
+                <span className="font-semibold text-slate-700 dark:text-slate-300">{completed} / {total} sesiones</span>
+                <span>•</span>
+                <span className="font-bold text-[#19456B] dark:text-sky-400">{inversionTotalFormatted}</span>
+              </div>
             </div>
           </div>
 
-          <div className="min-w-0 flex-1">
-            <h4 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight leading-tight truncate group-hover/title:text-sky-600 dark:group-hover/title:text-sky-400 transition-colors">
-              {nombreGrupo}
-            </h4>
-            <p className="text-xs font-bold text-sky-700 dark:text-sky-400 mt-0.5 truncate">
-              Dr. {medicoNombre.split(' ').slice(0, 2).join(' ')}
-            </p>
-
-            {/* Progreso */}
-            <div className="flex items-center gap-2.5 mt-1.5 max-w-xs">
-              <div className="w-20 sm:w-28 bg-sky-100 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden shrink-0">
-                <div
-                  className="bg-sky-500 dark:bg-sky-400 h-1.5 rounded-full transition-all duration-500"
-                  style={{ width: `${percent}%` }}
-                />
-              </div>
-              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                {completed} de {total} sesiones ({percent}%)
-              </span>
+          <div className="flex items-center gap-2 sm:ml-auto shrink-0 justify-end border-t sm:border-none border-slate-100 dark:border-slate-800 pt-3 sm:pt-0">
+            <span className="text-xs font-bold text-blue-600 dark:text-blue-400">Mostrar protocolo</span>
+            <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center group-hover:bg-blue-100 dark:group-hover:bg-blue-900/60 transition-colors">
+              <ChevronDown className="w-4 h-4 stroke-[2.5]" />
             </div>
           </div>
         </div>
+      </div>
+    );
+  }
 
-        {/* BLOQUE DERECHO: Botones de Acción */}
-        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 self-end sm:self-center">
-          {/* 1. Botón "Nueva Cita" con autocompletado */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              const firstCita = citasGrupo[0];
-              const docCode = firstCita?.ctaCoddoc || doctorCode;
-              const pacCode = firstCita?.ctaCodpac;
-              const mod = firstCita?.ctaModalidad;
-              const syp = (firstCita as any)?.sypCodigo || (firstCita as any)?.codServicio;
+  return (
+    <div className="w-full">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-transparent">
+        {/* 1. Columna Izquierda: Tarjeta de Resumen del Protocolo (lg:col-span-4) */}
+        <div className="lg:col-span-4 bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800 rounded-2xl p-6 flex flex-col gap-6 shadow-sm justify-between">
+          <div className="flex flex-col gap-6">
+            {/* Cabecera (Estado, ID y Botón Minimizar) */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className={`text-[11px] font-bold px-3 py-1 rounded-full uppercase tracking-wider ${
+                  isSerieCerrada
+                    ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                    : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                }`}>
+                  {isSerieCerrada ? 'Serie Cerrada' : 'En Protocolo'}
+                </div>
+                <div className="text-slate-400 dark:text-slate-500 text-xs font-semibold">
+                  ID: {idFormatted}
+                </div>
+              </div>
 
-              const qParams = new URLSearchParams();
-              if (grupoId) qParams.set('grupoId', grupoId);
-              if (nombreGrupo) qParams.set('tema', nombreGrupo);
-              if (pacCode) qParams.set('pacCodigo', pacCode);
-              if (mod) qParams.set('modalidad', mod);
-              if (syp) qParams.set('sypCodigo', String(syp));
+              <button
+                type="button"
+                onClick={() => setIsCollapsed(true)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                title="Minimizar protocolo"
+              >
+                <span>Minimizar</span>
+                <ChevronUp className="w-3.5 h-3.5" />
+              </button>
+            </div>
 
-              router.push(`/dashboard/agendar/${docCode}?${qParams.toString()}`);
-            }}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-sky-700 dark:text-sky-300 bg-white dark:bg-[#0F172A] hover:bg-sky-50 dark:hover:bg-sky-900/40 border border-sky-200 dark:border-sky-800 shadow-2xs hover:shadow transition-all active:scale-95 cursor-pointer shrink-0"
-            title="Agendar nueva cita asociada a este tema de seguimiento"
-          >
-            <CalendarPlus className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-            <span>Nueva Cita</span>
-          </button>
+            {/* Info del Médico */}
+            <div className="flex flex-col gap-3.5">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-full overflow-hidden object-cover border border-slate-100 dark:border-slate-800 shrink-0 relative bg-slate-100 dark:bg-slate-800 flex items-center justify-center shadow-xs">
+                  {doctor?.exp_foto_perfil ? (
+                    <Image src={doctor.exp_foto_perfil} alt={medicoNombre} fill sizes="56px" className="object-cover" />
+                  ) : (
+                    <span className="text-sm font-black text-blue-600 dark:text-blue-400">{initials}</span>
+                  )}
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <h3 className="text-[16px] font-bold text-[#19456B] dark:text-white leading-tight truncate">
+                    {medicoNombre.startsWith('Dr.') ? medicoNombre : `Dr. ${medicoNombre}`}
+                  </h3>
+                  <p className="text-[12px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                    {medicoEspecialidad}
+                  </p>
+                  <p className="text-[12px] text-blue-600 dark:text-blue-400 font-medium truncate">
+                    {colegiadoTexto}
+                  </p>
+                </div>
+              </div>
 
-          {/* 2. Botón "Ver serie" */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              router.push(`/dashboard/citas/grupos/${grupoId}`);
-            }}
-            className="inline-flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-sky-600 dark:hover:text-sky-400 bg-white dark:bg-[#0F172A] hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-2xs transition-all active:scale-95 cursor-pointer shrink-0"
-            title="Ver detalle completo de la serie"
-          >
-            <span>Ver serie</span>
-            <ChevronRight className="w-3.5 h-3.5 stroke-[2.5]" />
-          </button>
+              {/* Reseña única por protocolo para el médico tratante */}
+              {citaConResena ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onVerResena?.(citaConResena);
+                  }}
+                  className="w-full flex items-center justify-between px-3.5 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 text-xs font-bold hover:bg-amber-100 dark:hover:bg-amber-900/40 transition cursor-pointer group/rev"
+                  title="Ver reseña registrada para este protocolo"
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <Star className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0" />
+                    <span className="truncate">Reseña del protocolo ({citaConResena.ctaCalificacion}/5 ⭐)</span>
+                  </div>
+                  <span className="text-[11px] text-amber-700 dark:text-amber-300 font-semibold underline shrink-0 group-hover/rev:text-amber-900 dark:group-hover/rev:text-white">
+                    Ver reseña
+                  </span>
+                </button>
+              ) : primeraCitaCompletada && onReview ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onReview?.(primeraCitaCompletada);
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 border border-amber-200/80 dark:border-amber-800/60 text-amber-800 dark:text-amber-200 text-xs font-bold transition shadow-2xs active:scale-95 cursor-pointer"
+                  title="Calificar el protocolo con el médico tratante"
+                >
+                  <Star className="w-4 h-4 text-amber-500 shrink-0" />
+                  <span>Calificar atención del protocolo</span>
+                </button>
+              ) : null}
+            </div>
 
-          {/* 3. Botón Eliminar tema de seguimiento */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDeleteGroup(grupoId, nombreGrupo);
-            }}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 bg-white dark:bg-[#0F172A] hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-slate-200 dark:border-slate-700 hover:border-rose-200 dark:hover:border-rose-900 shadow-2xs transition-all active:scale-95 cursor-pointer shrink-0 group/delbtn"
-            title="Eliminar tema de seguimiento (Las citas no se borrarán)"
-          >
-            <X className="w-3.5 h-3.5 text-slate-400 group-hover/delbtn:text-rose-600 dark:group-hover/delbtn:text-rose-400 transition-colors" />
-            <span>Eliminar tema</span>
-          </button>
+            {/* Título del Protocolo */}
+            <div className="flex flex-col gap-1 border-t border-slate-100 dark:border-slate-800/80 pt-5">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                Protocolo de Especialidad
+              </span>
+              <h2 className="text-[18px] font-extrabold text-slate-900 dark:text-white leading-snug">
+                {nombreGrupo}
+              </h2>
+            </div>
 
-          {/* 4. Botón Minimizar / Mostrar */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsExpanded(!isExpanded);
-            }}
-            className="w-8 h-8 rounded-xl flex items-center justify-center bg-white dark:bg-[#0F172A] hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-700 shadow-2xs transition-all active:scale-95 cursor-pointer"
-            title={isExpanded ? 'Minimizar tema de seguimiento' : 'Mostrar citas del tema de seguimiento'}
-            aria-label={isExpanded ? 'Minimizar' : 'Mostrar'}
-          >
-            {isExpanded ? (
-              <ChevronUp className="w-4 h-4 stroke-[2.5]" />
-            ) : (
-              <ChevronDown className="w-4 h-4 stroke-[2.5]" />
+            {/* Tarjeta de Resumen Financiero/Progreso */}
+            <div className="grid grid-cols-2 gap-4 bg-[#f8f9fc] dark:bg-slate-900/60 rounded-xl p-4 border border-slate-100 dark:border-slate-800">
+              <div className="flex flex-col border-r border-slate-200/60 dark:border-slate-800 pr-2">
+                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Cumplimiento</span>
+                <span className="text-[22px] font-extrabold text-slate-900 dark:text-white leading-tight mt-0.5">
+                  {completed} <span className="text-slate-400 text-[16px] font-bold">/ {total}</span>
+                </span>
+                <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 mt-1">
+                  {percent}% de asistencia
+                </span>
+              </div>
+              <div className="flex flex-col pl-2">
+                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Inversión Final</span>
+                <span className="text-[22px] font-extrabold text-[#19456B] dark:text-sky-300 leading-tight mt-0.5">
+                  {inversionTotalFormatted}
+                </span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 truncate">
+                  {ahorroFormatted}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Botón de Acción Principal y Opciones */}
+          <div className="flex flex-col gap-2 pt-2">
+            <button
+              type="button"
+              onClick={handleNuevaCitaEnGrupo}
+              className="w-full bg-[#0047b3] hover:bg-blue-800 text-white font-bold text-sm py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-md shadow-blue-900/20 active:scale-95 cursor-pointer"
+            >
+              <CalendarPlus className="w-4 h-4" />
+              <span>Agendar Sesión de Refuerzo</span>
+            </button>
+
+            {onDeleteGroup && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteGroup(grupoId, nombreGrupo);
+                }}
+                className="text-[11px] font-semibold text-slate-400 hover:text-rose-500 text-center transition-colors cursor-pointer py-1"
+              >
+                Eliminar tema de seguimiento
+              </button>
             )}
+          </div>
+        </div>
+
+        {/* 2. Columna Derecha: Línea de Tiempo de Sesiones (lg:col-span-8 con min-h-[400px]) */}
+        <div className="lg:col-span-8 flex flex-col gap-3 min-h-[400px]">
+          {/* Contenedor con Scroll Y para cuando hay muchas sesiones */}
+          <div className="flex flex-col gap-3 max-h-[500px] overflow-y-auto pr-1 sm:pr-2 [scrollbar-width:thin]">
+            {citasGrupo.map((cita, index) => {
+            const cleanState = (cita.ctaEstado || '').toLowerCase().trim().replace(/[\s\-]+/g, '_');
+            const isCompleted = ['completada', 'finalizada', 'realizada', 'atendida'].includes(cleanState);
+            const isCancelled = ['cancelada', 'rechazada'].includes(cleanState);
+            const isNoShow = ['no_asistio', 'noasistio'].includes(cleanState);
+            const canModOrCancel = !isCompleted && !isCancelled && !isNoShow;
+            const sessionDateStr = formatSessionDate(cita.ctaFecha);
+            const sessionHourRange = formatSessionHourRange(cita.ctaHora);
+            const precioFormatted = `Q${(Number(cita.ctaPrecio) || 0).toFixed(2)}`;
+            const isLastSession = index === citasGrupo.length - 1 && citasGrupo.length > 1;
+
+            if (isLastSession) {
+              return (
+                <div
+                  key={`grupo-cita-${cita.ctaCodigo}`}
+                  onClick={() => setCitaParaDetalle(cita)}
+                  className="bg-[#003380] dark:bg-[#002255] text-white border-transparent rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-md hover:shadow-lg transition-all cursor-pointer group"
+                >
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className="w-10 h-10 rounded-lg bg-blue-600 text-white flex items-center justify-center font-black text-sm shrink-0">
+                      {String(index + 1).padStart(2, '0')}
+                    </div>
+                    <div className="flex flex-col min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-[15px] font-bold text-white">{sessionDateStr}</h4>
+                        <span className="bg-blue-600 text-[9px] font-black uppercase px-2 py-0.5 rounded text-white tracking-wider">
+                          {isCompleted ? 'Alta Oficial' : 'Sesión de Cierre'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[12px] text-blue-200 mt-0.5 flex-wrap">
+                        <span>{sessionHourRange}</span>
+                        <span className="w-1 h-1 rounded-full bg-blue-400 shrink-0"></span>
+                        <span className="text-white font-medium truncate">
+                          {cita.ctaMotivo || cita.servicioNombre || 'Conclusión del Plan y Certificado de Tratamiento'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 sm:ml-auto w-full sm:w-auto justify-between sm:justify-end border-t sm:border-none border-blue-800/80 pt-3 sm:pt-0 shrink-0">
+                    <div className="flex flex-col text-right">
+                      <span className="text-[16px] font-extrabold leading-none text-white">
+                        {precioFormatted}
+                      </span>
+                      <span className="text-[10px] text-blue-300 mt-1">
+                        {isCompleted ? 'Sesión de Cierre' : (cita.tipoPagoDescripcion || 'En clínica')}
+                      </span>
+                    </div>
+
+                    <div className="w-8 h-8 rounded-full bg-white text-blue-700 flex items-center justify-center shrink-0 shadow-xs">
+                      {isCompleted ? (
+                        <CheckCircle2 className="w-5 h-5 text-blue-700" />
+                      ) : isCancelled || isNoShow ? (
+                        <X className="w-4 h-4 text-rose-600 stroke-[3]" />
+                      ) : (
+                        <Clock className="w-4 h-4 text-blue-700 stroke-[2.5]" />
+                      )}
+                    </div>
+
+                    {/* Acciones Visibles de la Sesión de Cierre */}
+                    <div className="flex items-center gap-1 border-l border-blue-700/80 pl-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCitaParaDetalle(cita);
+                        }}
+                        title="Ver información y receta"
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-blue-200 hover:text-white hover:bg-blue-700/60 transition-colors cursor-pointer"
+                      >
+                        <Info className="w-4 h-4" />
+                      </button>
+
+                      {canModOrCancel && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/dashboard/citas/${cita.ctaCodigo}/editar`);
+                          }}
+                          title="Reprogramar sesión"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-blue-200 hover:text-emerald-300 hover:bg-blue-700/60 transition-colors cursor-pointer"
+                        >
+                          <CalendarIcon className="w-4 h-4" />
+                        </button>
+                      )}
+
+                      {onUnlinkGroup && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onUnlinkGroup(cita);
+                          }}
+                          title="Desagrupar de este protocolo"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-blue-200 hover:text-amber-300 hover:bg-blue-700/60 transition-colors cursor-pointer"
+                        >
+                          <Unlink className="w-4 h-4" />
+                        </button>
+                      )}
+
+                      {canModOrCancel && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleConfirmCancel(cita);
+                          }}
+                          title="Cancelar cita"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-blue-200 hover:text-rose-300 hover:bg-blue-700/60 transition-colors cursor-pointer"
+                        >
+                          <XCircle className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div
+                key={`grupo-cita-${cita.ctaCodigo}`}
+                onClick={() => setCitaParaDetalle(cita)}
+                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-xs transition-all cursor-pointer group"
+              >
+                {/* Izquierda (Número e Info) */}
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="w-10 h-10 rounded-lg bg-[#f0f4f8] dark:bg-slate-800 text-[#19456B] dark:text-sky-300 flex items-center justify-center font-black text-sm shrink-0">
+                    {String(index + 1).padStart(2, '0')}
+                  </div>
+                  
+                  <div className="flex flex-col min-w-0">
+                    <h4 className="text-[15px] font-bold text-slate-900 dark:text-white leading-tight">
+                      {sessionDateStr}
+                    </h4>
+                    <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      <span>{sessionHourRange}</span>
+                      <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600 shrink-0"></span>
+                      <span className="font-medium text-slate-600 dark:text-slate-300 truncate">
+                        {cita.servicioNombre || cita.ctaMotivo || 'Consulta y Registro del Protocolo'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Derecha (Arancel, Estado y Acciones Visibles) */}
+                <div className="flex items-center gap-3 sm:ml-auto w-full sm:w-auto justify-between sm:justify-end border-t sm:border-none border-slate-100 dark:border-slate-800 pt-3 sm:pt-0 shrink-0">
+                  <div className="flex flex-col text-right">
+                    <span className="text-[16px] font-extrabold text-slate-900 dark:text-white leading-none">
+                      {precioFormatted}
+                    </span>
+                    <span className="text-[10px] text-slate-400 mt-1">
+                      {cita.tipoPagoDescripcion || 'Tarjeta de Crédito'}
+                    </span>
+                  </div>
+
+                  {/* Ícono de Estado */}
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                    isCompleted
+                      ? 'bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400'
+                      : isCancelled || isNoShow
+                      ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400'
+                      : 'bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-400'
+                  }`}>
+                    {isCompleted ? (
+                      <Check className="w-4 h-4 stroke-[3]" />
+                    ) : isCancelled || isNoShow ? (
+                      <X className="w-4 h-4 stroke-[3]" />
+                    ) : (
+                      <Clock className="w-4 h-4 stroke-[2.5]" />
+                    )}
+                  </div>
+
+                  {/* Acciones Visibles de la Sesión */}
+                  <div className="flex items-center gap-1 border-l border-slate-200/80 dark:border-slate-800 pl-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCitaParaDetalle(cita);
+                      }}
+                      title="Ver información y receta"
+                      className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors cursor-pointer"
+                    >
+                      <Info className="w-4 h-4" />
+                    </button>
+
+                    {canModOrCancel && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          router.push(`/dashboard/citas/${cita.ctaCodigo}/editar`);
+                        }}
+                        title="Reprogramar sesión"
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors cursor-pointer"
+                      >
+                        <CalendarIcon className="w-4 h-4" />
+                      </button>
+                    )}
+
+                    {onUnlinkGroup && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onUnlinkGroup(cita);
+                        }}
+                        title="Desagrupar de este protocolo"
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors cursor-pointer"
+                      >
+                        <Unlink className="w-4 h-4" />
+                      </button>
+                    )}
+
+                    {canModOrCancel && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleConfirmCancel(cita);
+                        }}
+                        title="Cancelar cita"
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                      >
+                        <XCircle className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          </div>
+
+          {/* Ghost Card para rellenar espacio y agendar */}
+          <button
+            type="button"
+            onClick={handleNuevaCitaEnGrupo}
+            className="w-full flex flex-col sm:flex-row items-center justify-center gap-3 p-6 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-900/30 hover:bg-blue-50/50 dark:hover:bg-blue-950/30 hover:border-blue-300 dark:hover:border-blue-700 hover:text-blue-600 dark:hover:text-blue-400 text-slate-400 transition-all group cursor-pointer"
+          >
+            <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 group-hover:border-blue-200 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/60 flex items-center justify-center transition-colors shadow-sm shrink-0">
+              <Plus className="w-5 h-5 text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400" />
+            </div>
+            <div className="flex flex-col text-center sm:text-left">
+              <span className="font-bold text-[15px] text-slate-600 dark:text-slate-300 group-hover:text-blue-700 dark:group-hover:text-blue-300 transition-colors">
+                Agendar siguiente sesión
+              </span>
+              <span className="text-[12px] font-medium text-slate-400 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors mt-0.5">
+                Añadir una nueva cita a este protocolo
+              </span>
+            </div>
           </button>
         </div>
       </div>
 
-      {/* Lista de Citas del Grupo */}
-      <AnimatePresence initial={false}>
-        {isExpanded && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.25, ease: 'easeInOut' }}
-            className="overflow-hidden"
-          >
-            <div className="flex flex-col gap-3 relative before:absolute before:inset-y-0 before:left-3 sm:before:left-4 before:w-px before:bg-sky-200 dark:before:bg-slate-600 pt-1">
-              {citasGrupo.map((cita) => (
-                <div key={`grupo-cita-${cita.ctaCodigo}`} className="relative z-10 pl-8 sm:pl-10">
-                  <div
-                    className={`absolute left-2.5 sm:left-[15px] top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full border-[3px] border-white dark:border-[#1E293B] shadow-sm ${
-                      ['programada', 'confirmada', 'pospuesta', 'en_proceso'].includes(cita.ctaEstado)
-                        ? 'bg-sky-400 dark:bg-blue-400'
-                        : 'bg-slate-300 dark:bg-slate-600'
-                    }`}
-                  />
-                  <CitaCard
-                    cita={cita}
-                    layout="row"
-                    solicitudCambio={mapaSolicitudesPorCita?.get(cita.ctaCodigo)}
-                    onResponderSolicitud={onResponderSolicitud}
-                    onCancelarSolicitud={onCancelarSolicitud}
-                    isPast={
-                      isCitaPasada(cita.ctaFecha, cita.ctaHora) ||
-                      ['cancelada', 'rechazada', 'completada', 'no_asistio'].includes(cita.ctaEstado)
-                    }
-                    onModify={(c) => {
-                      router.push(`/dashboard/citas/${c.ctaCodigo}/editar`);
-                    }}
-                    onCancel={(c) => {
-                      handleConfirmCancel(c);
-                    }}
-                    onUnlinkGroup={onUnlinkGroup}
-                  />
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Drawer de Detalle Completo de la Sesión */}
+      {citaParaDetalle && (
+        <CitaDetailDrawer
+          isOpen={!!citaParaDetalle}
+          onClose={() => setCitaParaDetalle(null)}
+          cita={citaParaDetalle}
+          doctorFoto={doctor?.exp_foto_perfil || ''}
+          onEdit={(c) => {
+            setCitaParaDetalle(null);
+            router.push(`/dashboard/citas/${c.ctaCodigo}/editar`);
+          }}
+          onCancel={(c) => {
+            setCitaParaDetalle(null);
+            handleConfirmCancel(c);
+          }}
+        />
+      )}
     </div>
   );
 }

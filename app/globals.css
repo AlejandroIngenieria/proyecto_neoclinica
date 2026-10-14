@@ -209,8 +209,14 @@ body {
 
 /* Navbar header */
 .dark .sticky header {
-  background-color: rgba(26, 35, 50, 0.8) !important;
+  background-color: rgb(26, 35, 50) !important;
   border-color: #1e293b !important;
+}
+
+/*Header light mode*/
+.sticky header {
+  background-color: #f8fafc !important;
+  border-color: #f1f5f9 !important;
 }
 
 /* Scrollbar */
@@ -275,3 +281,13 @@ input:-webkit-autofill:active,
     margin-bottom: 20px;
   }
 }
+
+/* ─── Scrollbar Hide Utility ───────────────────────────────────────────── */
+.scrollbar-hide {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+

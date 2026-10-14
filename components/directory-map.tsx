@@ -10,6 +10,7 @@ import {
   Navigation,
   ChevronLeft,
   ChevronRight,
+  Home,
 } from 'lucide-react';
 import type { DoctorCardData } from './doctor-card';
 import type { DoctorClinica } from '@/types';
@@ -28,6 +29,52 @@ const ZONA_OFFSETS: Record<string, { lat: number; lng: number }> = {
   '15': { lat: 14.595, lng: -90.485 },
   '16': { lat: 14.612, lng: -90.472 },
   '4': { lat: 14.621, lng: -90.518 },
+};
+
+const DOMICILIO_MUNICIPIO_COORDINATES: Record<string, { lat: number; lng: number }> = {
+  guatemala: { lat: 14.6349, lng: -90.5069 },
+  mixco: { lat: 14.6333, lng: -90.6067 },
+  'villa nueva': { lat: 14.5256, lng: -90.5886 },
+  'santa catarina pinula': { lat: 14.5667, lng: -90.4950 },
+  'san miguel petapa': { lat: 14.4989, lng: -90.5606 },
+  amatitlan: { lat: 14.4833, lng: -90.6167 },
+  amatitlán: { lat: 14.4833, lng: -90.6167 },
+  chinautla: { lat: 14.7083, lng: -90.4983 },
+  'antigua guatemala': { lat: 14.5586, lng: -90.7295 },
+};
+
+const DOMICILIO_ZONA_COORDINATES: Record<string, { lat: number; lng: number; radiusMeters: number }> = {
+  // Ciudad de Guatemala
+  'guatemala-1': { lat: 14.642, lng: -90.513, radiusMeters: 2000 },
+  'guatemala-2': { lat: 14.656, lng: -90.509, radiusMeters: 2000 },
+  'guatemala-3': { lat: 14.629, lng: -90.530, radiusMeters: 2000 },
+  'guatemala-4': { lat: 14.621, lng: -90.518, radiusMeters: 1400 },
+  'guatemala-5': { lat: 14.625, lng: -90.495, radiusMeters: 2000 },
+  'guatemala-6': { lat: 14.655, lng: -90.485, radiusMeters: 2200 },
+  'guatemala-7': { lat: 14.638, lng: -90.548, radiusMeters: 2500 },
+  'guatemala-8': { lat: 14.619, lng: -90.525, radiusMeters: 1800 },
+  'guatemala-9': { lat: 14.611, lng: -90.516, radiusMeters: 1800 },
+  'guatemala-10': { lat: 14.598, lng: -90.513, radiusMeters: 2000 },
+  'guatemala-11': { lat: 14.615, lng: -90.551, radiusMeters: 2200 },
+  'guatemala-12': { lat: 14.590, lng: -90.545, radiusMeters: 2200 },
+  'guatemala-13': { lat: 14.580, lng: -90.530, radiusMeters: 2000 },
+  'guatemala-14': { lat: 14.582, lng: -90.518, radiusMeters: 2000 },
+  'guatemala-15': { lat: 14.595, lng: -90.485, radiusMeters: 2200 },
+  'guatemala-16': { lat: 14.612, lng: -90.472, radiusMeters: 2600 },
+  'guatemala-17': { lat: 14.660, lng: -90.450, radiusMeters: 2600 },
+  'guatemala-18': { lat: 14.680, lng: -90.440, radiusMeters: 3000 },
+  'guatemala-21': { lat: 14.550, lng: -90.550, radiusMeters: 2500 },
+
+  // Mixco
+  'mixco-1': { lat: 14.633, lng: -90.606, radiusMeters: 2200 },
+  'mixco-2': { lat: 14.620, lng: -90.590, radiusMeters: 2200 },
+  'mixco-3': { lat: 14.638, lng: -90.585, radiusMeters: 2200 },
+  'mixco-4': { lat: 14.645, lng: -90.560, radiusMeters: 2200 },
+  'mixco-7': { lat: 14.650, lng: -90.575, radiusMeters: 2200 },
+  'mixco-8': { lat: 14.598, lng: -90.582, radiusMeters: 2500 },
+  'mixco-10': { lat: 14.615, lng: -90.585, radiusMeters: 2200 },
+  'mixco-11': { lat: 14.635, lng: -90.565, radiusMeters: 2500 },
+  'mixco-15': { lat: 14.595, lng: -90.580, radiusMeters: 2500 },
 };
 
 export type DoctorAtBuilding = {
@@ -119,6 +166,8 @@ function MapController({
   userLocation,
   isNearMeActive,
   targetCoords,
+  targetZoom,
+  isDoctorDomicilioSelected,
   defaultCenterCoords,
   selectedDoctorBuildings,
   selectedDoctorId,
@@ -126,6 +175,8 @@ function MapController({
   userLocation?: { lat: number; lng: number } | null;
   isNearMeActive?: boolean;
   targetCoords?: { lat: number; lng: number } | null;
+  targetZoom?: number;
+  isDoctorDomicilioSelected?: boolean;
   defaultCenterCoords?: { lat: number; lng: number } | null;
   selectedDoctorBuildings?: BuildingLocation[];
   selectedDoctorId?: string | null;
@@ -162,8 +213,12 @@ function MapController({
     prevSelectedDoctorIdRef.current = selectedDoctorId;
 
     if (selectedDoctorId) {
-      // Si hay un médico seleccionado, encuadrar sus ubicaciones una única vez
-      if (selectedDoctorBuildings && selectedDoctorBuildings.length > 0) {
+      // Si el médico seleccionado está en modo atención a domicilio
+      if (isDoctorDomicilioSelected && targetCoords) {
+        map.panTo(targetCoords);
+        map.setZoom(targetZoom || 13);
+      } else if (selectedDoctorBuildings && selectedDoctorBuildings.length > 0) {
+        // Si hay clínicas físicas, encuadrar sus ubicaciones
         if (selectedDoctorBuildings.length === 1) {
           map.panTo({ lat: selectedDoctorBuildings[0].lat, lng: selectedDoctorBuildings[0].lng });
           map.setZoom(15);
@@ -181,13 +236,13 @@ function MapController({
       map.setZoom(13);
       prevTargetKeyRef.current = null;
     }
-  }, [map, selectedDoctorId, selectedDoctorBuildings, defaultCenterCoords]);
+  }, [map, selectedDoctorId, isDoctorDomicilioSelected, targetCoords, targetZoom, selectedDoctorBuildings, defaultCenterCoords]);
 
-  // Centrado cuando el usuario selecciona una sede / clínica específica
+  // Centrado cuando el usuario selecciona una sede / clínica específica o atención a domicilio
   useEffect(() => {
     if (!map) return;
 
-    const currentKey = targetCoords ? `${targetCoords.lat.toFixed(5)}_${targetCoords.lng.toFixed(5)}` : null;
+    const currentKey = targetCoords ? `${targetCoords.lat.toFixed(5)}_${targetCoords.lng.toFixed(5)}_${targetZoom || 16}` : null;
     if (currentKey === prevTargetKeyRef.current) {
       return;
     }
@@ -195,9 +250,9 @@ function MapController({
 
     if (targetCoords) {
       map.panTo(targetCoords);
-      map.setZoom(16);
+      map.setZoom(targetZoom || 16);
     }
-  }, [map, targetCoords]);
+  }, [map, targetCoords, targetZoom]);
 
   // Manejo de "Cerca de ti" y centrado inicial dentro de Ciudad de Guatemala
   useEffect(() => {
@@ -455,9 +510,99 @@ export function DirectoryMap({
     return displayedBuildings.find((b) => b.id === activeBuildingId) || null;
   }, [displayedBuildings, activeBuildingId]);
 
+  // Datos del doctor actualmente seleccionado en el directorio
+  const selectedDoctorData = useMemo(() => {
+    if (!selectedDoctorId) return null;
+    return doctors.find((d) => d.doctor.exp_codigo === selectedDoctorId) || null;
+  }, [doctors, selectedDoctorId]);
+
+  // Determinar si la selección actual corresponde a Atención a Domicilio
+  const isDoctorDomicilioSelected = useMemo(() => {
+    if (!selectedDoctorData) return false;
+    const doc = selectedDoctorData.doctor;
+    const hasDomicilio = !!(doc.atencion_domicilio && doc.atencion_domicilio.length > 0);
+    if (!hasDomicilio) return false;
+    const hasClinicas = !!(doc.clinicas && doc.clinicas.length > 0);
+    return selectedClinicIndex === -1 || (!hasClinicas && hasDomicilio);
+  }, [selectedDoctorData, selectedClinicIndex]);
+
+  // Círculos y centroide de cobertura a domicilio para el doctor seleccionado
+  const domicilioCoverage = useMemo(() => {
+    if (!isDoctorDomicilioSelected || !selectedDoctorData) return null;
+    const doc = selectedDoctorData.doctor;
+    const atencionList = doc.atencion_domicilio || [];
+    if (atencionList.length === 0) return null;
+
+    const circles: { lat: number; lng: number; radiusMeters: number; label: string; muni: string }[] = [];
+
+    atencionList.forEach((ad) => {
+      const muniRaw = ad.mun_descripcion || 'Guatemala';
+      const muniKey = muniRaw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+      const rawZonas = ad.lad_zonas || '';
+      const parts = rawZonas.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean);
+      const zoneNumbers: string[] = [];
+
+      parts.forEach((p) => {
+        const nums = p.match(/\d+/g);
+        if (nums && nums.length > 0) {
+          nums.forEach((n) => zoneNumbers.push(n));
+        }
+      });
+
+      if (zoneNumbers.length > 0) {
+        const uniqueNumbers = Array.from(new Set(zoneNumbers));
+        uniqueNumbers.forEach((num) => {
+          const key = `${muniKey}-${num}`;
+          const coord = DOMICILIO_ZONA_COORDINATES[key] || DOMICILIO_ZONA_COORDINATES[`guatemala-${num}`];
+          if (coord) {
+            circles.push({
+              lat: coord.lat,
+              lng: coord.lng,
+              radiusMeters: coord.radiusMeters,
+              label: `Zona ${num}`,
+              muni: muniRaw,
+            });
+          }
+        });
+      }
+
+      // Si no se resolvieron círculos de zonas específicas, usar coordenada del municipio
+      if (circles.length === 0 && DOMICILIO_MUNICIPIO_COORDINATES[muniKey]) {
+        const muniCoord = DOMICILIO_MUNICIPIO_COORDINATES[muniKey];
+        circles.push({
+          lat: muniCoord.lat,
+          lng: muniCoord.lng,
+          radiusMeters: 3800,
+          label: muniRaw,
+          muni: muniRaw,
+        });
+      }
+    });
+
+    if (circles.length === 0) {
+      circles.push({
+        lat: GUATEMALA_CENTER.lat,
+        lng: GUATEMALA_CENTER.lng,
+        radiusMeters: 3000,
+        label: 'Ciudad de Guatemala',
+        muni: 'Guatemala',
+      });
+    }
+
+    const avgLat = circles.reduce((sum, c) => sum + c.lat, 0) / circles.length;
+    const avgLng = circles.reduce((sum, c) => sum + c.lng, 0) / circles.length;
+
+    return {
+      circles,
+      centroid: { lat: avgLat, lng: avgLng },
+      labels: Array.from(new Set(circles.map((c) => c.label))).join(', '),
+    };
+  }, [isDoctorDomicilioSelected, selectedDoctorData]);
+
   // Edificio asociado al doctor y clínica seleccionada en la lista lateral
   const selectedDoctorBuilding = useMemo(() => {
-    if (!selectedDoctorId) return null;
+    if (!selectedDoctorId || isDoctorDomicilioSelected) return null;
     return (
       displayedBuildings.find((b) =>
         b.doctors.some((d) => {
@@ -469,7 +614,7 @@ export function DirectoryMap({
         })
       ) || null
     );
-  }, [selectedDoctorId, selectedClinicIndex, displayedBuildings]);
+  }, [selectedDoctorId, isDoctorDomicilioSelected, selectedClinicIndex, displayedBuildings]);
 
   // Notificar al componente padre el edificio activo
   useEffect(() => {
@@ -478,6 +623,9 @@ export function DirectoryMap({
 
   // Coordenadas objetivo para centrado en el mapa
   const targetCoords = useMemo(() => {
+    if (isDoctorDomicilioSelected && domicilioCoverage?.centroid) {
+      return domicilioCoverage.centroid;
+    }
     if (selectedDoctorBuilding) {
       return { lat: selectedDoctorBuilding.lat, lng: selectedDoctorBuilding.lng };
     }
@@ -485,21 +633,42 @@ export function DirectoryMap({
       return { lat: activeBuilding.lat, lng: activeBuilding.lng };
     }
     return null;
-  }, [selectedDoctorBuilding, activeBuilding]);
+  }, [isDoctorDomicilioSelected, domicilioCoverage, selectedDoctorBuilding, activeBuilding]);
+
+  const targetZoom = useMemo(() => {
+    if (isDoctorDomicilioSelected) {
+      return 13;
+    }
+    return 16;
+  }, [isDoctorDomicilioSelected]);
 
   // Sincronización: Al seleccionar una sede específica del doctor, abrir el edificio y posicionar el carrusel
   useEffect(() => {
     if (selectedDoctorId) {
-      const currentActiveBuilding = activeBuildingId
-        ? displayedBuildings.find((b) => b.id === activeBuildingId)
-        : null;
-      const isDocInCurrentBuilding = currentActiveBuilding?.doctors.some(
-        (d) => d.expCodigo === selectedDoctorId
-      );
+      // Si el doctor está en modo domicilio, no activar popover de ningún edificio físico
+      if (isDoctorDomicilioSelected) {
+        setActiveBuildingId(null);
+        return;
+      }
 
-      const targetBld = isDocInCurrentBuilding
-        ? currentActiveBuilding
-        : (selectedDoctorBuilding || displayedBuildings.find((b) => b.doctors.some((d) => d.expCodigo === selectedDoctorId)));
+      // 1. Si hay una sede/clínica específica seleccionada (selectedClinicIndex),
+      // el edificio activo DEBE ser el edificio correspondiente a esa sede (selectedDoctorBuilding).
+      let targetBld: BuildingLocation | null = null;
+
+      if (selectedClinicIndex !== null && selectedClinicIndex !== undefined && selectedDoctorBuilding) {
+        targetBld = selectedDoctorBuilding;
+      } else {
+        const currentActiveBuilding = activeBuildingId
+          ? (displayedBuildings.find((b) => b.id === activeBuildingId) || null)
+          : null;
+        const isDocInCurrentBuilding = !!currentActiveBuilding?.doctors.some(
+          (d) => d.expCodigo === selectedDoctorId
+        );
+
+        targetBld = (isDocInCurrentBuilding
+          ? currentActiveBuilding
+          : (selectedDoctorBuilding || displayedBuildings.find((b) => b.doctors.some((d) => d.expCodigo === selectedDoctorId)))) ?? null;
+      }
 
       if (targetBld) {
         if (activeBuildingId !== targetBld.id) {
@@ -518,7 +687,7 @@ export function DirectoryMap({
     } else {
       setActiveBuildingId(null);
     }
-  }, [selectedDoctorId, selectedDoctorBuilding, selectedClinicIndex, activeBuildingId, displayedBuildings]);
+  }, [selectedDoctorId, isDoctorDomicilioSelected, selectedDoctorBuilding, selectedClinicIndex, activeBuildingId, displayedBuildings]);
 
   // Manejador para navegar al doctor anterior en el carrusel del edificio
   const handlePrevDoctor = (bld: BuildingLocation, e: React.MouseEvent) => {
@@ -613,6 +782,8 @@ export function DirectoryMap({
             userLocation={userLocation}
             isNearMeActive={isNearMeActive}
             targetCoords={targetCoords}
+            targetZoom={targetZoom}
+            isDoctorDomicilioSelected={isDoctorDomicilioSelected}
             selectedDoctorBuildings={selectedDoctorBuildings}
             selectedDoctorId={selectedDoctorId}
             defaultCenterCoords={defaultCenterCoords}
@@ -683,6 +854,44 @@ export function DirectoryMap({
                 </div>
               </AdvancedMarker>
             </>
+          )}
+
+          {/* Círculos de Cobertura para Atención a Domicilio */}
+          {domicilioCoverage && domicilioCoverage.circles.map((circle, cIdx) => (
+            <MapCircle
+              key={`domicilio_circle_${cIdx}_${circle.lat}_${circle.lng}`}
+              center={{ lat: circle.lat, lng: circle.lng }}
+              radius={circle.radiusMeters}
+              options={{
+                fillColor: '#10B981',
+                fillOpacity: 0.18,
+                strokeColor: '#059669',
+                strokeOpacity: 0.85,
+                strokeWeight: 2,
+              }}
+            />
+          ))}
+
+          {/* Marcador Central para Cobertura a Domicilio */}
+          {domicilioCoverage && (
+            <AdvancedMarker position={domicilioCoverage.centroid} zIndex={1100}>
+              <div className="relative flex flex-col items-center select-none group cursor-pointer -translate-y-full pb-1 animate-in fade-in zoom-in duration-300">
+                <div className="absolute -inset-2 rounded-full bg-emerald-400/30 animate-pulse pointer-events-none" />
+                <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-700 text-white font-extrabold text-xs shadow-2xl border-2 border-white">
+                  <Home className="w-4 h-4 text-emerald-200 shrink-0" />
+                  <div className="flex flex-col text-left leading-tight">
+                    <span className="font-black text-white text-[11px]">
+                      Atención a Domicilio
+                    </span>
+                    <span className="text-[10px] text-emerald-100 font-medium max-w-[200px] truncate">
+                      {domicilioCoverage.labels}
+                    </span>
+                  </div>
+                </div>
+                <div className="w-3 h-3 bg-emerald-700 border-r-2 border-b-2 border-white rotate-45 -mt-1.5 shadow-xs" />
+                <div className="w-2.5 h-0.5 bg-slate-950/40 rounded-full blur-[0.5px] mt-0.5" />
+              </div>
+            </AdvancedMarker>
           )}
 
           {/* Pines Consolidados por Edificio / Hospital */}

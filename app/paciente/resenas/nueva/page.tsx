@@ -77,8 +77,10 @@ function ResenaFormContent() {
     if (status === 'unauthenticated') {
       const currentUrl = window.location.pathname + window.location.search;
       router.replace(`/login?returnUrl=${encodeURIComponent(currentUrl)}`);
+    } else if (status === 'authenticated' && codCta) {
+      router.replace(`/dashboard/citas?citaId=${codCta}&resena=true`);
     }
-  }, [status, router]);
+  }, [status, codCta, router]);
 
   // 2. Verificar si la cita ya cuenta con una reseña previa (Modo Solo Consulta)
   useEffect(() => {

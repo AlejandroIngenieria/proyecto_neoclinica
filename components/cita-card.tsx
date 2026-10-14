@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useRouter } from 'next/navigation';
-import { BadgeCheck, CalendarDays, Calendar, Clock, MapPin, Video, Home, Edit2, XCircle, Loader2, MoreVertical, FileText, Navigation, Paperclip, ExternalLink, X, Star, ChevronDown, ChevronRight, CalendarPlus, FolderPlus, FolderMinus, ClipboardList, Stethoscope, Pill, FlaskConical, Activity, Info, Lock, Play, CheckCircle2, UserCheck, CreditCard, Upload, AlertCircle, ArrowLeftRight, Building2, Printer, Copy, Check, User, QrCode } from 'lucide-react';
+import { BadgeCheck, CalendarDays, Calendar, Clock, MapPin, Video, Home, Edit2, XCircle, Loader2, MoreVertical, FileText, Navigation, Paperclip, ExternalLink, X, Star, ChevronDown, ChevronRight, CalendarPlus, CalendarClock, FolderPlus, FolderMinus, ClipboardList, Stethoscope, Pill, FlaskConical, Activity, Info, Lock, Play, CheckCircle2, UserCheck, CreditCard, Upload, AlertCircle, ArrowLeftRight, Building2, Printer, Copy, Check, User, QrCode } from 'lucide-react';
 import type { CitaListDto, SolicitudCambioDto } from '@/types/citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { usePagarCita, isCitaPasada, useMarcarLlegadaClinica } from '@/hooks/use-flujo-citas';
@@ -28,6 +28,8 @@ type CitaCardProps = {
   solicitudCambio?: SolicitudCambioDto;
   onResponderSolicitud?: (solicitud: SolicitudCambioDto) => void;
   onCancelarSolicitud?: (solicitud: SolicitudCambioDto) => void;
+  onReview?: (cita: CitaListDto) => void;
+  onVerResena?: (cita: CitaListDto) => void;
 };
 
 export function CitaCard({
@@ -43,6 +45,8 @@ export function CitaCard({
   solicitudCambio,
   onResponderSolicitud,
   onCancelarSolicitud,
+  onReview,
+  onVerResena,
 }: CitaCardProps) {
   const router = useRouter();
   const { data: doctor, isLoading } = useDoctorByCode(cita.ctaCoddoc);
@@ -205,7 +209,7 @@ export function CitaCard({
       case 'en_proceso': return 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-300 dark:border-blue-700';
       case 'completada':
       case 'finalizada':
-      case 'realizada': return 'bg-slate-100 text-slate-700';
+      case 'realizada': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300';
       case 'cancelada':
       case 'rechazada':
       case 'no_asistio':
@@ -408,10 +412,14 @@ export function CitaCard({
   const getStatusStripeColor = (estado: string) => {
     switch (estado?.toLowerCase()) {
       case 'confirmada': return 'bg-emerald-600 dark:bg-emerald-500';
+      case 'completada':
+      case 'finalizada':
+      case 'realizada':
+      case 'atendida':
+        return 'bg-emerald-500 dark:bg-emerald-500';
       case 'programada': return 'bg-blue-600 dark:bg-blue-500';
       case 'pospuesta': return 'bg-amber-500 dark:bg-amber-400';
       case 'en_proceso': return 'bg-indigo-600 dark:bg-indigo-400 animate-pulse';
-      case 'completada': return 'bg-slate-500 dark:bg-slate-400';
       case 'cancelada':
       case 'rechazada':
       case 'no_asistio':
@@ -424,6 +432,10 @@ export function CitaCard({
   const getStatusPillStyle = (estado: string) => {
     switch (estado?.toLowerCase()) {
       case 'confirmada':
+      case 'completada':
+      case 'finalizada':
+      case 'realizada':
+      case 'atendida':
         return 'bg-emerald-50 text-emerald-700 border-emerald-200/80 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800/60';
       case 'programada':
         return 'bg-blue-50 text-blue-700 border-blue-200/80 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800/60';
@@ -431,8 +443,6 @@ export function CitaCard({
         return 'bg-amber-50 text-amber-700 border-amber-200/80 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800/60';
       case 'en_proceso':
         return 'bg-indigo-50 text-indigo-700 border-indigo-200/80 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-800/60 animate-pulse';
-      case 'completada':
-        return 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
       case 'cancelada':
       case 'rechazada':
       case 'no_asistio':
@@ -444,11 +454,15 @@ export function CitaCard({
 
   const getStatusDotBg = (estado: string) => {
     switch (estado?.toLowerCase()) {
-      case 'confirmada': return 'bg-emerald-500';
+      case 'confirmada':
+      case 'completada':
+      case 'finalizada':
+      case 'realizada':
+      case 'atendida':
+        return 'bg-emerald-500';
       case 'programada': return 'bg-blue-600';
       case 'pospuesta': return 'bg-amber-500';
       case 'en_proceso': return 'bg-indigo-600';
-      case 'completada': return 'bg-slate-500';
       case 'cancelada':
       case 'rechazada':
       case 'no_asistio':
@@ -1099,7 +1113,7 @@ export function CitaCard({
                         : estadoLower === 'confirmada' ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800/60'
                         : estadoLower === 'pospuesta' ? 'bg-amber-50 text-amber-700 border-amber-200/80 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800/60'
                         : estadoLower === 'en_proceso' ? 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 animate-pulse'
-                        : isCompletedState ? 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                        : isCompletedState ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800/60'
                         : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800/60'
                       }`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${
@@ -1107,7 +1121,7 @@ export function CitaCard({
                           : estadoLower === 'confirmada' ? 'bg-emerald-500'
                           : estadoLower === 'pospuesta' ? 'bg-amber-500'
                           : estadoLower === 'en_proceso' ? 'bg-blue-600'
-                          : isCompletedState ? 'bg-slate-500'
+                          : isCompletedState ? 'bg-emerald-500'
                           : 'bg-rose-500'
                         }`} />
                         <span>{formatCitaEstado(cita.ctaEstado)}</span>
@@ -1863,173 +1877,440 @@ export function CitaCard({
     );
   };
 
+  const getTicketStatusInfo = () => {
+    if (isCompletedState) {
+      return {
+        label: 'Cita completada',
+        subtext: yaTieneResena ? `Calificación: ${cita.ctaCalificacion}/5 ⭐` : 'Atención médica finalizada',
+        icon: <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />,
+        textClass: 'text-emerald-700 dark:text-emerald-300 font-semibold',
+      };
+    }
+    if (isCancelada) {
+      return {
+        label: 'Cita cancelada',
+        subtext: 'Horario liberado en el sistema',
+        icon: <XCircle className="w-4 h-4 text-rose-500 shrink-0" />,
+        textClass: 'text-rose-600 dark:text-rose-400 font-semibold',
+      };
+    }
+    if (isNoAsistio) {
+      return {
+        label: 'No asistió a la cita',
+        subtext: 'Paciente no se presentó al turno',
+        icon: <XCircle className="w-4 h-4 text-rose-500 shrink-0" />,
+        textClass: 'text-rose-600 dark:text-rose-400 font-semibold',
+      };
+    }
+    if (isEnProceso) {
+      return {
+        label: 'Consulta en proceso',
+        subtext: 'Médico atendiendo en este momento',
+        icon: <Activity className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 animate-pulse" />,
+        textClass: 'text-indigo-700 dark:text-indigo-300 font-semibold',
+      };
+    }
+    if (estadoLower === 'pospuesta') {
+      return {
+        label: 'Cita pospuesta',
+        subtext: 'Turno reprogramado',
+        icon: <CalendarClock className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />,
+        textClass: 'text-amber-700 dark:text-amber-300 font-semibold',
+      };
+    }
+    if (estadoLower === 'confirmada') {
+      return {
+        label: 'Cita confirmada',
+        subtext: 'Recordatorio vía SMS enviado',
+        icon: <CheckCircle2 className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />,
+        textClass: 'text-blue-700 dark:text-blue-300 font-semibold',
+      };
+    }
+    return {
+      label: 'Cita programada',
+      subtext: 'Turno confirmado en sistema',
+      icon: <CheckCircle2 className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />,
+      textClass: 'text-blue-700 dark:text-blue-300 font-semibold',
+    };
+  };
+
   const renderBentoCard = () => {
-    const hasEightButtons = Boolean(solicitudCambio && solicitudCambio.estado === 'pendiente');
-    const cancelColSpan = hasEightButtons
-      ? 'col-span-1'
-      : 'col-span-2 sm:col-span-3 md:col-span-2 xl:col-span-1';
+    const ticketStatus = getTicketStatusInfo();
+    const diaSemana = format(dateObj, "EEEE", { locale: es });
+    const diaSemanaCap = diaSemana.charAt(0).toUpperCase() + diaSemana.slice(1);
+    const tipoPagoTexto = cita.tipoPagoDescripcion ? `(${cita.tipoPagoDescripcion})` : '(En clínica)';
+
     return (
       <div
         onClick={() => setMostrarModalInfo(true)}
-        className={`group relative flex flex-col rounded-3xl border transition-all duration-200 overflow-hidden cursor-pointer ${
-          isIndependizado
-            ? 'bg-slate-50/80 dark:bg-slate-900/60 border-slate-300 dark:border-slate-700 opacity-90 shadow-sm'
-            : 'bg-white dark:bg-[#0B1120] border-slate-200/90 dark:border-slate-800 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-700/60'
+        className={`w-full flex flex-col bg-white dark:bg-[#0B1120] border border-slate-200/90 dark:border-slate-800 rounded-2xl overflow-hidden hover:shadow-md transition-shadow cursor-pointer ${
+          isCancelada || isNoAsistio ? 'opacity-85' : ''
         }`}
       >
-        {/* Orilla izquierda de color representativo del estado de la cita */}
-        <div className={`absolute left-0 top-0 bottom-0 w-2 ${getStatusStripeColor(cita.ctaEstado)} z-20`} />
-
-        {/* ─── FILA SUPERIOR: INFORMACIÓN MÉDICA & BENTO DATOS ─── */}
-        <div className="p-5 sm:p-6 pl-6 sm:pl-7 flex flex-col xl:flex-row xl:items-center justify-between gap-5 sm:gap-6">
+        {/* 1. Sección Superior (Detalles Principales - Fondo Blanco) */}
+        <div className="flex flex-col md:flex-row justify-between p-5 gap-4">
           
-          {/* Bloque Izquierdo: Doctor Avatar & Datos */}
-          <div className="flex items-center gap-4 min-w-0 max-w-xl">
-            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden object-cover border border-slate-200/80 dark:border-slate-700 shadow-xs shrink-0 relative bg-slate-200 dark:bg-slate-700 flex items-center justify-center">
+          {/* Izquierda: Info del Médico y Consulta */}
+          <div className="flex gap-4 items-start min-w-0 flex-1">
+            {/* Avatar Doctor */}
+            <div className={`w-14 h-14 rounded-2xl overflow-hidden object-cover border border-slate-200/80 dark:border-slate-700 shrink-0 relative bg-slate-100 dark:bg-slate-800 flex items-center justify-center ${
+              isCancelada || isNoAsistio ? 'opacity-70 grayscale-[40%]' : ''
+            }`}>
               {isLoading ? (
                 <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
               ) : doctor?.exp_foto_perfil ? (
-                <Image src={doctor.exp_foto_perfil} alt={cita.medicoNombre} fill sizes="80px" className="object-cover" />
+                <Image src={doctor.exp_foto_perfil} alt={cita.medicoNombre} fill sizes="56px" className="object-cover" />
               ) : (
-                <span className="text-base sm:text-lg font-black text-slate-500 dark:text-slate-400">{initials}</span>
+                <span className="text-base font-black text-slate-500 dark:text-slate-400">{initials}</span>
               )}
-              {/* Badge azul con ícono en la esquina inferior derecha de la foto */}
-              <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center border-2 border-white dark:border-slate-800 shadow-xs">
-                <Stethoscope className="w-2.5 h-2.5" />
-              </div>
             </div>
 
-            <div className="flex flex-col min-w-0">
+            <div className="flex flex-col min-w-0 flex-1">
+              {/* Nombre y Especialidad */}
               <div className="flex items-center gap-1.5 flex-wrap">
-                <h4 className="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-tight truncate" title={`Dr. ${cita.medicoNombre}`}>
+                <h3 className="text-[17px] font-bold text-slate-900 dark:text-white leading-tight">
                   Dr. {cita.medicoNombre}
-                </h4>
-                <BadgeCheck className="w-4 h-4 text-blue-600 fill-blue-50 dark:fill-blue-950 shrink-0" />
+                </h3>
+                <BadgeCheck className="w-4 h-4 text-blue-500 fill-blue-50 dark:fill-blue-950 shrink-0" />
               </div>
-              <p className="text-xs sm:text-sm font-medium text-slate-500 dark:text-slate-400 mt-0.5 truncate" title={cita.medicoEspecialidad || doctor?.exp_profesion || 'Médico y Cirujano'}>
-                {cita.medicoEspecialidad || doctor?.exp_profesion || 'Médico y Cirujano'}
+              <p className="text-[13px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                {cita.medicoEspecialidad || doctor?.exp_profesion || 'Médico y Cirujano'} · {clinicaNombreReal || 'Centro Médico SaludYa'}
               </p>
 
-              {/* Fila de Tags / Píldoras: Modalidad (con ícono) + Servicio + Estado */}
-              <div className="flex items-center gap-2 flex-wrap mt-2.5">
-                {/* Modalidad con ícono */}
-                <div className="inline-flex items-center gap-1.5 bg-blue-50/80 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 rounded-xl px-2.5 py-1 text-xs font-bold border border-blue-100 dark:border-blue-900/50 shadow-2xs">
-                  {getModalityIconSmall(cita.ctaModalidad)}
+              {/* Metadatos (Modalidad / Motivo / Ubicación o Sala) */}
+              <div className="flex flex-wrap items-center gap-2 mt-3 text-[12px] font-medium text-slate-600 dark:text-slate-300">
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {cita.ctaModalidad === 'virtual' ? (
+                    <Video className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                  ) : cita.ctaModalidad === 'domicilio' ? (
+                    <Home className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                  ) : (
+                    <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                  )}
                   <span>{getModalityLabelHeader(cita.ctaModalidad)}</span>
                 </div>
 
-                {/* Tipo de Servicio */}
-                <div className="inline-flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl px-2.5 py-1 border border-slate-200/80 dark:border-slate-700/60 text-xs shadow-2xs">
-                  <span className="text-slate-400 dark:text-slate-500 font-medium">Servicio:</span>
-                  <span className="font-bold text-slate-800 dark:text-slate-200">{servicioNombreTexto}</span>
+                <span className="text-slate-300 dark:text-slate-600">/</span>
+
+                <div className="flex items-center gap-1.5 min-w-0 max-w-[200px]">
+                  <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="truncate">{servicioNombreTexto}</span>
                 </div>
 
-                {/* Estado con punto de color */}
-                <div className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1 text-xs font-bold border shadow-2xs ${getStatusPillStyle(cita.ctaEstado)}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${getStatusDotBg(cita.ctaEstado)}`} />
-                  <span className="capitalize">{formatCitaEstado(cita.ctaEstado)}</span>
-                </div>
+                <span className="text-slate-300 dark:text-slate-600">/</span>
+
+                {cita.ctaModalidad === 'virtual' ? (
+                  <div className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 shrink-0">
+                    <div className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400 shrink-0" />
+                    <span>
+                      {cita.enlaceVideollamada ? 'Videollamada disponible' : 'Enlace en sala de espera'}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 min-w-0 max-w-[240px]">
+                    <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="truncate">{direccionDetallada || ubicacionTexto}</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Bloque Derecho: Bento de Horario/Sede & Arancel */}
-          <div className="flex flex-col md:flex-row md:items-center gap-4 sm:gap-6 shrink-0">
-            {/* Caja de Fecha, Horario y Sede */}
-            <div className="bg-[#F8FAFC] dark:bg-slate-800/40 rounded-2xl p-4 sm:p-5 border border-slate-100 dark:border-slate-800/80 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6 shadow-2xs shrink-0">
-              {/* Fecha y Hora con Calendario Azul */}
-              <div className="flex items-center gap-3 shrink-0">
-                <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-blue-600 text-white flex flex-col items-center justify-center font-black shrink-0 shadow-xs">
-                  <span className="text-[9px] uppercase tracking-wider leading-none opacity-90">{mesAbrev}</span>
-                  <span className="text-base sm:text-lg font-black leading-none mt-0.5">{diaNum}</span>
-                </div>
-                <div className="flex flex-col min-w-0">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                    FECHA Y HORA
-                  </span>
-                  <span className="text-sm sm:text-base font-black text-slate-900 dark:text-white capitalize leading-snug">
-                    {fechaLargaCap}
-                  </span>
-                  <span className="text-xs font-bold text-blue-600 dark:text-blue-400 mt-0.5">
-                    {horarioString} · {turnoTexto}
-                  </span>
-                </div>
-              </div>
-
-              {/* Separador vertical */}
-              <div className="w-px h-10 bg-slate-200 dark:bg-slate-700 mx-1 hidden sm:block shrink-0" />
-
-              {/* Sede Hospitalaria / Ubicación Única Completa */}
-              <div className="flex flex-col min-w-[140px] max-w-[210px] sm:max-w-[240px] justify-center">
-                <div className="flex items-center gap-1.5 mb-0.5">
-                  <MapPin className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                    {cita.ctaModalidad === 'domicilio'
-                      ? 'UBICACIÓN A DOMICILIO'
-                      : cita.ctaModalidad === 'virtual'
-                      ? 'CONSULTA VIRTUAL'
-                      : 'SEDE HOSPITALARIA'}
-                  </span>
-                </div>
-                <span className="text-sm sm:text-base font-black text-slate-900 dark:text-white leading-snug break-normal line-clamp-2" title={clinicaNombreReal || ubicacionTexto}>
-                  {clinicaNombreReal || ubicacionTexto}
-                </span>
-                {direccionDetallada && (
-                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed break-normal line-clamp-1" title={direccionDetallada}>
-                    {direccionDetallada}
-                  </span>
-                )}
-              </div>
+          {/* Derecha: Fecha, Hora y Precio */}
+          <div className="flex flex-col md:items-end text-left md:text-right shrink-0">
+            <div className="text-[18px] font-extrabold text-slate-900 dark:text-white leading-none">
+              {diaNum} {mesAbrev} · {horarioString}
             </div>
-
-            {/* Arancel de Consulta */}
-            <div className="flex flex-col shrink-0 md:min-w-[130px] pl-1 justify-center">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                ARANCEL CONSULTA
+            <div className="text-[12px] text-slate-500 dark:text-slate-400 mt-1">
+              {diaSemanaCap}, {turnoTexto}
+            </div>
+            <div className="flex items-center gap-1 mt-3 text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase">
+              <span>Honorario:</span>
+              <span className="text-[15px] font-bold text-blue-600 dark:text-blue-400 normal-case ml-1">
+                Q{(Number(cita.ctaPrecio) || 0).toFixed(2)}
               </span>
-              <span className="text-xl sm:text-2xl font-black text-blue-600 dark:text-blue-400 tracking-tight leading-tight mt-0.5">
-                Q{(cita.ctaPrecio ?? 0).toFixed(2)}
-              </span>
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5 truncate" title={cita.tipoPagoDescripcion || 'En clínica'}>
-                <CreditCard className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <span className="truncate">{cita.tipoPagoDescripcion || 'En clínica'}</span>
+              <span className="normal-case font-normal text-slate-400 dark:text-slate-500">
+                {tipoPagoTexto}
               </span>
             </div>
           </div>
 
         </div>
 
-        {/* ─── FILA INFERIOR DE BOTONES (ACTION RAIL INTEGRADO RESPONSIVE CON GRID) ─── */}
-        <div className="border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-[#0B1120] grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-7 auto-rows-fr">
-            {/* 2. Información */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setMostrarModalInfo(true);
-              }}
-              className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition cursor-pointer group"
-            >
-              <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1 group-hover:scale-110 transition-transform shrink-0" />
-              <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 leading-tight whitespace-nowrap">
-                Información
+        {/* 2. Sección Inferior (Estado y Acciones - Fondo Gris/Azul Muy Pálido) */}
+        <div className="flex flex-col sm:flex-row items-center justify-between px-5 py-3 bg-[#f8f9fc] dark:bg-slate-900/60 border-t border-slate-100 dark:border-slate-800 gap-3">
+          
+          {/* Izquierda: Estados */}
+          <div className="flex items-center gap-3 text-[12px] w-full sm:w-auto justify-between sm:justify-start">
+            <div className={`flex items-center gap-1.5 ${ticketStatus.textClass}`}>
+              {ticketStatus.icon}
+              <span>Estado: {ticketStatus.label}</span>
+            </div>
+            {ticketStatus.subtext && (
+              <span className="text-slate-400 dark:text-slate-500 hidden sm:inline text-[11px]">
+                · {ticketStatus.subtext}
               </span>
-            </button>
+            )}
+          </div>
 
-            {/* 3. Reprogramar / Reseña */}
-            {canModify ? (
+          {/* Derecha: Botonera de Acciones Minimalista */}
+          <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-end">
+            
+            {/* Contenedor Píldora para Íconos */}
+            <div className="flex items-center gap-0.5 sm:gap-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-1 shadow-2xs">
+              {/* Información */}
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onModify(cita);
+                  setMostrarModalInfo(true);
                 }}
-                className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition cursor-pointer group"
+                className="p-1.5 text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700/60 rounded-md transition-colors cursor-pointer"
+                title="Información detallada de la cita"
               >
-                <Calendar className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1 group-hover:scale-110 transition-transform shrink-0" />
-                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 leading-tight whitespace-nowrap">
-                  Reprogramar
-                </span>
+                <Info className="w-4 h-4" />
+              </button>
+
+              {/* Reprogramar (Solo citas activas modificables) */}
+              {canModify && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onModify(cita);
+                  }}
+                  className="p-1.5 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-md transition-colors cursor-pointer"
+                  title="Reprogramar cita"
+                >
+                  <CalendarClock className="w-4 h-4" />
+                </button>
+              )}
+
+              {/* Nueva Cita (No independizado) */}
+              {!isIndependizado && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleNuevaCita();
+                  }}
+                  className="p-1.5 text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-md transition-colors cursor-pointer"
+                  title="Agendar nueva cita con este médico"
+                >
+                  <CalendarPlus className="w-4 h-4" />
+                </button>
+              )}
+
+              {/* Reseña (Solo para citas completadas) */}
+              {yaTieneResena ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMostrarModalResena(true);
+                  }}
+                  className="p-1.5 text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-md transition-colors cursor-pointer"
+                  title={`Ver reseña (${cita.ctaCalificacion}/5)`}
+                >
+                  <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+                </button>
+              ) : canReview ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    router.push(`/paciente/resenas/nueva?cita=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}`);
+                  }}
+                  className="p-1.5 text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-md transition-colors cursor-pointer"
+                  title="Escribir reseña"
+                >
+                  <Star className="w-4 h-4" />
+                </button>
+              ) : null}
+
+              {/* Agrupar / Desagrupar si aplica */}
+              {cita.ctaGrupoId ? (
+                onUnlinkGroup && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUnlinkGroup(cita);
+                    }}
+                    className="p-1.5 text-slate-500 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-md transition-colors cursor-pointer"
+                    title={`Quitar del grupo: ${cita.grupoTema || 'Grupo'}`}
+                  >
+                    <FolderMinus className="w-4 h-4" />
+                  </button>
+                )
+              ) : (
+                onLinkGroup && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onLinkGroup(cita);
+                    }}
+                    className="p-1.5 text-slate-500 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/50 rounded-md transition-colors cursor-pointer"
+                    title="Incluir cita en un grupo"
+                  >
+                    <FolderPlus className="w-4 h-4" />
+                  </button>
+                )
+              )}
+
+              {/* Cómo llegar (Exclusivo Presencial Activo) */}
+              {canShowComoLlegar && (
+                <div className="relative inline-flex">
+                  <button
+                    ref={navButtonRef}
+                    type="button"
+                    onClick={handleToggleNavMenu}
+                    className="p-1.5 text-slate-500 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/50 rounded-md transition-colors cursor-pointer"
+                    title="Cómo llegar (Waze / Google Maps)"
+                  >
+                    <Navigation className="w-4 h-4" />
+                  </button>
+
+                  {isNavMenuOpen && menuPos && typeof window !== 'undefined' && createPortal(
+                    <motion.div
+                      ref={navMenuRef}
+                      initial={{ opacity: 0, scale: 0.94, y: 4 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.94, y: 4 }}
+                      transition={{ duration: 0.15 }}
+                      style={{
+                        position: 'absolute',
+                        top: `${menuPos.top}px`,
+                        left: `${menuPos.left}px`,
+                        zIndex: 999999,
+                      }}
+                      className="min-w-[160px] overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-1.5 shadow-2xl text-slate-800 dark:text-slate-100"
+                    >
+                      <p className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                        ¿Cómo llegar?
+                      </p>
+                      <a
+                        href={gmapsUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsNavMenuOpen(false);
+                        }}
+                        className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-950/50 hover:text-blue-600 dark:hover:text-blue-400 transition cursor-pointer"
+                      >
+                        <MapPin className="h-3.5 w-3.5 text-blue-600" />
+                        Google Maps
+                      </a>
+                      <a
+                        href={wazeUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsNavMenuOpen(false);
+                        }}
+                        className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-sky-50 dark:hover:bg-sky-950/50 hover:text-sky-600 dark:hover:text-sky-400 transition cursor-pointer"
+                      >
+                        <Navigation className="h-3.5 w-3.5 text-sky-600" />
+                        Waze
+                      </a>
+                    </motion.div>,
+                    document.body
+                  )}
+                </div>
+              )}
+
+              {/* Imprimir PDF */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleImprimirRecetaPdf();
+                }}
+                className="p-1.5 text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700/60 rounded-md transition-colors cursor-pointer"
+                title="Imprimir resumen o receta en PDF"
+              >
+                <Printer className="w-4 h-4" />
+              </button>
+
+              {/* Cancelar (Solo citas activas cancelables) */}
+              {canCancel && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCancel(cita);
+                  }}
+                  className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 rounded-md transition-colors cursor-pointer"
+                  title="Cancelar cita médica"
+                >
+                  <XCircle className="w-4 h-4" />
+                </button>
+              )}
+
+              {/* Solicitud de cambio de turno */}
+              {solicitudCambio && solicitudCambio.estado === 'pendiente' && (
+                solicitudCambio.tipoRelacion === 'enviada' ? (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onCancelarSolicitud?.(solicitudCambio); }}
+                    className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-md transition-colors cursor-pointer"
+                    title="Cancelar solicitud de intercambio de horario"
+                  >
+                    <Clock className="w-4 h-4" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onResponderSolicitud?.(solicitudCambio); }}
+                    className="p-1.5 text-orange-600 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950/50 rounded-md transition-colors cursor-pointer animate-pulse"
+                    title="Responder solicitud de intercambio de horario"
+                  >
+                    <ArrowLeftRight className="w-4 h-4" />
+                  </button>
+                )
+              )}
+            </div>
+
+            {/* Acción Primaria según Modalidad y Estado */}
+            {cita.ctaModalidad === 'virtual' && isActiva ? (
+              <a
+                href={cita.enlaceVideollamada || colaUrl}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[13px] font-bold flex items-center gap-2 transition-colors shadow-xs shrink-0 cursor-pointer"
+              >
+                <Video className="w-4 h-4" />
+                <span>Abrir Consulta</span>
+              </a>
+            ) : canMarcarLlegada ? (
+              ctaEnClinica ? (
+                <div className="bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800 px-3.5 py-2 rounded-lg text-[13px] font-bold flex items-center gap-1.5 shadow-2xs shrink-0">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>En la clínica</span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={marcarLlegadaMutation.isPending}
+                  onClick={handleMarcarLlegada}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-[13px] font-bold flex items-center gap-2 transition-colors shadow-xs shrink-0 cursor-pointer"
+                >
+                  {marcarLlegadaMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Building2 className="w-4 h-4" />}
+                  <span>Llegué a clínica</span>
+                </button>
+              )
+            ) : puedeVerCola ? (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); router.push(colaUrl); }}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[13px] font-bold flex items-center gap-2 transition-colors shadow-xs shrink-0 cursor-pointer"
+              >
+                <Activity className="w-4 h-4" />
+                <span>Ver Cola</span>
               </button>
             ) : canReview ? (
               <button
@@ -2038,304 +2319,33 @@ export function CitaCard({
                   e.stopPropagation();
                   router.push(`/paciente/resenas/nueva?cita=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}`);
                 }}
-                className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-amber-600 dark:text-amber-400 transition cursor-pointer group"
+                className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-[13px] font-bold flex items-center gap-2 transition-colors shadow-xs shrink-0 cursor-pointer"
               >
-                <Star className="w-4 h-4 fill-amber-400 text-amber-400 mb-1 group-hover:scale-110 transition-transform shrink-0" />
-                <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
-                  Calificar
-                </span>
-              </button>
-            ) : yaTieneResena ? (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setMostrarModalResena(true);
-                }}
-                className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-amber-600 dark:text-amber-400 transition cursor-pointer group"
-              >
-                <Star className="w-4 h-4 fill-amber-400 text-amber-400 mb-1 shrink-0" />
-                <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
-                  Reseña ({cita.ctaCalificacion}/5)
-                </span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setMostrarModalInfo(true);
-                }}
-                className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-400 dark:text-slate-500 transition cursor-pointer group"
-              >
-                <Calendar className="w-4 h-4 text-slate-400 mb-1 shrink-0" />
-                <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
-                  Reprogramar
-                </span>
-              </button>
-            )}
-
-            {/* 4. Nueva Cita */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleNuevaCita();
-              }}
-              className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition cursor-pointer group"
-            >
-              <CalendarPlus className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1 group-hover:scale-110 transition-transform shrink-0" />
-              <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 leading-tight whitespace-nowrap">
-                Nueva cita
-              </span>
-            </button>
-
-            {/* 5. Cómo Llegar */}
-            {canShowComoLlegar ? (
-              <div className="relative h-full flex flex-col border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80">
-                <button
-                  ref={navButtonRef}
-                  type="button"
-                  onClick={handleToggleNavMenu}
-                  className="w-full h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center hover:bg-slate-50 dark:hover:bg-slate-800/60 transition cursor-pointer group"
-                >
-                  <div className="flex items-center gap-0.5 mb-1">
-                    <Navigation className="w-4 h-4 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform shrink-0" />
-                    <ChevronDown className="w-3 h-3 text-slate-400" />
-                  </div>
-                  <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 leading-tight whitespace-nowrap">
-                    Cómo llegar
-                  </span>
-                </button>
-
-                {/* Popover Menú Cómo llegar */}
-                {isNavMenuOpen && menuPos && typeof window !== 'undefined' && createPortal(
-                  <motion.div
-                    ref={navMenuRef}
-                    initial={{ opacity: 0, scale: 0.94, y: 4 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.94, y: 4 }}
-                    transition={{ duration: 0.15 }}
-                    style={{
-                      position: 'absolute',
-                      top: `${menuPos.top}px`,
-                      left: `${menuPos.left}px`,
-                      zIndex: 999999,
-                    }}
-                    className="min-w-[160px] overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-1.5 shadow-2xl text-slate-800 dark:text-slate-100"
-                  >
-                    <p className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                      ¿Cómo llegar?
-                    </p>
-                    <a
-                      href={gmapsUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIsNavMenuOpen(false);
-                      }}
-                      className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-950/50 hover:text-blue-600 dark:hover:text-blue-400 transition cursor-pointer"
-                    >
-                      <MapPin className="h-3.5 w-3.5 text-blue-600" />
-                      Google Maps
-                    </a>
-                    <a
-                      href={wazeUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIsNavMenuOpen(false);
-                      }}
-                      className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-sky-50 dark:hover:bg-sky-950/50 hover:text-sky-600 dark:hover:text-sky-400 transition cursor-pointer"
-                    >
-                      <Navigation className="h-3.5 w-3.5 text-sky-600" />
-                      Waze
-                    </a>
-                  </motion.div>,
-                  document.body
-                )}
-              </div>
-            ) : cita.ctaModalidad === 'virtual' && cita.enlaceVideollamada ? (
-              <a
-                href={cita.enlaceVideollamada}
-                target="_blank"
-                rel="noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition cursor-pointer group"
-              >
-                <Video className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1 group-hover:scale-110 transition-transform shrink-0" />
-                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 leading-tight whitespace-nowrap">
-                  Videollamada
-                </span>
-              </a>
-            ) : tieneArchivos ? (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setMostrarModalArchivos(true);
-                }}
-                className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition cursor-pointer group"
-              >
-                <Paperclip className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1 group-hover:scale-110 transition-transform shrink-0" />
-                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 leading-tight whitespace-nowrap">
-                  Archivos
-                </span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setMostrarModalInfo(true);
-                }}
-                className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-400 dark:text-slate-500 transition cursor-pointer group"
-              >
-                <Navigation className="w-4 h-4 text-slate-400 mb-1 shrink-0" />
-                <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
-                  Cómo llegar
-                </span>
-              </button>
-            )}
-
-            {/* 6. Agrupar / Desagrupar */}
-            {cita.ctaGrupoId ? (
-              onUnlinkGroup ? (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onUnlinkGroup(cita);
-                  }}
-                  className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-rose-50 text-slate-700 hover:text-rose-600 dark:text-slate-200 transition cursor-pointer group"
-                >
-                  <FolderMinus className="w-4 h-4 text-purple-600 dark:text-purple-400 mb-1 group-hover:scale-110 transition-transform shrink-0" />
-                  <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
-                    Desagrupar
-                  </span>
-                </button>
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 bg-purple-50/50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300">
-                  <FolderMinus className="w-4 h-4 text-purple-600 mb-1 shrink-0" />
-                  <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
-                    En Serie
-                  </span>
-                </div>
-              )
-            ) : onLinkGroup ? (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onLinkGroup(cita);
-                }}
-                className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition cursor-pointer group"
-              >
-                <FolderPlus className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1 group-hover:scale-110 transition-transform shrink-0" />
-                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 leading-tight whitespace-nowrap">
-                  Agrupar
-                </span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setMostrarModalInfo(true);
-                }}
-                className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-400 dark:text-slate-500 transition cursor-pointer group"
-              >
-                <FolderPlus className="w-4 h-4 text-slate-400 mb-1 shrink-0" />
-                <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
-                  Agrupar
-                </span>
-              </button>
-            )}
-
-            {/* 7. Imprimir PDF */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleImprimirRecetaPdf();
-              }}
-              className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition cursor-pointer group"
-            >
-              <Printer className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1 group-hover:scale-110 transition-transform shrink-0" />
-              <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 leading-tight whitespace-nowrap">
-                Imprimir PDF
-              </span>
-            </button>
-
-            {/* 8. Botón Cancelar (donde corresponda según estado, adaptado responsive) */}
-            {canCancel ? (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onCancel(cita);
-                }}
-                className={`h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 transition cursor-pointer group ${cancelColSpan}`}
-                title="Cancelar cita médica"
-              >
-                <XCircle className="w-4 h-4 text-rose-500 dark:text-rose-400 mb-1 group-hover:scale-110 transition-transform shrink-0" />
-                <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
-                  Cancelar
-                </span>
+                <Star className="w-4 h-4 fill-white" />
+                <span>Calificar</span>
               </button>
             ) : isCompletedState ? (
-              <div className={`h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 bg-emerald-50/40 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300 ${cancelColSpan}`}>
-                <CheckCircle2 className="w-4 h-4 text-emerald-500 mb-1 shrink-0" />
-                <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
-                  Completada
-                </span>
-              </div>
-            ) : isCancelada ? (
-              <div className={`h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 bg-rose-50/40 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 ${cancelColSpan}`}>
-                <XCircle className="w-4 h-4 text-rose-500 mb-1 shrink-0" />
-                <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
-                  Cancelada
-                </span>
-              </div>
-            ) : isNoAsistio ? (
-              <div className={`h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 bg-slate-50 dark:bg-slate-800/40 text-slate-500 dark:text-slate-400 ${cancelColSpan}`}>
-                <AlertCircle className="w-4 h-4 text-slate-400 mb-1 shrink-0" />
-                <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
-                  No asistió
-                </span>
-              </div>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); handleImprimirRecetaPdf(); }}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[13px] font-bold flex items-center gap-2 transition-colors shadow-xs shrink-0 cursor-pointer"
+              >
+                <FileText className="w-4 h-4" />
+                <span>Ver Receta</span>
+              </button>
+            ) : (isCancelada || isNoAsistio) && !isIndependizado ? (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); handleNuevaCita(); }}
+                className="bg-slate-700 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-[13px] font-bold flex items-center gap-2 transition-colors shadow-xs shrink-0 cursor-pointer"
+              >
+                <CalendarPlus className="w-4 h-4" />
+                <span>Reagendar</span>
+              </button>
             ) : null}
 
-            {/* 9. Botón Intercambio de turno si existe solicitud */}
-            {solicitudCambio && solicitudCambio.estado === 'pendiente' && (
-              solicitudCambio.tipoRelacion === 'enviada' ? (
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onCancelarSolicitud?.(solicitudCambio); }}
-                  className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 hover:bg-rose-50 text-amber-700 dark:text-amber-300 transition cursor-pointer group"
-                  title="Cancelar solicitud de intercambio de horario"
-                >
-                  <Clock className="w-4 h-4 text-amber-500 mb-1 group-hover:scale-110 transition-transform shrink-0" />
-                  <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
-                    Cancelar Cambio
-                  </span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onResponderSolicitud?.(solicitudCambio); }}
-                  className="h-full flex flex-col items-center justify-center py-2.5 sm:py-3 px-2 text-center border-r border-b xl:border-b-0 border-slate-100 dark:border-slate-800/80 bg-orange-50 hover:bg-orange-100 text-orange-700 dark:text-orange-300 font-black transition cursor-pointer group animate-pulse"
-                  title="Responder solicitud de intercambio de horario"
-                >
-                  <ArrowLeftRight className="w-4 h-4 text-orange-600 mb-1 shrink-0" />
-                  <span className="text-[11px] font-bold leading-tight whitespace-nowrap">
-                    Responder
-                  </span>
-                </button>
-              )
-            )}
+          </div>
+
         </div>
 
         {renderModalPortal()}

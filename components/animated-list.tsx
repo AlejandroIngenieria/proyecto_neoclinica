@@ -7,17 +7,17 @@ type AnimatedListProps = {
   children: ReactNode[];
   className?: string;
   style?: React.CSSProperties;
-  /** Delay base entre items en segundos (default: 0.06) */
+  /** Delay base entre items en segundos (default: 0.015) */
   staggerDelay?: number;
 };
 
 const itemVariants = {
-  hidden: { opacity: 0, y: 20 },
+  hidden: { opacity: 0, y: 8 },
   visible: { opacity: 1, y: 0 },
 };
 
 /**
- * Wrapper que anima la aparición de cada hijo con un stagger escalonado.
+ * Wrapper que anima la aparición de cada hijo con un stagger escalonado rápido.
  * Ideal para listas de DoctorCards, resultados de búsqueda, etc.
  *
  * @example
@@ -25,7 +25,7 @@ const itemVariants = {
  *   {doctors.map(d => <DoctorCard key={d.id} ... />)}
  * </AnimatedList>
  */
-export function AnimatedList({ children, className, style, staggerDelay = 0.06 }: AnimatedListProps) {
+export function AnimatedList({ children, className, style, staggerDelay = 0.015 }: AnimatedListProps) {
   return (
     <motion.div
       className={className}
@@ -53,9 +53,9 @@ export function AnimatedList({ children, className, style, staggerDelay = 0.06 }
         return (
           <motion.div
             key={key}
-            layout
+            layout="position"
             variants={itemVariants}
-            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
             className={isExpanded ? 'col-span-full w-full h-full' : 'w-full h-full'}
             style={isExpanded ? { gridColumn: '1 / -1' } : undefined}
           >

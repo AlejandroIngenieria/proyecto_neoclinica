@@ -43,10 +43,10 @@ export function InsuranceLogoBadge({
   const logoBox = (
     <div
       title={asg.aseguradora}
-      className={`shrink-0 flex items-center justify-center bg-white overflow-hidden transition-all duration-150 ${sizeClasses} ${
+      className={`shrink-0 flex items-center justify-center bg-white dark:bg-slate-800 overflow-hidden transition-all duration-150 ${sizeClasses} ${
         isHighlighted
           ? 'border border-sky-500 ring-2 ring-sky-400/80 shadow-xs'
-          : 'border border-slate-200/90 shadow-2xs hover:border-slate-300'
+          : 'border border-slate-200/90 dark:border-slate-700 shadow-2xs hover:border-slate-300 dark:hover:border-slate-600'
       } ${className}`}
     >
       {asg.imagen && !hasError ? (
@@ -58,11 +58,11 @@ export function InsuranceLogoBadge({
           className="w-full h-full object-contain pointer-events-none select-none"
         />
       ) : initials ? (
-        <span className="font-black text-slate-700 tracking-tighter leading-none select-none">
+        <span className="font-black text-slate-700 dark:text-slate-200 tracking-tighter leading-none select-none">
           {initials}
         </span>
       ) : (
-        <Shield className="w-3 h-3 text-slate-400" />
+        <Shield className="w-3 h-3 text-slate-400 dark:text-slate-500" />
       )}
     </div>
   );
@@ -76,7 +76,7 @@ export function InsuranceLogoBadge({
       title={asg.aseguradora}
       className={`inline-flex items-center gap-2 px-2.5 py-1.5 rounded-xl border transition-colors ${
         isHighlighted
-          ? 'bg-sky-50/80 border-sky-400 text-sky-900 ring-1 ring-sky-300/50'
+          ? 'bg-sky-50/80 dark:bg-sky-950/60 border-sky-400 dark:border-sky-600 text-sky-900 dark:text-sky-200 ring-1 ring-sky-300/50'
           : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 hover:border-slate-300 shadow-2xs'
       }`}
     >

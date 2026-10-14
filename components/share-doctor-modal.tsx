@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCode from 'qrcode';
 import {
@@ -49,7 +50,26 @@ export interface ShareDoctorModalProps {
 export function ShareDoctorModal({ isOpen, onClose, doctor }: ShareDoctorModalProps) {
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
+  const [mounted, setMounted] = useState<boolean>(false);
+  const [canNativeShare, setCanNativeShare] = useState<boolean>(false);
   const modalRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      setCanNativeShare(true);
+    }
+  }, []);
+
+  // Bloquear scroll de la página mientras el modal está abierto
+  useEffect(() => {
+    if (!isOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isOpen]);
 
   const profileUrl =
     doctor.url ||
@@ -95,14 +115,18 @@ export function ShareDoctorModal({ isOpen, onClose, doctor }: ShareDoctorModalPr
   }, [isOpen, onClose]);
 
   // Copiar al portapapeles
-  const handleCopyLink = async () => {
+  const handleCopyLink = async (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
     try {
-      if (navigator?.clipboard?.writeText) {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(profileUrl);
       } else {
         const textarea = document.createElement('textarea');
         textarea.value = profileUrl;
         textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '0';
         textarea.style.opacity = '0';
         document.body.appendChild(textarea);
         textarea.focus();
@@ -119,10 +143,14 @@ export function ShareDoctorModal({ isOpen, onClose, doctor }: ShareDoctorModalPr
   };
 
   // Descargar código QR en PNG
-  const handleDownloadQr = () => {
+  const handleDownloadQr = (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
     if (!qrDataUrl) return;
-    const sanitizedName = doctor.nombre
+    const sanitizedName = (doctor.nombre || 'medico')
       .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9]/g, '-')
       .replace(/-+/g, '-');
     const link = document.createElement('a');
@@ -135,8 +163,10 @@ export function ShareDoctorModal({ isOpen, onClose, doctor }: ShareDoctorModalPr
   };
 
   // Compartir nativo (dispositivos móviles / navegadores compatibles)
-  const handleNativeShare = async () => {
-    if (typeof navigator !== 'undefined' && navigator.share) {
+  const handleNativeShare = async (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       try {
         await navigator.share({
           title: `Perfil Médico: ${doctor.nombre}`,
@@ -182,23 +212,28 @@ export function ShareDoctorModal({ isOpen, onClose, doctor }: ShareDoctorModalPr
     },
   ];
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
         <div
           role="dialog"
           aria-modal="true"
           aria-labelledby="share-doctor-title"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
-          onClick={onClose}
+          className="fixed inset-0 z-[99999] flex items-center justify-center p-4 sm:p-6"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
         >
-          {/* Backdrop con desenfoque suave */}
+          {/* Backdrop con desenfoque suave y cubrimiento total */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
+            className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm"
           />
 
           {/* Tarjeta Modal */}
@@ -245,7 +280,10 @@ export function ShareDoctorModal({ isOpen, onClose, doctor }: ShareDoctorModalPr
 
               <button
                 type="button"
-                onClick={onClose}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose();
+                }}
                 className="rounded-lg p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:text-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
                 aria-label="Cerrar ventana"
               >
@@ -340,6 +378,7 @@ export function ShareDoctorModal({ isOpen, onClose, doctor }: ShareDoctorModalPr
                         href={opt.href}
                         target="_blank"
                         rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
                         className={`flex flex-col items-center justify-center p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 transition active:scale-95 ${opt.hoverBg}`}
                       >
                         <Icon className="h-4 w-4 mb-1" />
@@ -352,7 +391,7 @@ export function ShareDoctorModal({ isOpen, onClose, doctor }: ShareDoctorModalPr
             </div>
 
             {/* Pie de modal */}
-            {typeof navigator !== 'undefined' && typeof navigator.share === 'function' && (
+            {canNativeShare && (
               <div className="bg-slate-50 dark:bg-slate-800/50 px-6 py-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
                 <span className="text-xs text-slate-500 dark:text-slate-400">
                   ¿Deseas usar otras aplicaciones?
@@ -370,6 +409,7 @@ export function ShareDoctorModal({ isOpen, onClose, doctor }: ShareDoctorModalPr
           </motion.div>
         </div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }

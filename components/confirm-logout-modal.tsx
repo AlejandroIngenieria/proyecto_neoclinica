@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { signOut } from 'next-auth/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LogOut, X, Loader2 } from 'lucide-react';
@@ -16,7 +17,12 @@ export default function ConfirmLogoutModal({
   onClose,
   callbackUrl = '/login',
 }: ConfirmLogoutModalProps) {
+  const [mounted, setMounted] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Cerrar al presionar la tecla Escape
   useEffect(() => {
@@ -38,10 +44,12 @@ export default function ConfirmLogoutModal({
     }
   };
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
           {/* Fondo desenfocado minimalista */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -51,7 +59,7 @@ export default function ConfirmLogoutModal({
             onClick={() => {
               if (!isLoggingOut) onClose();
             }}
-            className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm"
+            className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm"
           />
 
           {/* Tarjeta modal minimalista */}
@@ -115,6 +123,7 @@ export default function ConfirmLogoutModal({
           </motion.div>
         </div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }

@@ -1,10 +1,12 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { SideDrawer } from '@/components/side-drawer';
 import type { CitaListDto } from '@/types/citas';
-import { Phone, Clock, MapPin, Monitor, FileText, Download, MessageCircle, CalendarDays, AlertCircle, Star, Printer, ClipboardList, Stethoscope, Pill, FlaskConical, Info } from 'lucide-react';
+import { Phone, Clock, MapPin, Monitor, FileText, Download, MessageCircle, CalendarDays, AlertCircle, Star, Printer, ClipboardList, Stethoscope, Pill, FlaskConical, Info, Copy, Check, CheckCircle2, XCircle, Activity, Paperclip, ExternalLink, FolderPlus } from 'lucide-react';
 import Image from 'next/image';
+import { toast } from 'sonner';
 
 // Assuming safeFormatDate is extracted or we can define it here for simplicity
 import { format, parseISO } from 'date-fns';
@@ -36,11 +38,42 @@ export type CitaDetailDrawerProps = {
 
 export function CitaDetailDrawer({ isOpen, onClose, cita, onEdit, onCancel, doctorFoto }: CitaDetailDrawerProps) {
   const router = useRouter();
+  const [idCopiado, setIdCopiado] = useState(false);
+
   if (!cita) return null;
 
   const isCompleted = ['completada', 'finalizada', 'realizada'].includes(
     (cita.ctaEstado || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\s\-]+/g, '_')
   );
+
+  const estadoRaw = (cita.ctaEstado || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\s\-]+/g, '_');
+  const citaCodigoDisplay = cita.ctaCodigo ? `${cita.ctaCodigo.slice(0, 8).toUpperCase()}...` : '';
+
+  const handleCopiarId = async (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!cita.ctaCodigo) return;
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(cita.ctaCodigo);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = cita.ctaCodigo;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      setIdCopiado(true);
+      toast.success('ID de cita copiado al portapapeles', {
+        description: cita.ctaCodigo,
+        duration: 2500,
+      });
+      setTimeout(() => setIdCopiado(false), 2000);
+    } catch {
+      toast.error('No se pudo copiar el ID');
+    }
+  };
 
   const handleImprimirRecetaPdf = () => {
     if (typeof window === 'undefined') return;
@@ -181,7 +214,6 @@ export function CitaDetailDrawer({ isOpen, onClose, cita, onEdit, onCancel, doct
       printWindow.document.open();
       printWindow.document.write(printHtml);
       printWindow.document.close();
-      printWindow.focus();
       setTimeout(() => {
         try {
           printWindow.print();
@@ -192,152 +224,319 @@ export function CitaDetailDrawer({ isOpen, onClose, cita, onEdit, onCancel, doct
     }
   };
 
+  const listaArchivos = cita.archivos || [];
+  const tieneArchivos = listaArchivos.length > 0;
+
   return (
     <SideDrawer
       isOpen={isOpen}
       onClose={onClose}
       title={
         <div className="flex items-center gap-2.5">
-          <ClipboardList className="w-5 h-5 text-[#2563EB]" />
-          <span className="text-[#111827] dark:text-white font-black text-lg">Información</span>
+          <div className="p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl shrink-0">
+            <ClipboardList className="w-5 h-5" />
+          </div>
+          <div>
+            <span className="text-[#111827] dark:text-white font-black text-lg">Información</span>
+          </div>
         </div>
       }
       subtitle={
-        <div className="flex items-center gap-2 mt-1.5">
-          <span className="text-xs text-[#6B7280] dark:text-slate-400 font-medium">Dr(a). {cita.medicoNombre}</span>
-          <span className="inline-flex items-center gap-1.5 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-slate-700 px-2 py-0.5 rounded-md text-[11px] font-bold text-[#111827] dark:text-white uppercase tracking-wider">
-            {((cita.ctaEstado || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\s\-]+/g, '_') === 'no_asistio') ? 'No asistió' : (cita.ctaEstado || '').replace(/_/g, ' ')}
+        <div className="flex flex-wrap items-center gap-2 mt-1.5">
+          {/* Badge dinámico con el estado real */}
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+            estadoRaw === 'programada' ? 'bg-sky-50 text-sky-700 border-sky-200/80 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-800/60'
+            : estadoRaw === 'confirmada' ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800/60'
+            : estadoRaw === 'pospuesta' ? 'bg-amber-50 text-amber-700 border-amber-200/80 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800/60'
+            : estadoRaw === 'en_proceso' ? 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 animate-pulse'
+            : isCompleted ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800/60'
+            : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800/60'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${
+              estadoRaw === 'programada' ? 'bg-sky-500'
+              : estadoRaw === 'confirmada' ? 'bg-emerald-500'
+              : estadoRaw === 'pospuesta' ? 'bg-amber-500'
+              : estadoRaw === 'en_proceso' ? 'bg-blue-600'
+              : isCompleted ? 'bg-emerald-500'
+              : 'bg-rose-500'
+            }`} />
+            <span>
+              {estadoRaw === 'no_asistio'
+                ? 'No asistió'
+                : estadoRaw === 'en_proceso'
+                ? 'En proceso'
+                : (cita.ctaEstado || 'Programada').charAt(0).toUpperCase() + (cita.ctaEstado || 'Programada').slice(1).replace(/_/g, ' ')}
+            </span>
           </span>
+
+          {/* Calificación si ya fue evaluada */}
+          {isCompleted && typeof cita.ctaCalificacion === 'number' && cita.ctaCalificacion > 0 && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+              <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+              <span>{cita.ctaCalificacion}/5 Estrellas</span>
+            </span>
+          )}
+
+          {/* Grupo si existe */}
+          {cita.grupoTema && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/70 dark:border-indigo-800/60">
+              <FolderPlus className="w-3 h-3" /> {cita.grupoTema}
+            </span>
+          )}
+
+          {/* ID CITA con botón de copiar en el header */}
+          {cita.ctaCodigo && (
+            <button
+              type="button"
+              onClick={handleCopiarId}
+              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition cursor-pointer group"
+              title={`Copiar ID: ${cita.ctaCodigo}`}
+            >
+              <span className="text-[10px] uppercase font-sans text-slate-400">ID:</span>
+              <span>#{citaCodigoDisplay}</span>
+              {idCopiado ? (
+                <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <Copy className="w-3 h-3 text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" />
+              )}
+            </button>
+          )}
         </div>
       }
     >
-      <div className="space-y-10 pb-12 text-[#111827] dark:text-slate-200 font-sans">
+      <div className="space-y-4 pb-2 text-[#111827] dark:text-slate-200 font-sans">
         
-        {/* 1. ACCIONES PRIMARIAS */}
-        <div className="space-y-3">
-          <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-widest mb-4">Acciones Rápidas</p>
+        {/* 1. Banner contextual explicativo según el estado REAL de la cita */}
+        {estadoRaw === 'no_asistio' ? (
+          <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 flex items-start gap-3.5">
+            <div className="p-2.5 rounded-xl bg-rose-600 text-white shadow-xs shrink-0 mt-0.5">
+              <XCircle className="w-5 h-5" />
+            </div>
+            <div className="text-xs">
+              <h4 className="font-bold text-rose-900 dark:text-rose-200 text-sm">Estado de la Cita: No asistió</h4>
+              <p className="text-rose-700 dark:text-rose-300/90 mt-1 leading-relaxed">
+                Esta consulta médica fue registrada como no asistida. El paciente no se presentó en la fecha y horario establecido ({safeFormatDateLocal(cita.ctaFecha, "d 'de' MMMM")} a las {cita.ctaHora ? cita.ctaHora.slice(0, 5) : ''} hrs). Por esta razón no se generó expediente clínico ni prescripción médica.
+              </p>
+            </div>
+          </div>
+        ) : estadoRaw === 'cancelada' ? (
+          <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 flex items-start gap-3.5">
+            <div className="p-2.5 rounded-xl bg-rose-600 text-white shadow-xs shrink-0 mt-0.5">
+              <XCircle className="w-5 h-5" />
+            </div>
+            <div className="text-xs">
+              <h4 className="font-bold text-rose-900 dark:text-rose-200 text-sm">Estado de la Cita: Cancelada</h4>
+              <p className="text-rose-700 dark:text-rose-300/90 mt-1 leading-relaxed">
+                La cita médica fue cancelada previamente. El horario asignado quedó liberado en el sistema y no se efectuaron cargos clínicos.
+              </p>
+            </div>
+          </div>
+        ) : estadoRaw === 'rechazada' ? (
+          <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 flex items-start gap-3.5">
+            <div className="p-2.5 rounded-xl bg-rose-600 text-white shadow-xs shrink-0 mt-0.5">
+              <AlertCircle className="w-5 h-5" />
+            </div>
+            <div className="text-xs">
+              <h4 className="font-bold text-rose-900 dark:text-rose-200 text-sm">Estado de la Cita: Solicitud Rechazada</h4>
+              <p className="text-rose-700 dark:text-rose-300/90 mt-1 leading-relaxed">
+                Esta solicitud de cita no pudo ser confirmada y fue declinada por el médico o centro de salud.
+              </p>
+            </div>
+          </div>
+        ) : estadoRaw === 'en_proceso' ? (
+          <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 flex items-start gap-3.5 animate-pulse">
+            <div className="p-2.5 rounded-xl bg-blue-600 text-white shadow-xs shrink-0 mt-0.5">
+              <Activity className="w-5 h-5" />
+            </div>
+            <div className="text-xs">
+              <h4 className="font-bold text-blue-900 dark:text-blue-200 text-sm">Estado de la Cita: Consulta en Proceso</h4>
+              <p className="text-blue-700 dark:text-blue-300/90 mt-1 leading-relaxed">
+                El médico se encuentra atendiendo esta consulta. El diagnóstico y prescripción médica se registrarán en el expediente al finalizar.
+              </p>
+            </div>
+          </div>
+        ) : estadoRaw === 'confirmada' ? (
+          <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 flex items-start gap-3.5">
+            <div className="p-2.5 rounded-xl bg-emerald-600 text-white shadow-xs shrink-0 mt-0.5">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <div className="text-xs">
+              <h4 className="font-bold text-emerald-900 dark:text-emerald-200 text-sm">Estado de la Cita: Confirmada</h4>
+              <p className="text-emerald-700 dark:text-emerald-300/90 mt-1 leading-relaxed">
+                Tu cita se encuentra confirmada por el centro médico. Te recomendamos presentarte con 10 a 15 minutos de anticipación en la fecha indicada.
+              </p>
+            </div>
+          </div>
+        ) : estadoRaw === 'pospuesta' ? (
+          <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 flex items-start gap-3.5">
+            <div className="p-2.5 rounded-xl bg-amber-500 text-white shadow-xs shrink-0 mt-0.5">
+              <Clock className="w-5 h-5" />
+            </div>
+            <div className="text-xs">
+              <h4 className="font-bold text-amber-900 dark:text-amber-200 text-sm">Estado de la Cita: Pospuesta</h4>
+              <p className="text-amber-700 dark:text-amber-300/90 mt-1 leading-relaxed">
+                Esta consulta fue pospuesta/reprogramada. Revisa los nuevos horarios asignados para tu atención.
+              </p>
+            </div>
+          </div>
+        ) : estadoRaw === 'programada' ? (
+          <div className="p-4 rounded-2xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-900/60 flex items-start gap-3.5">
+            <div className="p-2.5 rounded-xl bg-sky-600 text-white shadow-xs shrink-0 mt-0.5">
+              <Clock className="w-5 h-5" />
+            </div>
+            <div className="text-xs">
+              <h4 className="font-bold text-sky-900 dark:text-sky-200 text-sm">Estado de la Cita: Programada</h4>
+              <p className="text-sky-700 dark:text-sky-300/90 mt-1 leading-relaxed">
+                Cita agendada en el sistema, pendiente de atención médica en la fecha y hora seleccionada ({safeFormatDateLocal(cita.ctaFecha, "d 'de' MMMM")} a las {cita.ctaHora ? cita.ctaHora.slice(0, 5) : ''} hrs).
+              </p>
+            </div>
+          </div>
+        ) : isCompleted ? (
+          <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-start gap-3.5">
+            <div className="p-2.5 rounded-xl bg-slate-700 dark:bg-slate-600 text-white shadow-xs shrink-0 mt-0.5">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <div className="text-xs">
+              <h4 className="font-bold text-slate-900 dark:text-white text-sm">Estado de la Cita: Consulta Completada</h4>
+              <p className="text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
+                Esta consulta médica fue atendida y finalizada con éxito. A continuación encontrarás el expediente clínico registrado por el doctor.
+              </p>
+            </div>
+          </div>
+        ) : null}
 
-          {['completada', 'finalizada', 'realizada'].includes((cita.ctaEstado || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\s\-]+/g, '_')) && (!cita.ctaCalificacion || cita.ctaCalificacion <= 0) && (
-            <button 
-              onClick={() => {
-                onClose();
-                router.push(`/paciente/resenas/nueva?cita=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}`);
-              }}
-              className="w-full py-3 px-4 bg-amber-500 text-white rounded-xl font-bold text-sm hover:bg-amber-600 transition-colors shadow-md text-center flex items-center justify-center gap-2 cursor-pointer mb-2"
-            >
-              <Star className="w-4 h-4 fill-white text-white" />
-              <span>Escribir reseña del médico</span>
-            </button>
-          )}
-
-          {typeof cita.ctaCalificacion === 'number' && cita.ctaCalificacion > 0 && (
-            <div className="w-full py-2.5 px-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-800 dark:text-amber-300 text-xs font-bold flex items-center justify-center gap-1.5 mb-2">
-              <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
-              <span>Cita calificada ({cita.ctaCalificacion}/5 estrellas)</span>
+        {/* 2. Ficha de Datos Conectados de la Cita */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 text-xs">
+          {/* ID de la Cita Médica (CÓDIGO ÚNICO) */}
+          {cita.ctaCodigo && (
+            <div className="sm:col-span-2 pb-2.5 mb-0.5 border-b border-slate-200/70 dark:border-slate-700/60 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 block">ID de la Cita (Código Único)</span>
+                <p className="font-mono text-xs font-bold text-slate-800 dark:text-slate-200 truncate select-all" title={cita.ctaCodigo}>
+                  {cita.ctaCodigo}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCopiarId}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 transition shadow-2xs shrink-0 cursor-pointer active:scale-95"
+                title="Copiar ID al portapapeles"
+              >
+                {idCopiado ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span className="text-emerald-600 dark:text-emerald-400">¡Copiado!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span>Copiar ID</span>
+                  </>
+                )}
+              </button>
             </div>
           )}
 
-          {['programada', 'confirmada', 'pospuesta'].includes(cita.ctaEstado) && (
-            <>
-              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
-                <button 
-                  onClick={() => onEdit?.(cita)}
-                  className="flex-1 py-3 px-4 bg-[#2563EB] text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-colors shadow-sm text-center"
-                >
-                  Modificar cita
-                </button>
-                <button 
-                  onClick={() => onEdit?.(cita)}
-                  className="flex-1 py-3 px-4 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-slate-700 text-[#111827] dark:text-slate-300 rounded-xl font-bold text-sm hover:bg-gray-100 dark:hover:bg-[#0F172A] transition-colors text-center"
-                >
-                  Reprogramar
-                </button>
-              </div>
-              <button 
-                onClick={() => onCancel?.(cita)}
-                className="w-full py-3 px-4 bg-white dark:bg-[#1E293B] border border-[#FCA5A5] dark:border-red-900 text-[#EF4444] dark:text-red-400 rounded-xl font-bold text-sm hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-center mt-2"
-              >
-                Cancelar cita
-              </button>
-            </>
-          )}
-        </div>
+          {/* Paciente */}
+          <div className="space-y-1">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Paciente</span>
+            <p className="font-bold text-slate-900 dark:text-white text-sm">
+              {cita.pacienteNombre || 'Paciente Registrado'}
+            </p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              {cita.pacienteEstado === 'independizado' ? 'Cuenta Independizada' : 'Paciente de la cuenta'}
+            </p>
+          </div>
 
-        {/* 2. INFORMACIÓN MÉDICA */}
-        <div>
-          <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-widest mb-4">Detalles de la Consulta</p>
-          <div className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-slate-700 rounded-2xl p-5 shadow-sm space-y-5">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 bg-[#F9FAFB] dark:bg-[#0F172A] rounded-full border border-[#E5E7EB] dark:border-slate-700 overflow-hidden relative shrink-0 flex items-center justify-center">
-                {doctorFoto ? (
-                  <Image src={doctorFoto} alt="Doctor" fill sizes="56px" className="object-cover" />
-                ) : (
-                  <span className="text-[#6B7280] dark:text-slate-400 font-bold text-lg">{cita.medicoNombre.charAt(0)}</span>
+          {/* Médico y Especialidad */}
+          <div className="space-y-1">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Médico Tratante</span>
+            <p className="font-bold text-slate-900 dark:text-white text-sm">
+              Dr(a). {cita.medicoNombre}
+            </p>
+            <p className="text-[11px] text-sky-600 dark:text-sky-400 font-semibold">
+              {cita.medicoEspecialidad || 'Especialista Médico'}
+            </p>
+          </div>
+
+          {/* Fecha y Horario */}
+          <div className="space-y-1 pt-2.5 border-t border-slate-200/70 dark:border-slate-700/60">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Fecha y Hora</span>
+            <p className="font-bold text-slate-800 dark:text-slate-100 capitalize">
+              {safeFormatDateLocal(cita.ctaFecha, "EEEE d 'de' MMMM, yyyy")}
+            </p>
+            <p className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+              {cita.ctaHora ? cita.ctaHora.slice(0, 5) : ''} hrs
+            </p>
+          </div>
+
+          {/* Modalidad y Lugar */}
+          <div className="space-y-1 pt-2.5 border-t border-slate-200/70 dark:border-slate-700/60">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Modalidad & Sede</span>
+            <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-100 capitalize">
+              {getModalityIcon(cita.ctaModalidad)}
+              <span>{cita.ctaModalidad}</span>
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              {cita.ctaModalidad === 'presencial'
+                ? (cita.clinicaNombre || 'Clínica Principal')
+                : cita.ctaModalidad === 'virtual'
+                ? (cita.enlaceVideollamada || cita.ctaEnlaceVideollamada ? 'Videollamada disponible' : 'Enlace en sala de espera')
+                : (cita.direccionDomicilio || cita.ctaDireccionDomicilio || 'Dirección registrada a domicilio')}
+            </p>
+          </div>
+
+          {/* Costo, Método de Pago y Mapa */}
+          <div className="sm:col-span-2 pt-2.5 border-t border-slate-200/70 dark:border-slate-700/60 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 block">Costo de Consulta</span>
+              <span className="font-black text-slate-900 dark:text-white text-sm">
+                Q{cita.ctaPrecio ?? 0}
+              </span>
+              <span className="text-slate-500 dark:text-slate-400 text-[11px] ml-2">
+                • {cita.tipoPagoDescripcion || 'Pago en clínica'} ({cita.estadoPago === 'pagado' ? 'Pagado' : 'Pago presencial'})
+              </span>
+            </div>
+
+            {cita.ctaModalidad === 'presencial' && (
+              <div className="flex items-center gap-1.5">
+                {cita.ctaEnClinica && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 font-bold text-[11px] border border-emerald-200 dark:border-emerald-800">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Llegada confirmada
+                  </span>
+                )}
+                {cita.cliUrlGoogleMaps && (
+                  <a
+                    href={cita.cliUrlGoogleMaps}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:text-sky-600 font-bold text-[11px] border border-slate-200 dark:border-slate-600 transition shadow-2xs"
+                  >
+                    <MapPin className="w-3 h-3 text-rose-500" />
+                    <span>Ver Mapa</span>
+                  </a>
                 )}
               </div>
-              <div>
-                <h4 className="font-black text-[#111827] dark:text-white text-lg">{cita.medicoNombre}</h4>
-                <p className="text-sm font-medium text-[#6B7280] dark:text-slate-400">{cita.medicoEspecialidad}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 border-t border-[#E5E7EB] dark:border-slate-700 pt-5">
-              <div>
-                <p className="text-xs font-medium text-[#6B7280] dark:text-slate-400 mb-1">Fecha</p>
-                <p className="font-bold text-[#111827] dark:text-white flex items-center gap-2">
-                  <CalendarDays className="w-4 h-4 text-[#6B7280] dark:text-slate-400" />
-                  {safeFormatDateLocal(cita.ctaFecha, "d 'de' MMMM")}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-[#6B7280] dark:text-slate-400 mb-1">Hora</p>
-                <p className="font-bold text-[#111827] dark:text-white flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-[#6B7280] dark:text-slate-400" />
-                  {cita.ctaHora.slice(0, 5)}
-                </p>
-              </div>
-              <div className="col-span-2">
-                <p className="text-xs font-medium text-[#6B7280] dark:text-slate-400 mb-1">Modalidad</p>
-                <p className="font-bold text-[#111827] dark:text-white flex items-center gap-2 capitalize">
-                  {getModalityIcon(cita.ctaModalidad)} {cita.ctaModalidad}
-                </p>
-              </div>
-            </div>
-
-            <div className="border-t border-[#E5E7EB] dark:border-slate-700 pt-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-[#6B7280] dark:text-slate-400">Estado de la Cita</span>
-                <span className="text-sm font-bold text-[#111827] dark:text-white flex items-center gap-1.5">
-                  <span className={`w-2.5 h-2.5 rounded-full ${
-                    ['completada', 'finalizada', 'realizada'].includes((cita.ctaEstado || '').toLowerCase().trim().replace(/[\s\-]/g, '_')) ? 'bg-slate-400'
-                    : ['cancelada', 'rechazada', 'no_asistio'].includes((cita.ctaEstado || '').toLowerCase().trim().replace(/[\s\-]/g, '_')) ? 'bg-rose-500'
-                    : (cita.ctaEstado || '').toLowerCase().trim().replace(/[\s\-]/g, '_') === 'confirmada' ? 'bg-emerald-500'
-                    : (cita.ctaEstado || '').toLowerCase().trim().replace(/[\s\-]/g, '_') === 'pospuesta' ? 'bg-amber-500'
-                    : (cita.ctaEstado || '').toLowerCase().trim().replace(/[\s\-]/g, '_') === 'en_proceso' ? 'bg-blue-600 animate-pulse'
-                    : 'bg-sky-500'
-                  }`}></span>
-                  {((cita.ctaEstado || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\s\-]+/g, '_') === 'no_asistio')
-                    ? 'No asistió'
-                    : (cita.ctaEstado || '').toLowerCase().trim().replace(/[\s\-]+/g, '_') === 'en_proceso'
-                    ? 'En proceso'
-                    : (cita.ctaEstado || 'Programada').charAt(0).toUpperCase() + (cita.ctaEstado || 'Programada').slice(1).replace(/_/g, ' ')}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-[#6B7280] dark:text-slate-400">Estado de Pago</span>
-                <span className="text-sm font-bold text-[#111827] dark:text-white flex items-center gap-1.5">
-                  <span className={`w-2.5 h-2.5 rounded-full ${cita.estadoPago === 'pagado' ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
-                  {cita.estadoPago === 'pagado' ? 'Pagado' : (cita.tipoPagoDescripcion ? `${cita.tipoPagoDescripcion} (En consultorio)` : 'Pago en consultorio')}
-                </span>
-              </div>
-            </div>
+            )}
           </div>
         </div>
 
-        {/* 2.5 EXPEDIENTE CLÍNICO: ÚNICAMENTE PARA CITAS COMPLETADAS */}
+        {/* 3. Motivo y Síntomas Registrados al Agendar */}
+        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60">
+          <div className="flex items-center gap-2 mb-1.5">
+            <Activity className="w-4 h-4 text-sky-500" />
+            <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Motivo y Síntomas Registrados al Agendar</h4>
+          </div>
+          <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+            {cita.ctaMotivo?.trim() ? cita.ctaMotivo : 'Sin síntomas detallados durante el agendamiento.'}
+          </p>
+        </div>
+
+        {/* 4. EXPEDIENTE CLÍNICO: ÚNICAMENTE PARA CITAS COMPLETADAS */}
         {isCompleted && (
-          <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/40 border border-blue-200/80 dark:border-blue-800/80 shadow-2xs">
+          <div className="space-y-3 pt-1">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/40 border border-blue-200/80 dark:border-blue-800/80 shadow-2xs">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-blue-600 text-white shadow-xs shrink-0">
                   <FileText className="w-4 h-4" />
@@ -347,197 +546,194 @@ export function CitaDetailDrawer({ isOpen, onClose, cita, onEdit, onCancel, doct
                     Expediente y Receta Médica Oficial
                   </h4>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Diagnóstico y prescripción emitida por el médico
+                    Diagnóstico y prescripción emitida por el médico tratante
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={handleImprimirRecetaPdf}
-                className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
+                className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs hover:shadow transition active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
               >
                 <Printer className="w-3.5 h-3.5" />
                 <span>Descargar PDF</span>
               </button>
             </div>
 
-            <div className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-slate-700 rounded-2xl p-5 shadow-sm space-y-4">
-              <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-widest">
-                Expediente Clínico
+            <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 px-1 pt-1">
+              Expediente Clínico de la Consulta
+            </h4>
+
+            {/* Diagnóstico */}
+            <div className="p-4 rounded-2xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50">
+              <div className="flex items-center gap-2 mb-1.5">
+                <Stethoscope className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <h5 className="text-xs font-black uppercase tracking-wider text-blue-700 dark:text-blue-300">Diagnóstico Clínico</h5>
+              </div>
+              <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+                {cita.ctaDiagnostico?.trim() || 'Evaluación médica completada. Diagnóstico y evolución registrados en el expediente.'}
               </p>
-
-              {/* Diagnóstico */}
-              <div className="p-4 rounded-xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <Stethoscope className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                  <h5 className="text-xs font-black uppercase tracking-wider text-blue-700 dark:text-blue-300">Diagnóstico Clínico</h5>
-                </div>
-                <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
-                  {cita.ctaDiagnostico?.trim() || 'Evaluación médica completada. Diagnóstico y evolución registrados en el expediente.'}
-                </p>
-              </div>
-
-              {/* Tratamiento e indicaciones */}
-              <div className="p-4 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/50">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <Pill className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  <h5 className="text-xs font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Tratamiento e Indicaciones</h5>
-                </div>
-                <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
-                  {cita.ctaTratamiento?.trim() || 'Tratamiento e indicaciones médicas registradas en la consulta.'}
-                </p>
-              </div>
-
-              {/* Exámenes */}
-              {cita.ctaExamenesSolicitados && (
-                <div className="p-4 rounded-xl bg-amber-50/70 dark:bg-amber-950/40 border border-amber-100 dark:border-amber-900/50">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <FlaskConical className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                    <h5 className="text-xs font-black uppercase tracking-wider text-amber-700 dark:text-amber-300">Exámenes Solicitados</h5>
-                  </div>
-                  <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
-                    {cita.ctaExamenesSolicitados}
-                  </p>
-                </div>
-              )}
-
-              {/* Notas */}
-              {cita.ctaNotasMedicas && (
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <Info className="w-4 h-4 text-slate-500" />
-                    <h5 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Observaciones</h5>
-                  </div>
-                  <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
-                    {cita.ctaNotasMedicas}
-                  </p>
-                </div>
-              )}
             </div>
+
+            {/* Tratamiento e indicaciones */}
+            <div className="p-4 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/50">
+              <div className="flex items-center gap-2 mb-1.5">
+                <Pill className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <h5 className="text-xs font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Tratamiento e Indicaciones</h5>
+              </div>
+              <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+                {cita.ctaTratamiento?.trim() || 'Tratamiento e indicaciones médicas registradas en la consulta.'}
+              </p>
+            </div>
+
+            {/* Exámenes */}
+            {cita.ctaExamenesSolicitados && (
+              <div className="p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/40 border border-amber-100 dark:border-amber-900/50">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <FlaskConical className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                  <h5 className="text-xs font-black uppercase tracking-wider text-amber-700 dark:text-amber-300">Exámenes Solicitados</h5>
+                </div>
+                <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+                  {cita.ctaExamenesSolicitados}
+                </p>
+              </div>
+            )}
+
+            {/* Notas */}
+            {cita.ctaNotasMedicas && (
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Info className="w-4 h-4 text-slate-500" />
+                  <h5 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Observaciones</h5>
+                </div>
+                <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+                  {cita.ctaNotasMedicas}
+                </p>
+              </div>
+            )}
+
+            {/* Reseña registrada */}
+            {typeof cita.ctaCalificacion === 'number' && cita.ctaCalificacion > 0 && (
+              <div className="p-4 rounded-2xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-900/40 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                    <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+                    Tu Calificación: {cita.ctaCalificacion}/5
+                  </span>
+                  {cita.resenaFecha && (
+                    <span className="text-[10px] text-amber-600 dark:text-amber-400">
+                      {safeFormatDateLocal(cita.resenaFecha, "d MMM yyyy")}
+                    </span>
+                  )}
+                </div>
+                {cita.resenaComentario?.trim() && (
+                  <blockquote className="text-xs italic text-slate-700 dark:text-slate-300 border-l-2 border-amber-400 pl-2.5">
+                    &ldquo;{cita.resenaComentario}&rdquo;
+                  </blockquote>
+                )}
+              </div>
+            )}
           </div>
         )}
 
-        {/* 3. PREPARACIÓN / CONTACTO SECUNDARIO SEGÚN ESTADO */}
-        {(cita.ctaEstado || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\s\-]+/g, '_') === 'no_asistio' ? (
-          <div className="bg-rose-50 dark:bg-rose-950/40 rounded-2xl p-5 border border-rose-200 dark:border-rose-900/60">
-            <p className="font-bold text-rose-900 dark:text-rose-200 text-sm mb-1.5 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-rose-600" /> Cita No Asistida
-            </p>
-            <p className="text-xs text-rose-700 dark:text-rose-300/90 leading-relaxed">
-              Esta consulta fue registrada como no asistida debido a que el paciente no se presentó en la fecha y horario establecido.
-            </p>
-          </div>
-        ) : (cita.ctaEstado || '').toLowerCase().trim().replace(/[\s\-]+/g, '_') === 'cancelada' ? (
-          <div className="bg-rose-50 dark:bg-rose-950/40 rounded-2xl p-5 border border-rose-200 dark:border-rose-900/60">
-            <p className="font-bold text-rose-900 dark:text-rose-200 text-sm mb-1.5 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-rose-600" /> Cita Cancelada
-            </p>
-            <p className="text-xs text-rose-700 dark:text-rose-300/90 leading-relaxed">
-              Esta consulta médica fue cancelada. No se realizaron cargos en la cuenta.
-            </p>
-          </div>
-        ) : ['programada', 'confirmada'].includes((cita.ctaEstado || '').toLowerCase().trim().replace(/[\s\-]+/g, '_')) ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-[#F8FAFC] dark:bg-[#0B1120] rounded-2xl p-5 border border-[#E5E7EB] dark:border-slate-700">
-              <p className="font-bold text-[#111827] dark:text-white text-sm mb-3 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-[#2563EB]" /> Información para tu cita
-              </p>
-              <ul className="text-sm font-medium text-[#6B7280] dark:text-slate-400 space-y-2 ml-6">
-                <li className="list-disc">Llega 15 minutos antes.</li>
-                <li className="list-disc">Lleva resultados previos.</li>
-              </ul>
+        {/* 5. Documentos y Archivos Adjuntos */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60">
+          <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
+            <div className="flex items-center gap-2">
+              <Paperclip className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
+              <h4 className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wider">
+                Archivos y Documentos Adjuntos
+              </h4>
             </div>
-            
-            <div className="bg-white dark:bg-[#0F172A] rounded-2xl p-5 border border-[#E5E7EB] dark:border-slate-700 flex flex-col justify-center space-y-3">
-              <p className="font-bold text-[#111827] dark:text-white text-sm">¿Dudas sobre la cita?</p>
-              <div className="flex gap-2">
-                <a 
-                  href={`https://wa.me/50200000000?text=Hola`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex-1 py-2 bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-slate-700 text-[#111827] dark:text-slate-300 rounded-xl font-bold text-xs hover:bg-[#F9FAFB] dark:hover:bg-[#0B1120] transition-colors text-center flex items-center justify-center gap-1.5 shadow-sm"
-                >
-                  <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
-                </a>
-                <button className="flex-1 py-2 bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-slate-700 text-[#111827] dark:text-slate-300 rounded-xl font-bold text-xs hover:bg-[#F9FAFB] dark:hover:bg-[#0B1120] transition-colors text-center flex items-center justify-center gap-1.5 shadow-sm">
-                  <Phone className="w-3.5 h-3.5" /> Llamar
-                </button>
-              </div>
-            </div>
+            {tieneArchivos && (
+              <span className="text-[10px] font-bold text-sky-600 dark:text-sky-400 bg-sky-100/70 dark:bg-sky-950/60 px-2 py-0.5 rounded-md">
+                {listaArchivos.length} {listaArchivos.length === 1 ? 'archivo' : 'archivos'}
+              </span>
+            )}
           </div>
-        ) : null}
 
-        {/* 4. NOTAS PRIVADAS */}
-        <div>
-          <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-widest mb-4">Notas Privadas</p>
-          <div className="bg-[#F9FAFB] dark:bg-[#0B1120] rounded-2xl p-4 border border-[#E5E7EB] dark:border-slate-700">
-            <textarea 
-              className="w-full bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-slate-700 rounded-xl p-3 text-sm text-[#111827] dark:text-slate-200 placeholder-[#9CA3AF] dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 resize-none shadow-sm"
-              rows={3}
-              placeholder="Escribe aquí preguntas para el doctor o síntomas..."
-              defaultValue=""
-            />
-            <div className="flex justify-end mt-3">
-              <button className="px-5 py-2 bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-slate-700 text-[#111827] dark:text-slate-300 text-xs font-bold rounded-lg hover:bg-[#F3F4F6] dark:hover:bg-[#0F172A] transition-colors shadow-sm">
-                Guardar
-              </button>
-            </div>
-          </div>
-        </div>
+          {tieneArchivos ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              {listaArchivos.map((archivo) => {
+                const url = archivo.arcUrl || archivo.url || '';
+                const nombre = archivo.arcNombre || archivo.nombre || 'Documento adjunto';
+                const tipo = archivo.arcTipoArchivo || archivo.tipo || '';
+                const esImagen = String(tipo).includes('image') || String(url).match(/\.(png|jpg|jpeg|webp)$/i);
+                return (
+                  <div
+                    key={archivo.arcCodigo || archivo.id || url}
+                    className="flex flex-col bg-white dark:bg-[#1E293B] rounded-2xl p-3 border border-slate-200 dark:border-slate-700 shadow-2xs hover:border-sky-300 dark:hover:border-sky-600 transition group"
+                  >
+                    {esImagen ? (
+                      <div className="relative w-full h-28 rounded-xl overflow-hidden mb-2.5 bg-slate-100 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+                        <img src={url} alt={nombre} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                      </div>
+                    ) : (
+                      <div className="w-full h-28 rounded-xl mb-2.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400">
+                        <FileText className="w-8 h-8 text-sky-500 mb-1" />
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Documento PDF / Archivo</span>
+                      </div>
+                    )}
 
-        {/* 5. DOCUMENTOS */}
-        <div>
-          <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-widest mb-4">Documentos Clínicos</p>
-          {cita.documentos && cita.documentos.length > 0 ? (
-            <div className="space-y-2">
-              {cita.documentos.map((doc, idx) => (
-                <a
-                  key={idx}
-                  href={doc.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center justify-between p-3 rounded-xl border border-[#E5E7EB] dark:border-slate-700 hover:border-[#2563EB] hover:bg-[#F8FAFC] dark:hover:bg-[#0F172A] transition-colors bg-white dark:bg-[#1E293B] shadow-sm group"
-                >
-                  <div className="flex items-center gap-3">
-                    <FileText className="w-5 h-5 text-[#9CA3AF] group-hover:text-[#2563EB] transition-colors" />
-                    <span className="text-sm font-bold text-[#374151] dark:text-slate-200 truncate">{doc.nombre}</span>
+                    <p className="font-bold text-xs text-slate-800 dark:text-slate-100 truncate mb-2.5" title={nombre}>
+                      {nombre}
+                    </p>
+
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-auto inline-flex items-center justify-center gap-1.5 w-full py-1.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition active:scale-95"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Ver Documento</span>
+                    </a>
                   </div>
-                  <Download className="w-4 h-4 text-[#9CA3AF] group-hover:text-[#2563EB]" />
-                </a>
-              ))}
+                );
+              })}
             </div>
           ) : (
-            <div className="bg-[#F9FAFB] dark:bg-[#0B1120] rounded-xl p-5 text-center border border-[#E5E7EB] dark:border-slate-700 border-dashed">
-              <p className="text-sm font-bold text-[#6B7280] dark:text-slate-400">No hay documentos adjuntos</p>
+            <div className="py-6 text-center flex flex-col items-center justify-center">
+              <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 mb-2">
+                <Paperclip className="w-4 h-4" />
+              </div>
+              <p className="text-xs font-bold text-slate-600 dark:text-slate-300">No se adjuntaron documentos</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">Esta cita no cuenta con órdenes médicas o archivos adjuntos.</p>
             </div>
           )}
         </div>
 
-        {/* 6. TIMELINE MINIMALISTA */}
-        <div>
-          <p className="text-xs font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-widest mb-6">Historial de la Cita</p>
-          <div className="pl-2 space-y-6">
-            <div className="flex items-center gap-4">
-              <div className="w-2 h-2 rounded-full bg-[#111827] dark:bg-slate-400 shrink-0"></div>
-              <p className="text-sm font-bold text-[#111827] dark:text-slate-200">Cita creada</p>
-              <p className="text-xs font-medium text-[#6B7280] dark:text-slate-400 ml-auto">{safeFormatDateLocal(cita.ctaFecha, "dd MMM")}</p>
+        {/* 6. Acciones rápidas según el estado */}
+        <div className="pt-2">
+          {isCompleted && (!cita.ctaCalificacion || cita.ctaCalificacion <= 0) && (
+            <button 
+              onClick={() => {
+                onClose();
+                router.push(`/dashboard/citas?citaId=${cita.ctaCodigo}&resena=true`);
+              }}
+              className="w-full py-3 px-4 bg-amber-500 text-white rounded-xl font-bold text-sm hover:bg-amber-600 transition-colors shadow-md text-center flex items-center justify-center gap-2 cursor-pointer mb-2"
+            >
+              <Star className="w-4 h-4 fill-white text-white" />
+              <span>Escribir reseña del médico</span>
+            </button>
+          )}
+
+          {['programada', 'confirmada', 'pospuesta'].includes(cita.ctaEstado) && (
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+              <button 
+                onClick={() => onEdit?.(cita)}
+                className="flex-1 py-3 px-4 bg-[#2563EB] text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-colors shadow-sm text-center cursor-pointer"
+              >
+                Reprogramar cita
+              </button>
+              <button 
+                onClick={() => onCancel?.(cita)}
+                className="flex-1 py-3 px-4 bg-white dark:bg-[#1E293B] border border-rose-300 dark:border-rose-900 text-rose-600 dark:text-rose-400 rounded-xl font-bold text-sm hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors text-center cursor-pointer"
+              >
+                Cancelar cita
+              </button>
             </div>
-            <div className="flex items-center gap-4 relative">
-              <div className="absolute -top-5 left-[3px] w-[2px] h-4 bg-[#E5E7EB] dark:bg-slate-700"></div>
-              <div className="w-2 h-2 rounded-full bg-[#111827] dark:bg-slate-400 shrink-0"></div>
-              <p className="text-sm font-bold text-[#111827] dark:text-slate-200">Confirmada</p>
-            </div>
-            <div className="flex items-center gap-4 relative">
-              <div className="absolute -top-5 left-[3px] w-[2px] h-4 bg-[#E5E7EB] dark:bg-slate-700"></div>
-              <div className="w-2 h-2 rounded-full bg-[#E5E7EB] dark:bg-slate-800 shrink-0 border border-[#D1D5DB] dark:border-slate-600"></div>
-              <p className="text-sm font-medium text-[#9CA3AF] dark:text-slate-500">Consulta médica</p>
-            </div>
-            <div className="flex items-center gap-4 relative">
-              <div className="absolute -top-5 left-[3px] w-[2px] h-4 bg-[#E5E7EB] dark:bg-slate-700"></div>
-              <div className="w-2 h-2 rounded-full bg-[#E5E7EB] dark:bg-slate-800 shrink-0 border border-[#D1D5DB] dark:border-slate-600"></div>
-              <p className="text-sm font-medium text-[#9CA3AF] dark:text-slate-500">Resultados</p>
-            </div>
-          </div>
+          )}
         </div>
 
       </div>
