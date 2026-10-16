@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ArrowLeftRight, Clock, Calendar, AlertCircle, X, Check, 
   MessageSquare, XCircle, CalendarDays, ArrowRight, UserCheck, 
-  RotateCcw, Sparkles, Stethoscope, ChevronRight, Info, Building2, MapPin
+  RotateCcw, Stethoscope, ChevronRight, Info, Building2, MapPin
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -296,26 +296,23 @@ export function ModalResponderIntercambio({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
+    <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-slate-950/40 dark:bg-slate-950/70 backdrop-blur-md animate-in fade-in">
       <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 16 }}
+        initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 16 }}
-        transition={{ duration: 0.2 }}
-        className="relative w-full max-w-xl bg-white dark:bg-[#0F172A] rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[90vh] overflow-y-auto custom-scrollbar"
+        exit={{ opacity: 0, scale: 0.95, y: 15 }}
+        transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+        className="relative w-full max-w-xl bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 shadow-[0_20px_60px_rgba(11,28,48,0.12)] border border-slate-200/50 dark:border-slate-800 text-slate-900 dark:text-slate-100 max-h-[90vh] overflow-y-auto custom-scrollbar"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Glow de fondo decorativo */}
-        <div className="absolute -top-20 -right-20 w-48 h-48 bg-orange-500/10 rounded-full blur-3xl pointer-events-none" />
-
         {/* Encabezado */}
-        <div className="flex items-start justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+        <div className="flex items-start justify-between pb-4 border-b border-slate-100 dark:border-slate-800/80">
           <div className="flex items-center gap-3">
-            <div className="p-3 bg-orange-100 dark:bg-orange-950/80 text-orange-600 dark:text-orange-400 rounded-2xl shadow-xs border border-orange-200 dark:border-orange-800">
-              <ArrowLeftRight className="w-6 h-6" />
+            <div className="w-11 h-11 rounded-2xl bg-[#eff4ff] dark:bg-slate-800 border border-[#006194]/20 dark:border-slate-700/60 text-[#006194] dark:text-sky-400 flex items-center justify-center shrink-0">
+              <ArrowLeftRight className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-xl font-black text-slate-900 dark:text-white leading-tight">
+              <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white leading-tight">
                 Petición de Intercambio
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -327,9 +324,10 @@ export function ModalResponderIntercambio({
             type="button"
             disabled={responderMutation.isPending}
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition cursor-pointer disabled:opacity-50"
+            className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer disabled:opacity-50"
+            aria-label="Cerrar modal"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
@@ -393,7 +391,7 @@ export function ModalResponderIntercambio({
               <button
                 type="button"
                 onClick={() => setPaso('elegir_destino')}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-black transition shadow-md active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#006194] hover:bg-[#00517c] text-white text-xs font-semibold transition shadow-xs active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
               >
                 <span>Aceptar y ceder horario</span>
                 <ArrowRight className="w-4 h-4" />
@@ -621,8 +619,8 @@ export function ModalResponderIntercambio({
                               onClick={() => setNuevaHora(s)}
                               className={`p-2 rounded-lg text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1 ${
                                 nuevaHora === s
-                                  ? 'bg-blue-600 text-white shadow-xs scale-[0.98]'
-                                  : 'bg-slate-50 dark:bg-slate-800/80 hover:bg-blue-50 dark:hover:bg-blue-950/40 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700/80'
+                                  ? 'bg-[#006194] text-white shadow-xs'
+                                  : 'bg-slate-50 dark:bg-slate-800/80 hover:bg-[#eff4ff] dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700/80'
                               }`}
                             >
                               <span>{formatHora12h(s)}</span>

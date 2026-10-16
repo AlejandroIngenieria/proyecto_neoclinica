@@ -20,6 +20,8 @@ export type Paciente = {
   pac_foto_perfil_url: string | null;
   pac_foto_carne_seguro: string | null;
   pac_documento_identificacion_url?: string | null;
+  pac_codigo_referencia?: string | null;
+  pac_referido_por?: string | null;
   // Seguro Médico Asociado
   seg_codase?: number | null;
   aseguradora_nombre?: string | null;

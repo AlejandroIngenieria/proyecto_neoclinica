@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useCitasPaciente, useAllCitasPacientes, usePacientesSeleccion, useAutoCompletarCitasPasadas, useEliminarGrupo } from '@/hooks/use-flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { Navbar } from '@/components/navbar';
-import { ArrowLeft, Loader2, CheckCircle2, AlertCircle, HelpCircle, User, CalendarDays, Monitor, MapPin, Clock, X } from 'lucide-react';
+import { ArrowLeft, Loader2, CheckCircle2, AlertCircle, HelpCircle, User, CalendarDays, Monitor, MapPin, Clock, X, Activity, Info } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import type { CitaListDto } from '@/types/citas';
@@ -212,8 +212,23 @@ export default function GrupoDetailPage() {
                                 </div>
                               </div>
                             </div>
-                            <div className="flex items-center justify-center w-full sm:w-48 border-t sm:border-t-0 sm:border-l border-[#E5E7EB] dark:border-slate-700">
-                              <button onClick={() => setCitaSeleccionada(cita)} className="w-full h-full bg-[#F9FAFB] dark:bg-[#1E293B] text-[#111827] dark:text-white font-bold text-sm hover:bg-[#E5E7EB] dark:hover:bg-[#0B1120] transition-colors flex items-center justify-center py-4 sm:py-0 border-none cursor-pointer">
+                            <div className="flex items-center justify-center w-full sm:w-auto border-t sm:border-t-0 sm:border-l border-[#E5E7EB] dark:border-slate-700 divide-x divide-slate-200/80 dark:divide-slate-700">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const fechaQuery = cita.ctaFecha ? cita.ctaFecha.split('T')[0] : '';
+                                  router.push(
+                                    `/dashboard/citas/sala-espera?citaId=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}&fecha=${fechaQuery}`
+                                  );
+                                }}
+                                title="Ver sala de espera y cola del médico"
+                                className="px-4 py-4 sm:py-0 h-full bg-[#eff4ff] hover:bg-[#006194] text-[#006194] hover:text-white dark:bg-slate-800 dark:hover:bg-[#006194] dark:text-sky-300 dark:hover:text-white font-bold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer border-none"
+                              >
+                                <Activity className="w-3.5 h-3.5" />
+                                <span>Ver cola</span>
+                              </button>
+                              <button onClick={() => setCitaSeleccionada(cita)} className="px-4 py-4 sm:py-0 h-full bg-[#F9FAFB] dark:bg-[#1E293B] text-[#111827] dark:text-white font-bold text-xs hover:bg-[#E5E7EB] dark:hover:bg-[#0B1120] transition-colors flex items-center justify-center border-none cursor-pointer">
                                 Información
                               </button>
                             </div>
@@ -327,6 +342,19 @@ export default function GrupoDetailPage() {
                   <div className="mt-8 space-y-3">
                     <button
                       type="button"
+                      onClick={() => {
+                        const fechaQuery = citaPrincipal.ctaFecha ? citaPrincipal.ctaFecha.split('T')[0] : '';
+                        router.push(
+                          `/dashboard/citas/sala-espera?citaId=${citaPrincipal.ctaCodigo}&doc=${citaPrincipal.ctaCoddoc}&fecha=${fechaQuery}`
+                        );
+                      }}
+                      className="w-full py-3 bg-[#eff4ff] hover:bg-[#006194] text-[#006194] hover:text-white dark:bg-slate-800 dark:hover:bg-[#006194] dark:text-sky-300 dark:hover:text-white border border-slate-200/50 dark:border-slate-700/60 rounded-xl font-bold text-sm transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <Activity className="w-4 h-4" />
+                      <span>Ver cola del médico</span>
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setCitaSeleccionada(citaPrincipal)}
                       className="w-full py-3 bg-[#2563EB] text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-colors shadow-sm"
                     >
@@ -379,7 +407,7 @@ export default function GrupoDetailPage() {
             Estás a punto de eliminar el tema de seguimiento <strong>"{nombreGrupo}"</strong>.
             <div className="mt-3 text-xs bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
               <p className="font-bold mb-1.5 text-slate-800 dark:text-white flex items-center gap-1.5">
-                <span>ℹ️</span> <span>Las citas asociadas se conservarán:</span>
+                <Info className="w-3.5 h-3.5 text-blue-500 shrink-0" /> <span>Las citas asociadas se conservarán:</span>
               </p>
               <p className="mb-1">
                 • <strong>No se borrará ninguna cita</strong>; permanecerán en tu historial y próximas citas como consultas individuales.

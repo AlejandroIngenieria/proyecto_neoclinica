@@ -187,20 +187,20 @@ export function ForceChangePasswordModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in select-none">
+    <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-slate-950/40 dark:bg-slate-950/70 backdrop-blur-md animate-in fade-in select-none">
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ duration: 0.2 }}
-        className="relative w-full max-w-lg bg-white dark:bg-[#0F172A] rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[92vh] overflow-y-auto"
+        className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-7 shadow-[0_20px_60px_rgba(11,28,48,0.12)] border border-slate-200/50 dark:border-slate-800 flex flex-col max-h-[92vh] overflow-y-auto"
       >
         {/* Cabecera */}
-        <div className="flex items-start gap-3.5 pb-4 border-b border-slate-100 dark:border-slate-800">
-          <div className="p-3 bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 rounded-2xl shrink-0 border border-blue-200/80 dark:border-blue-800/60 shadow-2xs">
+        <div className="flex items-start gap-3.5 pb-4 border-b border-slate-100 dark:border-slate-800/80">
+          <div className="p-2.5 bg-[#eff4ff] dark:bg-slate-800 text-[#006194] dark:text-sky-400 rounded-2xl shrink-0 border border-[#006194]/20 dark:border-slate-700/60">
             <ShieldCheck className="w-6 h-6" />
           </div>
           <div>
-            <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white leading-tight">
+            <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white leading-tight">
               Cambio de Contraseña Obligatorio
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
@@ -239,7 +239,7 @@ export function ForceChangePasswordModal() {
                 type="button"
                 onClick={handleResend}
                 disabled={resendCooldown > 0 || reenviarPasswordMutation.isPending}
-                className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 disabled:text-slate-400 dark:disabled:text-slate-500 transition inline-flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
+                className="text-xs font-semibold text-[#006194] dark:text-sky-400 hover:text-[#00517c] dark:hover:text-sky-300 disabled:text-slate-400 dark:disabled:text-slate-500 transition inline-flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
                 title={resendCooldown > 0 ? `Espera ${resendCooldown} segundos para volver a enviar` : 'Reenviar nueva contraseña a tu correo'}
               >
                 {reenviarPasswordMutation.isPending ? (
@@ -271,7 +271,7 @@ export function ForceChangePasswordModal() {
                 onBlur={resetCapsLock}
                 placeholder="Ingresa la contraseña del correo"
                 required
-                className="w-full h-11 px-4 pr-11 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/40 outline-none transition"
+                className="w-full h-11 px-4 pr-11 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-[#006194] focus:ring-2 focus:ring-[#006194]/20 outline-none transition"
               />
               <button
                 type="button"
@@ -301,7 +301,7 @@ export function ForceChangePasswordModal() {
                 onBlur={resetCapsLock}
                 placeholder="Mínimo 8 caracteres"
                 required
-                className="w-full h-11 px-4 pr-11 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/40 outline-none transition"
+                className="w-full h-11 px-4 pr-11 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-[#006194] focus:ring-2 focus:ring-[#006194]/20 outline-none transition"
               />
               <button
                 type="button"
@@ -343,7 +343,7 @@ export function ForceChangePasswordModal() {
                 onBlur={resetCapsLock}
                 placeholder="Repite la nueva contraseña"
                 required
-                className="w-full h-11 px-4 pr-11 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/40 outline-none transition"
+                className="w-full h-11 px-4 pr-11 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-[#006194] focus:ring-2 focus:ring-[#006194]/20 outline-none transition"
               />
               <button
                 type="button"
@@ -395,7 +395,7 @@ export function ForceChangePasswordModal() {
             <button
               type="submit"
               disabled={!isFormValid || cambiarPasswordMutation.isPending}
-              className="w-full h-11 inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition shadow-sm active:scale-98 cursor-pointer"
+              className="w-full h-11 inline-flex items-center justify-center gap-2 bg-[#006194] hover:bg-[#00517c] disabled:opacity-50 text-white rounded-xl text-sm font-semibold transition shadow-xs active:scale-95 cursor-pointer"
             >
               {cambiarPasswordMutation.isPending ? (
                 <>
@@ -419,7 +419,7 @@ export function ForceChangePasswordModal() {
                 type="button"
                 onClick={handleResend}
                 disabled={resendCooldown > 0 || reenviarPasswordMutation.isPending}
-                className="font-bold text-blue-600 dark:text-blue-400 hover:underline disabled:text-slate-400 dark:disabled:text-slate-500 disabled:no-underline cursor-pointer disabled:cursor-not-allowed"
+                className="font-semibold text-[#006194] dark:text-sky-400 hover:underline disabled:text-slate-400 dark:disabled:text-slate-500 disabled:no-underline cursor-pointer disabled:cursor-not-allowed"
               >
                 {resendCooldown > 0 ? `Reenviar disponible en ${resendCooldown}s` : 'Haz clic aquí para reenviarlo'}
               </button>

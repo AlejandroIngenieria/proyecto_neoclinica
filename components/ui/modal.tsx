@@ -72,7 +72,7 @@ export function Modal({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
           {/* Overlay / Backdrop */}
           <motion.div
-            className="fixed inset-0 bg-slate-950/60 dark:bg-black/75 backdrop-blur-xs"
+            className="fixed inset-0 bg-slate-950/40 dark:bg-slate-950/70 backdrop-blur-md"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -90,14 +90,14 @@ export function Modal({
             exit={{ opacity: 0, scale: 0.95, y: 15 }}
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
             onClick={(e) => e.stopPropagation()}
-            className={`relative w-full ${maxWidthClass} bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden z-10 ${className}`}
+            className={`relative w-full ${maxWidthClass} bg-white dark:bg-slate-900 rounded-3xl shadow-[0_20px_60px_rgba(11,28,48,0.12)] border border-slate-200/50 dark:border-slate-800 text-slate-900 dark:text-slate-100 overflow-hidden z-10 ${className}`}
           >
             {/* Header if title is provided */}
             {(title || showCloseButton) && (
-              <div className="flex items-start justify-between px-6 pt-6 pb-2">
+              <div className="flex items-start justify-between px-6 py-4.5 border-b border-slate-100 dark:border-slate-800/80 bg-[#eff4ff]/30 dark:bg-slate-800/30">
                 <div className="flex-1 pr-4">
                   {title && (
-                    <h3 className="text-lg font-black tracking-tight text-slate-900 dark:text-white">
+                    <h3 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white">
                       {title}
                     </h3>
                   )}
@@ -112,7 +112,7 @@ export function Modal({
                   <button
                     type="button"
                     onClick={onClose}
-                    className="p-1.5 -mr-1.5 -mt-1 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                    className="p-1.5 -mr-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white/80 dark:hover:bg-slate-800 transition cursor-pointer"
                     aria-label="Cerrar modal"
                   >
                     <X className="w-4 h-4" />
@@ -122,7 +122,7 @@ export function Modal({
             )}
 
             {/* Content */}
-            <div className="p-6">{children}</div>
+            <div className="p-6 sm:p-7">{children}</div>
           </motion.div>
         </div>
       )}

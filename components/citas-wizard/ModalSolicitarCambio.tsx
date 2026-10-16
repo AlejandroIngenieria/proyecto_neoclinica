@@ -78,26 +78,26 @@ export function ModalSolicitarCambio({
   };
 
   return (
-    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/40 dark:bg-slate-950/70 backdrop-blur-md animate-in fade-in">
       <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 12 }}
+        initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 12 }}
-        transition={{ duration: 0.18 }}
-        className="relative w-full max-w-lg bg-white dark:bg-[#0F172A] rounded-2xl p-5 sm:p-6 shadow-2xl border border-orange-200/80 dark:border-orange-900/50 overflow-hidden max-h-[92vh] overflow-y-auto custom-scrollbar"
+        exit={{ opacity: 0, scale: 0.95, y: 15 }}
+        transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+        className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-7 shadow-[0_20px_60px_rgba(11,28,48,0.12)] border border-slate-200/50 dark:border-slate-800 text-slate-900 dark:text-slate-100 overflow-hidden max-h-[92vh] overflow-y-auto custom-scrollbar"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Encabezado minimalista */}
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-orange-100 dark:bg-orange-950/80 text-orange-600 dark:text-orange-400 rounded-xl">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800/80">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-[#eff4ff] dark:bg-slate-800 border border-[#006194]/20 dark:border-slate-700/60 text-[#006194] dark:text-sky-400 flex items-center justify-center shrink-0">
               <ArrowLeftRight className="w-5 h-5" />
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900 dark:text-white leading-snug">
                 Solicitar Cambio de Horario
               </h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 Proponer intercambio de turno con otro paciente
               </p>
             </div>
@@ -105,19 +105,20 @@ export function ModalSolicitarCambio({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition cursor-pointer"
+            className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
+            aria-label="Cerrar modal"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Detalles del turno solicitado */}
-        <div className="my-3.5 p-3 rounded-xl bg-orange-50/80 dark:bg-orange-950/30 border border-orange-200/70 dark:border-orange-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="my-3.5 p-3.5 rounded-2xl bg-[#eff4ff]/40 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-800 dark:text-slate-200 capitalize">
-            <Calendar className="w-4 h-4 text-orange-500 shrink-0" />
+            <Calendar className="w-4 h-4 text-[#006194] dark:text-sky-400 shrink-0" />
             <span>{fechaTexto}</span>
           </div>
-          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-orange-500 text-white rounded-lg text-xs font-bold shadow-xs self-start sm:self-auto">
+          <div className="flex items-center gap-1.5 px-3 py-1 bg-[#006194] text-white rounded-lg text-xs font-bold shadow-xs self-start sm:self-auto">
             <Clock className="w-3.5 h-3.5" />
             <span>{horaDisplay}</span>
           </div>
@@ -130,7 +131,7 @@ export function ModalSolicitarCambio({
               <label className="text-xs font-bold text-slate-800 dark:text-slate-200">
                 Tu cita a entregar a cambio:
               </label>
-              <span className="text-[11px] font-semibold text-sky-600 dark:text-sky-400">
+              <span className="text-[11px] font-semibold text-[#006194] dark:text-sky-400">
                 {citasCandidatas!.length} {citasCandidatas!.length === 1 ? 'disponible' : 'disponibles'}
               </span>
             </div>
@@ -146,7 +147,7 @@ export function ModalSolicitarCambio({
                     onClick={() => setSelectedCitaId(cita.ctaCodigo)}
                     className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-2.5 ${
                       isSelected
-                        ? 'border-blue-500 bg-blue-50/70 dark:bg-blue-950/40 shadow-xs'
+                        ? 'border-[#006194] bg-[#eff4ff]/60 dark:bg-slate-800/80 shadow-xs'
                         : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30'
                     }`}
                   >
@@ -154,7 +155,7 @@ export function ModalSolicitarCambio({
                       <div
                         className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
                           isSelected
-                            ? 'border-blue-600 bg-blue-600 text-white'
+                            ? 'border-[#006194] bg-[#006194] text-white'
                             : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900'
                         }`}
                       >
@@ -166,7 +167,7 @@ export function ModalSolicitarCambio({
                           <span className="text-xs font-bold text-slate-900 dark:text-white capitalize">
                             {formatFechaAmigable(cita.ctaFecha)}
                           </span>
-                          <span className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-100/70 dark:bg-blue-950/80 px-1.5 py-0.5 rounded">
+                          <span className="text-[11px] font-semibold text-[#006194] dark:text-sky-400 bg-[#eff4ff] dark:bg-slate-800 px-1.5 py-0.5 rounded">
                             {formatHora12h(cita.ctaHora)}
                           </span>
                         </div>
@@ -174,7 +175,7 @@ export function ModalSolicitarCambio({
                         <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
                           {mod === 'virtual' ? (
                             <span className="flex items-center gap-1">
-                              <Video className="w-3 h-3 text-sky-500" /> Virtual
+                              <Video className="w-3 h-3 text-[#006194] dark:text-sky-400" /> Virtual
                             </span>
                           ) : mod === 'domicilio' ? (
                             <span className="flex items-center gap-1">
@@ -191,7 +192,7 @@ export function ModalSolicitarCambio({
                     </div>
 
                     {isSelected && (
-                      <span className="text-[10px] font-bold uppercase tracking-wider bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-0.5 rounded-md shrink-0">
+                      <span className="text-[10px] font-bold uppercase tracking-wider bg-[#eff4ff] dark:bg-slate-800 text-[#006194] dark:text-sky-400 px-2 py-0.5 rounded-md shrink-0">
                         Elegida
                       </span>
                     )}
@@ -203,7 +204,7 @@ export function ModalSolicitarCambio({
         ) : (
           <div className="mb-3.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-700/60 text-xs text-slate-600 dark:text-slate-400 space-y-1">
             <p className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-              <Info className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+              <Info className="w-3.5 h-3.5 text-[#006194] shrink-0" />
               ¿Cómo funciona?
             </p>
             <p className="text-[11px] leading-relaxed">
@@ -228,14 +229,14 @@ export function ModalSolicitarCambio({
                   onClick={() => setMensaje(msg)}
                   className={`w-full text-left p-2.5 rounded-xl border text-xs transition-all flex items-start gap-2.5 cursor-pointer ${
                     isSelected
-                      ? 'border-orange-500 bg-orange-50/70 dark:bg-orange-950/40 text-slate-900 dark:text-white font-medium shadow-2xs'
+                      ? 'border-[#006194] bg-[#eff4ff]/60 dark:bg-slate-800/80 text-slate-900 dark:text-white font-medium shadow-2xs'
                       : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50/40 dark:bg-slate-800/30 text-slate-600 dark:text-slate-400'
                   }`}
                 >
                   <div
                     className={`w-3.5 h-3.5 rounded-full border-2 mt-0.5 shrink-0 flex items-center justify-center transition-all ${
                       isSelected
-                        ? 'border-orange-500 bg-orange-500'
+                        ? 'border-[#006194] bg-[#006194]'
                         : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900'
                     }`}
                   >
@@ -257,11 +258,11 @@ export function ModalSolicitarCambio({
         </div>
 
         {/* Botones de acción */}
-        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2">
+        <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-end gap-2.5">
           <button
             type="button"
             onClick={onClose}
-            className="py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold transition active:scale-98 cursor-pointer"
+            className="py-2.5 px-4 rounded-xl border border-slate-200/80 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white text-xs font-semibold transition active:scale-95 cursor-pointer"
           >
             Cerrar
           </button>
@@ -269,7 +270,7 @@ export function ModalSolicitarCambio({
             type="button"
             disabled={tieneCitasCandidatas && !selectedCitaId}
             onClick={handleConfirm}
-            className="py-2.5 px-4 rounded-xl bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white text-xs font-bold transition shadow-sm shadow-orange-500/20 active:scale-98 flex items-center gap-1.5 cursor-pointer"
+            className="py-2.5 px-5 rounded-xl bg-[#006194] hover:bg-[#00517c] disabled:opacity-50 text-white text-xs font-semibold transition shadow-xs active:scale-95 flex items-center gap-1.5 cursor-pointer"
           >
             <ArrowLeftRight className="w-3.5 h-3.5" />
             <span>

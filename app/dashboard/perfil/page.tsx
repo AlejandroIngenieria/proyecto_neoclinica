@@ -21,6 +21,10 @@ import {
   ExternalLink,
   ShieldCheck,
   Eye,
+  Gift,
+  Copy,
+  Check,
+  Share2,
 } from 'lucide-react';
 
 import { NeoLoader } from '@/components/neo-loader';
@@ -766,6 +770,41 @@ function PerfilContent() {
   });
   const munNacDesc = (munsNacListaRes?.data || []).find((m: Municipio) => m.mun_codigo === titular?.pac_mun_nac_id)?.mun_descripcion;
 
+  // ─── Referral Code Handlers ───
+  const [copiedReferral, setCopiedReferral] = useState(false);
+
+  const referralCode =
+    titular?.pac_codigo_referencia ||
+    (titular?.pac_codigo ? `NC-${titular.pac_codigo.replace(/-/g, '').slice(0, 8).toUpperCase()}` : null);
+
+  const handleCopyReferral = (code: string) => {
+    navigator.clipboard.writeText(code);
+    setCopiedReferral(true);
+    toast.success('Código de referido copiado al portapapeles');
+    setTimeout(() => setCopiedReferral(false), 2500);
+  };
+
+  const handleShareReferral = async (code: string) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://proyecto-neoclinica.vercel.app';
+    const text = `¡Agenda tu consulta médica en NeoClínica! Utiliza mi código de referido ${code} al confirmar tu cita médica: ${origin}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Código de Referido NeoClínica',
+          text,
+          url: origin,
+        });
+        return;
+      } catch {
+        // Fallback a copiar mensaje completo
+      }
+    }
+    navigator.clipboard.writeText(text);
+    setCopiedReferral(true);
+    toast.success('Mensaje con código y enlace copiado al portapapeles');
+    setTimeout(() => setCopiedReferral(false), 2500);
+  };
+
   // ─── Loading State ───
   if (isLoading) {
     return <NeoLoader />;
@@ -849,7 +888,8 @@ function PerfilContent() {
               <div className="flex flex-col items-center sm:items-start gap-2 mb-1">
                 <h1 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight text-slate-900 dark:text-white">{fullName}</h1>
                 <div>
-                  <span className="inline-block bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/40 px-3 py-1 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider">
+                  <span className="inline-flex items-center gap-1.5 bg-[#eff4ff] dark:bg-slate-800 text-[#006194] dark:text-sky-300 border border-slate-200/50 dark:border-slate-700/60 px-3 py-1 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#0284c7]" />
                     TITULAR DE LA CUENTA
                   </span>
                 </div>
@@ -858,7 +898,7 @@ function PerfilContent() {
             <div className="pb-2 w-full sm:w-auto flex justify-center sm:justify-start">
               <button
                 onClick={() => setIsEditing(true)}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-6 rounded-xl transition-colors font-semibold shadow-md active:scale-95 text-sm"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-[#006194] hover:bg-[#00517c] text-white py-2.5 px-6 rounded-xl transition-all font-semibold shadow-xs active:scale-95 text-sm cursor-pointer"
               >
                 <Edit3 className="h-4 w-4" />
                 Editar Perfil
@@ -883,9 +923,9 @@ function PerfilContent() {
             <div className="md:col-span-7 space-y-6">
               
               {/* Personal Info Card */}
-              <div className="bg-white dark:bg-[#1E293B] p-5 sm:p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm transition-transform hover:scale-[1.01] duration-300">
+              <div className="bg-white dark:bg-slate-900 p-5 sm:p-6 md:p-8 rounded-3xl border border-slate-200/40 dark:border-slate-800/60 shadow-[0_2px_12px_rgba(11,28,48,0.03)] transition-all">
                 <div className="flex items-center gap-3 mb-6 sm:mb-8">
-                  <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
+                  <div className="w-10 h-10 rounded-xl bg-[#eff4ff] dark:bg-slate-800 flex items-center justify-center text-[#006194] dark:text-sky-400 shrink-0">
                     <User className="h-5 w-5" />
                   </div>
                   <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Información Personal</h2>
@@ -933,9 +973,9 @@ function PerfilContent() {
               </div>
 
               {/* Emergency Contact Card */}
-              <div className="bg-white dark:bg-[#1E293B] p-5 sm:p-6 md:p-8 rounded-3xl border border-rose-100 dark:border-rose-950/30 shadow-sm transition-transform hover:scale-[1.01] duration-300">
+              <div className="bg-white dark:bg-slate-900 p-5 sm:p-6 md:p-8 rounded-3xl border border-slate-200/40 dark:border-slate-800/60 shadow-[0_2px_12px_rgba(11,28,48,0.03)] transition-all">
                 <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-900/30 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
+                  <div className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-900/30 flex items-center justify-center text-rose-500 shrink-0">
                     <Heart className="h-5 w-5" />
                   </div>
                   <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Contacto de Emergencia</h2>
@@ -957,9 +997,9 @@ function PerfilContent() {
               </div>
 
               {/* Address Card */}
-              <div className="bg-white dark:bg-[#1E293B] p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm transition-transform hover:scale-[1.01] duration-300">
+              <div className="bg-white dark:bg-slate-900 p-6 md:p-8 rounded-3xl border border-slate-200/40 dark:border-slate-800/60 shadow-[0_2px_12px_rgba(11,28,48,0.03)] transition-all">
                 <div className="flex items-center gap-3 mb-8">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                  <div className="w-10 h-10 rounded-xl bg-[#eff4ff] dark:bg-slate-800 flex items-center justify-center text-[#006194] dark:text-sky-400">
                     <MapPin className="h-5 w-5" />
                   </div>
                   <h2 className="text-lg font-bold text-slate-900 dark:text-white">Dirección</h2>
@@ -999,8 +1039,68 @@ function PerfilContent() {
             {/* Contact & Stats Column */}
             <div className="md:col-span-5 space-y-6">
               
+              {/* Tarjeta de Código de Referido */}
+              {referralCode && (
+                <div className="bg-gradient-to-br from-blue-50/70 via-white to-sky-50/50 dark:from-slate-900 dark:via-[#1E293B] dark:to-slate-900 p-6 md:p-8 rounded-3xl border border-blue-200/60 dark:border-slate-800 shadow-[0_2px_12px_rgba(11,28,48,0.03)] transition-all space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-blue-100 dark:bg-blue-950/60 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0 border border-blue-200/50 dark:border-blue-900/40">
+                        <Gift className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Código de Referido</h2>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Comparte y gana puntos de fidelidad</p>
+                      </div>
+                    </div>
+                    <Link
+                      href="/dashboard/perfil/puntos"
+                      className="text-xs font-bold text-blue-600 dark:text-sky-400 hover:underline flex items-center gap-1 shrink-0"
+                    >
+                      <span>Ver Puntos</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </Link>
+                  </div>
+
+                  {/* Código Box */}
+                  <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200/70 dark:border-slate-700/80 shadow-2xs">
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+                        Tu Código Único
+                      </span>
+                      <span className="text-lg font-black tracking-widest font-mono text-blue-950 dark:text-sky-300">
+                        {referralCode}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleCopyReferral(referralCode)}
+                        className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-slate-700 transition cursor-pointer"
+                        title="Copiar código"
+                      >
+                        {copiedReferral ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleShareReferral(referralCode)}
+                        className="p-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-2xs transition cursor-pointer"
+                        title="Compartir código y enlace"
+                      >
+                        <Share2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
+                    Comparte este código con familiares o amigos.
+                  </p>
+                </div>
+              )}
+
               {/* Contact Card */}
-              <div className="bg-white dark:bg-[#1E293B] p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm transition-transform hover:scale-[1.01] duration-300">
+              <div className="bg-white dark:bg-slate-900 p-6 md:p-8 rounded-3xl border border-slate-200/40 dark:border-slate-800/60 shadow-[0_2px_12px_rgba(11,28,48,0.03)] transition-all">
                 <div className="flex items-center gap-3 mb-8">
                   <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
                     <Phone className="h-5 w-5" />
@@ -1009,8 +1109,8 @@ function PerfilContent() {
                 </div>
                 
                 <div className="space-y-4">
-                  <div className={`flex items-center gap-4 p-4 rounded-2xl ${titular.pac_celular ? 'bg-slate-50 dark:bg-[#0F172A] border border-slate-200 dark:border-slate-800' : 'opacity-50'}`}>
-                    <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center text-blue-600 dark:text-blue-400 shadow-sm border border-slate-100 dark:border-slate-700">
+                  <div className={`flex items-center gap-4 p-4 rounded-2xl ${titular.pac_celular ? 'bg-[#eff4ff]/30 dark:bg-slate-800/40 border border-slate-200/40 dark:border-slate-700/60' : 'opacity-50'}`}>
+                    <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center text-[#006194] dark:text-sky-400 shadow-2xs border border-slate-100 dark:border-slate-700">
                       <Phone className="h-4 w-4" />
                     </div>
                     <div>
@@ -1020,8 +1120,8 @@ function PerfilContent() {
                       </p>
                     </div>
                   </div>
-                  <div className={`flex items-center gap-4 p-4 rounded-2xl ${titular.pac_telefono_casa ? 'bg-slate-50 dark:bg-[#0F172A] border border-slate-200 dark:border-slate-800' : 'opacity-50'}`}>
-                    <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 shadow-sm border border-slate-100 dark:border-slate-700">
+                  <div className={`flex items-center gap-4 p-4 rounded-2xl ${titular.pac_telefono_casa ? 'bg-[#eff4ff]/30 dark:bg-slate-800/40 border border-slate-200/40 dark:border-slate-700/60' : 'opacity-50'}`}>
+                    <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 shadow-2xs border border-slate-100 dark:border-slate-700">
                       <Phone className="h-4 w-4" />
                     </div>
                     <div>
@@ -1031,8 +1131,8 @@ function PerfilContent() {
                       </p>
                     </div>
                   </div>
-                  <div className={`flex items-center gap-4 p-4 rounded-2xl ${titular.pac_telefono_trabajo ? 'bg-slate-50 dark:bg-[#0F172A] border border-slate-200 dark:border-slate-800' : 'opacity-50'}`}>
-                    <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 shadow-sm border border-slate-100 dark:border-slate-700">
+                  <div className={`flex items-center gap-4 p-4 rounded-2xl ${titular.pac_telefono_trabajo ? 'bg-[#eff4ff]/30 dark:bg-slate-800/40 border border-slate-200/40 dark:border-slate-700/60' : 'opacity-50'}`}>
+                    <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 shadow-2xs border border-slate-100 dark:border-slate-700">
                       <Phone className="h-4 w-4" />
                     </div>
                     <div>
@@ -1054,9 +1154,9 @@ function PerfilContent() {
 
               {/* Documento de Identificación Card */}
               {titular.pac_documento_identificacion_url ? (
-                <div className="bg-white dark:bg-[#1E293B] p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm transition-transform hover:scale-[1.01] duration-300">
+                <div className="bg-white dark:bg-slate-900 p-6 md:p-8 rounded-3xl border border-slate-200/40 dark:border-slate-800/60 shadow-[0_2px_12px_rgba(11,28,48,0.03)] transition-all">
                   <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/40 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                    <div className="w-10 h-10 rounded-xl bg-[#eff4ff] dark:bg-slate-800 flex items-center justify-center text-[#006194] dark:text-sky-400">
                       <FileText className="h-5 w-5" />
                     </div>
                     <div>
@@ -1086,7 +1186,7 @@ function PerfilContent() {
                     href={titular.pac_documento_identificacion_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 font-semibold border border-blue-200 dark:border-blue-800 hover:bg-blue-100 transition-colors text-sm"
+                    className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-[#eff4ff] hover:bg-[#dfeafd] text-[#006194] dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-sky-300 font-semibold border border-slate-200/50 dark:border-slate-700/60 transition-colors text-sm cursor-pointer"
                   >
                     <FileText className="h-4 w-4" />
                     <span>Abrir en nueva pestaña</span>

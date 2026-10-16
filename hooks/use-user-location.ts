@@ -22,31 +22,49 @@ function calculateHaversineDistanceKm(lat1: number, lon1: number, lat2: number, 
   return R * c;
 }
 
+// Module-level singleton cache
+let cachedLocation: UserLocation | null = null;
+let cachedLoading = false;
+let cachedError: string | null = null;
+let hasRequested = false;
+const subscribers = new Set<() => void>();
+
+function notifySubscribers() {
+  subscribers.forEach((cb) => cb());
+}
+
 export function useUserLocation() {
-  const [location, setLocation] = useState<UserLocation | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [location, setLocation] = useState<UserLocation | null>(cachedLocation);
+  const [loading, setLoading] = useState(cachedLoading);
+  const [error, setError] = useState<string | null>(cachedError);
 
   const requestLocation = useCallback(() => {
     if (typeof window === 'undefined' || !navigator.geolocation) {
-      setError('Geolocalización no soportada');
+      cachedError = 'Geolocalización no soportada';
+      notifySubscribers();
       return;
     }
 
-    setLoading(true);
+    if (cachedLoading) return; // Request already in flight
+
+    cachedLoading = true;
+    notifySubscribers();
+
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setLocation({
+        cachedLocation = {
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
-        });
-        setLoading(false);
-        setError(null);
+        };
+        cachedLoading = false;
+        cachedError = null;
+        notifySubscribers();
       },
       (err) => {
         console.warn('Location permission denied or unavailable:', err.message);
-        setError(err.message);
-        setLoading(false);
+        cachedError = err.message;
+        cachedLoading = false;
+        notifySubscribers();
       },
       {
         enableHighAccuracy: true,
@@ -57,7 +75,22 @@ export function useUserLocation() {
   }, []);
 
   useEffect(() => {
-    requestLocation();
+    const updateState = () => {
+      setLocation(cachedLocation);
+      setLoading(cachedLoading);
+      setError(cachedError);
+    };
+
+    subscribers.add(updateState);
+
+    if (!hasRequested) {
+      hasRequested = true;
+      requestLocation();
+    }
+
+    return () => {
+      subscribers.delete(updateState);
+    };
   }, [requestLocation]);
 
   const getDistanceToDoctor = useCallback(

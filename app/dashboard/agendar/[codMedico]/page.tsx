@@ -4,7 +4,7 @@ import { useEffect, use } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Check } from 'lucide-react';
 import { useDoctors } from '@/hooks/use-doctors';
-import { useServiciosMedico, usePacientesSeleccion } from '@/hooks/use-flujo-citas';
+import { useServiciosMedico, usePacientesSeleccion, useClinicas } from '@/hooks/use-flujo-citas';
 import { useCitaStore } from '@/store/use-cita-store';
 import { Step1Modalidad } from '@/components/citas-wizard/Step1Modalidad';
 import { Step2PacienteMotivo } from '@/components/citas-wizard/Step2PacienteMotivo';
@@ -23,15 +23,18 @@ export default function AgendarCitaPage({ params }: { params: Promise<{ codMedic
   const paramTema = searchParams.get('tema') || searchParams.get('grupoTema');
   const paramModalidad = searchParams.get('modalidad');
   const paramPacCodigo = searchParams.get('pacCodigo') || searchParams.get('pacienteId');
+  const paramPrecio = searchParams.get('precio');
+  const paramClinica = searchParams.get('clinica');
 
   const { codMedico } = use(params);
   const { data: doctors = [], isLoading: isLoadingDoctors } = useDoctors();
   const { data: servicios = [] } = useServiciosMedico(codMedico);
+  const { data: clinicas = [] } = useClinicas(codMedico, paramModalidad || 'presencial');
   const { data: pacientes = [] } = usePacientesSeleccion();
   
   const { 
     step, setStep, setMedico, setServicio, setMotivo, 
-    setTemaSeguimiento, setModalidad, setPaciente, reset 
+    setTemaSeguimiento, setModalidad, setClinica, setPaciente, reset 
   } = useCitaStore();
 
   // Inicializar estado del wizard al montar
@@ -53,6 +56,20 @@ export default function AgendarCitaPage({ params }: { params: Promise<{ codMedic
       setModalidad(paramModalidad as any);
     }
   }, [paramModalidad, setModalidad]);
+
+  // Pre-seleccionar clínica si viene en los parámetros
+  useEffect(() => {
+    if (paramClinica && clinicas.length > 0) {
+      const matchCli = clinicas.find(
+        (c) =>
+          c.cliDescripcion?.toLowerCase().includes(paramClinica.toLowerCase()) ||
+          paramClinica.toLowerCase().includes(c.cliDescripcion?.toLowerCase())
+      );
+      if (matchCli) {
+        setClinica(matchCli);
+      }
+    }
+  }, [paramClinica, clinicas, setClinica]);
 
   // Pre-seleccionar paciente si viene en los parámetros
   useEffect(() => {
@@ -82,23 +99,32 @@ export default function AgendarCitaPage({ params }: { params: Promise<{ codMedic
   // Pre-seleccionar servicio si viene en la URL
   useEffect(() => {
     if (servicios.length > 0) {
-      if (paramSypCodigo) {
-        const found = servicios.find(s => s.sypCodigo === Number(paramSypCodigo));
-        if (found) {
-          setServicio(found);
-          setMotivo(found.servicio);
-        }
+      let found = paramSypCodigo ? servicios.find((s) => s.sypCodigo === Number(paramSypCodigo)) : null;
+      if (!found && paramMotivo) {
+        found = servicios.find((s) => s.servicio?.toLowerCase() === paramMotivo.toLowerCase()) || null;
+      }
+      if (found) {
+        const finalPrice = paramPrecio ? Number(paramPrecio) : found.costoTotal;
+        setServicio({
+          ...found,
+          costoSinIva: finalPrice,
+          costoTotal: finalPrice,
+        });
+        setMotivo(found.servicio);
       } else if (paramMotivo) {
-        const found = servicios.find(s => s.servicio?.toLowerCase() === paramMotivo.toLowerCase());
-        if (found) {
-          setServicio(found);
-          setMotivo(found.servicio);
-        } else {
-          setMotivo(paramMotivo);
-        }
+        const finalPrice = paramPrecio ? Number(paramPrecio) : 250;
+        setServicio({
+          sypCodigo: paramSypCodigo ? Number(paramSypCodigo) : 1,
+          servicio: paramMotivo,
+          costoSinIva: finalPrice,
+          costoIva: 0,
+          costoTotal: finalPrice,
+          observaciones: paramClinica || null,
+        });
+        setMotivo(paramMotivo);
       }
     }
-  }, [servicios, paramSypCodigo, paramMotivo, setServicio, setMotivo]);
+  }, [servicios, paramSypCodigo, paramMotivo, paramPrecio, paramClinica, setServicio, setMotivo]);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#0B1120] text-slate-900 dark:text-slate-200 pb-20 lg:pb-0 pt-8">

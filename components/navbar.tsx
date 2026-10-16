@@ -182,7 +182,7 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
 
         {/* ── Desktop Nav links ── */}
         {navLinks.length > 0 && (
-          <nav className="hidden md:flex min-w-0 flex-1 flex-nowrap items-center justify-center gap-5 overflow-visible text-sm py-2">
+          <nav className="hidden md:inline-flex items-center p-1 bg-[#eff4ff]/80 dark:bg-slate-800/80 rounded-2xl border border-slate-200/50 dark:border-slate-700/60 gap-1 text-xs sm:text-sm">
             {navLinks.map((link) => {
               const isActive = pathname === link.href;
               const { Icon } = getNavStyles(link.label);
@@ -190,13 +190,14 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`relative flex items-center gap-2 px-4 py-2 transition-colors ${
+                  className={`relative flex items-center gap-2 px-3.5 py-1.5 rounded-xl transition-all ${
                     isActive
-                      ? 'text-blue-600 font-bold border-b-2 border-blue-600'
-                      : 'text-slate-500 hover:text-slate-700 font-medium border-b-2 border-transparent'
+                      ? 'bg-white dark:bg-slate-900 text-[#006194] dark:text-sky-300 font-bold shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-medium'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 transition-all ${isActive ? 'fill-current' : 'fill-none'}`} />
+                  {isActive && <span className="w-1.5 h-1.5 rounded-full bg-[#0284c7]" />}
+                  <Icon className={`w-3.5 h-3.5 transition-all ${isActive ? 'text-[#006194] dark:text-sky-300' : 'text-slate-400'}`} />
                   <span>{link.label}</span>
                 </Link>
               );
@@ -236,18 +237,18 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
             <AnimatePresence>
             {isUserMenuOpen && (
               <motion.div
-                className="absolute right-0 z-[120] mt-3 w-64 sm:w-72 overflow-hidden rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-[0_20px_60px_rgba(0,0,0,0.15)] text-slate-900 dark:text-slate-100"
+                className="absolute right-0 z-[120] mt-3 w-64 sm:w-72 overflow-hidden rounded-3xl border border-slate-200/50 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-[0_12px_40px_rgba(11,28,48,0.08)] text-slate-900 dark:text-slate-100"
                 initial={{ opacity: 0, y: -8, scale: 0.96 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -8, scale: 0.96 }}
                 transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
               >
-                {/* 1. Cabecera (Solo lectura): Avatar, nombre y correo electrónico */}
-                <div className="border-b border-slate-100 dark:border-slate-800 px-4 py-4">
+                {/* 1. Cabecera: Avatar, nombre y correo electrónico */}
+                <div className="bg-[#eff4ff]/40 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800/80 px-4 py-3.5">
                   <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center overflow-hidden rounded-2xl bg-primary/10 text-sm sm:text-base font-black text-primary shrink-0">
+                    <span className="flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/50 dark:border-slate-700 shadow-2xs text-sm sm:text-base font-black text-[#006194] dark:text-sky-400 shrink-0">
                       {userImage ? (
-                        <img src={userImage} alt={userName} className="h-10 w-10 sm:h-12 sm:w-12 rounded-2xl object-cover" />
+                        <img src={userImage} alt={userName} className="h-10 w-10 sm:h-11 sm:w-11 rounded-2xl object-cover" />
                       ) : (
                         userInitials
                       )}
@@ -259,66 +260,112 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
                   </div>
                 </div>
 
-                {/* 2. Opciones de Perfil, Expediente y Sistema */}
-                <div className="p-2 space-y-0.5">
+                {/* 2. Opciones de Perfil, Pacientes, Puntos y Configuración */}
+                <div className="p-2 space-y-1">
                   {/* Mi perfil */}
                   <Link
                     href="/dashboard/perfil"
                     onClick={() => setIsUserMenuOpen(false)}
-                    className="flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 transition hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400"
+                    className={`flex items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold transition-all ${
+                      pathname === '/dashboard/perfil'
+                        ? 'bg-[#eff4ff] text-[#006194] dark:bg-slate-800 dark:text-sky-300 font-bold'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-[#eff4ff]/60 hover:text-[#006194] dark:hover:bg-slate-800/60 dark:hover:text-sky-300'
+                    }`}
                   >
-                    <UserRound className="h-4 w-4" />
-                    <span>Mi perfil</span>
+                    <span className="flex items-center gap-2.5">
+                      <UserRound className="h-4 w-4 shrink-0" />
+                      <span>Mi perfil</span>
+                    </span>
+                    {pathname === '/dashboard/perfil' && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#0284c7]" />
+                    )}
                   </Link>
 
                   {/* Mi expediente / Familiares */}
                   <Link
                     href="/dashboard/perfil/pacientes"
                     onClick={() => setIsUserMenuOpen(false)}
-                    className="flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 transition hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400"
+                    className={`flex items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold transition-all ${
+                      pathname.startsWith('/dashboard/perfil/pacientes')
+                        ? 'bg-[#eff4ff] text-[#006194] dark:bg-slate-800 dark:text-sky-300 font-bold'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-[#eff4ff]/60 hover:text-[#006194] dark:hover:bg-slate-800/60 dark:hover:text-sky-300'
+                    }`}
                   >
-                    <Users className="h-4 w-4" />
-                    <span>Mi expediente / Familiares</span>
+                    <span className="flex items-center gap-2.5">
+                      <Users className="h-4 w-4 shrink-0" />
+                      <span>Pacientes afiliados</span>
+                    </span>
+                    {pathname.startsWith('/dashboard/perfil/pacientes') && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#0284c7]" />
+                    )}
+                  </Link>
+
+                  {/* Puntos y Recompensas */}
+                  <Link
+                    href="/dashboard/perfil/puntos"
+                    onClick={() => setIsUserMenuOpen(false)}
+                    className={`flex items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold transition-all ${
+                      pathname.startsWith('/dashboard/perfil/puntos')
+                        ? 'bg-[#eff4ff] text-[#006194] dark:bg-slate-800 dark:text-sky-300 font-bold'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-[#eff4ff]/60 hover:text-[#006194] dark:hover:bg-slate-800/60 dark:hover:text-sky-300'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <Star className="h-4 w-4 shrink-0" />
+                      <span>Puntos y Recompensas</span>
+                    </span>
+                    {pathname.startsWith('/dashboard/perfil/puntos') && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#0284c7]" />
+                    )}
                   </Link>
 
                   {/* Configuraciones */}
                   <Link
                     href="/dashboard/perfil/configuracion"
                     onClick={() => setIsUserMenuOpen(false)}
-                    className="flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 transition hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400"
+                    className={`flex items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold transition-all ${
+                      pathname.startsWith('/dashboard/perfil/configuracion')
+                        ? 'bg-[#eff4ff] text-[#006194] dark:bg-slate-800 dark:text-sky-300 font-bold'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-[#eff4ff]/60 hover:text-[#006194] dark:hover:bg-slate-800/60 dark:hover:text-sky-300'
+                    }`}
                   >
-                    <Settings className="h-4 w-4" />
-                    <span>Configuraciones</span>
+                    <span className="flex items-center gap-2.5">
+                      <Settings className="h-4 w-4 shrink-0" />
+                      <span>Configuraciones</span>
+                    </span>
+                    {pathname.startsWith('/dashboard/perfil/configuracion') && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#0284c7]" />
+                    )}
                   </Link>
 
                   {/* Modo Oscuro */}
                   <button
                     type="button"
                     onClick={toggleTheme}
-                    className="flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 transition hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer"
+                    className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:bg-[#eff4ff]/60 hover:text-[#006194] dark:hover:bg-slate-800/60 dark:hover:text-sky-300 cursor-pointer"
                   >
-                    <span className="flex items-center gap-3">
-                      {theme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+                    <span className="flex items-center gap-2.5">
+                      {theme === 'dark' ? <Moon className="h-4 w-4 text-sky-400 shrink-0" /> : <Sun className="h-4 w-4 text-amber-500 shrink-0" />}
                       <span>Modo Oscuro</span>
                     </span>
-                    <div className={`relative flex h-5 w-9 items-center rounded-full transition-colors ${theme === 'dark' ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}>
-                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${theme === 'dark' ? 'translate-x-5' : 'translate-x-1'}`} />
+                    <div className={`relative flex h-5 w-9 items-center rounded-full transition-colors ${theme === 'dark' ? 'bg-[#006194]' : 'bg-slate-300 dark:bg-slate-700'}`}>
+                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${theme === 'dark' ? 'translate-x-4.5' : 'translate-x-1'}`} />
                     </div>
                   </button>
 
-                  {/* Línea divisoria horizontal (border-t) */}
+                  {/* Línea divisoria horizontal */}
                   <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
 
-                  {/* Cerrar sesión: Ubicado en la base con color rojo */}
+                  {/* Cerrar sesión */}
                   <button
                     type="button"
                     onClick={() => {
                       setIsUserMenuOpen(false);
                       setShowLogoutModal(true);
                     }}
-                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold text-rose-600 dark:text-rose-400 transition hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                    className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 transition hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
                   >
-                    <LogOut className="h-4 w-4" />
+                    <LogOut className="h-4 w-4 shrink-0" />
                     <span>Cerrar sesión</span>
                   </button>
                 </div>
@@ -331,7 +378,7 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
 
       {/* ── Mobile Nav links bar (Horizontal scrollable) ── */}
       {navLinks.length > 0 && (
-        <div className="flex md:hidden overflow-x-auto scrollbar-none items-center gap-2 py-2 border-t border-slate-200/50 dark:border-slate-800/50">
+        <div className="flex md:hidden overflow-x-auto scrollbar-none items-center gap-1.5 py-2 px-1 border-t border-slate-200/50 dark:border-slate-800/50">
           {navLinks.map((link) => {
             const isActive = pathname === link.href;
             const { Icon } = getNavStyles(link.label);
@@ -339,13 +386,13 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
               <Link
                 key={link.href}
                 href={link.href}
-                className={`flex shrink-0 items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                className={`flex shrink-0 items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                   isActive
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                    ? 'bg-[#006194] text-white shadow-xs'
+                    : 'bg-[#eff4ff]/60 text-slate-600 hover:bg-[#eff4ff] dark:bg-slate-800 dark:text-slate-300'
                 }`}
               >
-                <Icon className={`w-3.5 h-3.5 transition-all ${isActive ? 'fill-current' : 'fill-none'}`} />
+                <Icon className={`w-3.5 h-3.5 transition-all ${isActive ? 'text-white' : 'text-slate-400'}`} />
                 <span>{link.label}</span>
               </Link>
             );

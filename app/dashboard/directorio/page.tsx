@@ -456,6 +456,14 @@ function DashboardContent() {
     const [isNearMeActive, setIsNearMeActive] = useState(false);
     const [isMapVisible, setIsMapVisible] = useState(false);
     const [hoveredDoctorId, setHoveredDoctorId] = useState<string | null>(null);
+    const rafHoverRef = useRef<number | null>(null);
+    const handleDoctorHover = useCallback((docId: string | null) => {
+        if (!isMapVisible) return;
+        if (rafHoverRef.current) cancelAnimationFrame(rafHoverRef.current);
+        rafHoverRef.current = requestAnimationFrame(() => {
+            setHoveredDoctorId(docId);
+        });
+    }, [isMapVisible]);
     const [selectedDoctorId, setSelectedDoctorId] = useState<string | null>(null);
     const [selectedClinicIndex, setSelectedClinicIndex] = useState<number | null>(null);
     const [selectedBuilding, setSelectedBuilding] = useState<BuildingLocation | null>(null);
@@ -667,7 +675,7 @@ function DashboardContent() {
         }
     };
 
-    const handleDoctorCardSelect = (data: DoctorCardData) => {
+    const handleDoctorCardSelect = useCallback((data: DoctorCardData) => {
         const isCurrentlySelected = selectedDoctorId === data.doctor.exp_codigo;
         const nextSelectedId = isCurrentlySelected ? null : data.doctor.exp_codigo;
 
@@ -681,10 +689,6 @@ function DashboardContent() {
         setSelectedClinicIndex(defaultClinicIndex);
 
         if (nextSelectedId) {
-            // En móvil NO se abre el mapa automáticamente al seleccionar un médico
-            if (!isMobileScreen && !isMapVisible) {
-                setIsMapVisible(true);
-            }
             if (currentPage !== 1) setCurrentPage(1);
             setTimeout(() => {
                 scrollToDoctorView(nextSelectedId);
@@ -694,15 +698,15 @@ function DashboardContent() {
             setIsMapVisible(false);
             setShowMapMobile(false);
         }
-    };
+    }, [selectedDoctorId, isMobileScreen, isMapVisible, currentPage, setCurrentPage]);
 
-    const handleCloseSelectedDoctor = () => {
+    const handleCloseSelectedDoctor = useCallback(() => {
         setSelectedDoctorId(null);
         setSelectedBuilding(null);
         setIsMapVisible(false);
         setShowMapMobile(false);
         setSelectedClinicIndex(null);
-    };
+    }, []);
 
     const handleDoctorSelectFromMap = (expCodigo: string, clinicIndex?: number | null) => {
         if (!expCodigo) {
@@ -1115,7 +1119,7 @@ function DashboardContent() {
         return Array.from(suggestions.values()).slice(0, 8);
     }, [searchTerm, resolvedDoctors, searchTags]);
 
-    const handleDoctorVisit = (cardData: DoctorCardData) => {
+    const handleDoctorVisit = useCallback((cardData: DoctorCardData) => {
         const item: RecentDoctorItem = {
             exp_codigo: cardData.doctor.exp_codigo,
             fullName: cardData.fullName,
@@ -1125,7 +1129,7 @@ function DashboardContent() {
             visitedAt: new Date().toISOString(),
         };
         setRecentDoctors(addRecentDoctor(item));
-    };
+    }, []);
 
     // ─── Columnas adaptativas y Paginación dinámica (elementos por fila x 4 filas) ───
     const [columnsPerRow, setColumnsPerRow] = useState<number>(() => {
@@ -1144,7 +1148,7 @@ function DashboardContent() {
     useEffect(() => {
         const updateColumns = () => {
             const width = window.innerWidth;
-            if (isMapVisible || selectedDoctorId) {
+            if (isMapVisible) {
                 // Modo mapa lateral activo (el listado ocupa ~50% del ancho)
                 if (width >= 2000) setColumnsPerRow(3);
                 else if (width >= 768) setColumnsPerRow(2);
@@ -1163,7 +1167,7 @@ function DashboardContent() {
         updateColumns();
         window.addEventListener('resize', updateColumns);
         return () => window.removeEventListener('resize', updateColumns);
-    }, [isMapVisible, selectedDoctorId]);
+    }, [isMapVisible]);
 
     // La cantidad de elementos por página se calcula como: número de elementos por fila x 4 filas completas
     const itemsPerPage = useMemo(() => {
@@ -2212,7 +2216,7 @@ function DashboardContent() {
                     <section id="doctores" className="scroll-mt-24 sm:scroll-mt-28 space-y-3 relative z-0 min-h-[400px]">
                         <div className="flex flex-col lg:flex-row gap-6 items-start relative z-0">
                             {/* Left Column: Doctor Cards List */}
-                            <div className={`w-full transition-all duration-300 ${(isMapVisible || selectedDoctorId) ? 'lg:w-[52%] xl:w-[48%] shrink-0' : 'w-full'} ${showMapMobile ? 'hidden lg:block' : 'block'}`}>
+                            <div className={`w-full transition-all duration-300 ${isMapVisible ? 'lg:w-[52%] xl:w-[48%] shrink-0' : 'w-full'} ${showMapMobile ? 'hidden lg:block' : 'block'}`}>
                                 {searchedLocation && (
                                     <div className="flex items-center justify-between bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 px-4 py-2.5 rounded-2xl mb-4 shadow-xs">
                                         <div className="flex items-center gap-2 text-xs font-bold text-sky-900 dark:text-sky-200 min-w-0">
@@ -2238,36 +2242,24 @@ function DashboardContent() {
                                     </div>
                                 ) : (selectedDoctorCard || doctorsForGrid.length > 0) ? (
                                     <div className="space-y-4 w-full">
-                                        {/* 1. Tarjeta del médico seleccionado: Tipo 2 (más ancha y con más detalles) */}
+                                        {/* 1. Tarjeta del médico seleccionado: Modal Expandido de Ubicaciones (Responsive Grid) */}
                                         {selectedDoctorCard && (
                                             <div id="selected-doctor-container" className="w-full scroll-mt-24 sm:scroll-mt-28">
-                                                {/* Vista Móvil: Tarjeta horizontal de 3 zonas */}
-                                                <div className="block md:hidden w-full">
-                                                    <DoctorCardMobile
-                                                        data={selectedDoctorCard}
-                                                        onVisit={handleDoctorVisit}
-                                                        isSelected={true}
-                                                    />
-                                                </div>
-
-                                                {/* Vista Escritorio / Tablet: Tarjeta Expandida ocupando todo el ancho */}
-                                                <div className="hidden md:block w-full">
-                                                    <DoctorCard
-                                                        data={selectedDoctorCard}
-                                                        onVisit={handleDoctorVisit}
-                                                        onSelect={handleDoctorCardSelect}
-                                                        onClose={handleCloseSelectedDoctor}
-                                                        onSelectClinic={(idx) => setSelectedClinicIndex(idx)}
-                                                        selectedClinicIndex={selectedClinicIndex}
-                                                        variant="expanded"
-                                                        isHovered={hoveredDoctorId === selectedDoctorCard.doctor.exp_codigo}
-                                                        isSelected={true}
-                                                        isHighlightedByLocation={selectedBuildingDoctorCodes.has(selectedDoctorCard.doctor.exp_codigo)}
-                                                        highlightedLocationName={selectedBuilding?.name}
-                                                        onMouseEnter={() => setHoveredDoctorId(selectedDoctorCard.doctor.exp_codigo)}
-                                                        onMouseLeave={() => setHoveredDoctorId(null)}
-                                                    />
-                                                </div>
+                                                <DoctorCard
+                                                    data={selectedDoctorCard}
+                                                    onVisit={handleDoctorVisit}
+                                                    onSelect={handleDoctorCardSelect}
+                                                    onClose={handleCloseSelectedDoctor}
+                                                    onSelectClinic={setSelectedClinicIndex}
+                                                    selectedClinicIndex={selectedClinicIndex}
+                                                    variant="expanded"
+                                                    isHovered={isMapVisible && hoveredDoctorId === selectedDoctorCard.doctor.exp_codigo}
+                                                    isSelected={true}
+                                                    isHighlightedByLocation={selectedBuildingDoctorCodes.has(selectedDoctorCard.doctor.exp_codigo)}
+                                                    highlightedLocationName={selectedBuilding?.name}
+                                                    onMouseEnter={isMapVisible ? () => handleDoctorHover(selectedDoctorCard.doctor.exp_codigo) : undefined}
+                                                    onMouseLeave={isMapVisible ? () => handleDoctorHover(null) : undefined}
+                                                />
                                             </div>
                                         )}
 
@@ -2275,41 +2267,42 @@ function DashboardContent() {
                                         {doctorsForGrid.length > 0 && (
                                             <AnimatedList
                                                 className={
-                                                    (isMapVisible || selectedDoctorId)
-                                                        ? "grid grid-cols-1 md:grid-cols-2 min-[2000px]:grid-cols-3 gap-4 w-full"
-                                                        : "grid grid-cols-1 min-[550px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 min-[1650px]:grid-cols-5 min-[2250px]:grid-cols-6 gap-6 w-full"
+                                                    isMapVisible
+                                                        ? "grid grid-cols-1 md:grid-cols-2 min-[2000px]:grid-cols-3 gap-4 w-full items-start"
+                                                        : "grid grid-cols-1 min-[550px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 min-[1650px]:grid-cols-5 min-[2250px]:grid-cols-6 gap-6 w-full items-start"
                                                 }
                                                 style={{
                                                     gridTemplateColumns: `repeat(${columnsPerRow}, minmax(0, 1fr))`,
                                                 }}
                                             >
                                                 {doctorsForGrid.map((doctor) => (
-                                                    <div key={doctor.doctor.exp_codigo} className="w-full h-full flex justify-center">
+                                                    <div key={doctor.doctor.exp_codigo} className="w-full flex justify-center">
                                                         {/* Vista Móvil: Tarjeta horizontal de 3 zonas */}
                                                         <div className="block md:hidden w-full">
                                                             <DoctorCardMobile
                                                                 data={doctor}
                                                                 onVisit={handleDoctorVisit}
+                                                                onSelect={handleDoctorCardSelect}
                                                                 isSelected={false}
                                                             />
                                                         </div>
 
                                                         {/* Vista Escritorio / Tablet: Tarjeta compacta */}
-                                                        <div className="hidden md:block w-full h-full">
+                                                        <div className="hidden md:block w-full flex justify-center">
                                                             <DoctorCard
                                                                 data={doctor}
                                                                 onVisit={handleDoctorVisit}
                                                                 onSelect={handleDoctorCardSelect}
                                                                 onClose={handleCloseSelectedDoctor}
-                                                                onSelectClinic={(idx) => setSelectedClinicIndex(idx)}
+                                                                onSelectClinic={setSelectedClinicIndex}
                                                                 selectedClinicIndex={selectedClinicIndex}
                                                                 variant="compact"
-                                                                isHovered={hoveredDoctorId === doctor.doctor.exp_codigo}
+                                                                isHovered={isMapVisible && hoveredDoctorId === doctor.doctor.exp_codigo}
                                                                 isSelected={false}
                                                                 isHighlightedByLocation={selectedBuildingDoctorCodes.has(doctor.doctor.exp_codigo)}
                                                                 highlightedLocationName={selectedBuilding?.name}
-                                                                onMouseEnter={() => setHoveredDoctorId(doctor.doctor.exp_codigo)}
-                                                                onMouseLeave={() => setHoveredDoctorId(null)}
+                                                                onMouseEnter={isMapVisible ? () => handleDoctorHover(doctor.doctor.exp_codigo) : undefined}
+                                                                onMouseLeave={isMapVisible ? () => handleDoctorHover(null) : undefined}
                                                             />
                                                         </div>
                                                     </div>
@@ -2370,7 +2363,7 @@ function DashboardContent() {
                             </div>
 
                             {/* Right Column: Sticky Interactive Google Map */}
-                            {(isMapVisible || selectedDoctorId || showMapMobile) && (
+                            {(isMapVisible || showMapMobile) && (
                                 <div className={`w-full lg:flex-1 h-[calc(100vh-170px)] sticky top-24 shrink-0 transition-all duration-300 animate-in fade-in zoom-in-95 duration-200 relative ${showMapMobile ? 'block' : 'hidden lg:block'}`}>
                                     <button
                                         type="button"

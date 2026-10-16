@@ -57,22 +57,22 @@ export function ModalMiCitaConflicto({
   const modalidad = citaConflicto.ctaModalidad?.toLowerCase();
 
   return (
-    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/40 dark:bg-slate-950/70 backdrop-blur-md animate-in fade-in">
       <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 12 }}
+        initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 12 }}
-        transition={{ duration: 0.18 }}
-        className="relative w-full max-w-md bg-white dark:bg-[#0F172A] rounded-2xl p-5 sm:p-6 shadow-2xl border border-sky-200/80 dark:border-sky-900/50 overflow-hidden"
+        exit={{ opacity: 0, scale: 0.95, y: 15 }}
+        transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+        className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-7 shadow-[0_20px_60px_rgba(11,28,48,0.12)] border border-slate-200/50 dark:border-slate-800 text-slate-900 dark:text-slate-100 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Encabezado minimalista */}
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-          <div className="flex items-center gap-2.5">
-            <div className={`p-2 rounded-xl text-sky-600 dark:text-sky-400 ${
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800/80">
+          <div className="flex items-center gap-3">
+            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border ${
               esMismoMedico 
-                ? 'bg-sky-100 dark:bg-sky-950/80' 
-                : 'bg-amber-100 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400'
+                ? 'bg-[#eff4ff] dark:bg-slate-800 text-[#006194] dark:text-sky-400 border-[#006194]/20 dark:border-slate-700/60' 
+                : 'bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border-amber-200/80 dark:border-amber-900/60'
             }`}>
               {esMismoMedico ? <Calendar className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
             </div>
@@ -80,7 +80,7 @@ export function ModalMiCitaConflicto({
               <h3 className="text-base font-bold text-slate-900 dark:text-white leading-snug">
                 {esMismoMedico ? 'Cita ya programada' : 'Coincidencia de horario'}
               </h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 Detalles de tu cita existente
               </p>
             </div>
@@ -88,20 +88,21 @@ export function ModalMiCitaConflicto({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition cursor-pointer"
+            className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
+            aria-label="Cerrar"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Tarjeta de detalles de la cita existente */}
-        <div className="my-4 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60 space-y-2.5">
+        <div className="my-4 p-4 rounded-2xl bg-[#eff4ff]/30 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 space-y-2.5">
           {/* Paciente */}
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5 font-medium">
-              <User className="w-3.5 h-3.5 text-sky-500" /> Paciente:
+              <User className="w-3.5 h-3.5 text-[#006194] dark:text-sky-400" /> Paciente:
             </span>
-            <span className="font-bold text-slate-800 dark:text-slate-200">
+            <span className="font-semibold text-slate-800 dark:text-slate-200">
               {citaConflicto.pacienteNombre || 'Paciente registrado'}
             </span>
           </div>
@@ -109,9 +110,9 @@ export function ModalMiCitaConflicto({
           {/* Médico */}
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5 font-medium">
-              <Stethoscope className="w-3.5 h-3.5 text-sky-500" /> Especialista:
+              <Stethoscope className="w-3.5 h-3.5 text-[#006194] dark:text-sky-400" /> Especialista:
             </span>
-            <span className="font-bold text-slate-800 dark:text-slate-200 text-right">
+            <span className="font-semibold text-slate-800 dark:text-slate-200 text-right">
               {citaConflicto.medicoNombre}
               {citaConflicto.medicoEspecialidad && (
                 <span className="block text-[10px] text-slate-500 dark:text-slate-400 font-normal">
@@ -124,9 +125,9 @@ export function ModalMiCitaConflicto({
           {/* Fecha y Hora */}
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5 font-medium">
-              <Clock className="w-3.5 h-3.5 text-sky-500" /> Horario:
+              <Clock className="w-3.5 h-3.5 text-[#006194] dark:text-sky-400" /> Horario:
             </span>
-            <span className="font-bold text-slate-800 dark:text-slate-200">
+            <span className="font-semibold text-slate-800 dark:text-slate-200">
               {horaDisplay} · <span className="capitalize">{formatFechaAmigable(citaConflicto.ctaFecha)}</span>
             </span>
           </div>
@@ -135,7 +136,7 @@ export function ModalMiCitaConflicto({
           <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/60 dark:border-slate-700/50">
             <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5 font-medium">
               {modalidad === 'virtual' ? (
-                <Video className="w-3.5 h-3.5 text-sky-500" />
+                <Video className="w-3.5 h-3.5 text-[#006194] dark:text-sky-400" />
               ) : modalidad === 'domicilio' ? (
                 <Home className="w-3.5 h-3.5 text-emerald-500" />
               ) : (
@@ -156,15 +157,15 @@ export function ModalMiCitaConflicto({
         {/* Mensaje contextual según Caso A o Caso B */}
         {esMismoMedico ? (
           /* CASO A: Mismo médico */
-          <div className="mb-4 p-3 rounded-xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800/60 text-xs text-sky-900 dark:text-sky-200 flex items-start gap-2.5 leading-relaxed">
-            <Info className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
+          <div className="mb-4 p-3.5 rounded-2xl bg-[#eff4ff]/60 dark:bg-sky-950/40 border border-sky-200/80 dark:border-sky-800/60 text-xs text-sky-900 dark:text-sky-200 flex items-start gap-2.5 leading-relaxed">
+            <Info className="w-4 h-4 text-[#006194] dark:text-sky-400 shrink-0 mt-0.5" />
             <span>
               Ya tienes una cita agendada con este mismo especialista a esta hora. Si deseas modificarla o reprogramarla, puedes hacerlo desde tu panel de <strong>Mis Citas</strong>.
             </span>
           </div>
         ) : (
           /* CASO B: Diferente médico */
-          <div className="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2.5 leading-relaxed">
+          <div className="mb-4 p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/50 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2.5 leading-relaxed">
             <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
             <div>
               <p>
@@ -176,12 +177,12 @@ export function ModalMiCitaConflicto({
         )}
 
         {/* Acciones */}
-        <div className="flex items-center justify-end gap-2 pt-2">
+        <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800/80">
           {esMismoMedico ? (
             <button
               type="button"
               onClick={onClose}
-              className="w-full py-2.5 px-4 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold transition active:scale-98 cursor-pointer"
+              className="w-full py-2.5 px-4 rounded-xl bg-[#006194] hover:bg-[#00517c] text-white text-xs font-semibold transition active:scale-95 shadow-xs cursor-pointer"
             >
               Entendido
             </button>
@@ -190,14 +191,14 @@ export function ModalMiCitaConflicto({
               <button
                 type="button"
                 onClick={onClose}
-                className="py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold transition active:scale-98 cursor-pointer"
+                className="py-2.5 px-4 rounded-xl border border-slate-200/80 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white text-xs font-semibold transition active:scale-95 cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 type="button"
                 onClick={handleAgendar}
-                className="py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-sm shadow-blue-500/20 active:scale-98 flex items-center gap-1.5 cursor-pointer"
+                className="py-2.5 px-4 rounded-xl bg-[#006194] hover:bg-[#00517c] text-white text-xs font-semibold transition shadow-xs active:scale-95 flex items-center gap-1.5 cursor-pointer"
               >
                 <span>Agendar de todos modos</span>
                 <ArrowRight className="w-3.5 h-3.5" />

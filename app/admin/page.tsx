@@ -25,7 +25,6 @@ import {
   FileText,
   DollarSign,
   ChevronDown,
-  Sparkles,
   Award,
   Mail,
   ExternalLink,
@@ -631,7 +630,7 @@ export default function AdminPage() {
         <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white p-6 sm:p-8 shadow-xl shadow-indigo-950/20">
           <div className="relative z-10 max-w-3xl space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-200 text-xs font-bold">
-              <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+              <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
               Gestión Integral de Flujo de Citas
             </div>
             <h1 className="text-2xl sm:text-4xl font-black tracking-tight leading-tight">

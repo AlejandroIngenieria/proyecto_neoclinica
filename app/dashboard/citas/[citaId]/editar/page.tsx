@@ -7,7 +7,7 @@ import { useSession } from 'next-auth/react';
 import { 
   ArrowLeft, Loader2, CalendarDays, Clock, MapPin, Monitor, CheckCircle2, AlertCircle, 
   Home, Building2, CalendarClock, CreditCard, Upload, FileText, Paperclip, FileCheck, 
-  Check, X, ChevronLeft, ChevronRight, Stethoscope, Video, Sparkles, User, ShieldCheck, 
+  Check, X, ChevronLeft, ChevronRight, Stethoscope, Video, Calendar, User, ShieldCheck, 
   ArrowRight, Info, FolderPlus, Banknote, Landmark, Wallet, Plus, Activity, BriefcaseMedical,
   ClipboardList, UploadCloud
 } from 'lucide-react';
@@ -2403,7 +2403,7 @@ export default function EditWizardPage() {
                   <div>
                     <div className="flex items-center justify-between pb-4 border-b border-blue-100 dark:border-blue-900/50 mb-5">
                       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                        <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                        <Calendar className="w-3.5 h-3.5 text-blue-600" />
                         Nueva Cita Seleccionada
                       </span>
                       <span className="text-[11px] font-extrabold text-blue-600 dark:text-blue-400">Por Confirmar</span>

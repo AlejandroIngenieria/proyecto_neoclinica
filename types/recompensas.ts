@@ -39,16 +39,6 @@ export interface AsignarReferidoPayload {
   codigoReferencia: string;
 }
 
-export interface LigaNivel {
-  id: string;
-  nombre: string;
-  puntosMinimos: number;
-  puntosMaximos: number;
-  colorGradient: string;
-  badgeIcon: string;
-  beneficios: string[];
-}
-
 export interface HistorialMovimientoPuntos {
   id?: string;
   hisCodigo?: number;

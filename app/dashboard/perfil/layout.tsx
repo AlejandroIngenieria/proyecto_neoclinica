@@ -10,10 +10,10 @@ export default function PerfilLayout({ children }: { children: React.ReactNode }
   return (
     <SidebarProvider defaultOpen={true}>
       <ProfileSidebar />
-      <SidebarInset className="min-h-screen bg-slate-50/50 dark:bg-slate-950/40">
+      <SidebarInset className="min-h-screen bg-[#F8F9FF] dark:bg-[#0B1120]">
         {/* Disparador móvil exclusivo para pantallas pequeñas (< md) */}
-        <div className="sticky top-0 z-20 flex h-12 items-center gap-2 border-b border-slate-200/80 bg-white/80 px-4 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/80 md:hidden">
-          <SidebarTrigger className="h-8 w-8 rounded-lg text-slate-700 dark:text-slate-200" />
+        <div className="sticky top-0 z-20 flex h-12 items-center gap-2 border-b border-slate-200/40 bg-white/80 px-4 backdrop-blur-md dark:border-slate-800/60 dark:bg-slate-900/80 md:hidden">
+          <SidebarTrigger className="h-8 w-8 rounded-xl text-slate-700 dark:text-slate-200 hover:bg-[#eff4ff] dark:hover:bg-slate-800" />
           <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Menú del Perfil</span>
         </div>
 

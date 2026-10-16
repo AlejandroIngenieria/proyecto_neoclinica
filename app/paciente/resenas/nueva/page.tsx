@@ -11,7 +11,6 @@ import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Star,
-  Sparkles,
   Award,
   CheckCircle2,
   AlertCircle,
@@ -295,7 +294,7 @@ function ResenaFormContent() {
           {/* Título y subtítulo */}
           <div className="border-b border-slate-100 dark:border-slate-800 pb-6">
             <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 text-xs sm:text-sm font-bold tracking-wide uppercase mb-1">
-              <Sparkles className="w-4 h-4" />
+              <Star className="w-4 h-4 fill-amber-500 text-amber-500" />
               <span>{isReadOnly ? 'Detalle de Valoración' : 'Tu opinión es muy valiosa'}</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">

@@ -1,18 +1,50 @@
 import { useRouter } from 'next/navigation';
 import { useState, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
-import { useModalidades, useClinicas, useAreasDomicilio, useHorarios, useHorasOcupadas, useServiciosMedico, useGruposCita, usePacientesSeleccion, useAllCitasPacientes, useCreateGrupo } from '@/hooks/use-flujo-citas';
+import {
+  useModalidades,
+  useClinicas,
+  useAreasDomicilio,
+  useHorarios,
+  useHorasOcupadas,
+  useServiciosMedico,
+  useGruposCita,
+  usePacientesSeleccion,
+  useAllCitasPacientes,
+  useCreateGrupo,
+} from '@/hooks/use-flujo-citas';
 import { useColaDelDia } from '@/hooks/use-cola-dia';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { usePacienteTitular } from '@/hooks/use-pacientes';
 import { useCitaStore } from '@/store/use-cita-store';
 import { useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, Stethoscope, MapPin, Video, Home, ArrowRight, CalendarDays, Clock, Building2, CalendarClock, Check, Sparkles, FolderPlus, Plus, Layers, Info, ArrowLeftRight, ClipboardList, Loader2 } from 'lucide-react';
-import { DayPicker } from 'react-day-picker';
-import { es } from 'date-fns/locale';
+import {
+  ChevronLeft,
+  ChevronRight,
+  User,
+  RotateCcw,
+  CheckCircle2,
+  Flame,
+  Users,
+  ShieldCheck,
+  Building2,
+  Video,
+  Home,
+  MapPin,
+  Clock,
+  ArrowRight,
+  Check,
+  Loader2,
+  Layers,
+  CalendarClock,
+  Stethoscope,
+  X,
+  Plus,
+} from 'lucide-react';
 import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 import type { HorarioCitaDto, ServicioMedicoCitaDto, GrupoCitaDto, CitaListDto } from '@/types/citas';
-import 'react-day-picker/style.css';
+import { getDoctorLowestPrice, getDoctorGroupedServices } from '@/types/doctor';
 import { NeoLoader } from '@/components/neo-loader';
 import { ModalSolicitarCambio } from './ModalSolicitarCambio';
 import { ModalMiCitaConflicto } from './ModalMiCitaConflicto';
@@ -20,20 +52,48 @@ import { DomicilioSelectorMap } from './DomicilioSelectorMap';
 
 export function Step1Modalidad() {
   const {
-    codMedico, modalidad, setModalidad,
-    tipoConsulta, setTipoConsulta,
-    setClinica, setArea, clinicaSeleccionada, areaDomicilio,
-    servicioSeleccionado, setServicio, motivo, setMotivo,
-    fecha, setFecha, hora, setHora, nextStep, step,
-    pacienteSeleccionado, setPaciente,
-    grupoId, grupoNombre, setTemaSeguimiento,
-    tipoPagoId, setTipoPagoId,
-    creandoNuevoGrupo, nuevoGrupoTema, setCreandoNuevoGrupo, setNuevoGrupoTema,
-    solicitudIntercambio, setSolicitudIntercambio,
-    pacientesExcluidos, setPacientesExcluidos, addPacienteExcluido,
-    citasMultiples, addCitaMultiple, removeCitaMultiple, clearCitasMultiples,
-    coberturaDomicilioValida, ubicacionDomicilioConfirmada
+    codMedico,
+    modalidad,
+    setModalidad,
+    tipoConsulta,
+    setTipoConsulta,
+    setClinica,
+    setArea,
+    clinicaSeleccionada,
+    areaDomicilio,
+    servicioSeleccionado,
+    setServicio,
+    motivo,
+    setMotivo,
+    fecha,
+    setFecha,
+    hora,
+    setHora,
+    nextStep,
+    step,
+    pacienteSeleccionado,
+    setPaciente,
+    grupoId,
+    grupoNombre,
+    setTemaSeguimiento,
+    tipoPagoId,
+    setTipoPagoId,
+    creandoNuevoGrupo,
+    nuevoGrupoTema,
+    setCreandoNuevoGrupo,
+    setNuevoGrupoTema,
+    solicitudIntercambio,
+    setSolicitudIntercambio,
+    pacientesExcluidos,
+    setPacientesExcluidos,
+    citasMultiples,
+    addCitaMultiple,
+    removeCitaMultiple,
+    clearCitasMultiples,
+    coberturaDomicilioValida,
+    ubicacionDomicilioConfirmada,
   } = useCitaStore();
+
   const router = useRouter();
 
   const { data: modalidades = [], isLoading: loadingModalidades } = useModalidades(codMedico);
@@ -45,10 +105,14 @@ export function Step1Modalidad() {
 
   const { titular } = usePacienteTitular();
   const { data: pacientes = [] } = usePacientesSeleccion();
-  const codigosPacientes = useMemo(() => pacientes.map(p => p.pacCodigo), [pacientes]);
+  const codigosPacientes = useMemo(() => pacientes.map((p) => p.pacCodigo), [pacientes]);
   const { data: misCitas = [] } = useAllCitasPacientes(codigosPacientes);
 
-  // Inicializar paciente por defecto si aún no está en el store (respetando exclusiones)
+  // Modales de Tratamiento / Grupo
+  const [modalCrearGrupoOpen, setModalCrearGrupoOpen] = useState(false);
+  const [modalAsociarGrupoOpen, setModalAsociarGrupoOpen] = useState(false);
+
+  // Inicializar paciente por defecto si aún no está en el store
   useEffect(() => {
     if (!pacienteSeleccionado) {
       const titularCodigo = (titular as any)?.pacCodigo || titular?.pac_codigo;
@@ -57,13 +121,15 @@ export function Step1Modalidad() {
       if (titularValido) {
         setPaciente({
           pacCodigo: titularCodigo,
-          nombreCompleto: (titular as any).nombreCompleto || `${titular.pac_primer_nombre || ''} ${titular.pac_primer_apellido || ''}`.trim(),
+          nombreCompleto:
+            (titular as any).nombreCompleto ||
+            `${titular.pac_primer_nombre || ''} ${titular.pac_primer_apellido || ''}`.trim(),
           pacTitular: true,
           pacFechaNacimiento: (titular as any).pacFechaNacimiento || titular.pac_fecha_nacimiento || null,
           pacFotoPerfilUrl: (titular as any).pacFotoPerfilUrl || titular.pac_foto_perfil_url || undefined,
         });
       } else if (pacientes.length > 0) {
-        const primerValido = pacientes.find(p => !pacientesExcluidos?.includes(p.pacCodigo));
+        const primerValido = pacientes.find((p) => !pacientesExcluidos?.includes(p.pacCodigo));
         if (primerValido) {
           setPaciente(primerValido);
         }
@@ -71,7 +137,14 @@ export function Step1Modalidad() {
     }
   }, [titular, pacientes, pacienteSeleccionado, pacientesExcluidos, setPaciente]);
 
-  const codPacActivo = pacienteSeleccionado?.pacCodigo || (titular as any)?.pacCodigo || titular?.pac_codigo || pacientes.find(p => p.pacTitular)?.pacCodigo || pacientes[0]?.pacCodigo || null;
+  const codPacActivo =
+    pacienteSeleccionado?.pacCodigo ||
+    (titular as any)?.pacCodigo ||
+    titular?.pac_codigo ||
+    pacientes.find((p) => p.pacTitular)?.pacCodigo ||
+    pacientes[0]?.pacCodigo ||
+    null;
+
   const { data: grupos = [], isLoading: loadingGrupos } = useGruposCita(codPacActivo, codMedico);
 
   const queryClient = useQueryClient();
@@ -80,7 +153,7 @@ export function Step1Modalidad() {
   const handleConfirmarNuevoGrupo = async () => {
     const tema = nuevoGrupoTema.trim();
     if (!tema) {
-      toast.warning('Por favor ingresa un nombre para el nuevo grupo de citas.');
+      toast.warning('Por favor ingresa un nombre para el nuevo tratamiento.');
       return;
     }
 
@@ -94,25 +167,25 @@ export function Step1Modalidad() {
         });
 
         const createdId = (res as any)?.id || (res as any)?.grupoId || (typeof res === 'string' ? res : '');
-
-        // Refrescar caché de grupos para que aparezca de inmediato en la lista
         await queryClient.invalidateQueries({ queryKey: ['gruposCita', codPacActivo, codMedico] });
 
-        // Seleccionar automáticamente el grupo creado
         setTemaSeguimiento(createdId || 'temp-' + Date.now(), tema);
         setCreandoNuevoGrupo(false);
+        setModalCrearGrupoOpen(false);
         setNuevoGrupoTema('');
-        toast.success(`Grupo "${tema}" creado y seleccionado exitosamente.`);
+        toast.success(`Tratamiento "${tema}" creado y seleccionado.`);
       } catch (err: any) {
         console.error('Error al persistir nuevo grupo en API:', err);
         setTemaSeguimiento('temp-' + Date.now(), tema);
         setCreandoNuevoGrupo(false);
-        toast.success(`Grupo "${tema}" asignado.`);
+        setModalCrearGrupoOpen(false);
+        toast.success(`Tratamiento "${tema}" asignado.`);
       }
     } else {
       setTemaSeguimiento('temp-' + Date.now(), tema);
       setCreandoNuevoGrupo(false);
-      toast.success(`Grupo "${tema}" asignado.`);
+      setModalCrearGrupoOpen(false);
+      toast.success(`Tratamiento "${tema}" asignado.`);
     }
   };
 
@@ -120,7 +193,7 @@ export function Step1Modalidad() {
     if (!grupos) return [];
     const map = new Map<string, GrupoCitaDto>();
     grupos.forEach((g: GrupoCitaDto) => {
-      const key = (g.grupoId ? String(g.grupoId) : (g.titulo || g.descripcion || '')).toLowerCase();
+      const key = (g.grupoId ? String(g.grupoId) : g.titulo || g.descripcion || '').toLowerCase();
       if (!map.has(key)) {
         map.set(key, g);
       }
@@ -128,29 +201,237 @@ export function Step1Modalidad() {
     return Array.from(map.values());
   }, [grupos]);
 
+  // Deduplicación estricta case-insensitive de tipos de consulta
   const listaTiposConsulta = useMemo(() => {
     const tiposBase = [
-      'Primera vez',
+      'Primera Vez',
       'Seguimiento',
       'Control',
       'Urgencia',
       'Interconsulta',
       'Chequeo preventivo',
     ];
+
+    const map = new Map<string, string>();
+    tiposBase.forEach((t) => map.set(t.toLowerCase().trim(), t));
+
     if (doctor?.tipos_consulta && doctor.tipos_consulta.length > 0) {
-      const docTipos = doctor.tipos_consulta
-        .map((tc) => tc.tipo_consulta?.trim())
-        .filter(Boolean) as string[];
-      return Array.from(new Set([...tiposBase, ...docTipos]));
+      doctor.tipos_consulta.forEach((tc) => {
+        const val = tc.tipo_consulta?.trim();
+        if (val) {
+          const key = val.toLowerCase();
+          if (!map.has(key)) {
+            map.set(key, val);
+          }
+        }
+      });
     }
-    return tiposBase;
+
+    return Array.from(map.values());
   }, [doctor?.tipos_consulta]);
+
+  const tiposConsultaConIconos = useMemo(() => {
+    const mapIcon = (tipo: string) => {
+      const t = tipo.toLowerCase();
+      if (t.includes('primera')) return User;
+      if (t.includes('seguimiento')) return RotateCcw;
+      if (t.includes('control')) return CheckCircle2;
+      if (t.includes('urgencia')) return Flame;
+      if (t.includes('interconsulta')) return Users;
+      if (t.includes('preventivo') || t.includes('chequeo')) return ShieldCheck;
+      return Stethoscope;
+    };
+
+    return listaTiposConsulta.map((tipo) => ({
+      tipo,
+      Icon: mapIcon(tipo),
+    }));
+  }, [listaTiposConsulta]);
 
   useEffect(() => {
     if (!tipoConsulta) {
-      setTipoConsulta('Primera vez');
+      setTipoConsulta('Primera Vez');
     }
   }, [tipoConsulta, setTipoConsulta]);
+
+  // Selección automática de modalidad por defecto si no está seleccionada
+  useEffect(() => {
+    if (!modalidad && modalidades.length > 0) {
+      const hasPresencial = modalidades.some((m) => m.modDescripcion.toLowerCase().includes('presencial'));
+      setModalidad(hasPresencial ? 'presencial' : (modalidades[0].modDescripcion.toLowerCase() as any));
+    }
+  }, [modalidad, setModalidad, modalidades]);
+
+  // Selección automática de clínica en modalidad presencial
+  useEffect(() => {
+    if (modalidad === 'presencial' && clinicas.length > 0 && !clinicaSeleccionada) {
+      setClinica(clinicas[0]);
+    }
+  }, [modalidad, clinicas, clinicaSeleccionada, setClinica]);
+
+  // Obtener grupos de servicios adaptados por ubicación y modalidad tal como en el perfil médico
+  const locationServiceGroups = useMemo(() => {
+    if (!doctor) return [];
+    return getDoctorGroupedServices(doctor);
+  }, [doctor]);
+
+  // Filtrado y adaptación de servicios según la modalidad y ubicación seleccionada
+  const serviciosFiltrados: ServicioMedicoCitaDto[] = useMemo(() => {
+    // 1. Modalidad Presencial
+    if (modalidad === 'presencial') {
+      if (clinicaSeleccionada && locationServiceGroups.length > 0) {
+        const cliName = (clinicaSeleccionada.cliDescripcion || '').toLowerCase().trim();
+        const matchedGroup = locationServiceGroups.find(
+          (g) =>
+            g.type === 'clinica' &&
+            (g.name.toLowerCase().trim() === cliName ||
+              cliName.includes(g.name.toLowerCase().trim()) ||
+              g.name.toLowerCase().trim().includes(cliName))
+        );
+
+        if (matchedGroup && matchedGroup.services.length > 0) {
+          return matchedGroup.services.map((s, idx) => ({
+            sypCodigo: s.syp_codigo || (idx + 1) * 100,
+            servicio: s.servicio || 'Consulta Médica',
+            costoSinIva: s.syp_costo_sin_iva ?? s.syp_costo_total ?? clinicaSeleccionada.mclPrecioBase ?? 250,
+            costoIva: s.syp_costo_iva ?? 0,
+            costoTotal: s.syp_costo_total ?? clinicaSeleccionada.mclPrecioBase ?? 250,
+            observaciones: s.syp_observaciones || clinicaSeleccionada.cliDescripcion,
+          }));
+        }
+      }
+
+      // Fallback para modalidad presencial si no hay grupos adaptados
+      const general = (servicios || []).filter((s) => {
+        const nom = (s.servicio || '').toLowerCase();
+        return !nom.includes('domicilio') && !nom.includes('virtual') && !nom.includes('videollamada');
+      });
+      const baseList = general.length > 0 ? general : servicios;
+      if (clinicaSeleccionada?.mclPrecioBase) {
+        const base = clinicaSeleccionada.mclPrecioBase;
+        return baseList.map((s, idx) => {
+          const isGeneral = idx === 0 || (s.servicio || '').toLowerCase().includes('consulta') || (s.servicio || '').toLowerCase().includes('rutina');
+          const cost = isGeneral ? base : (s.costoTotal || base);
+          return {
+            ...s,
+            costoSinIva: cost,
+            costoTotal: cost,
+          };
+        });
+      }
+      return baseList;
+    }
+
+    // 2. Modalidad A Domicilio
+    if (modalidad === 'domicilio') {
+      const domGroup = locationServiceGroups.find((g) => g.type === 'domicilio');
+      if (domGroup && domGroup.services.length > 0) {
+        return domGroup.services.map((s, idx) => ({
+          sypCodigo: s.syp_codigo || 9001 + idx,
+          servicio: s.servicio || 'Consulta Médica a Domicilio',
+          costoSinIva: s.syp_costo_sin_iva ?? s.syp_costo_total ?? domGroup.basePrice ?? 300,
+          costoIva: s.syp_costo_iva ?? 0,
+          costoTotal: s.syp_costo_total ?? domGroup.basePrice ?? 300,
+          observaciones: s.syp_observaciones || 'Atención Médica a Domicilio',
+        }));
+      }
+
+      const dom = (servicios || []).filter((s) => {
+        const nom = (s.servicio || '').toLowerCase();
+        const obs = (s.observaciones || '').toLowerCase();
+        return nom.includes('domicilio') || obs.includes('domicilio');
+      });
+      if (dom.length > 0) return dom;
+
+      const domBase = doctor?.atencion_domicilio?.[0]?.lad_precio_base || 300;
+      return [
+        {
+          sypCodigo: 9001,
+          servicio: 'Consulta Médica a Domicilio',
+          costoSinIva: domBase,
+          costoIva: 0,
+          costoTotal: domBase,
+          observaciones: 'Atención personalizada en tu domicilio',
+        },
+      ];
+    }
+
+    // 3. Modalidad Videoconsulta / Virtual
+    if (modalidad === 'virtual') {
+      const virt = (servicios || []).filter((s) => {
+        const nom = (s.servicio || '').toLowerCase();
+        const obs = (s.observaciones || '').toLowerCase();
+        return (
+          nom.includes('virtual') ||
+          nom.includes('videoconsulta') ||
+          nom.includes('en línea') ||
+          nom.includes('online') ||
+          obs.includes('virtual')
+        );
+      });
+      if (virt.length > 0) return virt;
+
+      const virtPrice = doctor ? (getDoctorLowestPrice(doctor) || 200) : 200;
+      return [
+        {
+          sypCodigo: 8001,
+          servicio: 'Videoconsulta Virtual',
+          costoSinIva: virtPrice,
+          costoIva: 0,
+          costoTotal: virtPrice,
+          observaciones: 'Telemedicina Encriptada',
+        },
+      ];
+    }
+
+    return servicios;
+  }, [doctor, locationServiceGroups, servicios, modalidad, clinicaSeleccionada]);
+
+  // Sincronización y revalidación automática del servicio seleccionado al cambiar sede o modalidad
+  useEffect(() => {
+    if (modalidad === 'virtual') {
+      const virtualSrv =
+        serviciosFiltrados.find(
+          (s) =>
+            (s.servicio || '').toLowerCase().includes('virtual') ||
+            (s.servicio || '').toLowerCase().includes('videoconsulta')
+        ) || serviciosFiltrados[0];
+
+      if (virtualSrv) {
+        if (
+          !servicioSeleccionado ||
+          servicioSeleccionado.sypCodigo !== virtualSrv.sypCodigo ||
+          servicioSeleccionado.costoTotal !== virtualSrv.costoTotal
+        ) {
+          setServicio(virtualSrv);
+          setMotivo(virtualSrv.servicio);
+        }
+      }
+    } else if (serviciosFiltrados.length > 0) {
+      // Buscar si el servicio previamente elegido existe en la nueva sede/modalidad
+      const match = servicioSeleccionado
+        ? serviciosFiltrados.find(
+            (s) =>
+              s.sypCodigo === servicioSeleccionado.sypCodigo ||
+              s.servicio?.toLowerCase().trim() === servicioSeleccionado.servicio?.toLowerCase().trim()
+          )
+        : null;
+
+      if (match) {
+        // Si el precio o detalles difieren en esta nueva sede, sincronizar el precio
+        if (
+          servicioSeleccionado?.costoTotal !== match.costoTotal ||
+          servicioSeleccionado?.sypCodigo !== match.sypCodigo
+        ) {
+          setServicio(match);
+        }
+      } else {
+        // Si no existe para la nueva sede/modalidad, seleccionar el primero disponible
+        setServicio(serviciosFiltrados[0]);
+        setMotivo(serviciosFiltrados[0].servicio);
+      }
+    }
+  }, [modalidad, clinicaSeleccionada, serviciosFiltrados, servicioSeleccionado, setServicio, setMotivo]);
 
   const [currentMonth, setCurrentMonth] = useState<Date>(() => {
     const today = new Date();
@@ -172,7 +453,6 @@ export function Step1Modalidad() {
 
   const [currentTime, setCurrentTime] = useState<Date>(() => new Date());
 
-  // Ticker en tiempo real cada 10 segundos para bloquear slots con el paso del tiempo
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTime(new Date());
@@ -180,7 +460,7 @@ export function Step1Modalidad() {
     return () => clearInterval(timer);
   }, []);
 
-  // Si la fecha seleccionada cambia o si con el transcurso del tiempo la hora seleccionada ya transcurrió hoy, limpiar la hora y avisar
+  // Limpiar hora si ha transcurrido
   useEffect(() => {
     if (fecha) {
       const today = new Date(currentTime);
@@ -200,54 +480,32 @@ export function Step1Modalidad() {
         const selMinutes = (isNaN(hH) ? 0 : hH) * 60 + (isNaN(hM) ? 0 : hM);
         if (selMinutes <= currentMinutes) {
           setHora(null);
-          toast.warning(`El horario de las ${hora} ha transcurrido y ya no se encuentra disponible.`);
+          toast.warning(`El horario de las ${hora} ya no se encuentra disponible.`);
         }
       }
     }
   }, [fecha, hora, currentTime, setHora]);
 
-  // Si en citas múltiples alguna cita agregada para hoy ya venció con el paso del tiempo, removerla automáticamente
-  useEffect(() => {
-    if (citasMultiples.length > 0) {
-      const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
-      citasMultiples.forEach(c => {
-        const isToday =
-          c.fecha.getFullYear() === currentTime.getFullYear() &&
-          c.fecha.getMonth() === currentTime.getMonth() &&
-          c.fecha.getDate() === currentTime.getDate();
-        if (isToday) {
-          const [hH, hM] = c.hora.split(':').map(Number);
-          const selMinutes = (isNaN(hH) ? 0 : hH) * 60 + (isNaN(hM) ? 0 : hM);
-          if (selMinutes <= currentMinutes) {
-            removeCitaMultiple(c.id);
-            toast.warning(`La cita de las ${c.hora.substring(0, 5)} ha transcurrido y fue removida del grupo.`);
-          }
-        }
-      });
-    }
-  }, [currentTime, citasMultiples, removeCitaMultiple]);
-
   const handleSelectTema = (g: GrupoCitaDto) => {
-    const topicTitle = g.titulo || g.descripcion || 'Tema de Seguimiento';
+    const topicTitle = g.titulo || g.descripcion || 'Tratamiento';
     setTemaSeguimiento(g.grupoId, topicTitle);
     setCreandoNuevoGrupo(false);
+    setModalCrearGrupoOpen(false);
+    setModalAsociarGrupoOpen(false);
     setNuevoGrupoTema('');
     setFecha(null);
     setHora(null);
 
-    // 1. Automatizar modalidad
     if (g.modalidad && (g.modalidad === 'presencial' || g.modalidad === 'virtual' || g.modalidad === 'domicilio')) {
       setModalidad(g.modalidad as any);
     }
 
-    // 2. No sobreescribir motivo con el tema de seguimiento
     if (motivo === g.titulo || motivo === g.descripcion || motivo === topicTitle) {
       setMotivo('');
     }
 
-    // 3. Automatizar servicio médico
     if (g.codServicio && servicios.length > 0) {
-      const matchServicio = servicios.find(s => s.sypCodigo === g.codServicio);
+      const matchServicio = servicios.find((s) => s.sypCodigo === g.codServicio);
       if (matchServicio) {
         setServicio(matchServicio);
       }
@@ -255,43 +513,24 @@ export function Step1Modalidad() {
       setServicio(servicios[0]);
     }
 
-    // 4. Automatizar método de pago
     if (g.codMetodoPago) {
       setTipoPagoId(g.codMetodoPago);
     }
 
-    // 5. Automatizar consultorio / clínica
     if (g.consultorioId && clinicas.length > 0) {
-      const matchClinica = clinicas.find(c => c.mclCodigo === g.consultorioId || (c as any).cliCodigo === g.consultorioId);
+      const matchClinica = clinicas.find(
+        (c) => c.mclCodigo === g.consultorioId || (c as any).cliCodigo === g.consultorioId
+      );
       if (matchClinica) {
         setClinica(matchClinica);
       }
     }
+    toast.success(`Tratamiento "${topicTitle}" asociado.`);
   };
 
-  // Sincronizar automáticamente tema seleccionado, servicio, clínica y modalidad
-  useEffect(() => {
-    if (grupoId && gruposUnicos.length > 0) {
-      const g = gruposUnicos.find(item => String(item.grupoId).toLowerCase() === String(grupoId).toLowerCase());
-      if (g) {
-        if (!modalidad && g.modalidad && (g.modalidad === 'presencial' || g.modalidad === 'virtual' || g.modalidad === 'domicilio')) {
-          setModalidad(g.modalidad as any);
-        }
-        if (!servicioSeleccionado && g.codServicio && servicios.length > 0) {
-          const match = servicios.find(s => s.sypCodigo === g.codServicio);
-          if (match) setServicio(match);
-        }
-        if (!clinicaSeleccionada && g.consultorioId && clinicas.length > 0) {
-          const matchClinica = clinicas.find(c => c.mclCodigo === g.consultorioId || (c as any).cliCodigo === g.consultorioId);
-          if (matchClinica) setClinica(matchClinica);
-        }
-      }
-    }
-  }, [grupoId, gruposUnicos, modalidad, servicioSeleccionado, servicios, clinicaSeleccionada, clinicas, setModalidad, setServicio, setClinica]);
-
   const mclCodigo = modalidad === 'presencial' ? clinicaSeleccionada?.mclCodigo || null : 0;
-  const { data: horariosClinica = [], isLoading: loadingHorarios } = useHorarios(mclCodigo);
-  
+  const { data: horariosClinica = [] } = useHorarios(mclCodigo);
+
   const fechaStr = fecha ? format(fecha, 'yyyy-MM-dd') : null;
   const { data: horasOcupadas = [] } = useHorasOcupadas(codMedico || null, fechaStr);
   const { data: colaDelDia = [] } = useColaDelDia(codMedico || null, fechaStr);
@@ -302,12 +541,11 @@ export function Step1Modalidad() {
     if (modalidad === 'presencial') {
       return horariosClinica;
     }
-
     if (!doctor) return [];
 
     const combined: HorarioCitaDto[] = [];
-    doctor.clinicas?.forEach(c => {
-      c.horarios_atencion?.forEach(h => {
+    doctor.clinicas?.forEach((c) => {
+      c.horarios_atencion?.forEach((h) => {
         combined.push({
           horDiaSemana: h.hor_dia_semana,
           horHoraInicio: h.hor_hora_inicio,
@@ -315,14 +553,12 @@ export function Step1Modalidad() {
         });
       });
     });
-
     return combined;
   }, [modalidad, horariosClinica, doctor]);
 
-  // Citas del tema de seguimiento seleccionado (incluyendo tanto previas como futuras para resaltar en verde)
   const temaCitasList = useMemo(() => {
     if (!grupoId) return [];
-    const g = gruposUnicos.find(item => item.grupoId === grupoId);
+    const g = gruposUnicos.find((item) => item.grupoId === grupoId);
     if (!g) return [];
 
     const list: { fechaStr: string; horaStr: string; citaId: string; dateObj: Date; isPast: boolean }[] = [];
@@ -331,14 +567,14 @@ export function Step1Modalidad() {
 
     const processCita = (fechaRaw: any, horaRaw: any, citaId: string) => {
       if (!fechaRaw) return;
-      const fechaStr = String(fechaRaw).split('T')[0];
-      const [year, month, day] = fechaStr.split('-').map(Number);
+      const fStr = String(fechaRaw).split('T')[0];
+      const [year, month, day] = fStr.split('-').map(Number);
       if (isNaN(year) || isNaN(month) || isNaN(day)) return;
       const dateObj = new Date(year, month - 1, day);
       dateObj.setHours(0, 0, 0, 0);
 
       list.push({
-        fechaStr,
+        fechaStr: fStr,
         horaStr: String(horaRaw || '').slice(0, 5),
         citaId: citaId || '',
         dateObj,
@@ -347,33 +583,26 @@ export function Step1Modalidad() {
     };
 
     if (g.citas && g.citas.length > 0) {
-      g.citas.forEach(c => {
-        processCita(c.fecha, c.hora, c.citaId);
-      });
+      g.citas.forEach((c) => processCita(c.fecha, c.hora, c.citaId));
     } else if (g.fecha) {
       processCita(g.fecha, g.hora, g.citaId || '');
     }
     return list;
   }, [grupoId, gruposUnicos]);
 
-  const fechasTemaSeguimiento = useMemo(() => {
-    return temaCitasList.map(item => item.dateObj);
-  }, [temaCitasList]);
+  const fechasTemaSeguimiento = useMemo(() => temaCitasList.map((item) => item.dateObj), [temaCitasList]);
 
   const fechaSelectedStr = fecha ? format(fecha, 'yyyy-MM-dd') : null;
   const citasTemaEnFecha = useMemo(() => {
     if (!fechaSelectedStr) return [];
-    return temaCitasList.filter(c => c.fechaStr === fechaSelectedStr);
+    return temaCitasList.filter((c) => c.fechaStr === fechaSelectedStr);
   }, [fechaSelectedStr, temaCitasList]);
 
-  const horasTemaEnFecha = useMemo(() => {
-    return citasTemaEnFecha.map(c => c.horaStr);
-  }, [citasTemaEnFecha]);
+  const horasTemaEnFecha = useMemo(() => citasTemaEnFecha.map((c) => c.horaStr), [citasTemaEnFecha]);
 
-  // Citas activas de la cuenta del usuario en la fecha seleccionada
   const misCitasActivasEnFecha = useMemo(() => {
     if (!fechaSelectedStr || !misCitas.length) return [];
-    return misCitas.filter(c => {
+    return misCitas.filter((c) => {
       if (!c.ctaFecha) return false;
       const cFecha = c.ctaFecha.split('T')[0];
       if (cFecha !== fechaSelectedStr) return false;
@@ -384,24 +613,16 @@ export function Step1Modalidad() {
 
   const misHorasEnFecha = useMemo(() => {
     return misCitasActivasEnFecha
-      .map(c => (c.ctaHora ? String(c.ctaHora).slice(0, 5) : ''))
+      .map((c) => (c.ctaHora ? String(c.ctaHora).slice(0, 5) : ''))
       .filter(Boolean);
   }, [misCitasActivasEnFecha]);
 
-  // Si el usuario tenía seleccionada una solicitud de intercambio sobre un horario que es de su propia cuenta, limpiarla
-  useEffect(() => {
-    if (solicitudIntercambio && fecha && solicitudIntercambio.fecha === format(fecha, 'yyyy-MM-dd')) {
-      if (misHorasEnFecha.includes(solicitudIntercambio.hora) || horasTemaEnFecha.includes(solicitudIntercambio.hora)) {
-        setSolicitudIntercambio(null);
-      }
-    }
-  }, [solicitudIntercambio, fecha, misHorasEnFecha, horasTemaEnFecha, setSolicitudIntercambio]);
-
   const isCitaTemaDate = (date: Date) => {
-    return fechasTemaSeguimiento.some(d =>
-      d.getFullYear() === date.getFullYear() &&
-      d.getMonth() === date.getMonth() &&
-      d.getDate() === date.getDate()
+    return fechasTemaSeguimiento.some(
+      (d) =>
+        d.getFullYear() === date.getFullYear() &&
+        d.getMonth() === date.getMonth() &&
+        d.getDate() === date.getDate()
     );
   };
 
@@ -414,12 +635,18 @@ export function Step1Modalidad() {
     return sel < today;
   }, [fecha]);
 
-  const disabledDays = useMemo(() => {
+  const isDayDisabled = (date: Date) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+
+    if (isCitaTemaDate(d)) return false;
+    if (d < today) return true;
+    if (!horarios.length) return true;
 
     const allowedJsDays = new Set<number>();
-    horarios.forEach(h => {
+    horarios.forEach((h) => {
       if (h.horDiaSemana === 7 || h.horDiaSemana === 0) {
         allowedJsDays.add(0);
       } else {
@@ -427,25 +654,58 @@ export function Step1Modalidad() {
       }
     });
 
-    return [
-      (date: Date) => {
-        const d = new Date(date);
-        d.setHours(0, 0, 0, 0);
+    return !allowedJsDays.has(d.getDay());
+  };
 
-        // Si es una fecha con cita de este tema (pasada o futura), permitir seleccionarla para inspeccionar su info
-        if (isCitaTemaDate(d)) return false;
+  const calendarDays = useMemo(() => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const startDayOfWeek = (firstDay.getDay() + 6) % 7; // Lu = 0, ..., Do = 6
 
-        // Si es fecha en el pasado sin cita del tema, está deshabilitada
-        if (d < today) return true;
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const daysInPrevMonth = new Date(year, month, 0).getDate();
 
-        // Si el doctor no tiene horarios configurados
-        if (!horarios.length) return true;
+    const days: {
+      date: Date;
+      dayNum: number;
+      isCurrentMonth: boolean;
+    }[] = [];
 
-        // Si no atiende este día de la semana
-        return !allowedJsDays.has(d.getDay());
-      }
-    ];
-  }, [horarios, fechasTemaSeguimiento, isCitaTemaDate]);
+    for (let i = startDayOfWeek - 1; i >= 0; i--) {
+      const d = daysInPrevMonth - i;
+      const date = new Date(year, month - 1, d);
+      date.setHours(0, 0, 0, 0);
+      days.push({
+        date,
+        dayNum: d,
+        isCurrentMonth: false,
+      });
+    }
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(year, month, d);
+      date.setHours(0, 0, 0, 0);
+      days.push({
+        date,
+        dayNum: d,
+        isCurrentMonth: true,
+      });
+    }
+
+    const remaining = (7 - (days.length % 7)) % 7;
+    for (let d = 1; d <= remaining; d++) {
+      const date = new Date(year, month + 1, d);
+      date.setHours(0, 0, 0, 0);
+      days.push({
+        date,
+        dayNum: d,
+        isCurrentMonth: false,
+      });
+    }
+
+    return days;
+  }, [currentMonth]);
 
   const availableTimeSlots = useMemo(() => {
     if (!fecha || isPastDateSelected) return [];
@@ -455,18 +715,17 @@ export function Step1Modalidad() {
     const selectedDate = new Date(fecha);
     selectedDate.setHours(0, 0, 0, 0);
 
-    // Fechas pasadas no tienen horarios de agendamiento disponibles
     if (selectedDate < today) return [];
 
     const dayOfWeek = fecha.getDay();
-    const horariosDia = horarios.filter(h => {
+    const horariosDia = horarios.filter((h) => {
       if (dayOfWeek === 0) return h.horDiaSemana === 0 || h.horDiaSemana === 7;
       return h.horDiaSemana === dayOfWeek;
     });
 
     const slots = new Set<string>();
 
-    horariosDia.forEach(horarioDia => {
+    horariosDia.forEach((horarioDia) => {
       if (!horarioDia.horHoraInicio || !horarioDia.horHoraFin) return;
       const [startH, startM] = horarioDia.horHoraInicio.slice(0, 5).split(':').map(Number);
       const [endH, endM] = horarioDia.horHoraFin.slice(0, 5).split(':').map(Number);
@@ -482,15 +741,8 @@ export function Step1Modalidad() {
       }
     });
 
-    // Añadir las horas de citas de este tema para esta fecha (para mostrarlas como ya reservadas)
-    horasTemaEnFecha.forEach(h => {
-      slots.add(h);
-    });
-
-    // Añadir las horas de citas del propio usuario para esta fecha
-    misHorasEnFecha.forEach(h => {
-      slots.add(h);
-    });
+    horasTemaEnFecha.forEach((h) => slots.add(h));
+    misHorasEnFecha.forEach((h) => slots.add(h));
 
     if (slots.size === 0) return [];
 
@@ -503,7 +755,7 @@ export function Step1Modalidad() {
 
     const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
 
-    return uniqueSlots.map(slot => {
+    return uniqueSlots.map((slot) => {
       const slotWithSeconds = `${slot}:00`;
       const isTemaSlot = horasTemaEnFecha.includes(slot);
       const isMiCita = misHorasEnFecha.includes(slot);
@@ -513,21 +765,23 @@ export function Step1Modalidad() {
       const slotMinutes = (isNaN(slotH) ? 0 : slotH) * 60 + (isNaN(slotM) ? 0 : slotM);
       const isPastHour = isToday && slotMinutes <= currentMinutes;
 
-      // Ocupado por OTRO paciente: está en horasOcupadas del médico pero NO es cita propia del usuario ni de su tema
       const isOccupiedByOther = (horasOcupadas.includes(slotWithSeconds) || horasOcupadas.includes(slot)) && !isOwnSlot;
       const isBusy = isOccupiedByOther || isOwnSlot;
 
-      // Verificar si en la cola del día este horario ya inició consulta o finalizó
-      const citaCola = colaDelDia.find(c => {
+      const citaCola = colaDelDia.find((c) => {
         const cHora = c.ctaHora ? c.ctaHora.slice(0, 5) : '';
         return cHora === slot;
       });
       const estCitaCola = (citaCola?.ctaEstado || '').toLowerCase();
-      const isConsultaIniciada = estCitaCola === 'en_proceso' || estCitaCola === 'en_consulta' || Boolean(citaCola?.esTurnoActual);
-      const isConsultaFinalizada = estCitaCola === 'completada' || estCitaCola === 'no_asistio' || estCitaCola === 'cancelada' || estCitaCola === 'rechazada';
+      const isConsultaIniciada =
+        estCitaCola === 'en_proceso' || estCitaCola === 'en_consulta' || Boolean(citaCola?.esTurnoActual);
+      const isConsultaFinalizada =
+        estCitaCola === 'completada' ||
+        estCitaCola === 'no_asistio' ||
+        estCitaCola === 'cancelada' ||
+        estCitaCola === 'rechazada';
       const isNoSolicitable = isConsultaIniciada || isConsultaFinalizada;
 
-      // REGLA CRÍTICA: Si la hora ya pasó hoy (isPastHour), está estrictamente deshabilitada (no se puede agendar)
       const disabled = isPastHour || isBusy;
 
       return {
@@ -545,13 +799,6 @@ export function Step1Modalidad() {
     });
   }, [fecha, isPastDateSelected, horarios, horasOcupadas, colaDelDia, horasTemaEnFecha, misHorasEnFecha, currentTime]);
 
-  useEffect(() => {
-    if (!modalidad && modalidades.length === 1) {
-      const hasPresencial = modalidades.some(m => m.modDescripcion.toLowerCase().includes('presencial'));
-      setModalidad(hasPresencial ? 'presencial' : modalidades[0].modDescripcion.toLowerCase() as any);
-    }
-  }, [modalidad, setModalidad, modalidades]);
-
   const isHoraValid = useMemo(() => {
     if (!hora || !fecha) return false;
     const isToday =
@@ -568,1097 +815,1122 @@ export function Step1Modalidad() {
   }, [fecha, hora, currentTime]);
 
   const isScheduleEnabled =
-    (modalidad === 'virtual') ||
+    modalidad === 'virtual' ||
     (modalidad === 'presencial' && clinicaSeleccionada) ||
     (modalidad === 'domicilio' && coberturaDomicilioValida && ubicacionDomicilioConfirmada);
 
   const isMultiMode = !!(grupoId || creandoNuevoGrupo);
-  const fechasCitasMultiples = useMemo(() => citasMultiples.map(c => c.fecha), [citasMultiples]);
+  const fechasCitasMultiples = useMemo(() => citasMultiples.map((c) => c.fecha), [citasMultiples]);
 
   const isDateValidForBooking = !!(fecha && !isPastDateSelected);
   const isComplete = isMultiMode
     ? isScheduleEnabled && citasMultiples.length > 0 && (!creandoNuevoGrupo || nuevoGrupoTema.trim().length > 0)
     : isScheduleEnabled && isDateValidForBooking && !!hora && isHoraValid;
 
+  // Cálculo de total estimado
+  const precioUnitario = useMemo(() => {
+    if (servicioSeleccionado?.costoTotal) {
+      return servicioSeleccionado.costoTotal;
+    }
+    if (modalidad === 'presencial' && clinicaSeleccionada?.mclPrecioBase) {
+      return clinicaSeleccionada.mclPrecioBase;
+    }
+    if (doctor) {
+      return getDoctorLowestPrice(doctor) || 150;
+    }
+    return 150;
+  }, [servicioSeleccionado, modalidad, clinicaSeleccionada, doctor]);
+
+  const precioTotal = useMemo(() => {
+    if (isMultiMode && citasMultiples.length > 0) {
+      return precioUnitario * citasMultiples.length;
+    }
+    return precioUnitario;
+  }, [precioUnitario, isMultiMode, citasMultiples]);
+
+  const precioEntero = Math.floor(precioTotal);
+  const precioDecimal = (precioTotal % 1).toFixed(2).substring(2);
+
+  const nombreServicioEstimado =
+    modalidad === 'virtual'
+      ? 'Videoconsulta Médica'
+      : servicioSeleccionado?.servicio ||
+        (modalidad === 'presencial' ? 'Consulta Presencial' : 'Consulta a Domicilio');
+
   if (isLoading) {
     return (
-      <div className="py-12"><NeoLoader fullScreenPortal={false} /></div>
+      <div className="py-12">
+        <NeoLoader fullScreenPortal={false} />
+      </div>
     );
   }
 
-  const getIcon = (tipo: string, selected: boolean) => {
-    const colorClass = selected ? "text-blue-700" : "text-slate-500";
-    switch (tipo) {
-      case 'presencial': return <MapPin className={`h-4 w-4 ${colorClass}`} />;
-      case 'virtual': return <Video className={`h-4 w-4 ${colorClass}`} />;
-      case 'domicilio': return <Home className={`h-4 w-4 ${colorClass}`} />;
-      default: return <Stethoscope className={`h-4 w-4 ${colorClass}`} />;
-    }
-  };
+  const modalidadesDisplay = [
+    { tipo: 'presencial' as const, label: 'Presencial', Icon: Building2 },
+    { tipo: 'virtual' as const, label: 'Videoconsulta', Icon: Video },
+    { tipo: 'domicilio' as const, label: 'A Domicilio', Icon: Home },
+  ];
 
   return (
-    <div className="flex flex-col w-full font-sans pb-4">
+    <div className="relative w-full overflow-hidden font-sans pb-10">
+      {/* Luces sutiles y decorativas de fondo */}
+      <div className="absolute -top-32 left-1/4 w-96 h-96 rounded-full bg-[#dce9ff]/40 dark:bg-blue-900/15 blur-3xl pointer-events-none -z-10" />
+      <div className="absolute top-1/2 right-10 w-80 h-80 rounded-full bg-[#cce5ff]/25 dark:bg-sky-900/15 blur-3xl pointer-events-none -z-10" />
 
-      {/* 1. AGRUPAR CITA */}
-      <div className="mb-6 bg-white dark:bg-[#1E293B] rounded-2xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-2">
-          <div>
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <FolderPlus className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-              Agrupar cita
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Asocia esta cita a un tratamiento continuo o crea un nuevo grupo de citas con este especialista.
-            </p>
-          </div>
-          {(grupoId || creandoNuevoGrupo) && (
+      {/* Contenedor adaptado al ancho del header */}
+      <div className="w-full flex flex-col space-y-10">
+        {/* ========================================== */}
+        {/* 1. SECCIÓN AGRUPACIÓN                       */}
+        {/* ========================================== */}
+        <section className="flex flex-col space-y-3">
+          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Agrupación
+          </span>
+
+          <div className="grid grid-cols-3 gap-3 bg-[#eff4ff] dark:bg-slate-800/60 p-1.5 rounded-2xl">
+            {/* Individual */}
             <button
               type="button"
               onClick={() => {
                 setTemaSeguimiento(null, null);
                 setCreandoNuevoGrupo(false);
                 setNuevoGrupoTema('');
+                clearCitasMultiples();
               }}
-              className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline self-start sm:self-auto cursor-pointer"
+              className={`group relative flex items-center justify-center gap-2 py-3 px-4 rounded-xl transition-all duration-200 cursor-pointer ${
+                !grupoId && !creandoNuevoGrupo
+                  ? 'bg-white dark:bg-slate-900 text-[#0b1c30] dark:text-white shadow-[0_2px_12px_rgba(11,28,48,0.04)] font-medium'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
             >
-              Desagrupar cita
+              {!grupoId && !creandoNuevoGrupo && (
+                <span className="w-1.5 h-1.5 rounded-full bg-[#006194]"></span>
+              )}
+              <span className="text-sm">Individual</span>
             </button>
-          )}
-        </div>
 
-        {gruposUnicos.length > 0 ? (
-          <div className="space-y-4">
-            {/* Opciones con grupos existentes */}
-            <div className="flex flex-wrap gap-2">
-              {/* Primero: Cita individual */}
-              <button
-                type="button"
-                onClick={() => {
-                  setTemaSeguimiento(null, null);
-                  setCreandoNuevoGrupo(false);
-                  setNuevoGrupoTema('');
-                }}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
-                  !grupoId && !creandoNuevoGrupo
-                    ? 'bg-slate-800 text-white dark:bg-slate-700 border-slate-800 dark:border-slate-700 shadow-sm'
-                    : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                }`}
-              >
-                <span>Cita individual</span>
-              </button>
+            {/* Asociar Tratamiento */}
+            <button
+              type="button"
+              onClick={() => {
+                setCreandoNuevoGrupo(false);
+                if (gruposUnicos.length === 0) {
+                  toast.info('No tienes tratamientos previos con este especialista. Puedes crear uno nuevo.');
+                  setModalCrearGrupoOpen(true);
+                } else if (gruposUnicos.length === 1) {
+                  handleSelectTema(gruposUnicos[0]);
+                } else {
+                  setModalAsociarGrupoOpen(true);
+                }
+              }}
+              className={`group relative flex items-center justify-center gap-2 py-3 px-4 rounded-xl transition-all duration-200 cursor-pointer ${
+                grupoId && !creandoNuevoGrupo
+                  ? 'bg-white dark:bg-slate-900 text-[#0b1c30] dark:text-white shadow-[0_2px_12px_rgba(11,28,48,0.04)] font-medium'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              {grupoId && !creandoNuevoGrupo && (
+                <span className="w-1.5 h-1.5 rounded-full bg-[#006194]"></span>
+              )}
+              <span className="text-sm">
+                Asociar Tratamiento {gruposUnicos.length > 0 ? `(${gruposUnicos.length})` : ''}
+              </span>
+            </button>
 
-              {/* Segundo: Agrupar cita */}
-              <button
-                type="button"
-                onClick={() => {
-                  setCreandoNuevoGrupo(false);
-                  if (!grupoId && gruposUnicos.length > 0) {
-                    handleSelectTema(gruposUnicos[0]);
-                  }
-                }}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
-                  !creandoNuevoGrupo && grupoId
-                    ? 'bg-purple-50 dark:bg-purple-950/60 border-purple-500 text-purple-700 dark:text-purple-300 shadow-sm'
-                    : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                }`}
-              >
-                <FolderPlus className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                <span>Agrupar cita ({gruposUnicos.length})</span>
-              </button>
+            {/* Nuevo Grupo */}
+            <button
+              type="button"
+              onClick={() => {
+                setCreandoNuevoGrupo(true);
+                setModalCrearGrupoOpen(true);
+              }}
+              className={`group relative flex items-center justify-center gap-1.5 py-3 px-4 rounded-xl transition-all duration-200 cursor-pointer ${
+                creandoNuevoGrupo
+                  ? 'bg-white dark:bg-slate-900 text-[#006194] dark:text-sky-400 shadow-[0_2px_12px_rgba(11,28,48,0.04)] font-medium'
+                  : 'text-[#006194] dark:text-sky-400 hover:bg-white/50 dark:hover:bg-slate-900/50 font-medium'
+              }`}
+            >
+              <span className="text-base font-semibold leading-none">+</span>
+              <span className="text-sm">Nuevo Grupo</span>
+            </button>
+          </div>
 
-              {/* Tercero: Crear grupo de citas */}
-              <button
-                type="button"
-                onClick={() => {
-                  setCreandoNuevoGrupo(true);
-                }}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
-                  creandoNuevoGrupo
-                    ? 'bg-purple-50 dark:bg-purple-950/60 border-purple-500 text-purple-700 dark:text-purple-300 shadow-sm'
-                    : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                }`}
-              >
-                <Plus className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                <span>Crear grupo de citas</span>
-              </button>
-            </div>
+          {/* Tarjeta de Tratamiento Activo */}
+          {grupoId && !creandoNuevoGrupo && (
+            <div className="flex items-center justify-between p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-[0_2px_12px_rgba(11,28,48,0.04)] animate-in fade-in">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-[#e5eeff] dark:bg-slate-800 text-[#006194] dark:text-sky-400 flex items-center justify-center shrink-0">
+                  <Layers className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+                    Tratamiento Asociado
+                  </span>
+                  <p className="text-sm font-semibold text-[#0b1c30] dark:text-white truncate">
+                    {grupoNombre || 'Tratamiento seleccionado'}
+                  </p>
+                </div>
+              </div>
 
-            {/* Lista de grupos existentes para seleccionar */}
-            {!creandoNuevoGrupo && (
-              <div className="space-y-3 pt-1">
-                {grupoId && (
-                  <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-purple-50/80 dark:bg-purple-950/40 border border-purple-200/80 dark:border-purple-800/50 text-xs font-bold text-purple-800 dark:text-purple-300">
-                    <Check className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                    <span>Grupo seleccionado: <strong>{grupoNombre || 'Seleccionado'}</strong>. Modalidad, servicio y método de pago preconfigurados automáticamente.</span>
-                  </div>
+              <div className="flex items-center gap-2 shrink-0 ml-3">
+                {gruposUnicos.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setModalAsociarGrupoOpen(true)}
+                    className="px-3 py-1.5 rounded-xl bg-[#eff4ff] hover:bg-[#dce9ff] dark:bg-slate-800 dark:hover:bg-slate-700 text-[#006194] dark:text-sky-400 text-xs font-semibold cursor-pointer transition"
+                  >
+                    Cambiar
+                  </button>
                 )}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {gruposUnicos.map((g) => {
-                    const isSelected = grupoId === g.grupoId;
-                    const topicTitle = g.titulo || g.descripcion || 'Grupo de Citas';
-                    return (
-                      <button
-                        key={g.grupoId}
-                        type="button"
-                        onClick={() => handleSelectTema(g)}
-                        className={`text-left p-3.5 rounded-2xl border-2 transition-all flex items-start justify-between gap-3 cursor-pointer ${
-                          isSelected
-                            ? 'border-purple-500 bg-purple-50/80 dark:bg-purple-950/50 shadow-md text-purple-950 dark:text-purple-200 ring-2 ring-purple-400/20'
-                            : 'border-slate-200 dark:border-slate-700 hover:border-purple-300 dark:hover:border-purple-600/50 bg-slate-50/50 dark:bg-[#0F172A]'
-                        }`}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 text-purple-600 dark:text-purple-400 mb-1">
-                            <FolderPlus className="w-4 h-4 shrink-0" />
-                            <span className="text-[10px] font-black uppercase tracking-wider">Grupo de Citas</span>
-                          </div>
-                          <h4 className="font-bold text-sm truncate text-slate-900 dark:text-white">
-                            {topicTitle}
-                          </h4>
-                          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                            {g.modalidad && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-purple-100/80 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">
-                                {g.modalidad}
-                              </span>
-                            )}
-                            <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                              {g.citaId ? 'Continuidad de citas' : 'Grupo activo'}
-                            </span>
-                          </div>
-                        </div>
-                        <div className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center mt-0.5 transition ${
-                          isSelected ? 'bg-purple-600 text-white shadow-xs' : 'border border-slate-300 dark:border-slate-600'
-                        }`}>
-                          {isSelected && <Check className="w-3.5 h-3.5" />}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Formulario para ingresar nuevo grupo */}
-            {creandoNuevoGrupo && (
-              <div className="pt-2 animate-in fade-in duration-150">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
-                  Nombre del nuevo grupo de citas o tratamiento:
-                </label>
-                <div className="flex flex-col sm:flex-row gap-2 max-w-xl">
-                  <input
-                    type="text"
-                    value={nuevoGrupoTema}
-                    onChange={(e) => setNuevoGrupoTema(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleConfirmarNuevoGrupo();
-                      } else if (e.key === 'Escape') {
-                        setCreandoNuevoGrupo(false);
-                        setNuevoGrupoTema('');
-                      }
-                    }}
-                    placeholder="Ej: Control Post-operatorio Rodilla, Tratamiento Acné..."
-                    className="flex-1 bg-white dark:bg-[#0F172A] px-4 py-2.5 rounded-xl border border-purple-300 dark:border-purple-700 outline-none focus:ring-2 focus:ring-purple-500/20 text-sm text-slate-800 dark:text-slate-200"
-                    autoFocus
-                  />
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleConfirmarNuevoGrupo}
-                      disabled={isCreatingGrupo || !nuevoGrupoTema.trim()}
-                      className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-sm transition flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer shrink-0"
-                    >
-                      {isCreatingGrupo ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>Creando...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Check className="w-3.5 h-3.5 stroke-[3]" />
-                          <span>Crear grupo</span>
-                        </>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCreandoNuevoGrupo(false);
-                        setNuevoGrupoTema('');
-                      }}
-                      className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold transition cursor-pointer shrink-0"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                </div>
-                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1.5">
-                  Presiona <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-mono border border-slate-200 dark:border-slate-700">Enter</kbd> o haz clic en <strong>Crear grupo</strong> para confirmar.
-                </p>
-              </div>
-            )}
-          </div>
-        ) : (
-          /* Si el paciente no tiene grupos previos con este médico */
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Cita individual */}
-              <button
-                type="button"
-                onClick={() => {
-                  setCreandoNuevoGrupo(false);
-                  setNuevoGrupoTema('');
-                  setTemaSeguimiento(null, null);
-                }}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
-                  !creandoNuevoGrupo
-                    ? 'bg-slate-800 text-white dark:bg-slate-700 border-slate-800 dark:border-slate-700 shadow-sm'
-                    : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                }`}
-              >
-                <span>Cita individual</span>
-              </button>
-
-              {/* Crear grupo de citas */}
-              <button
-                type="button"
-                onClick={() => {
-                  setCreandoNuevoGrupo(true);
-                }}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
-                  creandoNuevoGrupo
-                    ? 'bg-purple-50 dark:bg-purple-950/60 border-purple-500 text-purple-700 dark:text-purple-300 shadow-sm'
-                    : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                }`}
-              >
-                <Plus className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                <span>Crear grupo de citas</span>
-              </button>
-            </div>
-
-            {creandoNuevoGrupo && (
-              <div className="pt-2 animate-in fade-in duration-150">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
-                  Nombre del nuevo grupo de citas o tratamiento:
-                </label>
-                <div className="flex flex-col sm:flex-row gap-2 max-w-xl">
-                  <input
-                    type="text"
-                    value={nuevoGrupoTema}
-                    onChange={(e) => setNuevoGrupoTema(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleConfirmarNuevoGrupo();
-                      } else if (e.key === 'Escape') {
-                        setCreandoNuevoGrupo(false);
-                        setNuevoGrupoTema('');
-                      }
-                    }}
-                    placeholder="Ej: Control Post-operatorio, Tratamiento Ortodoncia..."
-                    className="flex-1 bg-white dark:bg-[#0F172A] px-4 py-2.5 rounded-xl border border-purple-300 dark:border-purple-700 outline-none focus:ring-2 focus:ring-purple-500/20 text-sm text-slate-800 dark:text-slate-200"
-                    autoFocus
-                  />
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleConfirmarNuevoGrupo}
-                      disabled={isCreatingGrupo || !nuevoGrupoTema.trim()}
-                      className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-sm transition flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer shrink-0"
-                    >
-                      {isCreatingGrupo ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>Creando...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Check className="w-3.5 h-3.5 stroke-[3]" />
-                          <span>Crear grupo</span>
-                        </>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCreandoNuevoGrupo(false);
-                        setNuevoGrupoTema('');
-                      }}
-                      className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold transition cursor-pointer shrink-0"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                </div>
-                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1.5">
-                  Presiona <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-mono border border-slate-200 dark:border-slate-700">Enter</kbd> o haz clic en <strong>Crear grupo</strong> para confirmar.
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* 2. SELECCIÓN DE SERVICIO MÉDICO */}
-      {servicios.length > 0 && (
-        <div className="mb-6 bg-white dark:bg-[#1E293B] rounded-2xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-2">
-            <div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Stethoscope className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                Servicios y Tarifas del Especialista
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Selecciona el servicio médico que requieres para consultar su costo y agendar tu cita.
-              </p>
-            </div>
-            {servicioSeleccionado && (
-              <button
-                type="button"
-                onClick={() => {
-                  setServicio(null);
-                  setMotivo('');
-                }}
-                className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline self-start sm:self-auto cursor-pointer"
-              >
-                Limpiar selección
-              </button>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 max-h-[260px] overflow-y-auto pr-1 custom-scrollbar">
-            {servicios.map((s: ServicioMedicoCitaDto) => {
-              const isSelected = servicioSeleccionado?.sypCodigo === s.sypCodigo;
-              return (
                 <button
-                  key={s.sypCodigo}
                   type="button"
                   onClick={() => {
-                    setServicio(s);
-                    setMotivo(s.servicio);
+                    setTemaSeguimiento(null, null);
+                    clearCitasMultiples();
+                    toast.info('Se desasoció el tratamiento.');
                   }}
-                  className={`text-left p-4 rounded-xl border-2 transition-all flex flex-col justify-between cursor-pointer ${
+                  className="p-1.5 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-500 transition cursor-pointer"
+                  title="Quitar asociación"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* ========================================== */}
+        {/* 2. SECCIÓN TIPO DE CONSULTA                 */}
+        {/* ========================================== */}
+        <section className="flex flex-col space-y-3">
+          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Tipo de Consulta
+          </span>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            {tiposConsultaConIconos.map(({ tipo, Icon }) => {
+              const isSelected = (tipoConsulta || 'Primera Vez').toLowerCase() === tipo.toLowerCase();
+              return (
+                <button
+                  key={tipo}
+                  type="button"
+                  onClick={() => setTipoConsulta(tipo)}
+                  className={`flex items-center justify-between p-3.5 rounded-2xl text-left transition-all duration-200 group cursor-pointer ${
                     isSelected
-                      ? 'border-blue-600 dark:border-blue-500 bg-blue-50/70 dark:bg-blue-900/30 shadow-md shadow-blue-600/10'
-                      : 'border-slate-200 dark:border-slate-700/80 hover:border-blue-300 dark:hover:border-blue-600/50 bg-slate-50/50 dark:bg-[#0F172A] hover:shadow-sm'
+                      ? 'bg-white dark:bg-slate-900 shadow-[0_2px_12px_rgba(11,28,48,0.04)] ring-1 ring-[#006194]/20'
+                      : 'bg-[#eff4ff]/60 dark:bg-slate-800/40 hover:bg-white dark:hover:bg-slate-900'
                   }`}
                 >
-                  <div>
-                    <div className="flex items-start justify-between gap-2">
-                      <h4 className={`font-bold text-[14px] leading-tight ${isSelected ? 'text-blue-900 dark:text-blue-300' : 'text-slate-800 dark:text-slate-200'}`}>
-                        {s.servicio}
-                      </h4>
-                      <div className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${isSelected ? 'bg-blue-600 text-white' : 'border border-slate-300 dark:border-slate-600'}`}>
-                        {isSelected ? <Check className="w-3.5 h-3.5" /> : null}
-                      </div>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all group-hover:scale-105 shrink-0 ${
+                        isSelected
+                          ? 'bg-[#e5eeff] dark:bg-slate-800 text-[#006194] dark:text-sky-400'
+                          : 'bg-[#e5eeff]/80 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 group-hover:text-[#006194]'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" />
                     </div>
-                    {s.observaciones && (
-                      <p className="text-[12px] text-slate-500 dark:text-slate-400 line-clamp-2 mt-1.5">
-                        {s.observaciones}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="mt-3 pt-2.5 border-t border-slate-200/60 dark:border-slate-700/60 flex items-baseline justify-between">
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500">
-                      Sin IVA: Q{s.costoSinIva.toFixed(2)}
-                    </span>
-                    <span className="text-base font-black text-blue-600 dark:text-blue-400">
-                      Q{s.costoTotal.toFixed(2)}
+                    <span
+                      className={`text-sm font-semibold truncate ${
+                        isSelected
+                          ? 'text-[#0b1c30] dark:text-white'
+                          : 'text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white'
+                      }`}
+                    >
+                      {tipo}
                     </span>
                   </div>
+                  {isSelected && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#006194] shrink-0 ml-2" />
+                  )}
                 </button>
               );
             })}
           </div>
-        </div>
-      )}
+        </section>
 
-      {/* 2.5 TIPOS DE CONSULTA (SECCIÓN DEL PANEL MÉDICO) */}
-      <div className="mb-6 bg-white dark:bg-[#1E293B] rounded-2xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 border border-blue-100 dark:border-blue-900/40 shadow-2xs">
-            <ClipboardList className="w-5 h-5 stroke-[2.2]" />
-          </div>
-          <div>
-            <h3 className="text-sm sm:text-base font-black tracking-wider uppercase text-slate-900 dark:text-white">
-              TIPOS DE CONSULTA
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Selecciona el tipo de consulta médica que requieres
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
-          {listaTiposConsulta.map((tipo) => {
-            const isSelected = (tipoConsulta || 'Primera vez') === tipo;
-            return (
-              <button
-                key={tipo}
-                type="button"
-                onClick={() => setTipoConsulta(tipo)}
-                className={`px-4 sm:px-5 py-2 sm:py-2.5 rounded-full text-xs sm:text-sm font-bold transition-all duration-200 cursor-pointer shadow-2xs active:scale-95 flex items-center gap-1.5 ${
-                  isSelected
-                    ? 'bg-[#0B3B60] dark:bg-blue-600 text-white shadow-md shadow-[#0B3B60]/20 ring-2 ring-offset-2 ring-[#0B3B60] dark:ring-blue-400 dark:ring-offset-slate-900'
-                    : 'bg-slate-100 hover:bg-slate-200/90 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700'
-                }`}
-              >
-                {isSelected && <Check className="w-3.5 h-3.5 stroke-[3] shrink-0" />}
-                <span>{tipo}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 3. MODALIDAD DE ATENCIÓN (BOTONES GRANDES Y CENTRADOS CON ICONO) */}
-      <div className="my-6 bg-white dark:bg-[#1E293B] rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
-        <div className="text-center mb-5">
-          <h3 className="text-base font-bold text-slate-900 dark:text-white">
-            Modalidad de Atención
-          </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Selecciona cómo deseas realizar tu consulta con el especialista
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-stretch justify-center gap-4 max-w-3xl mx-auto">
-          {modalidades.map((mod) => {
-            const normalizedTipo = mod.modDescripcion.toLowerCase().includes('domicilio')
-              ? 'domicilio'
-              : mod.modDescripcion.toLowerCase() as any;
-            const isSelected = modalidad === normalizedTipo;
-
-            let subtitle = 'Atención médica';
-            let IconComponent = Stethoscope;
-            if (normalizedTipo === 'presencial') {
-              subtitle = 'En consultorio o clínica médica';
-              IconComponent = Building2;
-            } else if (normalizedTipo === 'virtual') {
-              subtitle = 'Consulta online por videollamada';
-              IconComponent = Video;
-            } else if (normalizedTipo === 'domicilio') {
-              subtitle = 'Atención médica en tu domicilio';
-              IconComponent = Home;
-            }
-
-            return (
-              <button
-                key={mod.modCodigo}
-                type="button"
-                onClick={() => setModalidad(normalizedTipo)}
-                className={`relative flex-1 min-w-[200px] max-w-[260px] p-5 rounded-2xl border-2 transition-all flex flex-col items-center justify-between text-center cursor-pointer group ${
-                  isSelected
-                    ? 'border-blue-600 dark:border-blue-500 bg-blue-50/70 dark:bg-blue-950/40 shadow-md ring-2 ring-blue-500/20'
-                    : 'border-slate-200 dark:border-slate-700/80 bg-slate-50/50 dark:bg-slate-900/40 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-100/50'
-                }`}
-              >
-                {/* Active check pill */}
-                {isSelected && (
-                  <span className="absolute -top-2.5 right-4 bg-blue-600 dark:bg-blue-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
-                    <Check className="w-3 h-3 stroke-[3]" /> Seleccionado
-                  </span>
-                )}
-
-                <div
-                  className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-3 transition-transform group-hover:scale-105 ${
+        {/* ========================================== */}
+        {/* 3. SECCIÓN MODALIDAD & SERVICIOS / UBICACIÓN */}
+        {/* ========================================== */}
+        <section className="flex flex-col space-y-3">
+          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Modalidad
+          </span>
+          <div className="grid grid-cols-3 gap-3">
+            {modalidadesDisplay.map(({ tipo, label, Icon }) => {
+              const isSelected = modalidad === tipo;
+              return (
+                <button
+                  key={tipo}
+                  type="button"
+                  onClick={() => setModalidad(tipo)}
+                  className={`relative flex flex-col items-center justify-center gap-3 p-5 rounded-2xl transition-all duration-200 cursor-pointer group ${
                     isSelected
-                      ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25'
-                      : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shadow-xs'
+                      ? 'bg-white dark:bg-slate-900 shadow-[0_2px_12px_rgba(11,28,48,0.04)] ring-1 ring-[#006194]/20'
+                      : 'bg-[#eff4ff]/60 dark:bg-slate-800/40 hover:bg-white dark:hover:bg-slate-900'
                   }`}
                 >
-                  <IconComponent className="w-7 h-7" />
-                </div>
-
-                <div className="w-full">
-                  <h4
-                    className={`font-bold text-sm mb-1 capitalize transition-colors ${
-                      isSelected ? 'text-blue-900 dark:text-blue-200' : 'text-slate-800 dark:text-slate-200'
+                  <div
+                    className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all ${
+                      isSelected
+                        ? 'bg-[#cce5ff]/30 dark:bg-sky-950/60 text-[#006194] dark:text-sky-400'
+                        : 'bg-[#dce9ff]/40 dark:bg-slate-800 text-slate-500 dark:text-slate-400 group-hover:text-[#006194] group-hover:bg-[#cce5ff]/30'
                     }`}
                   >
-                    {mod.modDescripcion}
-                  </h4>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
-                    {subtitle}
-                  </p>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 4. AGENDAMIENTO RESPECTIVO (SEDE / CALENDARIO / HORARIOS) */}
-      {!modalidad ? (
-        <div className="my-8 p-10 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/20 text-center flex flex-col items-center justify-center">
-          <div className="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-3">
-            <Stethoscope className="w-7 h-7" />
+                    <Icon className="w-5 h-5" />
+                  </div>
+                  <span
+                    className={`text-sm font-semibold ${
+                      isSelected
+                        ? 'text-[#0b1c30] dark:text-white'
+                        : 'text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white'
+                    }`}
+                  >
+                    {label}
+                  </span>
+                  {isSelected && (
+                    <span className="absolute top-3 right-3 w-1.5 h-1.5 rounded-full bg-[#006194]" />
+                  )}
+                </button>
+              );
+            })}
           </div>
-          <h4 className="text-base font-bold text-slate-800 dark:text-slate-200">
-            Selecciona una modalidad para ver los horarios
-          </h4>
-          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mt-1">
-            Elige una de las modalidades arriba (Presencial, Virtual o Domicilio) para consultar sedes disponibles y agendar tu cita.
-          </p>
-        </div>
-      ) : (
-        <>
+        </section>
 
-      {/* 3. COLUMNS CONTENT */}
-      {modalidad === 'domicilio' && (
-        <div className="mb-8">
-          <DomicilioSelectorMap doctor={doctor} areas={areas} />
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 flex-grow min-h-[360px]">
-
-        {/* Column 1: Ubicación para Presencial */}
+        {/* 3.1 SI ES PRESENCIAL: 1° Sede Médica, 2° Servicios asociados a la sede */}
         {modalidad === 'presencial' && (
-          <div className="lg:col-span-4 flex flex-col space-y-4 pt-6 md:pt-8">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Clínica Médica</h3>
-
-            <div className="flex flex-col gap-3 h-[320px] overflow-y-auto pr-2 custom-scrollbar">
+          <>
+            <section className="flex flex-col space-y-3 animate-in fade-in duration-200">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Sede Médica
+              </span>
               {loadingClinicas ? (
-                <div className="h-24 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
+                <div className="h-20 animate-pulse rounded-2xl bg-[#eff4ff] dark:bg-slate-800" />
               ) : (
-                clinicas.map((clinica) => {
-                  const isSelected = clinicaSeleccionada?.mclCodigo === clinica.mclCodigo;
-                  return (
-                    <button
-                      key={clinica.mclCodigo}
-                      onClick={() => setClinica(clinica)}
-                      className={`text-left p-4 rounded-lg border transition-all shrink-0 ${isSelected
-                        ? 'bg-blue-50/50 dark:bg-blue-900/20 border-blue-600/50 dark:border-blue-500/50 shadow-sm'
-                        : 'bg-white dark:bg-[#1E293B] border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {clinicas.map((clinica) => {
+                    const isSelected = clinicaSeleccionada?.mclCodigo === clinica.mclCodigo;
+                    return (
+                      <button
+                        key={clinica.mclCodigo}
+                        type="button"
+                        onClick={() => setClinica(clinica)}
+                        className={`flex items-center justify-between p-4 rounded-2xl text-left transition-all cursor-pointer group ${
+                          isSelected
+                            ? 'bg-white dark:bg-slate-900 shadow-[0_2px_12px_rgba(11,28,48,0.04)] ring-1 ring-[#006194]/20'
+                            : 'bg-[#eff4ff]/60 dark:bg-slate-800/40 hover:bg-white dark:hover:bg-slate-900'
                         }`}
-                    >
-                      <h4 className={`font-semibold text-[15px] leading-tight ${isSelected ? 'text-slate-900 dark:text-white' : 'text-slate-800 dark:text-slate-200'}`}>
-                        {clinica.cliDescripcion}
-                      </h4>
-                      <p className="text-[13px] text-slate-600 dark:text-slate-400 mt-1 line-clamp-2">
-                        {clinica.cliDireccionCompleta}
-                      </p>
-                    </button>
-                  )
-                })
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                              isSelected
+                                ? 'bg-[#e5eeff] dark:bg-slate-800 text-[#006194] dark:text-sky-400'
+                                : 'bg-[#e5eeff]/80 dark:bg-slate-800/80 text-slate-500 group-hover:text-[#006194]'
+                            }`}
+                          >
+                            <MapPin className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <p
+                              className={`text-sm font-semibold truncate ${
+                                isSelected ? 'text-[#0b1c30] dark:text-white' : 'text-slate-700 dark:text-slate-300'
+                              }`}
+                            >
+                              {clinica.cliDescripcion}
+                            </p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                              {clinica.cliDireccionCompleta}
+                            </p>
+                          </div>
+                        </div>
+                        {isSelected && (
+                          <div className="w-2 h-2 rounded-full bg-[#006194] shrink-0 ml-2" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               )}
-            </div>
-          </div>
+            </section>
+
+            {/* Servicios asociados a la sede médica */}
+            {serviciosFiltrados.length > 0 && (
+              <section className="flex flex-col space-y-3 animate-in fade-in duration-200">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Servicio
+                </span>
+                <div className="flex flex-col space-y-2.5">
+                  {serviciosFiltrados.map((s) => {
+                    const isSelected = servicioSeleccionado?.sypCodigo === s.sypCodigo;
+                    return (
+                      <div
+                        key={s.sypCodigo}
+                        onClick={() => {
+                          setServicio(s);
+                          setMotivo(s.servicio);
+                        }}
+                        className={`flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all ${
+                          isSelected
+                            ? 'bg-white dark:bg-slate-900 shadow-[0_2px_14px_rgba(11,28,48,0.05)] ring-1 ring-[#006194]/20'
+                            : 'bg-[#eff4ff]/50 dark:bg-slate-800/40 hover:bg-white dark:hover:bg-slate-900'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3.5 min-w-0">
+                          <div
+                            className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                              isSelected ? 'bg-[#006194]' : 'bg-transparent'
+                            }`}
+                          />
+                          <span
+                            className={`text-base font-semibold truncate ${
+                              isSelected ? 'text-[#0b1c30] dark:text-white' : 'text-slate-600 dark:text-slate-300'
+                            }`}
+                          >
+                            {s.servicio}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-6 shrink-0 ml-4">
+                          <span className="text-sm text-slate-500 dark:text-slate-400">
+                            45 min
+                          </span>
+                          <span
+                            className={`text-base font-semibold ${
+                              isSelected ? 'text-[#0b1c30] dark:text-white' : 'text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            Q{s.costoTotal.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+          </>
         )}
 
-        {/* Calendar and Time columns grouped inside a soft card */}
-        <div className={`bg-slate-50/50 dark:bg-[#0F172A] rounded-2xl p-4 sm:p-6 md:p-8 flex flex-col md:flex-row gap-6 md:gap-8 lg:gap-16 border border-slate-100 dark:border-slate-800/50 ${modalidad === 'presencial' ? 'lg:col-span-8' : 'lg:col-span-12'}`}>
-
-          {!isScheduleEnabled ? (
-            <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl h-[320px] bg-white dark:bg-[#1E293B] p-6 text-center">
-              <CalendarDays className="h-10 w-10 text-slate-300 dark:text-slate-600 mb-3" />
-              <p className="text-sm font-medium text-slate-500 dark:text-slate-400 max-w-sm">
-                {modalidad === 'presencial'
-                  ? 'Selecciona una clínica a la izquierda para cargar los horarios.'
-                  : modalidad === 'domicilio'
-                    ? 'Indica y confirma tu ubicación en el mapa de arriba para verificar la cobertura y habilitar las fechas y horarios disponibles.'
-                    : 'Cargando disponibilidad del médico...'}
-              </p>
+        {/* 3.2 MODALIDAD VIRTUAL: solo precio y chequeo general sin lista compleja de procedimientos */}
+        {modalidad === 'virtual' && (
+          <section className="flex flex-col space-y-3 animate-in fade-in duration-200">
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Servicio
+            </span>
+            <div className="flex items-center justify-between p-4 rounded-2xl bg-white dark:bg-slate-900 shadow-[0_2px_14px_rgba(11,28,48,0.05)] ring-1 ring-[#006194]/20 border border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div className="w-2.5 h-2.5 rounded-full bg-[#006194] shrink-0" />
+                <div className="min-w-0">
+                  <span className="text-base font-semibold text-[#0b1c30] dark:text-white block truncate">
+                    Videoconsulta Médica
+                  </span>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                    Chequeo y consulta online por videollamada segura
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-6 shrink-0 ml-4">
+                <span className="text-sm text-slate-500 dark:text-slate-400">
+                  30 min
+                </span>
+                <span className="text-base font-semibold text-[#0b1c30] dark:text-white">
+                  Q{precioUnitario.toFixed(2)}
+                </span>
+              </div>
             </div>
-          ) : (
-            <>
-              {/* Column 2: Calendar */}
-              <div className="flex-1 flex flex-col space-y-4 min-w-0 max-w-full overflow-x-auto">
-                <h3 className={`text-lg font-bold text-slate-900 dark:text-white ${modalidad === 'virtual' ? 'text-center md:text-left md:pl-10 lg:pl-20' : ''}`}>Fecha</h3>
-                <div className={`flex flex-col ${modalidad === 'virtual' ? 'items-center md:items-start md:pl-10 lg:pl-20' : 'items-center sm:items-start'}`}>
-                  {/* Robust Direct Calendar Month Navigation Header */}
-                  <div className="w-full max-w-[280px] sm:max-w-[320px] flex items-center justify-between mb-2 px-1">
-                    <span className="text-base font-bold capitalize text-slate-900 dark:text-white">
-                      {format(currentMonth, 'MMMM yyyy', { locale: es })}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+          </section>
+        )}
+
+        {/* 3.3 MODALIDAD A DOMICILIO: primero servicios asociados, después selección de ubicación */}
+        {modalidad === 'domicilio' && (
+          <>
+            {serviciosFiltrados.length > 0 && (
+              <section className="flex flex-col space-y-3 animate-in fade-in duration-200">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Servicio
+                </span>
+                <div className="flex flex-col space-y-2.5">
+                  {serviciosFiltrados.map((s) => {
+                    const isSelected = servicioSeleccionado?.sypCodigo === s.sypCodigo;
+                    return (
+                      <div
+                        key={s.sypCodigo}
+                        onClick={() => {
+                          setServicio(s);
+                          setMotivo(s.servicio);
                         }}
-                        className="h-8 w-8 flex items-center justify-center bg-white dark:bg-[#1E293B] shadow-sm border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 p-1 rounded-full transition-colors text-slate-600 dark:text-slate-400 cursor-pointer"
-                        title="Mes anterior"
+                        className={`flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all ${
+                          isSelected
+                            ? 'bg-white dark:bg-slate-900 shadow-[0_2px_14px_rgba(11,28,48,0.05)] ring-1 ring-[#006194]/20'
+                            : 'bg-[#eff4ff]/50 dark:bg-slate-800/40 hover:bg-white dark:hover:bg-slate-900'
+                        }`}
                       >
-                        <ChevronLeft className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
-                        }}
-                        className="h-8 w-8 flex items-center justify-center bg-white dark:bg-[#1E293B] shadow-sm border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 p-1 rounded-full transition-colors text-slate-600 dark:text-slate-400 cursor-pointer"
-                        title="Siguiente mes"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
+                        <div className="flex items-center gap-3.5 min-w-0">
+                          <div
+                            className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                              isSelected ? 'bg-[#006194]' : 'bg-transparent'
+                            }`}
+                          />
+                          <span
+                            className={`text-base font-semibold truncate ${
+                              isSelected ? 'text-[#0b1c30] dark:text-white' : 'text-slate-600 dark:text-slate-300'
+                            }`}
+                          >
+                            {s.servicio}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-6 shrink-0 ml-4">
+                          <span className="text-sm text-slate-500 dark:text-slate-400">
+                            60 min
+                          </span>
+                          <span
+                            className={`text-base font-semibold ${
+                              isSelected ? 'text-[#0b1c30] dark:text-white' : 'text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            Q{s.costoTotal.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
-                  <DayPicker
-                    mode="single"
-                    month={currentMonth}
-                    onMonthChange={setCurrentMonth}
-                    startMonth={new Date(2024, 0, 1)}
-                    endMonth={new Date(2028, 11, 31)}
-                    selected={fecha || undefined}
-                    onSelect={(d) => {
-                      if (!d) {
-                        setFecha(null);
-                        setHora(null);
-                        return;
-                      }
-                      setFecha(d);
-                      setHora(null);
-                    }}
-                    locale={es}
-                    disabled={disabledDays}
-                    modifiers={{
-                      citaTema: fechasTemaSeguimiento,
-                      citaProgramada: fechasCitasMultiples,
-                    }}
-                    modifiersClassNames={{
-                      selected: 'bg-blue-600 dark:bg-blue-500 text-white hover:bg-blue-700 dark:hover:bg-blue-600 font-bold shadow-md rounded-xl',
-                      today: 'font-bold text-blue-600 dark:text-blue-400',
-                      citaTema: '!bg-emerald-100 dark:!bg-emerald-950/80 !text-emerald-800 dark:!text-emerald-200 !border-2 !border-emerald-500 font-black rounded-xl hover:!bg-emerald-200 dark:hover:!bg-emerald-900',
-                      citaProgramada: '!bg-indigo-100 dark:!bg-indigo-950/80 !text-indigo-800 dark:!text-indigo-200 !border-2 !border-indigo-500 font-black rounded-xl hover:!bg-indigo-200 dark:hover:!bg-indigo-900',
-                    }}
-                    classNames={{
-                      day: 'p-0 text-[14px] sm:text-[15px] dark:text-slate-200',
-                      day_button: 'h-9 w-9 sm:h-11 sm:w-11 font-medium hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-xl transition-all mx-auto flex items-center justify-center cursor-pointer',
-                      month_caption: 'hidden',
-                      nav: 'hidden',
-                      button_previous: 'hidden',
-                      button_next: 'hidden',
-                      month_grid: 'w-full border-collapse',
-                      weekday: 'text-slate-400 dark:text-slate-500 font-medium text-xs sm:text-sm capitalize w-9 h-9 sm:w-11 sm:h-11',
-                    }}
-                  />
+            {/* Selección de Ubicación a Domicilio con el mismo estilo */}
+            <section className="flex flex-col space-y-3 animate-in fade-in duration-200">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Ubicación de Atención a Domicilio
+              </span>
+              <DomicilioSelectorMap doctor={doctor} areas={areas} />
+            </section>
+          </>
+        )}
 
-                  {fechasTemaSeguimiento.length > 0 && (
-                    <div className="mt-3 flex items-center gap-2 text-xs font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-50/90 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/70 px-3 py-2 rounded-xl max-w-xs shadow-2xs">
-                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
-                      <span>Días en verde: Citas del grupo de citas</span>
-                    </div>
-                  )}
+        {/* ========================================== */}
+        {/* 4. SECCIÓN FECHA Y HORARIO                  */}
+        {/* ========================================== */}
+        <section className="flex flex-col space-y-4">
+          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Fecha y Horario
+          </span>
 
-                  {isMultiMode && fechasCitasMultiples.length > 0 && (
-                    <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-indigo-800 dark:text-indigo-300 bg-indigo-50/90 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/70 px-3 py-2 rounded-xl max-w-xs shadow-2xs">
-                      <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 shrink-0" />
-                      <span>Días en índigo: Citas seleccionadas ({citasMultiples.length}/5)</span>
-                    </div>
-                  )}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-[#eff4ff]/50 dark:bg-slate-900/40 p-5 rounded-3xl border border-slate-200/50 dark:border-slate-800/60">
+            {/* Columna Izquierda: Calendario (7 cols) */}
+            <div className="lg:col-span-7 flex flex-col space-y-3">
+              {/* Controles de cambio de mes directamente arriba del calendario */}
+              <div className="flex items-center justify-between pb-1">
+                <div className="flex items-center gap-2">
+                  <button
+                    aria-label="Mes anterior"
+                    type="button"
+                    onClick={() =>
+                      setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
+                    }
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="text-sm font-semibold text-[#006194] dark:text-sky-400 capitalize">
+                    {format(currentMonth, 'MMMM yyyy', { locale: es })}
+                  </span>
+                  <button
+                    aria-label="Mes siguiente"
+                    type="button"
+                    onClick={() =>
+                      setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
+                    }
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
 
-              {/* Column 3: Time Slots */}
-              <div className={`flex-1 flex flex-col space-y-4 border-t md:border-t-0 md:border-l border-slate-200 dark:border-slate-800 pt-8 md:pt-0 md:pl-8 lg:pl-12 ${modalidad === 'virtual' ? 'md:pr-10 lg:pr-20' : ''}`}>
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Horarios Disponibles</h3>
-                </div>
+              <div className="grid grid-cols-7 text-center text-xs font-semibold text-slate-500 dark:text-slate-400 py-1">
+                <span>Lu</span>
+                <span>Ma</span>
+                <span>Mi</span>
+                <span>Ju</span>
+                <span>Vi</span>
+                <span>Sá</span>
+                <span>Do</span>
+              </div>
+              <div className="grid grid-cols-7 gap-1.5 text-center text-xs sm:text-sm">
+                {calendarDays.map(({ date, dayNum, isCurrentMonth }, idx) => {
+                  const isSelected =
+                    fecha &&
+                    fecha.getFullYear() === date.getFullYear() &&
+                    fecha.getMonth() === date.getMonth() &&
+                    fecha.getDate() === date.getDate();
+                  const disabled = !isCurrentMonth || isDayDisabled(date);
+                  const isTema = isCitaTemaDate(date);
+                  const isMulti = fechasCitasMultiples.some(
+                    (d) =>
+                      d.getFullYear() === date.getFullYear() &&
+                      d.getMonth() === date.getMonth() &&
+                      d.getDate() === date.getDate()
+                  );
 
-                {fecha ? (
-                  isPastDateSelected ? (
-                    <div className="flex flex-col gap-3 p-4 rounded-2xl bg-amber-50/80 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-800/80 text-amber-900 dark:text-amber-200 shadow-2xs">
-                      <div className="flex items-center gap-2 font-bold text-sm text-amber-900 dark:text-amber-200">
-                        <FolderPlus className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
-                        <span>Historial: Cita previa de este grupo</span>
-                      </div>
-                      <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
-                        Esta fecha ({format(fecha, "dd 'de' MMMM, yyyy", { locale: es })}) corresponde a una cita previa del grupo <strong>{grupoNombre || 'Grupo de Citas'}</strong>.
-                      </p>
-                      {horasTemaEnFecha.length > 0 && (
-                        <div className="p-3 bg-white dark:bg-[#0F172A] rounded-xl border border-amber-200 dark:border-amber-800 flex items-center justify-between text-xs">
-                          <span className="font-semibold text-slate-600 dark:text-slate-300">Horario de consulta:</span>
-                          <span className="font-black text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/60 px-2.5 py-1 rounded-lg">
-                            {horasTemaEnFecha.join(', ')} · Realizada
-                          </span>
-                        </div>
-                      )}
-                      <div className="p-3 rounded-xl bg-amber-100/70 dark:bg-amber-900/30 text-xs font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-2">
-                        <Info className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                        <span>No es posible agendar en fechas pasadas. Selecciona una fecha futura para agendar tu próxima cita.</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Banner si la fecha futura tiene una cita agendada de este grupo */}
-                      {horasTemaEnFecha.length > 0 && (
-                        <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-900 dark:text-emerald-200 flex items-start gap-2.5 shadow-2xs">
-                          <FolderPlus className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-                          <div>
-                            <p className="font-bold">Cita de este grupo ya agendada en esta fecha:</p>
-                            <p className="text-[11px] text-emerald-700 dark:text-emerald-300 mt-0.5">
-                              Horario reservado: <strong>{horasTemaEnFecha.join(', ')}</strong>. Este horario se encuentra bloqueado para evitar duplicados.
-                            </p>
-                          </div>
-                        </div>
-                      )}
+                  if (!isCurrentMonth) {
+                    return (
+                      <span
+                        key={idx}
+                        className="py-2 rounded-xl text-slate-400/70 dark:text-slate-600 opacity-40 select-none"
+                      >
+                        {dayNum}
+                      </span>
+                    );
+                  }
 
-                      {/* Banner de Solicitud de Intercambio Activa */}
-                      {solicitudIntercambio && fecha && solicitudIntercambio.fecha === format(fecha, 'yyyy-MM-dd') && (
-                        <div className="p-3.5 rounded-2xl bg-orange-50 dark:bg-orange-950/40 border-2 border-orange-400 dark:border-orange-600/70 text-orange-950 dark:text-orange-200 flex items-start gap-3 shadow-xs animate-in fade-in">
-                          <div className="p-2 bg-orange-500 text-white rounded-xl shrink-0 mt-0.5 shadow-sm">
-                            <ArrowLeftRight className="w-4 h-4" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-black text-slate-900 dark:text-white">
-                              🎯 Has solicitado el horario de las {(() => {
-                                const [h, m] = solicitudIntercambio.hora.split(':');
-                                let hn = parseInt(h);
-                                const ap = hn >= 12 ? 'PM' : 'AM';
-                                hn = hn % 12 || 12;
-                                return `${hn}:${m} ${ap}`;
-                              })()} para intercambio
-                            </p>
-                            <p className="text-[11px] text-orange-800 dark:text-orange-300 mt-0.5 leading-relaxed">
-                              Ahora selecciona un <strong>horario disponible</strong> de la lista abajo para asegurar tu cita temporal mientras el otro paciente responde.
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setSolicitudIntercambio(null)}
-                            className="text-orange-600 dark:text-orange-400 hover:text-orange-800 text-xs font-bold underline shrink-0 cursor-pointer"
-                            title="Descartar solicitud de intercambio"
-                          >
-                            Quitar
-                          </button>
-                        </div>
-                      )}
+                  if (isSelected) {
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        className="py-2 rounded-xl bg-white dark:bg-slate-800 text-[#0b1c30] dark:text-white shadow-[0_2px_8px_rgba(11,28,48,0.06)] font-semibold flex flex-col items-center justify-center relative cursor-pointer"
+                      >
+                        <span>{dayNum}</span>
+                        <span className="w-1 h-1 rounded-full bg-[#006194] mt-0.5" />
+                      </button>
+                    );
+                  }
 
-                      {availableTimeSlots.length > 0 ? (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 h-[320px] overflow-y-auto pr-2 pt-7 pb-2 px-1 custom-scrollbar content-start">
-                          {availableTimeSlots.map(({ time: slot, disabled, isTemaSlot, isMiCita, isPastHour, isOccupiedByOther, isNoSolicitable, isConsultaIniciada, isConsultaFinalizada }) => {
-                            const isSelected = isMultiMode
-                              ? fecha && citasMultiples.some(c => c.fecha.toDateString() === fecha.toDateString() && c.hora.substring(0, 5) === slot.substring(0, 5))
-                              : hora === slot;
+                  if (isTema) {
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setFecha(date);
+                          setHora(null);
+                        }}
+                        className="py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-400 font-bold flex flex-col items-center justify-center relative cursor-pointer"
+                        title="Cita agendada para este tratamiento"
+                      >
+                        <span>{dayNum}</span>
+                        <span className="w-1 h-1 rounded-full bg-emerald-600 mt-0.5" />
+                      </button>
+                    );
+                  }
 
-                            // Format to 12h AM/PM
-                            const [h, m] = slot.split(':');
-                            let hourNum = parseInt(h);
-                            const ampm = hourNum >= 12 ? 'PM' : 'AM';
-                            hourNum = hourNum % 12;
-                            hourNum = hourNum ? hourNum : 12;
-                            const displayTime = `${hourNum}:${m} ${ampm}`;
+                  if (isMulti) {
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setFecha(date);
+                          setHora(null);
+                        }}
+                        className="py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-400 font-bold flex flex-col items-center justify-center relative cursor-pointer"
+                      >
+                        <span>{dayNum}</span>
+                        <span className="w-1 h-1 rounded-full bg-indigo-600 mt-0.5" />
+                      </button>
+                    );
+                  }
 
-                            if (isTemaSlot) {
-                              return (
-                                <div
-                                  key={slot}
-                                  className="py-2.5 px-3 sm:px-4 border-2 border-emerald-500/80 bg-emerald-50/90 dark:bg-emerald-950/60 dark:border-emerald-600 rounded-xl text-left text-xs sm:text-sm font-bold text-emerald-900 dark:text-emerald-200 opacity-90 cursor-not-allowed shadow-xs flex flex-col justify-between"
-                                  title="Este horario ya está agendado para este grupo de citas"
-                                >
-                                  <div className="flex items-center justify-between gap-1">
-                                    <span>{displayTime}</span>
-                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase tracking-wider bg-emerald-600 text-white px-1.5 py-0.5 rounded-md">
-                                      <Check className="w-2.5 h-2.5 stroke-[3]" /> Agendada
-                                    </span>
-                                  </div>
-                                  <span className="text-[10px] font-medium text-emerald-700 dark:text-emerald-400 mt-0.5">
-                                    Cita de este seguimiento
-                                  </span>
-                                </div>
-                              );
-                            }
+                  if (disabled) {
+                    return (
+                      <span
+                        key={idx}
+                        className="py-2 rounded-xl text-slate-300 dark:text-slate-700 cursor-not-allowed select-none"
+                      >
+                        {dayNum}
+                      </span>
+                    );
+                  }
 
-                            // CASO: CITA DEL MISMO USUARIO/CUENTA (fondo celeste, hover con tooltip, click abre modal de conflicto)
-                            if (isMiCita) {
-                              const citaConflicto = misCitasActivasEnFecha.find(c => {
-                                const cHora = c.ctaHora ? String(c.ctaHora).slice(0, 5) : '';
-                                return cHora === slot;
-                              });
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => {
+                        setFecha(date);
+                        setHora(null);
+                      }}
+                      className="py-2 rounded-xl hover:bg-white dark:hover:bg-slate-800 text-[#0b1c30] dark:text-slate-200 cursor-pointer transition-colors"
+                    >
+                      {dayNum}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
-                              return (
-                                <button
-                                  key={slot}
-                                  type="button"
-                                  onClick={() => {
-                                    if (citaConflicto) {
-                                      setCitaConflictoSeleccionada({
-                                        cita: citaConflicto,
-                                        slotRaw: slot,
-                                        horaDisplay: displayTime,
-                                      });
-                                      setModalMiCitaOpen(true);
-                                    }
-                                  }}
-                                  className={`relative group hover:z-30 py-3 px-3 sm:px-4 rounded-xl text-center text-xs sm:text-sm font-bold transition-all cursor-pointer active:scale-[0.98] ${
-                                    isSelected
-                                      ? 'border-2 border-sky-600 bg-sky-100 dark:bg-sky-900/60 text-sky-950 dark:text-white shadow-sm ring-2 ring-sky-400/50'
-                                      : 'border border-sky-300 dark:border-sky-800/80 bg-sky-50 dark:bg-sky-950/40 text-sky-950 dark:text-sky-200 hover:bg-sky-100 dark:hover:bg-sky-900/60 hover:border-sky-400'
-                                  }`}
-                                >
-                                  <span>{displayTime}</span>
+            {/* Columna Derecha: Slots de Horario (5 cols) */}
+            <div className="lg:col-span-5 flex flex-col space-y-3">
+              <div className="flex items-center justify-between pb-1">
+                <span className="text-xs sm:text-sm font-semibold text-[#0b1c30] dark:text-white capitalize">
+                  {fecha ? format(fecha, 'EEEE d MMM', { locale: es }) : 'Selecciona fecha'}
+                </span>
+                <span className="text-xs font-medium text-[#006194] dark:text-sky-400">
+                  {availableTimeSlots.filter((s) => !s.disabled && !s.isOccupiedByOther).length} cupos
+                </span>
+              </div>
 
-                                  {/* Tooltip CSS elegante y minimalista */}
-                                  <span className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all duration-150 transform group-hover:-translate-y-1 group-focus-within:-translate-y-1 bg-slate-900/95 dark:bg-slate-800/95 text-white text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-xl whitespace-nowrap z-50 flex items-center gap-1.5 backdrop-blur-xs border border-white/10">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" />
-                                    <span>Tienes una cita programada a esta hora</span>
-                                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 border-x-4 border-x-transparent border-t-4 border-t-slate-900/95 dark:border-t-slate-800/95" />
-                                  </span>
-                                </button>
-                              );
-                            }
+              {fecha ? (
+                availableTimeSlots.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
+                    {availableTimeSlots.map(
+                      ({
+                        time: slot,
+                        disabled,
+                        isTemaSlot,
+                        isMiCita,
+                        isPastHour,
+                        isOccupiedByOther,
+                        isNoSolicitable,
+                      }) => {
+                        const isSelected = isMultiMode
+                          ? fecha &&
+                            citasMultiples.some(
+                              (c) =>
+                                c.fecha.toDateString() === fecha.toDateString() &&
+                                c.hora.substring(0, 5) === slot.substring(0, 5)
+                            )
+                          : hora === slot;
 
-                            const isSolicitadoActualmente =
-                              solicitudIntercambio?.hora === slot &&
-                              fecha &&
-                              solicitudIntercambio.fecha === format(fecha, 'yyyy-MM-dd');
+                        const [h, m] = slot.split(':');
+                        let hourNum = parseInt(h);
+                        const ampm = hourNum >= 12 ? 'PM' : 'AM';
+                        hourNum = hourNum % 12 || 12;
+                        const displayTime = `${String(hourNum).padStart(2, '0')}:${m} ${ampm}`;
 
-                            // CASO: HORARIO OCUPADO POR OTRO PACIENTE (fondo naranja, hover con tooltip, click abre modal de intercambio)
-                            if (isOccupiedByOther && !isPastHour) {
-                              // Si ya inició la consulta o finalizó, deshabilitar opción de solicitar horario
-                              if (isNoSolicitable) {
-                                return (
-                                  <button
-                                    key={slot}
-                                    type="button"
-                                    disabled
-                                    className="relative group py-3 px-3 sm:px-4 rounded-xl text-center text-xs sm:text-sm font-semibold transition-all cursor-not-allowed border border-slate-200 dark:border-slate-800 bg-slate-100/80 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 opacity-75"
-                                  >
-                                    <span>{displayTime}</span>
+                        if (isTemaSlot) {
+                          return (
+                            <div
+                              key={slot}
+                              className="py-2.5 px-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-400 text-emerald-800 dark:text-emerald-200 text-xs font-bold text-center"
+                            >
+                              {displayTime} · Agendada
+                            </div>
+                          );
+                        }
 
-                                    {/* Tooltip minimalista sin emojis */}
-                                    <span className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all duration-150 transform group-hover:-translate-y-1 group-focus-within:-translate-y-1 bg-slate-900/95 dark:bg-slate-800/95 text-white text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-xl whitespace-nowrap z-50 flex items-center gap-1.5 backdrop-blur-xs border border-white/10">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
-                                      <span>
-                                        {isConsultaIniciada
-                                          ? 'Consulta iniciada · No disponible para cambio'
-                                          : 'Consulta finalizada · No disponible para cambio'}
-                                      </span>
-                                      <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 border-x-4 border-x-transparent border-t-4 border-t-slate-900/95 dark:border-t-slate-800/95" />
-                                    </span>
-                                  </button>
-                                );
-                              }
+                        if (isMiCita) {
+                          const citaConflicto = misCitasActivasEnFecha.find((c) => {
+                            const cHora = c.ctaHora ? String(c.ctaHora).slice(0, 5) : '';
+                            return cHora === slot;
+                          });
+                          return (
+                            <button
+                              key={slot}
+                              type="button"
+                              onClick={() => {
+                                if (citaConflicto) {
+                                  setCitaConflictoSeleccionada({
+                                    cita: citaConflicto,
+                                    slotRaw: slot,
+                                    horaDisplay: displayTime,
+                                  });
+                                  setModalMiCitaOpen(true);
+                                }
+                              }}
+                              className="py-2.5 px-3 rounded-xl bg-sky-50 dark:bg-sky-950/40 border border-sky-300 text-sky-900 dark:text-sky-200 text-xs font-bold text-center cursor-pointer hover:bg-sky-100"
+                              title="Tienes una cita a esta hora"
+                            >
+                              {displayTime} · Tu cita
+                            </button>
+                          );
+                        }
 
-                              return (
-                                <button
-                                  key={slot}
-                                  type="button"
-                                  onClick={() => {
-                                    setSlotParaCambio({ raw: slot, display: displayTime });
-                                    setModalCambioOpen(true);
-                                  }}
-                                  className={`relative group hover:z-30 py-3 px-3 sm:px-4 rounded-xl text-center text-xs sm:text-sm font-bold transition-all cursor-pointer ${
-                                    isSolicitadoActualmente
-                                      ? 'border-2 border-orange-500 bg-orange-500 text-white shadow-md ring-2 ring-orange-400/50'
-                                      : 'border border-orange-300 dark:border-orange-800/80 bg-orange-50 dark:bg-orange-950/40 text-orange-950 dark:text-orange-200 hover:bg-orange-100 dark:hover:bg-orange-900/60 hover:border-orange-400 active:scale-[0.98]'
-                                  }`}
-                                >
-                                  <span>{displayTime}</span>
-
-                                  {/* Tooltip CSS elegante y minimalista */}
-                                  <span className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all duration-150 transform group-hover:-translate-y-1 group-focus-within:-translate-y-1 bg-slate-900/95 dark:bg-slate-800/95 text-white text-[11px] font-medium px-2.5 py-1 rounded-lg shadow-xl whitespace-nowrap z-50 flex items-center gap-1.5 backdrop-blur-xs border border-white/10">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-orange-400 shrink-0" />
-                                    <span>Horario ocupado · Solicitar cambio</span>
-                                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 border-x-4 border-x-transparent border-t-4 border-t-slate-900/95 dark:border-t-slate-800/95" />
-                                  </span>
-                                </button>
-                              );
-                            }
-
-                            // CASO REGULAR DISPONIBLE O PASADO
+                        if (isOccupiedByOther && !isPastHour) {
+                          if (isNoSolicitable) {
                             return (
                               <button
                                 key={slot}
                                 type="button"
-                                disabled={disabled}
-                                title={isPastHour ? 'Esta hora ya transcurrió hoy' : disabled ? 'Horario no disponible' : ''}
-                                onClick={() => {
-                                  if (disabled) return;
-                                  if (isMultiMode) {
-                                    if (!fecha) return;
-                                    const existing = citasMultiples.find(
-                                      c => c.fecha.toDateString() === fecha.toDateString() && c.hora.substring(0, 5) === slot.substring(0, 5)
-                                    );
-                                    if (existing) {
-                                      removeCitaMultiple(existing.id);
-                                      toast.info('Cita removida del grupo');
-                                    } else {
-                                      if (citasMultiples.length >= 5) {
-                                        toast.warning('Máximo 5 citas por grupo');
-                                        return;
-                                      }
-                                      const ok = addCitaMultiple(fecha, slot);
-                                      if (ok) {
-                                        toast.success(`Cita agregada (${citasMultiples.length + 1}/5)`);
-                                      }
-                                    }
-                                  } else {
-                                    setHora(slot);
-                                    setPacientesExcluidos([]);
-                                  }
-                                }}
-                                className={`w-full py-3 px-3 sm:px-4 border rounded-xl text-left text-xs sm:text-sm font-semibold transition-all ${
-                                  disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer active:scale-[0.98]'
-                                } ${isSelected
-                                  ? isMultiMode
-                                    ? 'border-indigo-600 bg-indigo-50/90 dark:bg-indigo-900/40 dark:border-indigo-500 text-indigo-950 dark:text-white shadow-sm ring-2 ring-indigo-500/30'
-                                    : 'border-blue-600/50 bg-blue-50/70 dark:bg-blue-900/30 dark:border-blue-500/50 text-slate-900 dark:text-white shadow-sm'
-                                  : disabled
-                                    ? 'border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-[#0B1120] text-slate-400 dark:text-slate-600'
-                                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                                }`}
+                                disabled
+                                className="py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800/50 text-slate-400 text-xs font-medium text-center cursor-not-allowed"
                               >
-                                <div className="flex items-center justify-between">
-                                  <span className={isSelected && isMultiMode ? 'font-bold text-indigo-700 dark:text-indigo-300' : ''}>
-                                    {displayTime}
-                                  </span>
-                                  {isSelected && isMultiMode && (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white px-2 py-0.5 rounded-md shadow-2xs">
-                                      <Check className="w-3 h-3 stroke-[3]" /> Seleccionada
-                                    </span>
-                                  )}
-                                  {isPastHour && (
-                                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-200/60 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-                                      Pasada
-                                    </span>
-                                  )}
-                                </div>
+                                {displayTime}
                               </button>
                             );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="text-sm text-slate-500 dark:text-slate-400 mt-2 flex flex-col items-center justify-center h-[200px] bg-slate-50 dark:bg-[#0F172A] rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
-                          <Clock className="h-6 w-6 text-slate-300 dark:text-slate-600 mb-2" />
-                          No hay horarios para esta fecha.
-                        </div>
-                      )}
-                    </>
-                  )
-                ) : (
-                  <div className="text-sm text-slate-500 dark:text-slate-400 mt-2 flex flex-col items-center justify-center h-[200px] bg-slate-50 dark:bg-[#0F172A] rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
-                    <CalendarDays className="h-6 w-6 text-slate-300 dark:text-slate-600 mb-2" />
-                    Selecciona una fecha en el calendario.
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
+                          }
+                          const isSolicitado =
+                            solicitudIntercambio?.hora === slot &&
+                            fecha &&
+                            solicitudIntercambio.fecha === format(fecha, 'yyyy-MM-dd');
 
-      {/* Panel de Citas del Grupo (Modo Multi-Cita) */}
-      {isMultiMode && (
-        <div className="mt-6 bg-white dark:bg-[#1E293B] rounded-2xl p-5 sm:p-6 border border-indigo-200/80 dark:border-indigo-900/50 shadow-sm animate-in fade-in duration-200">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-2">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800/60 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
-                <Layers className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  Citas seleccionadas en este grupo
-                  <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
-                    citasMultiples.length >= 5
-                      ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
-                      : 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300'
-                  }`}>
-                    {citasMultiples.length}/5 citas
-                  </span>
-                </h4>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  {citasMultiples.length === 0
-                    ? 'Elige fechas en el calendario y horarios disponibles para apartar varias citas a la vez.'
-                    : citasMultiples.length >= 5
-                      ? 'Has alcanzado el límite máximo de 5 citas por grupo.'
-                      : `Puedes agregar hasta ${5 - citasMultiples.length} ${5 - citasMultiples.length === 1 ? 'cita adicional' : 'citas adicionales'} seleccionando otra fecha u horario.`}
-                </p>
-              </div>
+                          return (
+                            <button
+                              key={slot}
+                              type="button"
+                              onClick={() => {
+                                setSlotParaCambio({ raw: slot, display: displayTime });
+                                setModalCambioOpen(true);
+                              }}
+                              className={`py-2.5 px-3 rounded-xl text-xs font-medium text-center transition-all cursor-pointer ${
+                                isSolicitado
+                                  ? 'bg-orange-500 text-white shadow-xs'
+                                  : 'bg-orange-50 dark:bg-orange-950/40 border border-orange-300 text-orange-900 dark:text-orange-200 hover:bg-orange-100'
+                              }`}
+                              title="Horario ocupado · Solicitar cambio"
+                            >
+                              {displayTime}
+                            </button>
+                          );
+                        }
+
+                        return (
+                          <button
+                            key={slot}
+                            type="button"
+                            disabled={disabled}
+                            onClick={() => {
+                              if (disabled) return;
+                              if (isMultiMode) {
+                                if (!fecha) return;
+                                const existing = citasMultiples.find(
+                                  (c) =>
+                                    c.fecha.toDateString() === fecha.toDateString() &&
+                                    c.hora.substring(0, 5) === slot.substring(0, 5)
+                                );
+                                if (existing) {
+                                  removeCitaMultiple(existing.id);
+                                  toast.info('Cita removida del grupo');
+                                } else {
+                                  if (citasMultiples.length >= 5) {
+                                    toast.warning('Máximo 5 citas por grupo');
+                                    return;
+                                  }
+                                  const ok = addCitaMultiple(fecha, slot);
+                                  if (ok) toast.success(`Cita agregada (${citasMultiples.length + 1}/5)`);
+                                }
+                              } else {
+                                setHora(slot);
+                                setPacientesExcluidos([]);
+                              }
+                            }}
+                            className={`py-2.5 px-3 rounded-xl font-medium text-xs sm:text-sm text-center transition-all ${
+                              disabled
+                                ? 'bg-slate-100 dark:bg-slate-800/40 text-slate-300 dark:text-slate-600 cursor-not-allowed select-none'
+                                : isSelected
+                                ? 'bg-[#006194] text-white shadow-[0_4px_16px_rgba(0,97,148,0.25)] font-semibold cursor-pointer'
+                                : 'bg-white/80 dark:bg-slate-800/80 hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white cursor-pointer shadow-xs'
+                            }`}
+                          >
+                            {displayTime}
+                          </button>
+                        );
+                      }
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-[200px] text-center p-4 text-slate-400">
+                    <Clock className="w-8 h-8 mb-1.5 opacity-50" />
+                    <span className="text-xs">No hay cupos disponibles para esta fecha.</span>
+                  </div>
+                )
+              ) : (
+                <div className="flex flex-col items-center justify-center h-[200px] text-center p-4 text-slate-400">
+                  <CalendarClock className="w-8 h-8 mb-1.5 opacity-50" />
+                  <span className="text-xs">Selecciona un día en el calendario.</span>
+                </div>
+              )}
             </div>
-            {citasMultiples.length > 0 && (
+          </div>
+        </section>
+
+        {/* Panel de Citas Múltiples si está en modo multi-cita */}
+        {isMultiMode && citasMultiples.length > 0 && (
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm animate-in fade-in duration-200">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-[#006194]" />
+                <span className="text-sm font-semibold text-[#0b1c30] dark:text-white">
+                  Citas en este tratamiento ({citasMultiples.length}/5)
+                </span>
+              </div>
               <button
                 type="button"
-                onClick={() => {
-                  clearCitasMultiples();
-                  toast.info('Se han limpiado las citas seleccionadas');
-                }}
-                className="text-xs font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 hover:underline self-start sm:self-auto cursor-pointer"
+                onClick={clearCitasMultiples}
+                className="text-xs text-rose-500 hover:underline cursor-pointer"
               >
-                Limpiar todas ({citasMultiples.length})
+                Limpiar todas
               </button>
-            )}
-          </div>
-
-          {citasMultiples.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
               {citasMultiples.map((c, idx) => {
                 const [h, m] = c.hora.split(':');
                 let hourNum = parseInt(h);
                 const ampm = hourNum >= 12 ? 'PM' : 'AM';
                 hourNum = hourNum % 12 || 12;
-                const displayTime = `${hourNum}:${m} ${ampm}`;
+                const displayTime = `${String(hourNum).padStart(2, '0')}:${m} ${ampm}`;
                 const displayDate = format(c.fecha, "EEEE d 'de' MMMM", { locale: es });
 
                 return (
                   <div
                     key={c.id}
-                    className="flex items-center justify-between gap-3 p-3 rounded-xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/40 dark:bg-indigo-950/20 text-xs font-medium text-slate-800 dark:text-slate-200 transition-all hover:border-indigo-300 dark:hover:border-indigo-700 shadow-2xs"
+                    className="flex items-center justify-between gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-[#eff4ff]/40 dark:bg-slate-800/40 text-xs"
                   >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="w-6 h-6 rounded-lg bg-indigo-600 text-white text-[11px] font-black flex items-center justify-center shrink-0 shadow-2xs">
+                    <div className="flex items-center gap-2 truncate">
+                      <span className="w-5 h-5 rounded-md bg-[#006194] text-white text-[10px] font-bold flex items-center justify-center shrink-0">
                         {idx + 1}
                       </span>
                       <div className="truncate">
-                        <p className="font-bold text-slate-900 dark:text-white capitalize truncate">{displayDate}</p>
-                        <p className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 mt-0.5">{displayTime}</p>
+                        <p className="font-semibold text-slate-800 dark:text-slate-200 capitalize truncate">
+                          {displayDate}
+                        </p>
+                        <p className="text-[11px] text-[#006194] dark:text-sky-400 font-medium">
+                          {displayTime}
+                        </p>
                       </div>
                     </div>
                     <button
                       type="button"
-                      onClick={() => {
-                        removeCitaMultiple(c.id);
-                        toast.info('Cita removida del grupo');
-                      }}
-                      className="w-7 h-7 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 flex items-center justify-center transition-colors cursor-pointer shrink-0"
-                      title="Quitar esta cita"
+                      onClick={() => removeCitaMultiple(c.id)}
+                      className="text-slate-400 hover:text-rose-500 px-1.5 py-0.5 rounded cursor-pointer"
                     >
-                      ✕
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 );
               })}
             </div>
-          ) : (
-            <div className="text-center py-6 text-xs text-slate-500 dark:text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-900/30">
-              <CalendarClock className="w-6 h-6 mx-auto mb-1.5 text-slate-400 dark:text-slate-500 opacity-80" />
-              Selecciona una fecha y luego un horario arriba para agregar la primera cita del grupo.
-            </div>
-          )}
-        </div>
-      )}
-        </>
-      )}
+          </div>
+        )}
 
-      {/* Footer Next Button ALWAYS VISIBLE BUT BLOCKED IF NOT COMPLETE */}
-      <div className="sticky bottom-0 z-30 bg-transparent flex justify-end items-center py-4 border-t border-slate-200/60 dark:border-slate-800/40 mt-8">
-        <button
-          onClick={() => {
-            window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-            document.documentElement.scrollTop = 0;
-            document.body.scrollTop = 0;
-            nextStep();
-          }}
-          disabled={!isComplete}
-          className={`w-full sm:w-auto font-bold py-3.5 px-8 sm:px-10 rounded-xl transition-all flex items-center justify-center gap-2 ${isComplete
-            ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-md cursor-pointer'
-            : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-70'
-            }`}
-        >
-          <span>Continuar al Siguiente Paso</span> <ArrowRight className="h-5 w-5" />
-        </button>
+        {/* ========================================== */}
+        {/* 5. CARD RESUMEN: TOTAL ESTIMADO Y BOTÓN     */}
+        {/* ========================================== */}
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-[0_4px_28px_rgba(11,28,48,0.06)] flex flex-col sm:flex-row items-center justify-between gap-6 border border-slate-100 dark:border-slate-800">
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Total Estimado
+              </span>
+              <span className="text-xs text-[#006c4a] dark:text-emerald-400 font-medium">
+                · {nombreServicioEstimado}
+              </span>
+            </div>
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="text-3xl sm:text-4xl font-semibold tracking-tight text-[#0b1c30] dark:text-white">
+                Q{precioEntero}
+              </span>
+              <span className="text-base font-medium text-slate-500 dark:text-slate-400">
+                .{precioDecimal}
+              </span>
+              <span className="text-xs text-slate-400 dark:text-slate-500 ml-2">
+                (Cancelación sin cargo hasta 24h antes)
+              </span>
+            </div>
+          </div>
+          <div className="w-full sm:w-auto flex items-center">
+            <button
+              type="button"
+              onClick={() => {
+                window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+                document.documentElement.scrollTop = 0;
+                document.body.scrollTop = 0;
+                nextStep();
+              }}
+              disabled={!isComplete}
+              className={`w-full sm:w-auto px-8 h-12 rounded-xl text-sm font-semibold tracking-wide shadow-[0_4px_16px_rgba(0,97,148,0.22)] active:scale-[0.99] transition-all flex items-center justify-center gap-2 ${
+                isComplete
+                  ? 'bg-[#006194] hover:bg-[#007bb9] text-white cursor-pointer'
+                  : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60'
+              }`}
+            >
+              <span>Continuar a Paciente</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
       </div>
 
+      {/* ========================================== */}
+      {/* MODAL MINIMALISTA: CREAR NUEVO TRATAMIENTO */}
+      {/* ========================================== */}
+      {modalCrearGrupoOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => {
+            setModalCrearGrupoOpen(false);
+            setCreandoNuevoGrupo(false);
+            setNuevoGrupoTema('');
+          }}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-[0_8px_32px_rgba(11,28,48,0.14)] border border-slate-100 dark:border-slate-800 animate-in zoom-in-[0.98] duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#e5eeff] dark:bg-slate-800 text-[#006194] dark:text-sky-400 flex items-center justify-center shrink-0">
+                  <Layers className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#0b1c30] dark:text-white">
+                    Nuevo Tratamiento
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Crea un grupo de citas para este seguimiento
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setModalCrearGrupoOpen(false);
+                  setCreandoNuevoGrupo(false);
+                  setNuevoGrupoTema('');
+                }}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wider">
+                  Nombre del Tratamiento o Seguimiento
+                </label>
+                <input
+                  type="text"
+                  value={nuevoGrupoTema}
+                  onChange={(e) => setNuevoGrupoTema(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleConfirmarNuevoGrupo();
+                    }
+                  }}
+                  placeholder="Ej. Control Rodilla, Ortodoncia, Terapia..."
+                  className="w-full bg-[#eff4ff]/60 dark:bg-slate-800/40 px-4 py-3 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 text-sm font-medium text-[#0b1c30] dark:text-white outline-none focus:ring-2 focus:ring-[#006194]/20 focus:border-[#006194] transition"
+                  autoFocus
+                />
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1.5">
+                  Podrás agendar múltiples citas asociadas a este tratamiento con el especialista.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalCrearGrupoOpen(false);
+                    setCreandoNuevoGrupo(false);
+                    setNuevoGrupoTema('');
+                  }}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={isCreatingGrupo || !nuevoGrupoTema.trim()}
+                  onClick={handleConfirmarNuevoGrupo}
+                  className="px-5 py-2.5 rounded-xl bg-[#006194] hover:bg-[#007bb9] text-white text-xs font-semibold shadow-[0_4px_16px_rgba(0,97,148,0.22)] disabled:opacity-50 transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  {isCreatingGrupo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  <span>Crear Tratamiento</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* MODAL MINIMALISTA: ASOCIAR TRATAMIENTO     */}
+      {/* ========================================== */}
+      {modalAsociarGrupoOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setModalAsociarGrupoOpen(false)}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-7 max-w-lg w-full shadow-[0_8px_32px_rgba(11,28,48,0.14)] border border-slate-100 dark:border-slate-800 animate-in zoom-in-[0.98] duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#e5eeff] dark:bg-slate-800 text-[#006194] dark:text-sky-400 flex items-center justify-center shrink-0">
+                  <Layers className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#0b1c30] dark:text-white">
+                    Asociar a un Tratamiento
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Selecciona un tratamiento existente con este médico
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalAsociarGrupoOpen(false)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar my-4">
+              {gruposUnicos.map((g) => {
+                const isSelected = grupoId === g.grupoId;
+                const topicTitle = g.titulo || g.descripcion || 'Tratamiento';
+                return (
+                  <button
+                    key={g.grupoId}
+                    type="button"
+                    onClick={() => handleSelectTema(g)}
+                    className={`w-full text-left p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3 cursor-pointer ${
+                      isSelected
+                        ? 'border-[#006194] bg-[#eff4ff] dark:bg-slate-800 text-[#006194] dark:text-sky-300 ring-1 ring-[#006194]/20'
+                        : 'border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-[#0b1c30] dark:text-white truncate">
+                        {topicTitle}
+                      </p>
+                      {g.modalidad && (
+                        <span className="text-[11px] text-slate-400 capitalize">
+                          Modalidad: {g.modalidad}
+                        </span>
+                      )}
+                    </div>
+                    {isSelected && (
+                      <span className="w-2 h-2 rounded-full bg-[#006194] shrink-0" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  setModalAsociarGrupoOpen(false);
+                  setCreandoNuevoGrupo(true);
+                  setModalCrearGrupoOpen(true);
+                }}
+                className="text-xs text-[#006194] dark:text-sky-400 font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Crear nuevo tratamiento</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setModalAsociarGrupoOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 transition cursor-pointer"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modales de Intercambio y Conflicto */}
       {modalCambioOpen && slotParaCambio && fecha && (
         <ModalSolicitarCambio
           isOpen={modalCambioOpen}
@@ -1695,9 +1967,7 @@ export function Step1Modalidad() {
                 return;
               }
               const ok = addCitaMultiple(fecha, slotRaw);
-              if (ok) {
-                toast.success(`Cita agregada (${citasMultiples.length + 1}/5)`);
-              }
+              if (ok) toast.success(`Cita agregada (${citasMultiples.length + 1}/5)`);
             } else {
               setHora(slotRaw);
             }
@@ -1707,7 +1977,6 @@ export function Step1Modalidad() {
           }}
         />
       )}
-
     </div>
   );
 }

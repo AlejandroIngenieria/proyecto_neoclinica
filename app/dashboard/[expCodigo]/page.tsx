@@ -9,7 +9,7 @@ import Masonry from 'react-masonry-css';
 import {
   MapPin,
   Phone,
-  Sparkles,
+  Camera,
   CalendarDays,
   ShieldCheck,
   Heart,
@@ -626,7 +626,7 @@ function BentoGrid(props: BentoGridProps) {
                         key={i}
                         className="p-2.5 rounded-xl bg-white dark:bg-slate-800/80 border border-emerald-200/60 dark:border-emerald-900/40 text-xs text-slate-700 dark:text-slate-300 flex items-start gap-2.5 shadow-2xs"
                       >
-                        <Sparkles className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                        <Award className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                         <div className="min-w-0">
                           <span className="font-bold text-slate-900 dark:text-slate-100 block">
                             {a.titulo}
@@ -1084,7 +1084,7 @@ function BentoGrid(props: BentoGridProps) {
               {altaSpecialties.length > 0 && altaSpecialties[0].institucion ? (
                 <div className="bg-emerald-50/60 dark:bg-emerald-950/20 rounded-xl p-3 border border-emerald-200/60 dark:border-emerald-800/40">
                   <div className="flex items-center gap-1.5 mb-1">
-                    <span className="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider flex items-center gap-1"><Sparkles className="w-3.5 h-3.5 text-emerald-500" />Alta Especialidad</span>
+                    <span className="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider flex items-center gap-1"><Award className="w-3.5 h-3.5 text-emerald-500" />Alta Especialidad</span>
                   </div>
                   <span className="text-sm font-bold text-slate-800 dark:text-slate-200 block leading-snug">{altaSpecialties[0].titulo}</span>
                   <span className="text-xs text-slate-500 dark:text-slate-400 block mt-1">{altaSpecialties[0].institucion} {altaSpecialties[0].pais ? `· ${altaSpecialties[0].pais}` : ''}</span>
@@ -1310,7 +1310,7 @@ function BentoGrid(props: BentoGridProps) {
           <div>
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-blue-50 dark:bg-blue-950/40 flex items-center justify-center text-blue-500"><Sparkles className="w-4 h-4" /></div>
+                <div className="w-7 h-7 rounded-full bg-blue-50 dark:bg-blue-950/40 flex items-center justify-center text-blue-500"><Camera className="w-4 h-4" /></div>
                 <h3 className="text-sm text-slate-900 dark:text-white font-bold">Galería</h3>
               </div>
               <span className="text-[10px] text-slate-500 font-medium">{realPhotos.length > 0 ? `${realPhotos.length} Fotos` : 'Consultorio'}</span>
@@ -1467,7 +1467,7 @@ function BentoGrid(props: BentoGridProps) {
               <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
                 <div className="flex items-center gap-2">
                   <div className="w-7 h-7 rounded-full bg-amber-50 dark:bg-amber-950/40 flex items-center justify-center text-amber-500"><Star className="w-4 h-4 fill-amber-500" /></div>
-                  <h3 className="text-sm text-slate-900 dark:text-white font-bold">Reseñas {doctor.promedio_valoracion > 0 ? `${doctor.promedio_valoracion.toFixed(1)}★` : ''}</h3>
+                  <h3 className="text-sm text-slate-900 dark:text-white font-bold">Reseñas {doctor.promedio_valoracion > 0 ? `(${doctor.promedio_valoracion.toFixed(1)})` : ''}</h3>
                 </div>
                 <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-semibold">{doctor.total_resenas || 0}</span>
               </div>
@@ -1601,12 +1601,20 @@ function DoctorProfileContent() {
     setIsShareModalOpen(true);
   };
 
-  const handleScheduleService = (serviceName: string, price: number | null, sypCodigo?: number | null) => {
+  const handleScheduleService = (
+    serviceName: string,
+    price: number | null,
+    sypCodigo?: number | null,
+    modalidad?: string | null,
+    clinica?: string | null
+  ) => {
     setSelectedServiceIntent({ motivo: serviceName, precio: price, sypCodigo });
     const query = new URLSearchParams();
     query.set('motivo', serviceName);
     if (sypCodigo) query.set('sypCodigo', String(sypCodigo));
     if (price) query.set('precio', String(price));
+    if (modalidad) query.set('modalidad', modalidad);
+    if (clinica) query.set('clinica', clinica);
     router.push(`/dashboard/agendar/${doctor?.exp_codigo}?${query.toString()}`);
   };
 
@@ -2155,7 +2163,7 @@ clinicas={clinicas}
         <Link
           href={`/dashboard/agendar/${doctor.exp_codigo}${
             selectedService?.servicio
-              ? `?motivo=${encodeURIComponent(selectedService.servicio)}&sypCodigo=${selectedService.syp_codigo || ''}&precio=${selectedService.syp_costo_total || ''}`
+              ? `?motivo=${encodeURIComponent(selectedService.servicio)}&sypCodigo=${selectedService.syp_codigo || ''}&precio=${selectedService.syp_costo_total || ''}${selectedService.modalidad ? `&modalidad=${selectedService.modalidad}` : ''}${selectedService.cli_descripcion ? `&clinica=${encodeURIComponent(selectedService.cli_descripcion)}` : ''}`
               : ''
           }`}
           className="py-2.5 px-6 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-[13px] shadow-sm flex items-center gap-2 active:scale-95 transition-transform cursor-pointer shrink-0"
@@ -2207,7 +2215,7 @@ clinicas={clinicas}
                       {activeDrawer === 'resenas' && <Star className="w-5 h-5 fill-white" />}
                       {activeDrawer === 'trayectoria' && <GraduationCap className="w-5 h-5" />}
                       {activeDrawer === 'seguros' && <ShieldCheck className="w-5 h-5" />}
-                      {activeDrawer === 'galeria' && <Sparkles className="w-5 h-5" />}
+                      {activeDrawer === 'galeria' && <Camera className="w-5 h-5" />}
                     </div>
                     <div className="min-w-0">
                       <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-tight truncate">
@@ -2488,7 +2496,7 @@ clinicas={clinicas}
                               >
                                 <div className="flex items-center justify-between gap-2 mb-1">
                                   <span className="bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider flex items-center gap-1">
-                                    <Sparkles className="w-3 h-3" />
+                                    <Award className="w-3 h-3" />
                                     Alta Especialidad
                                   </span>
                                   {alta.anio && (
@@ -2674,6 +2682,8 @@ clinicas={clinicas}
                         if (selectedService.servicio) query.set('motivo', selectedService.servicio);
                         if (selectedService.syp_codigo) query.set('sypCodigo', String(selectedService.syp_codigo));
                         if (selectedService.syp_costo_total) query.set('precio', String(selectedService.syp_costo_total));
+                        if (selectedService.modalidad) query.set('modalidad', selectedService.modalidad);
+                        if (selectedService.cli_descripcion) query.set('clinica', selectedService.cli_descripcion);
                       }
                       router.push(`/dashboard/agendar/${doctor.exp_codigo}${query.toString() ? `?${query.toString()}` : ''}`);
                     }}

@@ -137,7 +137,7 @@ export function CitaDetailDrawer({ isOpen, onClose, cita, onEdit, onCancel, doct
 </head>
 <body>
   <div class="no-print no-print-bar">
-    <button class="btn-print" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
+    <button class="btn-print" onclick="window.print()">Imprimir / Guardar como PDF</button>
     <button class="btn-close" onclick="window.close()">Cerrar</button>
   </div>
   <div class="header">
@@ -719,19 +719,35 @@ export function CitaDetailDrawer({ isOpen, onClose, cita, onEdit, onCancel, doct
           )}
 
           {['programada', 'confirmada', 'pospuesta'].includes(cita.ctaEstado) && (
-            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
-              <button 
-                onClick={() => onEdit?.(cita)}
-                className="flex-1 py-3 px-4 bg-[#2563EB] text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-colors shadow-sm text-center cursor-pointer"
+            <div className="flex flex-col gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  const fechaQuery = cita.ctaFecha ? cita.ctaFecha.split('T')[0] : '';
+                  router.push(
+                    `/dashboard/citas/sala-espera?citaId=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}&fecha=${fechaQuery}`
+                  );
+                }}
+                className="w-full py-2.5 px-4 bg-[#eff4ff] hover:bg-[#006194] text-[#006194] hover:text-white dark:bg-slate-800 dark:hover:bg-[#006194] dark:text-sky-300 dark:hover:text-white border border-slate-200/60 dark:border-slate-700/60 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
               >
-                Reprogramar cita
+                <Activity className="w-4 h-4" />
+                <span>Ver sala de espera y cola del médico</span>
               </button>
-              <button 
-                onClick={() => onCancel?.(cita)}
-                className="flex-1 py-3 px-4 bg-white dark:bg-[#1E293B] border border-rose-300 dark:border-rose-900 text-rose-600 dark:text-rose-400 rounded-xl font-bold text-sm hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors text-center cursor-pointer"
-              >
-                Cancelar cita
-              </button>
+              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+                <button 
+                  onClick={() => onEdit?.(cita)}
+                  className="flex-1 py-3 px-4 bg-[#2563EB] text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-colors shadow-sm text-center cursor-pointer"
+                >
+                  Reprogramar cita
+                </button>
+                <button 
+                  onClick={() => onCancel?.(cita)}
+                  className="flex-1 py-3 px-4 bg-white dark:bg-[#1E293B] border border-rose-300 dark:border-rose-900 text-rose-600 dark:text-rose-400 rounded-xl font-bold text-sm hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors text-center cursor-pointer"
+                >
+                  Cancelar cita
+                </button>
+              </div>
             </div>
           )}
         </div>

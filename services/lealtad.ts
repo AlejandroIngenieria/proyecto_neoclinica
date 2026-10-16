@@ -2,11 +2,6 @@ import { expedientesApi, getAuthHeaders } from '@/lib/api-client';
 
 export interface LealtadEstado {
   puntosActuales: number;
-  nivelActual: string;
-  puntosMinimosNivel: number;
-  puntosMaximosNivel: number;
-  imagenNivelUrl: string | null;
-  progresoPorcentaje: number;
 }
 
 export interface LealtadTarea {
@@ -37,18 +32,5 @@ export async function completarTareaLealtad(token: string, codigoAccion: string)
     { codigoAccion },
     getAuthHeaders(token)
   );
-  return data;
-}
-
-export interface NivelLealtad {
-  nvlCodigo: number;
-  nvlDescripcion: string;
-  nvlPuntosMin: number;
-  nvlPuntosMax: number;
-  nvlImagenUrl: string | null;
-}
-
-export async function fetchNivelesLealtad(token: string): Promise<NivelLealtad[]> {
-  const { data } = await expedientesApi.get<NivelLealtad[]>('/api/lealtad/niveles', getAuthHeaders(token));
   return data;
 }

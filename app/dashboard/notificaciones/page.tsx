@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bell,
@@ -21,10 +22,11 @@ import {
   RotateCcw,
   Inbox,
   ShieldAlert,
-  Sparkles,
   ChevronDown,
   Check,
   Filter,
+  ArrowLeft,
+  Home,
 } from 'lucide-react';
 import {
   useNotificaciones,
@@ -32,7 +34,6 @@ import {
   useMarcarTodasNotificacionesLeidas,
   useEliminarNotificacion,
   useLimpiarNotificaciones,
-  useGenerarNotificacionesEjemplo,
 } from '@/hooks/use-notificaciones';
 import type { NotificacionDto } from '@/types';
 
@@ -43,7 +44,7 @@ interface SortOption {
   value: OrdenTipo;
   label: string;
   desc: string;
-  icon: typeof Sparkles;
+  icon: typeof Calendar;
 }
 
 const SORT_OPTIONS: SortOption[] = [
@@ -51,7 +52,7 @@ const SORT_OPTIONS: SortOption[] = [
     value: 'recientes',
     label: 'Más recientes primero',
     desc: 'Orden cronológico reciente a antiguo',
-    icon: Sparkles,
+    icon: Calendar,
   },
   {
     value: 'antiguas',
@@ -156,7 +157,6 @@ export default function CentroNotificacionesPage() {
   const marcarTodasMutation = useMarcarTodasNotificacionesLeidas();
   const eliminarMutation = useEliminarNotificacion();
   const limpiarMutation = useLimpiarNotificaciones();
-  const generarEjemplosMutation = useGenerarNotificacionesEjemplo();
 
   // UI state
   const [categoria, setCategoria] = useState<CategoriaFiltro>('todas');
@@ -274,81 +274,84 @@ export default function CentroNotificacionesPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/60 dark:bg-slate-950 pb-24 pt-6 sm:pt-8 transition-colors duration-200">
+    <div className="min-h-screen bg-[#F8F9FF] dark:bg-slate-950 pb-24 pt-6 sm:pt-8 transition-colors duration-200">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 sm:space-y-8">
         
-        {/* ── Breadcrumb & Hero Header ── */}
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+        {/* ── Barra Superior de Navegación y Retorno ── */}
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 shadow-2xs hover:border-slate-300 dark:hover:border-slate-700 transition-all active:scale-95 cursor-pointer group"
+            title="Volver a la pantalla anterior"
+          >
+            <ArrowLeft className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 group-hover:-translate-x-0.5 transition-transform" />
+            <span>Volver</span>
+          </button>
+
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-[#006194] dark:hover:text-sky-300 hover:bg-white dark:hover:bg-slate-900 border border-transparent hover:border-slate-200/60 dark:hover:border-slate-800 transition"
+            title="Ir al inicio del Dashboard"
+          >
+            <Home className="w-3.5 h-3.5" />
+            <span>Inicio del Dashboard</span>
+          </Link>
+        </div>
+
+        {/* ── Cabecera Principal (Estilo Apple Minimalist Clinical) ── */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3 sm:gap-3.5">
             <button
               type="button"
-              onClick={() => router.push('/dashboard')}
-              className="hover:text-sky-600 dark:hover:text-sky-400 transition hover:underline"
+              onClick={() => router.back()}
+              className="w-11 h-11 rounded-2xl bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:text-[#006194] dark:hover:text-sky-300 hover:bg-[#eff4ff] dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 flex items-center justify-center shrink-0 shadow-2xs transition-all active:scale-95 cursor-pointer group"
+              title="Volver a la pantalla anterior"
+              aria-label="Volver a la pantalla anterior"
             >
-              Dashboard
+              <ArrowLeft className="w-5 h-5 group-hover:-translate-x-0.5 transition-transform" />
             </button>
-            <ChevronRight className="w-3.5 h-3.5" />
-            <span className="text-slate-900 dark:text-slate-200 font-bold">Centro de Notificaciones</span>
+
+            <div className="w-11 h-11 rounded-2xl bg-[#eff4ff] dark:bg-slate-800 text-[#006194] dark:text-sky-400 border border-slate-200/60 dark:border-slate-700/60 flex items-center justify-center shrink-0 shadow-2xs">
+              <Bell className="w-5 h-5" />
+            </div>
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-white">
+                Notificaciones
+              </h1>
+              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+                Historial clasificado de tus citas médicas, recordatorios y avisos clínicos.
+              </p>
+            </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 text-white flex items-center justify-center shadow-lg shadow-sky-500/25 shrink-0">
-                  <Bell className="w-6 h-6" />
-                </div>
-                <div>
-                  <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-white">
-                    Centro de Notificaciones
-                  </h1>
-                  <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-                    Historial clasificado de citas médicas, recordatorios, reseñas y alertas del sistema.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Acciones globales */}
-            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          {/* Acciones globales */}
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            {unreadCount > 0 && (
               <button
                 type="button"
-                onClick={() => generarEjemplosMutation.mutate()}
-                disabled={generarEjemplosMutation.isPending}
-                title="Generar notificaciones de prueba en todas las categorías"
-                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:border-sky-400 hover:text-sky-600 transition shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
+                onClick={() => marcarTodasMutation.mutate()}
+                disabled={marcarTodasMutation.isPending}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-[#eff4ff] hover:bg-[#dfeafd] text-[#006194] dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-sky-300 border border-slate-200/50 dark:border-slate-700/60 transition shadow-2xs cursor-pointer active:scale-95 disabled:opacity-50"
               >
-                <Sparkles className={`w-4 h-4 text-sky-500 ${generarEjemplosMutation.isPending ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">Generar Ejemplos</span>
+                <CheckCheck className="w-4 h-4" />
+                <span>Marcar todo como leído</span>
               </button>
+            )}
 
-              {unreadCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => marcarTodasMutation.mutate()}
-                  disabled={marcarTodasMutation.isPending}
-                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-800 hover:bg-sky-50 dark:hover:bg-sky-950/50 transition shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
-                >
-                  <CheckCheck className="w-4 h-4" />
-                  <span>Marcar todo como leído</span>
-                </button>
-              )}
-
-              {notificaciones.length > 0 && (
-                <div className="relative inline-block">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setClearOnlyRead(false);
-                      setShowClearModal(true);
-                    }}
-                    className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-400 border border-rose-200/80 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition shadow-xs cursor-pointer active:scale-95"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    <span>Vaciar historial</span>
-                  </button>
-                </div>
-              )}
-            </div>
+            {notificaciones.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setClearOnlyRead(false);
+                  setShowClearModal(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-slate-200/60 dark:border-slate-800 transition shadow-2xs cursor-pointer active:scale-95"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Vaciar historial</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -635,16 +638,6 @@ export default function CentroNotificacionesPage() {
                     <span>Restablecer filtros</span>
                   </button>
                 )}
-
-                <button
-                  type="button"
-                  onClick={() => generarEjemplosMutation.mutate()}
-                  disabled={generarEjemplosMutation.isPending}
-                  className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold bg-sky-600 hover:bg-sky-700 text-white shadow-lg shadow-sky-600/20 transition cursor-pointer active:scale-95 disabled:opacity-50"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>Generar alertas de prueba</span>
-                </button>
               </div>
             </div>
           ) : (
@@ -709,10 +702,17 @@ export default function CentroNotificacionesPage() {
 
                           {item.accionUrl && (
                             <div className="pt-1">
-                              <span className="inline-flex items-center gap-1 text-xs font-bold text-sky-600 dark:text-sky-400 hover:underline">
-                                <span>Ver detalles y gestionar</span>
-                                <ChevronRight className="w-3.5 h-3.5" />
-                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleExecuteAction(item.accionUrl!);
+                                }}
+                                className="inline-flex items-center gap-1.5 text-xs font-bold text-[#006194] dark:text-sky-400 hover:text-[#004b73] dark:hover:text-sky-300 hover:underline cursor-pointer"
+                              >
+                                <span>Ir a la gestión o consulta</span>
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                           )}
                         </div>
@@ -755,6 +755,25 @@ export default function CentroNotificacionesPage() {
               </AnimatePresence>
             </div>
           )}
+
+          {/* Pie de navegación de retorno */}
+          <div className="pt-6 border-t border-slate-200/60 dark:border-slate-800/80 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => router.back()}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-900 border border-slate-200/60 dark:border-slate-800 shadow-2xs transition-all cursor-pointer group active:scale-95"
+            >
+              <ArrowLeft className="w-4 h-4 text-slate-400 group-hover:-translate-x-1 transition-transform" />
+              <span>Volver a la pantalla anterior</span>
+            </button>
+            <Link
+              href="/dashboard"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-[#006194] dark:text-sky-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition"
+            >
+              <Home className="w-3.5 h-3.5" />
+              <span>Ir al inicio del Dashboard</span>
+            </Link>
+          </div>
         </div>
 
       </div>
@@ -764,7 +783,14 @@ export default function CentroNotificacionesPage() {
         {selectedNotification && (() => {
           const { Icon, bg, border, label } = getNotificationVisuals(selectedNotification.tipo);
           return (
-            <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md">
+            <div
+              onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                  setSelectedNotification(null);
+                }
+              }}
+              className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md"
+            >
               <motion.div
                 initial={{ opacity: 0, scale: 0.95, y: 10 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}

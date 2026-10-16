@@ -543,28 +543,28 @@ export function DomicilioSelectorMap({
   // Si la ubicación ya fue confirmada, mostrar una tarjeta resumen limpia y moderna
   if (ubicacionDomicilioConfirmada && coberturaDomicilioValida) {
     return (
-      <div className="w-full bg-white dark:bg-[#1E293B] rounded-2xl p-6 border-2 border-emerald-500/40 shadow-sm relative overflow-hidden transition-all animate-in fade-in zoom-in-[0.99] duration-300">
-        <div className="absolute top-0 right-0 bg-emerald-500 text-white text-[11px] font-bold px-3 py-1 rounded-bl-xl flex items-center gap-1 shadow-xs">
+      <div className="w-full bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-[0_2px_14px_rgba(11,28,48,0.05)] relative overflow-hidden transition-all animate-in fade-in zoom-in-[0.99] duration-300">
+        <div className="absolute top-0 right-0 bg-[#006194] text-white text-[11px] font-semibold px-3 py-1 rounded-bl-2xl flex items-center gap-1 shadow-xs">
           <Check className="w-3.5 h-3.5 stroke-[3]" /> Cobertura Verificada
         </div>
 
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3.5 min-w-0">
-            <div className="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-200 dark:border-emerald-800/60 shadow-xs">
+            <div className="w-12 h-12 rounded-2xl bg-[#e5eeff] dark:bg-slate-800 text-[#006194] dark:text-sky-400 flex items-center justify-center shrink-0 shadow-xs">
               <Home className="w-6 h-6" />
             </div>
 
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
+                <span className="text-xs font-semibold text-[#006194] dark:text-sky-400 uppercase tracking-wider">
                   Dirección de Visita a Domicilio
                 </span>
-                <span className="text-[11px] px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 font-semibold">
+                <span className="text-[11px] px-2 py-0.5 rounded-lg bg-[#eff4ff] dark:bg-slate-800 text-[#006194] dark:text-sky-300 font-medium">
                   {selectedMuni} · {selectedZona}
                 </span>
               </div>
 
-              <h4 className="text-base font-bold text-slate-900 dark:text-white mt-0.5 truncate">
+              <h4 className="text-base font-semibold text-[#0b1c30] dark:text-white mt-0.5 truncate">
                 {direccionDomicilio || `${selectedZona}, ${selectedMuni}, ${selectedDepto}`}
               </h4>
 
@@ -580,7 +580,7 @@ export function DomicilioSelectorMap({
           <button
             type="button"
             onClick={handleEditLocation}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all shrink-0 cursor-pointer shadow-xs active:scale-95"
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#eff4ff] hover:bg-[#dce9ff] dark:bg-slate-800 dark:hover:bg-slate-700 text-[#006194] dark:text-sky-400 text-xs font-semibold transition-all shrink-0 cursor-pointer shadow-xs active:scale-95"
           >
             <Edit3 className="w-3.5 h-3.5" />
             <span>Cambiar Ubicación</span>
@@ -591,34 +591,38 @@ export function DomicilioSelectorMap({
   }
 
   return (
-    <div className="w-full bg-white dark:bg-[#1E293B] rounded-3xl p-5 sm:p-7 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+    <div className="w-full bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-7 border border-slate-100 dark:border-slate-800 shadow-[0_2px_14px_rgba(11,28,48,0.05)] space-y-6">
       {/* Encabezado con banner de cobertura del médico */}
       <div>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div>
-            <h3 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-              <Home className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-              <span>Ubicación para Cita a Domicilio</span>
-            </h3>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-              Indica tu ubicación exacta para verificar que esté dentro del área de servicio del médico.
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-[#e5eeff] dark:bg-slate-800 text-[#006194] dark:text-sky-400 flex items-center justify-center shrink-0">
+              <Home className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base sm:text-lg font-bold text-[#0b1c30] dark:text-white">
+                Ubicación para Cita a Domicilio
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Indica tu ubicación exacta para verificar que esté dentro del área de servicio del médico.
+              </p>
+            </div>
           </div>
 
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200/80 dark:border-blue-800/60 text-blue-700 dark:text-blue-300 text-xs font-semibold shrink-0">
-            <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#eff4ff] dark:bg-slate-800 text-[#006194] dark:text-sky-400 text-xs font-medium shrink-0 self-start sm:self-auto border border-[#cce5ff]/50 dark:border-slate-700">
+            <ShieldCheck className="w-4 h-4" />
             <span>Servicio a Domicilio</span>
           </div>
         </div>
 
         {/* Cobertura del especialista */}
-        <div className="mt-3.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800 flex items-start gap-2.5 text-xs text-slate-600 dark:text-slate-300">
-          <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+        <div className="mt-4 p-3.5 rounded-2xl bg-[#eff4ff]/60 dark:bg-slate-800/40 border border-slate-200/50 dark:border-slate-800/60 flex items-start gap-2.5 text-xs text-slate-600 dark:text-slate-300">
+          <Info className="w-4 h-4 text-[#006194] shrink-0 mt-0.5" />
           <div>
-            <span className="font-bold text-slate-800 dark:text-slate-200">
+            <span className="font-semibold text-[#0b1c30] dark:text-slate-200">
               Zonas con cobertura médica del especialista:
             </span>{' '}
-            <span className="text-slate-600 dark:text-slate-400">{coverageSummaryText}</span>
+            <span className="text-slate-500 dark:text-slate-400">{coverageSummaryText}</span>
           </div>
         </div>
       </div>
@@ -630,13 +634,13 @@ export function DomicilioSelectorMap({
           <div className="grid grid-cols-2 gap-3">
             {/* País */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 País
               </label>
               <select
                 value={selectedPais}
                 onChange={(e) => setSelectedPais(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500"
+                className="w-full bg-[#eff4ff]/60 dark:bg-slate-800/40 px-3 py-2.5 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-xs font-medium text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-[#006194]/20 focus:border-[#006194]"
               >
                 <option value="Guatemala">Guatemala</option>
               </select>
@@ -644,13 +648,13 @@ export function DomicilioSelectorMap({
 
             {/* Departamento */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Departamento
               </label>
               <select
                 value={selectedDepto}
                 onChange={(e) => setSelectedDepto(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500"
+                className="w-full bg-[#eff4ff]/60 dark:bg-slate-800/40 px-3 py-2.5 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-xs font-medium text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-[#006194]/20 focus:border-[#006194]"
               >
                 {availableDepartamentos.map((depto) => (
                   <option key={depto} value={depto}>
@@ -664,13 +668,13 @@ export function DomicilioSelectorMap({
           <div className="grid grid-cols-2 gap-3">
             {/* Municipio */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Municipio <span className="text-red-500">*</span>
               </label>
               <select
                 value={selectedMuni}
                 onChange={(e) => handleMunicipioChange(e.target.value)}
-                className="w-full bg-white dark:bg-slate-900 px-3 py-2 rounded-xl border border-blue-200 dark:border-blue-900/60 text-xs font-bold text-blue-900 dark:text-blue-300 outline-none focus:border-blue-500 shadow-xs"
+                className="w-full bg-[#eff4ff]/60 dark:bg-slate-800/40 px-3 py-2.5 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-xs font-medium text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-[#006194]/20 focus:border-[#006194]"
               >
                 {availableMunicipios.map((muni) => (
                   <option key={muni} value={muni}>
@@ -682,13 +686,13 @@ export function DomicilioSelectorMap({
 
             {/* Zona / Sector */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Zona de Cobertura <span className="text-red-500">*</span>
               </label>
               <select
                 value={selectedZona}
                 onChange={(e) => handleZonaChange(e.target.value)}
-                className="w-full bg-white dark:bg-slate-900 px-3 py-2 rounded-xl border border-blue-200 dark:border-blue-900/60 text-xs font-bold text-blue-900 dark:text-blue-300 outline-none focus:border-blue-500 shadow-xs"
+                className="w-full bg-[#eff4ff]/60 dark:bg-slate-800/40 px-3 py-2.5 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-xs font-medium text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-[#006194]/20 focus:border-[#006194]"
               >
                 {availableZonas.map((zona) => (
                   <option key={zona} value={zona}>
@@ -701,7 +705,7 @@ export function DomicilioSelectorMap({
 
           {/* Aldea / Colonia / Caserío */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
               Aldea, Colonia o Residencial
             </label>
             <input
@@ -709,13 +713,13 @@ export function DomicilioSelectorMap({
               value={aldea}
               onChange={(e) => setAldea(e.target.value)}
               placeholder="Ej. Aldea El Manzanillo, Col. San José, Condominio..."
-              className="w-full bg-slate-50 dark:bg-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500"
+              className="w-full bg-[#eff4ff]/60 dark:bg-slate-800/40 px-3.5 py-2.5 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-xs font-medium text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-[#006194]/20 focus:border-[#006194]"
             />
           </div>
 
           {/* Dirección Exacta */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
               Dirección Específica (Calle, Avenida, No. de Casa) <span className="text-red-500">*</span>
             </label>
             <input
@@ -723,13 +727,13 @@ export function DomicilioSelectorMap({
               value={calleDetalle}
               onChange={(e) => setCalleDetalle(e.target.value)}
               placeholder="Ej. 5ta Avenida 12-45, Lote 14"
-              className="w-full bg-slate-50 dark:bg-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500"
+              className="w-full bg-[#eff4ff]/60 dark:bg-slate-800/40 px-3.5 py-2.5 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-xs font-medium text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-[#006194]/20 focus:border-[#006194]"
             />
           </div>
 
           {/* Referencias */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
               Referencias de Llegada
             </label>
             <textarea
@@ -737,7 +741,7 @@ export function DomicilioSelectorMap({
               value={referencias}
               onChange={(e) => setReferencias(e.target.value)}
               placeholder="Ej. Portón café de 2 hojas, frente a la tienda 'El Rosal'..."
-              className="w-full bg-slate-50 dark:bg-slate-900 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500 resize-none"
+              className="w-full bg-[#eff4ff]/60 dark:bg-slate-800/40 px-3.5 py-2 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-xs font-medium text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-[#006194]/20 focus:border-[#006194] resize-none"
             />
           </div>
         </div>
@@ -752,16 +756,16 @@ export function DomicilioSelectorMap({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={`Buscar dirección o punto en ${selectedMuni}...`}
-                className="w-full bg-slate-50 dark:bg-slate-900 pl-9 pr-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500"
+                className="w-full bg-[#eff4ff]/60 dark:bg-slate-800/40 pl-9 pr-4 py-2.5 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-xs text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-[#006194]/20 focus:border-[#006194]"
               />
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
             </form>
 
             <button
               type="button"
               onClick={handleUseCurrentLocation}
               disabled={userGpsLoading}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-all shrink-0 cursor-pointer shadow-xs disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-[#eff4ff] hover:bg-[#dce9ff] dark:bg-slate-800 dark:hover:bg-slate-700 text-[#006194] dark:text-sky-400 text-xs font-semibold transition-all shrink-0 cursor-pointer shadow-xs disabled:opacity-50"
               title="Detectar mi ubicación actual vía GPS"
             >
               <Navigation className={`w-3.5 h-3.5 ${userGpsLoading ? 'animate-spin' : ''}`} />
@@ -770,7 +774,7 @@ export function DomicilioSelectorMap({
           </div>
 
           {/* Contenedor del Mapa */}
-          <div className="w-full h-[320px] sm:h-[350px] rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 relative shadow-inner bg-slate-100 dark:bg-slate-900">
+          <div className="w-full h-[320px] sm:h-[350px] rounded-2xl overflow-hidden border border-slate-200/80 dark:border-slate-800 relative shadow-inner bg-slate-100 dark:bg-slate-900">
             {MAPS_API_KEY ? (
               <APIProvider apiKey={MAPS_API_KEY} libraries={['places', 'marker']}>
                 <GoogleMap
@@ -805,8 +809,8 @@ export function DomicilioSelectorMap({
                         <span>Visita médica aquí</span>
                       </div>
                       <div className="relative">
-                        <div className="w-8 h-8 rounded-full bg-blue-600 border-2 border-white shadow-lg flex items-center justify-center text-white">
-                          <MapPin className="w-5 h-5 fill-white text-blue-600" />
+                        <div className="w-8 h-8 rounded-full bg-[#006194] border-2 border-white shadow-lg flex items-center justify-center text-white">
+                          <MapPin className="w-5 h-5 fill-white text-[#006194]" />
                         </div>
                         <div className="w-2.5 h-1 bg-black/40 rounded-full mx-auto mt-0.5 blur-[1px]" />
                       </div>
@@ -816,7 +820,7 @@ export function DomicilioSelectorMap({
               </APIProvider>
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center text-slate-500">
-                <MapPin className="w-8 h-8 text-blue-500 mb-2" />
+                <MapPin className="w-8 h-8 text-[#006194] mb-2" />
                 <p className="text-xs font-bold">Mapa de Cobertura</p>
                 <p className="text-[11px] mt-1 max-w-xs">
                   {selectedMuni} · {selectedZona} (Lat: {markerPos.lat.toFixed(4)}, Lng:{' '}
@@ -828,7 +832,7 @@ export function DomicilioSelectorMap({
             {/* Píldora de instrucción flotante en el mapa */}
             <div className="absolute top-2.5 left-2.5 z-10 pointer-events-none">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-md text-[11px] font-semibold text-slate-800 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700 shadow-md">
-                <Compass className="w-3.5 h-3.5 text-blue-600" />
+                <Compass className="w-3.5 h-3.5 text-[#006194]" />
                 Haz clic o arrastra el marcador a tu casa
               </span>
             </div>
@@ -841,24 +845,24 @@ export function DomicilioSelectorMap({
       </div>
 
       {/* Banner de Validación y Botón de Confirmación */}
-      <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
         {/* Estado de cobertura */}
         <div className="flex-1 w-full">
           {isWithinCoverage ? (
-            <div className="flex items-center gap-2.5 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300 text-xs font-semibold">
-              <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300 text-xs font-semibold">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
               <div>
-                <span className="font-bold">✓ Ubicación dentro de la cobertura médica:</span>{' '}
+                <span className="font-bold">Ubicación dentro de la cobertura médica:</span>{' '}
                 <span>
                   El doctor atiende a domicilio en {selectedMuni}, {selectedZona}.
                 </span>
               </div>
             </div>
           ) : (
-            <div className="flex items-center gap-2.5 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 text-xs font-semibold">
-              <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
+            <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 text-xs font-semibold">
+              <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
               <div>
-                <span className="font-bold">⚠️ Fuera de zona de cobertura:</span>{' '}
+                <span className="font-bold">Fuera de zona de cobertura:</span>{' '}
                 <span>
                   El médico únicamente atiende a domicilio en: {coverageSummaryText}. Selecciona una de sus zonas
                   cubiertas para continuar.
@@ -873,9 +877,9 @@ export function DomicilioSelectorMap({
           type="button"
           onClick={handleConfirmLocation}
           disabled={!isWithinCoverage}
-          className={`w-full sm:w-auto px-6 py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md shrink-0 ${
+          className={`w-full sm:w-auto px-7 py-3 rounded-xl font-semibold text-xs flex items-center justify-center gap-2 transition-all shrink-0 ${
             isWithinCoverage
-              ? 'bg-blue-600 hover:bg-blue-700 active:scale-95 text-white cursor-pointer shadow-blue-500/25'
+              ? 'bg-[#006194] hover:bg-[#007bb9] active:scale-95 text-white cursor-pointer shadow-[0_4px_16px_rgba(0,97,148,0.22)]'
               : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed shadow-none'
           }`}
         >

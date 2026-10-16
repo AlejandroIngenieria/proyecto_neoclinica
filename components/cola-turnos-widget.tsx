@@ -8,7 +8,7 @@ import {
   User,
   CheckCircle2,
   AlertCircle,
-  Sparkles,
+  Bell,
   RefreshCw,
   Stethoscope,
   ChevronRight,
@@ -195,7 +195,7 @@ export function ColaTurnosWidget({ citaHoy, pacienteActualId }: { citaHoy: CitaL
           </div>
         ) : esSiguienteTurno ? (
           <div className="flex items-center gap-3.5 p-4 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/25">
-            <Sparkles className="h-6 w-6 shrink-0" />
+            <Bell className="h-6 w-6 shrink-0" />
             <div className="min-w-0">
               <p className="text-sm font-black uppercase tracking-wide">¡Eres el siguiente turno!</p>
               <p className="text-xs text-amber-100 font-medium mt-0.5">
@@ -326,7 +326,7 @@ export function ColaTurnosWidget({ citaHoy, pacienteActualId }: { citaHoy: CitaL
                   {isMine && (
                     <div className="absolute -top-2.5 left-2.5">
                       <span className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white shadow-xs">
-                        <Sparkles className="h-2.5 w-2.5" /> Tu Cita
+                        <User className="h-2.5 w-2.5" /> Tu Cita
                       </span>
                     </div>
                   )}

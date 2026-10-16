@@ -59,7 +59,7 @@ export default function ConfirmLogoutModal({
             onClick={() => {
               if (!isLoggingOut) onClose();
             }}
-            className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm"
+            className="absolute inset-0 bg-slate-950/40 dark:bg-slate-950/70 backdrop-blur-md"
           />
 
           {/* Tarjeta modal minimalista */}
@@ -68,26 +68,26 @@ export default function ConfirmLogoutModal({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.94, y: 8 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-2xl p-6 text-center select-none z-10"
+            className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800 shadow-[0_20px_60px_rgba(11,28,48,0.12)] p-6 sm:p-7 text-center select-none z-10"
           >
             {/* Botón de cerrar (X) */}
             <button
               type="button"
               disabled={isLoggingOut}
               onClick={onClose}
-              className="absolute top-4 right-4 p-1.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer disabled:opacity-50"
+              className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer disabled:opacity-50"
               aria-label="Cancelar y cerrar"
             >
               <X className="w-4 h-4" />
             </button>
 
             {/* Ícono minimalista de cierre de sesión */}
-            <div className="mx-auto w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-100 dark:border-rose-900/40 flex items-center justify-center mb-3.5 shadow-2xs">
+            <div className="mx-auto w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200/80 dark:border-rose-900/60 flex items-center justify-center mb-3.5">
               <LogOut className="w-5 h-5 ml-0.5" />
             </div>
 
             {/* Título y descripción */}
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">
+            <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white tracking-tight">
               ¿Deseas cerrar sesión?
             </h3>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
@@ -100,7 +100,7 @@ export default function ConfirmLogoutModal({
                 type="button"
                 disabled={isLoggingOut}
                 onClick={onClose}
-                className="flex-1 h-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold text-xs sm:text-sm transition cursor-pointer disabled:opacity-50"
+                className="flex-1 h-10 rounded-xl border border-slate-200/80 dark:border-slate-700 bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white font-semibold text-xs sm:text-sm transition cursor-pointer disabled:opacity-50"
               >
                 Cancelar
               </button>
@@ -108,7 +108,7 @@ export default function ConfirmLogoutModal({
                 type="button"
                 disabled={isLoggingOut}
                 onClick={handleConfirmLogout}
-                className="flex-1 h-10 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-[0.98] text-white font-semibold text-xs sm:text-sm shadow-md shadow-rose-500/20 transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+                className="flex-1 h-10 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-semibold text-xs sm:text-sm shadow-xs transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
               >
                 {isLoggingOut ? (
                   <>

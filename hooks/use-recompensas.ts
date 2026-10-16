@@ -108,8 +108,10 @@ export function useVincularReferido(pacCodigo?: string) {
       queryClient.invalidateQueries({ queryKey: ['recompensas', 'puntos', pacCodigo] });
       queryClient.invalidateQueries({ queryKey: ['recompensas', 'historial', pacCodigo] });
       queryClient.invalidateQueries({ queryKey: ['lealtad', 'estado'] });
+      queryClient.invalidateQueries({ queryKey: ['pacienteTitular'] });
+      queryClient.invalidateQueries({ queryKey: ['pacientes'] });
 
-      toast.success('Código de referido vinculado');
+      toast.success('Código de referido vinculado exitosamente');
 
       if (token) {
         crearNotificacion(token, {
@@ -117,8 +119,8 @@ export function useVincularReferido(pacCodigo?: string) {
           usuarioTipo: 'paciente',
           tipo: 'sistema',
           titulo: 'Código Referido Vinculado',
-          mensaje: `Has vinculado exitosamente el código de referido (${variables.codigoReferencia}). ¡Has ganado puntos de lealtad adicionales!`,
-          accionUrl: '/dashboard/premios',
+          mensaje: `Has vinculado exitosamente el código de referido (${variables.codigoReferencia}). Quien te invitó recibirá puntos cuando inicies y concluyas tu primera consulta médica.`,
+          accionUrl: '/dashboard/perfil/puntos',
         }).catch(() => {});
       }
     },

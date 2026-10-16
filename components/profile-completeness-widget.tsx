@@ -8,7 +8,6 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronUp,
-  Sparkles,
   ShieldCheck,
   ArrowRight,
   Edit3,
@@ -38,6 +37,11 @@ export function ProfileCompletenessWidget({
 
   const { percentage, isComplete, missingLabels } = info;
 
+  // Si ya completó el perfil al 100%, no mostrar ningún mensaje ni widget
+  if (isComplete || percentage >= 100) {
+    return null;
+  }
+
   // Color theme mapping based on percentage
   const colorScheme = useMemo(() => {
     if (isComplete) {
@@ -53,7 +57,7 @@ export function ProfileCompletenessWidget({
       return {
         badgeBg: 'bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/20',
         progressBar: 'bg-gradient-to-r from-blue-600 to-cyan-500',
-        icon: Sparkles,
+        icon: ShieldCheck,
         iconColor: 'text-blue-500 dark:text-blue-400',
         cardBg: 'bg-blue-50/60 dark:bg-blue-950/20 border-blue-200/60 dark:border-blue-900/40',
       };

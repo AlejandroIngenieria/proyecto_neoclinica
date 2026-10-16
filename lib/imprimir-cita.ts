@@ -253,7 +253,7 @@ export function imprimirCitaPdf(cita: CitaListDto) {
 </head>
 <body>
   <div class="no-print no-print-bar">
-    <button class="btn-print" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
+    <button class="btn-print" onclick="window.print()">Imprimir / Guardar como PDF</button>
     <button class="btn-close" onclick="window.close()">Cerrar</button>
   </div>
 

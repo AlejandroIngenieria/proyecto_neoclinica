@@ -53,7 +53,6 @@ export function AnimatedList({ children, className, style, staggerDelay = 0.015 
         return (
           <motion.div
             key={key}
-            layout="position"
             variants={itemVariants}
             transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
             className={isExpanded ? 'col-span-full w-full h-full' : 'w-full h-full'}

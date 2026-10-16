@@ -35,7 +35,6 @@ import {
   Upload,
   CalendarPlus,
   Layers,
-  Sparkles,
   UserCheck,
   SlidersHorizontal,
   ArrowLeftRight,
@@ -51,6 +50,8 @@ import {
   MoreHorizontal,
   FolderPlus,
   FolderMinus,
+  ChevronsDown,
+  ChevronsUp,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -407,7 +408,7 @@ function CitasContent() {
 
   const handleTabChange = (newTab: 'proximas' | 'historial') => {
     setTabActual(newTab);
-    updateUrlState({ tab: newTab });
+    updateUrlState({ tab: newTab, citaId: null });
   };
   const [isFiltrosPopoverOpen, setIsFiltrosPopoverOpen] = useState(false);
   const filtrosPopoverRef = useRef<HTMLDivElement>(null);
@@ -421,6 +422,10 @@ function CitasContent() {
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [isConsultasIndividualesOpen, setIsConsultasIndividualesOpen] = useState(true);
   const [isSeriesSectionOpen, setIsSeriesSectionOpen] = useState(true);
+  const [allGroupsCollapseSignal, setAllGroupsCollapseSignal] = useState<{ collapsed: boolean; count: number }>({
+    collapsed: true,
+    count: 0,
+  });
   const [showIndependientesCitas, setShowIndependientesCitas] = useState<boolean>(false);
 
   // Solicitudes de intercambio de horario pendientes
@@ -696,7 +701,8 @@ function CitasContent() {
         }
         return;
       } else if (citas.length > 0) {
-        toast.error('No se encontró la cita especificada o no pertenece a tu cuenta.');
+        urlHandledRef.current = true;
+        setBusquedaTexto(urlCitaId);
       }
     }
 
@@ -918,6 +924,32 @@ function CitasContent() {
     if (!selectedPacienteId) return null;
     return seccionesPorPaciente.find((s) => s.paciente.pacCodigo === selectedPacienteId) || null;
   }, [seccionesPorPaciente, selectedPacienteId]);
+
+  // Secciones activas del paciente seleccionado
+  const hasIndividuales = (selectedSection?.standalone?.length ?? 0) > 0;
+  const hasSeries = Object.keys(selectedSection?.series ?? {}).length > 0;
+
+  // Está todo minimizado si todas las secciones visibles existentes están cerradas
+  const isEverythingMinimized = useMemo(() => {
+    if (!hasIndividuales && !hasSeries) return false;
+    if (hasIndividuales && isConsultasIndividualesOpen) return false;
+    if (hasSeries && isSeriesSectionOpen) return false;
+    return true;
+  }, [hasIndividuales, hasSeries, isConsultasIndividualesOpen, isSeriesSectionOpen]);
+
+  const handleToggleAllCollapse = () => {
+    if (isEverythingMinimized) {
+      // Maximizar todo
+      setIsConsultasIndividualesOpen(true);
+      setIsSeriesSectionOpen(true);
+      setAllGroupsCollapseSignal((prev) => ({ collapsed: false, count: prev.count + 1 }));
+    } else {
+      // Minimizar todo
+      setIsConsultasIndividualesOpen(false);
+      setIsSeriesSectionOpen(false);
+      setAllGroupsCollapseSignal((prev) => ({ collapsed: true, count: prev.count + 1 }));
+    }
+  };
 
   // Conteo específico para el paciente seleccionado (Próximas vs Historial vs Completadas vs Canceladas)
   const {
@@ -1400,23 +1432,60 @@ function CitasContent() {
                 transition={{ duration: 0.2 }}
                 className="space-y-6"
               >
-                {/* ── Encabezado: Solo botón Volver a pacientes a la izquierda ── */}
-                <div className="flex items-center pb-1">
-                  {pacientesTabsList.length > 1 ? (
-                    <button
-                      type="button"
-                      onClick={handleVolverPacientes}
-                      className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all active:scale-95 cursor-pointer"
-                    >
-                      <ArrowLeft className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                      <span>Volver a pacientes</span>
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 text-xs font-bold">
-                      <CalendarDays className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                      <span className="hidden sm:inline">Mis Citas Médicas</span>
-                    </div>
-                  )}
+                {/* ── Encabezado: Volver a pacientes + Citas de [Nombre del Paciente] (Centrado) + Minimizar/Maximizar Todo ── */}
+                <div className="grid grid-cols-[auto_1fr_auto] items-center gap-2 sm:gap-4 pb-3 border-b border-slate-200/80 dark:border-slate-800 min-h-[46px]">
+                  {/* Izquierda: Volver a pacientes */}
+                  <div className="flex items-center justify-start min-w-0">
+                    {pacientesTabsList.length > 1 ? (
+                      <button
+                        type="button"
+                        onClick={handleVolverPacientes}
+                        className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all active:scale-95 cursor-pointer shadow-2xs shrink-0"
+                        title="Ver todos los pacientes"
+                      >
+                        <ArrowLeft className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                        <span className="hidden sm:inline">Volver a pacientes</span>
+                        <span className="sm:hidden">Volver</span>
+                      </button>
+                    ) : (
+                      <div className="w-8" />
+                    )}
+                  </div>
+
+                  {/* Centro: Texto centrado, sin icono ni descripción */}
+                  <div className="flex items-center justify-center min-w-0 px-2 text-center">
+                    <h1 className="text-base sm:text-xl font-black text-slate-900 dark:text-white tracking-tight truncate">
+                      Citas de {selectedSection.paciente.nombreCorto || selectedSection.paciente.primerNombre}
+                    </h1>
+                  </div>
+
+                  {/* Derecha: Botón de Minimizar / Maximizar todo con texto e icono legibles */}
+                  <div className="flex items-center justify-end">
+                    {hasIndividuales || hasSeries ? (
+                      <button
+                        type="button"
+                        onClick={handleToggleAllCollapse}
+                        className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all active:scale-95 cursor-pointer shadow-2xs shrink-0 select-none ${
+                          isEverythingMinimized
+                            ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-500/25'
+                            : 'bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-400'
+                        }`}
+                        title={isEverythingMinimized ? 'Maximizar todo' : 'Minimizar todo'}
+                        aria-label={isEverythingMinimized ? 'Maximizar todo' : 'Minimizar todo'}
+                      >
+                        <span>
+                          {isEverythingMinimized ? 'Maximizar todo' : 'Minimizar todo'}
+                        </span>
+                        {isEverythingMinimized ? (
+                          <ChevronsDown className="w-4 h-4 stroke-[2.5] shrink-0" />
+                        ) : (
+                          <ChevronsUp className="w-4 h-4 stroke-[2.5] shrink-0" />
+                        )}
+                      </button>
+                    ) : (
+                      <div className="w-8" />
+                    )}
+                  </div>
                 </div>
 
                 {/* Banner de Registro Histórico para Pacientes Independizados */}
@@ -1434,99 +1503,86 @@ function CitasContent() {
                   </div>
                 )}
 
-                {/* ── Barra de Navegación de Citas del Paciente (Pestañas Próximas / Historial + Filtros + Nueva Cita) ── */}
-                <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-slate-200/80 dark:border-slate-800 pb-0 pt-1">
-                  {/* Pestañas Tradicionales (Extremo Izquierdo) */}
-                  <nav className="flex items-center gap-6 sm:gap-8 -mb-px overflow-x-auto scrollbar-none">
+                {/* ── Barra de Navegación de Citas del Paciente (Segmented Tray Próximas / Historial + Filtros + Búsqueda) ── */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/40 dark:border-slate-800/60 pb-3 pt-1">
+                  {/* Segmented Control Tray */}
+                  <nav className="inline-flex p-1 bg-[#eff4ff] dark:bg-slate-800/80 rounded-2xl border border-slate-200/50 dark:border-slate-700/60 items-center gap-1 shrink-0 self-start sm:self-center">
                     <button
                       type="button"
                       onClick={() => handleTabChange('proximas')}
-                      className={`group relative pb-3.5 flex items-center gap-2.5 text-sm sm:text-base font-bold transition-colors cursor-pointer shrink-0 ${
+                      className={`relative flex items-center gap-2 px-4 py-2 text-xs sm:text-sm font-bold rounded-xl transition-all cursor-pointer ${
                         tabActual === 'proximas'
-                          ? 'text-blue-600 dark:text-blue-400 font-black'
-                          : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-semibold'
+                          ? 'bg-white dark:bg-slate-900 text-[#006194] dark:text-sky-300 shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
                       }`}
                     >
-                      <CalendarDays
-                        className={`w-4 h-4 sm:w-5 sm:h-5 ${
-                          tabActual === 'proximas'
-                            ? 'text-blue-600 dark:text-blue-400'
-                            : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600'
-                        }`}
-                      />
+                      {tabActual === 'proximas' && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#0284c7]" />
+                      )}
+                      <CalendarDays className="w-4 h-4 shrink-0" />
                       <span>Próximas Citas</span>
                       <span
-                        className={`text-xs px-2 py-0.5 rounded-full font-extrabold ${
+                        className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
                           tabActual === 'proximas'
-                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
-                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                            ? 'bg-[#eff4ff] text-[#006194] dark:bg-slate-800 dark:text-sky-300'
+                            : 'bg-slate-200/60 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
                         }`}
                       >
                         {pacienteProximasCount}
                       </span>
-                      {/* Línea inferior gruesa indicadora */}
-                      {tabActual === 'proximas' && (
-                        <motion.div
-                          layoutId="activeTabIndicator"
-                          className="absolute bottom-0 left-0 right-0 h-[3px] bg-blue-600 dark:bg-blue-400 rounded-t-full"
-                          transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                        />
-                      )}
                     </button>
 
                     <button
                       type="button"
                       onClick={() => handleTabChange('historial')}
-                      className={`group relative pb-3.5 flex items-center gap-2.5 text-sm sm:text-base font-bold transition-colors cursor-pointer shrink-0 ${
+                      className={`relative flex items-center gap-2 px-4 py-2 text-xs sm:text-sm font-bold rounded-xl transition-all cursor-pointer ${
                         tabActual === 'historial'
-                          ? 'text-blue-600 dark:text-blue-400 font-black'
-                          : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-semibold'
+                          ? 'bg-white dark:bg-slate-900 text-[#006194] dark:text-sky-300 shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
                       }`}
                     >
-                      <Clock
-                        className={`w-4 h-4 sm:w-5 sm:h-5 ${
-                          tabActual === 'historial'
-                            ? 'text-blue-600 dark:text-blue-400'
-                            : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600'
-                        }`}
-                      />
+                      {tabActual === 'historial' && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#0284c7]" />
+                      )}
+                      <Clock className="w-4 h-4 shrink-0" />
                       <span>Historial</span>
                       <span
-                        className={`text-xs px-2 py-0.5 rounded-full font-extrabold ${
+                        className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
                           tabActual === 'historial'
-                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
-                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                            ? 'bg-[#eff4ff] text-[#006194] dark:bg-slate-800 dark:text-sky-300'
+                            : 'bg-slate-200/60 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
                         }`}
                       >
                         {pacienteHistorialCount}
                       </span>
-                      {/* Línea inferior gruesa indicadora */}
-                      {tabActual === 'historial' && (
-                        <motion.div
-                          layoutId="activeTabIndicator"
-                          className="absolute bottom-0 left-0 right-0 h-[3px] bg-blue-600 dark:bg-blue-400 rounded-t-full"
-                          transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                        />
-                      )}
                     </button>
                   </nav>
 
-                  {/* Nueva Barra de Búsqueda y Filtros (Píldora) */}
-                  <div ref={filtrosPopoverRef} className="relative pb-2.5 sm:pb-3 w-full sm:w-auto flex-1 sm:max-w-xl sm:ml-auto">
-                    <div className="flex items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-full h-10 pl-4 pr-1 shadow-sm w-full max-w-xl transition-all focus-within:ring-2 focus-within:ring-[#11698E]/20 focus-within:border-[#11698E]">
+                  {/* Barra de Búsqueda y Filtros */}
+                  <div ref={filtrosPopoverRef} className="relative w-full sm:w-auto flex-1 sm:max-w-xl sm:ml-auto">
+                    <div className="flex items-center bg-white dark:bg-slate-900 border border-slate-200/50 dark:border-slate-700/60 rounded-2xl h-11 pl-4 pr-1.5 shadow-2xs w-full max-w-xl transition-all focus-within:ring-2 focus-within:ring-[#006194]/20 focus-within:border-[#006194]">
                       {/* Input de Búsqueda Libre */}
                       <Search className="w-4 h-4 text-slate-400 dark:text-slate-500 mr-2 shrink-0"/>
                       <input 
                         type="text" 
                         value={busquedaTexto}
-                        onChange={(e) => setBusquedaTexto(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setBusquedaTexto(val);
+                          if (!val.trim()) {
+                            updateUrlState({ citaId: null });
+                          }
+                        }}
                         placeholder="Buscar por médico, ID de cita, servicio o modalidad..." 
                         className="bg-transparent border-none outline-none text-sm w-full text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                       />
                       {busquedaTexto && (
                         <button
                           type="button"
-                          onClick={() => setBusquedaTexto('')}
+                          onClick={() => {
+                            setBusquedaTexto('');
+                            updateUrlState({ citaId: null });
+                          }}
                           className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full cursor-pointer mr-1"
                           title="Limpiar búsqueda"
                         >
@@ -1535,20 +1591,20 @@ function CitasContent() {
                       )}
                       
                       {/* Divisor y Botón de Filtros Avanzados */}
-                      <div className="flex items-center gap-1 border-l border-slate-200 dark:border-slate-700 pl-2 ml-2 shrink-0">
+                      <div className="flex items-center gap-1 border-l border-slate-200/60 dark:border-slate-700/60 pl-2 ml-2 shrink-0">
                         <button 
                           type="button"
                           onClick={() => setIsFiltrosPopoverOpen((prev) => !prev)}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full text-xs font-semibold transition-colors cursor-pointer ${
+                          className={`flex items-center gap-1.5 px-3 py-1.5 hover:bg-[#eff4ff] dark:hover:bg-slate-800 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
                             medicoSeleccionado || grupoSeleccionado || modalidadSeleccionada
-                              ? 'text-[#11698E] bg-[#11698E]/10 dark:text-sky-400 dark:bg-sky-950/40'
+                              ? 'text-[#006194] bg-[#eff4ff] dark:text-sky-400 dark:bg-slate-800'
                               : 'text-slate-600 dark:text-slate-300'
                           }`}
                         >
                           <Filter className="w-3.5 h-3.5"/>
                           <span>Filtros</span>
                           {(medicoSeleccionado || grupoSeleccionado || modalidadSeleccionada) && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-[#11698E] dark:bg-sky-400" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#0284c7] dark:bg-sky-400" />
                           )}
                         </button>
                       </div>
@@ -1675,6 +1731,7 @@ function CitasContent() {
                   </div>
                 )}
 
+
                 {/* Contenido de Citas del Paciente */}
                 {selectedSection.totalCitas === 0 ? (
                   <div className="p-8 sm:p-12 rounded-3xl bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-800 text-center space-y-4 shadow-2xs">
@@ -1762,33 +1819,34 @@ function CitasContent() {
                     {/* Standalone con timeline */}
                     {selectedSection.standalone.length > 0 && (
                       <div className="space-y-3">
-                        <button
-                          type="button"
-                          onClick={() => setIsConsultasIndividualesOpen(!isConsultasIndividualesOpen)}
-                          aria-expanded={isConsultasIndividualesOpen}
-                          className="w-full flex items-center justify-between py-1.5 px-0.5 bg-transparent select-none text-left cursor-pointer transition-none"
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                        <div className="flex items-center justify-between py-1.5 px-0.5 select-none">
+                          <div className="flex items-center gap-2.5 flex-wrap">
+                            <div className="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
                               <CalendarIcon className="w-4 h-4" />
                             </div>
                             <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
                               Consultas Individuales ({selectedSection.standalone.length})
                             </h3>
-                          </div>
-                          <div className="flex items-center gap-2 text-xs font-bold text-slate-400 dark:text-slate-500">
-                            <span className="text-[11px] font-bold hidden sm:inline text-slate-400 dark:text-slate-500">
-                              {isConsultasIndividualesOpen ? 'Minimizar' : 'Mostrar'}
-                            </span>
-                            <div className="w-6 h-6 flex items-center justify-center text-slate-400 dark:text-slate-500">
+                            <button
+                              type="button"
+                              onClick={() => setIsConsultasIndividualesOpen(!isConsultasIndividualesOpen)}
+                              aria-expanded={isConsultasIndividualesOpen}
+                              className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all cursor-pointer active:scale-90 ${
+                                isConsultasIndividualesOpen
+                                  ? 'bg-blue-100 hover:bg-blue-200 dark:bg-blue-950/80 dark:hover:bg-blue-900 text-blue-700 dark:text-blue-300'
+                                  : 'bg-slate-100 hover:bg-blue-100 dark:bg-slate-800 dark:hover:bg-blue-950/60 text-slate-500 hover:text-blue-700 dark:text-slate-400 dark:hover:text-blue-300'
+                              }`}
+                              title={isConsultasIndividualesOpen ? 'Minimizar consultas individuales' : 'Mostrar consultas individuales'}
+                              aria-label={isConsultasIndividualesOpen ? 'Minimizar consultas individuales' : 'Mostrar consultas individuales'}
+                            >
                               {isConsultasIndividualesOpen ? (
                                 <ChevronUp className="w-4 h-4 stroke-[2.5]" />
                               ) : (
                                 <ChevronDown className="w-4 h-4 stroke-[2.5]" />
                               )}
-                            </div>
+                            </button>
                           </div>
-                        </button>
+                        </div>
 
                         <AnimatePresence initial={false}>
                           {isConsultasIndividualesOpen && (
@@ -1831,33 +1889,34 @@ function CitasContent() {
                     {/* Series */}
                     {Object.entries(selectedSection.series).length > 0 && (
                       <div className="space-y-3">
-                        <button
-                          type="button"
-                          onClick={() => setIsSeriesSectionOpen(!isSeriesSectionOpen)}
-                          aria-expanded={isSeriesSectionOpen}
-                          className="w-full flex items-center justify-between py-1.5 px-0.5 bg-transparent select-none text-left cursor-pointer transition-none"
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-7 h-7 rounded-lg bg-sky-100/80 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 flex items-center justify-center">
+                        <div className="flex items-center justify-between py-1.5 px-0.5 select-none">
+                          <div className="flex items-center gap-2.5 flex-wrap">
+                            <div className="w-7 h-7 rounded-lg bg-sky-100/80 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
                               <RefreshCw className="w-4 h-4" />
                             </div>
                             <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
                               Grupos ({Object.keys(selectedSection.series).length})
                             </h3>
-                          </div>
-                          <div className="flex items-center gap-2 text-xs font-bold text-slate-400 dark:text-slate-500">
-                            <span className="text-[11px] font-bold hidden sm:inline text-slate-400 dark:text-slate-500">
-                              {isSeriesSectionOpen ? 'Minimizar' : 'Mostrar'}
-                            </span>
-                            <div className="w-6 h-6 flex items-center justify-center text-slate-400 dark:text-slate-500">
+                            <button
+                              type="button"
+                              onClick={() => setIsSeriesSectionOpen(!isSeriesSectionOpen)}
+                              aria-expanded={isSeriesSectionOpen}
+                              className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all cursor-pointer active:scale-90 ${
+                                isSeriesSectionOpen
+                                  ? 'bg-sky-100 hover:bg-sky-200 dark:bg-sky-950/80 dark:hover:bg-sky-900 text-sky-700 dark:text-sky-300'
+                                  : 'bg-slate-100 hover:bg-sky-100 dark:bg-slate-800 dark:hover:bg-sky-950/60 text-slate-500 hover:text-sky-700 dark:text-slate-400 dark:hover:text-sky-300'
+                              }`}
+                              title={isSeriesSectionOpen ? 'Minimizar grupos de citas' : 'Mostrar grupos de citas'}
+                              aria-label={isSeriesSectionOpen ? 'Minimizar grupos de citas' : 'Mostrar grupos de citas'}
+                            >
                               {isSeriesSectionOpen ? (
                                 <ChevronUp className="w-4 h-4 stroke-[2.5]" />
                               ) : (
                                 <ChevronDown className="w-4 h-4 stroke-[2.5]" />
                               )}
-                            </div>
+                            </button>
                           </div>
-                        </button>
+                        </div>
 
                         <AnimatePresence initial={false}>
                           {isSeriesSectionOpen && (
@@ -1885,6 +1944,7 @@ function CitasContent() {
                                     onCancelarSolicitud={(s) => setSolicitudACancelar(s)}
                                     onReview={(c) => setCitaParaResenar(c)}
                                     onVerResena={(c) => setCitaParaVerResena(c)}
+                                    collapseSignal={allGroupsCollapseSignal}
                                   />
                                 ))}
                               </div>
@@ -2022,7 +2082,7 @@ function CitasContent() {
               </p>
               <div className="text-xs text-left bg-slate-50 dark:bg-slate-800/80 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 space-y-1.5">
                 <p className="font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
-                  <span>ℹ️</span> <span>Las citas asociadas se conservarán:</span>
+                  <Info className="w-3.5 h-3.5 text-blue-500 shrink-0" /> <span>Las citas asociadas se conservarán:</span>
                 </p>
                 <p>
                   • <strong className="text-slate-700 dark:text-slate-200">No se borrará ninguna cita</strong>;
@@ -2181,10 +2241,10 @@ function PatientCard({
       whileTap={{ scale: 0.99 }}
       transition={{ duration: 0.2 }}
       onClick={onSelect}
-      className={`group relative flex flex-col justify-between p-5 sm:p-6 rounded-3xl bg-white dark:bg-slate-900 border shadow-sm hover:shadow-xl transition-all duration-200 cursor-pointer overflow-hidden ${
+      className={`group relative flex flex-col justify-between p-5 sm:p-6 rounded-3xl bg-white dark:bg-slate-900 border shadow-[0_2px_12px_rgba(11,28,48,0.03)] hover:shadow-[0_4px_20px_rgba(11,28,48,0.06)] hover:border-slate-300/80 dark:hover:border-slate-700 transition-all duration-200 cursor-pointer overflow-hidden ${
         isIndependiente
-          ? 'border-indigo-200/90 dark:border-indigo-900/60 hover:border-indigo-400 dark:hover:border-indigo-500 hover:shadow-indigo-500/5'
-          : 'border-slate-200/80 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600'
+          ? 'border-indigo-200/60 dark:border-indigo-900/60 hover:border-indigo-400 dark:hover:border-indigo-500'
+          : 'border-slate-200/40 dark:border-slate-800/60'
       }`}
     >
       {/* Indicador de acento en hover */}
@@ -2192,7 +2252,7 @@ function PatientCard({
         className={`absolute top-0 inset-x-0 h-1 transition-opacity ${
           isIndependiente
             ? 'bg-gradient-to-r from-indigo-500 to-purple-500 opacity-80'
-            : 'bg-gradient-to-r from-blue-500 to-indigo-500 opacity-0 group-hover:opacity-100'
+            : 'bg-gradient-to-r from-[#006194] to-[#0284c7] opacity-0 group-hover:opacity-100'
         }`}
       />
 
@@ -2202,15 +2262,15 @@ function PatientCard({
           <div className="flex items-center gap-3.5 min-w-0">
             {/* Avatar */}
             {pac.fotoPerfilUrl ? (
-              <div className="relative w-13 h-13 sm:w-14 sm:h-14 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm shrink-0">
+              <div className="relative w-13 h-13 sm:w-14 sm:h-14 rounded-2xl overflow-hidden border border-slate-200/50 dark:border-slate-700 shadow-2xs shrink-0">
                 <Image src={pac.fotoPerfilUrl} alt={pac.nombreCorto} fill className="object-cover" />
               </div>
             ) : (
               <div
-                className={`w-13 h-13 sm:w-14 sm:h-14 rounded-2xl text-white font-black text-lg sm:text-xl flex items-center justify-center shadow-md shrink-0 ${
+                className={`w-13 h-13 sm:w-14 sm:h-14 rounded-2xl text-white font-black text-lg sm:text-xl flex items-center justify-center shadow-xs shrink-0 ${
                   isIndependiente
                     ? 'bg-gradient-to-br from-indigo-600 to-purple-600 shadow-indigo-500/15'
-                    : 'bg-gradient-to-br from-blue-600 to-indigo-600 shadow-blue-500/15'
+                    : 'bg-gradient-to-br from-[#006194] to-[#0284c7] shadow-sky-500/15'
                 }`}
               >
                 {initial}
@@ -2222,14 +2282,14 @@ function PatientCard({
                 className={`text-base sm:text-lg font-black text-slate-900 dark:text-white transition-colors tracking-tight truncate ${
                   isIndependiente
                     ? 'group-hover:text-indigo-600 dark:group-hover:text-indigo-400'
-                    : 'group-hover:text-blue-600 dark:group-hover:text-blue-400'
+                    : 'group-hover:text-[#006194] dark:group-hover:text-sky-400'
                 }`}
               >
                 {pac.nombreCorto}
               </h3>
               <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="text-[10px] sm:text-[11px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/60 inline-flex items-center gap-1">
-                  {pac.pacTitular && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />}
+                <span className="text-[10px] sm:text-[11px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-[#eff4ff] dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/50 dark:border-slate-700/60 inline-flex items-center gap-1">
+                  {pac.pacTitular && <span className="w-1.5 h-1.5 rounded-full bg-[#0284c7] shrink-0" />}
                   {pac.parentesco}
                 </span>
                 {isIndependiente && (
@@ -2251,7 +2311,7 @@ function PatientCard({
               className={`text-xs px-3 py-1 rounded-full font-black border shrink-0 shadow-2xs ${
                 isIndependiente
                   ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border-indigo-200/60 dark:border-indigo-800/40'
-                  : 'bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border-blue-200/60 dark:border-blue-800/40'
+                  : 'bg-[#eff4ff] dark:bg-slate-800 text-[#006194] dark:text-sky-300 border-slate-200/50 dark:border-slate-700/60'
               }`}
             >
               {totalCitas} {totalCitas === 1 ? 'cita' : 'citas'}
@@ -2265,10 +2325,10 @@ function PatientCard({
 
         {/* Snippet de Próxima Cita */}
         {proximaCita ? (
-          <div className="mt-4 p-3.5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/50 space-y-1.5">
+          <div className="mt-4 p-3.5 rounded-2xl bg-[#eff4ff]/35 dark:bg-slate-800/40 border border-slate-200/40 dark:border-slate-700/50 space-y-1.5">
             <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 dark:text-slate-400">
               <span className="flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-blue-500" />
+                <Clock className="w-3.5 h-3.5 text-[#006194] dark:text-sky-400" />
                 {tabActual === 'proximas' ? 'Próxima consulta' : 'Última consulta'}
               </span>
               <span className="text-slate-700 dark:text-slate-300 font-extrabold">
@@ -2276,7 +2336,7 @@ function PatientCard({
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <CalendarIcon className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+              <CalendarIcon className="w-3.5 h-3.5 text-[#006194] dark:text-sky-400 shrink-0" />
               <span className="text-xs font-black text-slate-800 dark:text-slate-200 capitalize truncate">
                 {safeFormatDate(proximaCita.ctaFecha, "EEEE, d 'de' MMMM")}
               </span>
@@ -2287,15 +2347,15 @@ function PatientCard({
             </div>
           </div>
         ) : (
-          <div className="mt-4 p-3.5 rounded-2xl bg-slate-50/60 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-800 space-y-2.5">
+          <div className="mt-4 p-3.5 rounded-2xl bg-slate-50/60 dark:bg-slate-800/40 border border-slate-200/40 dark:border-slate-800 space-y-2.5">
             <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
-              <CalendarDays className="w-4 h-4 text-blue-500/80 shrink-0" />
+              <CalendarDays className="w-4 h-4 text-[#006194]/70 shrink-0" />
               <span>{tabActual === 'proximas' ? 'Sin citas próximas programadas' : 'Sin citas en el historial'}</span>
             </div>
 
             {/* Resumen de citas completadas y canceladas */}
             {tabActual === 'proximas' && (
-              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/40 dark:border-slate-700/60">
                 <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 truncate">
@@ -2331,7 +2391,7 @@ function PatientCard({
           className={`font-bold transition-colors flex items-center gap-1 ${
             isIndependiente
               ? 'text-indigo-600 dark:text-indigo-400 group-hover:text-indigo-700 dark:group-hover:text-indigo-300'
-              : 'text-blue-600 dark:text-blue-400 group-hover:text-blue-700 dark:group-hover:text-blue-300'
+              : 'text-[#006194] dark:text-sky-400 group-hover:text-[#00517c] dark:group-hover:text-sky-300'
           }`}
         >
           {isIndependiente ? 'Consultar historial' : 'Ver citas'}
@@ -2341,7 +2401,7 @@ function PatientCard({
         <div className="flex items-center gap-2">
           {totalSeries > 0 && (
             <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 flex items-center gap-1">
-              <RefreshCw className="w-3 h-3 text-sky-500" />
+              <RefreshCw className="w-3 h-3 text-[#006194]" />
               {totalSeries} {totalSeries === 1 ? 'serie' : 'series'}
             </span>
           )}
@@ -2356,9 +2416,9 @@ function PatientCard({
                 );
               }}
               title="Ver sala de espera y cola de atención"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60 text-xs font-bold shadow-2xs transition active:scale-95 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#eff4ff] hover:bg-[#006194] text-[#006194] hover:text-white dark:bg-slate-800 dark:hover:bg-[#006194] dark:text-sky-300 dark:hover:text-white border border-slate-200/50 dark:border-slate-700/60 text-xs font-bold shadow-2xs transition-all active:scale-95 cursor-pointer"
             >
-              <Activity className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <Activity className="w-3.5 h-3.5" />
               <span>Ver cola</span>
             </button>
           )}
@@ -2382,6 +2442,7 @@ function SerieCard({
   onCancelarSolicitud,
   onReview,
   onVerResena,
+  collapseSignal,
 }: {
   grupoId: string;
   citasGrupo: CitaListDto[];
@@ -2396,9 +2457,16 @@ function SerieCard({
   onCancelarSolicitud?: (solicitud: SolicitudCambioDto) => void;
   onReview?: (c: CitaListDto) => void;
   onVerResena?: (c: CitaListDto) => void;
+  collapseSignal?: { collapsed: boolean; count: number };
 }) {
   const [citaParaDetalle, setCitaParaDetalle] = useState<CitaListDto | null>(null);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
+
+  useEffect(() => {
+    if (collapseSignal && collapseSignal.count > 0) {
+      setIsCollapsed(collapseSignal.collapsed);
+    }
+  }, [collapseSignal]);
   const doctorCode = citasGrupo[0]?.ctaCoddoc;
   const { data: doctor } = useDoctorByCode(doctorCode || '');
 
@@ -2524,9 +2592,9 @@ function SerieCard({
           </div>
 
           <div className="flex items-center gap-2 sm:ml-auto shrink-0 justify-end border-t sm:border-none border-slate-100 dark:border-slate-800 pt-3 sm:pt-0">
-            <span className="text-xs font-bold text-blue-600 dark:text-blue-400">Mostrar protocolo</span>
-            <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center group-hover:bg-blue-100 dark:group-hover:bg-blue-900/60 transition-colors">
-              <ChevronDown className="w-4 h-4 stroke-[2.5]" />
+            <div className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-xs font-bold transition-all shadow-2xs group-hover:bg-blue-600 group-hover:text-white">
+              <span>Protocolo completo</span>
+              <ChevronDown className="w-4 h-4 stroke-[2.5] transition-transform group-hover:translate-y-0.5" />
             </div>
           </div>
         </div>
@@ -2536,107 +2604,75 @@ function SerieCard({
 
   return (
     <div className="w-full">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-transparent">
-        {/* 1. Columna Izquierda: Tarjeta de Resumen del Protocolo (lg:col-span-4) */}
-        <div className="lg:col-span-4 bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800 rounded-2xl p-6 flex flex-col gap-6 shadow-sm justify-between">
-          <div className="flex flex-col gap-6">
-            {/* Cabecera (Estado, ID y Botón Minimizar) */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className={`text-[11px] font-bold px-3 py-1 rounded-full uppercase tracking-wider ${
+      <div className="w-full bg-white dark:bg-[#0B1120] border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl p-5 sm:p-6 shadow-sm flex flex-col gap-6">
+        {/* Cabecera unificada superior con botón Minimizar en la misma esquina superior derecha */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800/80">
+          <div className="flex items-center gap-4 min-w-0">
+            <div className="w-12 h-12 sm:w-13 sm:h-13 rounded-2xl overflow-hidden object-cover border border-slate-100 dark:border-slate-800 shrink-0 relative bg-slate-100 dark:bg-slate-800 flex items-center justify-center shadow-xs">
+              {doctor?.exp_foto_perfil ? (
+                <Image src={doctor.exp_foto_perfil} alt={medicoNombre} fill sizes="52px" className="object-cover" />
+              ) : (
+                <span className="text-sm font-black text-blue-600 dark:text-blue-400">{initials}</span>
+              )}
+            </div>
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
                   isSerieCerrada
                     ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
                     : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
                 }`}>
                   {isSerieCerrada ? 'Serie Cerrada' : 'En Protocolo'}
-                </div>
-                <div className="text-slate-400 dark:text-slate-500 text-xs font-semibold">
-                  ID: {idFormatted}
-                </div>
+                </span>
+                <span className="text-xs text-slate-400 font-semibold">{idFormatted}</span>
               </div>
-
-              <button
-                type="button"
-                onClick={() => setIsCollapsed(true)}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                title="Minimizar protocolo"
-              >
-                <span>Minimizar</span>
-                <ChevronUp className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {/* Info del Médico */}
-            <div className="flex flex-col gap-3.5">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-full overflow-hidden object-cover border border-slate-100 dark:border-slate-800 shrink-0 relative bg-slate-100 dark:bg-slate-800 flex items-center justify-center shadow-xs">
-                  {doctor?.exp_foto_perfil ? (
-                    <Image src={doctor.exp_foto_perfil} alt={medicoNombre} fill sizes="56px" className="object-cover" />
-                  ) : (
-                    <span className="text-sm font-black text-blue-600 dark:text-blue-400">{initials}</span>
-                  )}
-                </div>
-                <div className="flex flex-col min-w-0">
-                  <h3 className="text-[16px] font-bold text-[#19456B] dark:text-white leading-tight truncate">
-                    {medicoNombre.startsWith('Dr.') ? medicoNombre : `Dr. ${medicoNombre}`}
-                  </h3>
-                  <p className="text-[12px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                    {medicoEspecialidad}
-                  </p>
-                  <p className="text-[12px] text-blue-600 dark:text-blue-400 font-medium truncate">
-                    {colegiadoTexto}
-                  </p>
-                </div>
-              </div>
-
-              {/* Reseña única por protocolo para el médico tratante */}
-              {citaConResena ? (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onVerResena?.(citaConResena);
-                  }}
-                  className="w-full flex items-center justify-between px-3.5 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 text-xs font-bold hover:bg-amber-100 dark:hover:bg-amber-900/40 transition cursor-pointer group/rev"
-                  title="Ver reseña registrada para este protocolo"
-                >
-                  <div className="flex items-center gap-2 truncate">
-                    <Star className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0" />
-                    <span className="truncate">Reseña del protocolo ({citaConResena.ctaCalificacion}/5 ⭐)</span>
-                  </div>
-                  <span className="text-[11px] text-amber-700 dark:text-amber-300 font-semibold underline shrink-0 group-hover/rev:text-amber-900 dark:group-hover/rev:text-white">
-                    Ver reseña
-                  </span>
-                </button>
-              ) : primeraCitaCompletada && onReview ? (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onReview?.(primeraCitaCompletada);
-                  }}
-                  className="w-full flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 border border-amber-200/80 dark:border-amber-800/60 text-amber-800 dark:text-amber-200 text-xs font-bold transition shadow-2xs active:scale-95 cursor-pointer"
-                  title="Calificar el protocolo con el médico tratante"
-                >
-                  <Star className="w-4 h-4 text-amber-500 shrink-0" />
-                  <span>Calificar atención del protocolo</span>
-                </button>
-              ) : null}
-            </div>
-
-            {/* Título del Protocolo */}
-            <div className="flex flex-col gap-1 border-t border-slate-100 dark:border-slate-800/80 pt-5">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                Protocolo de Especialidad
-              </span>
-              <h2 className="text-[18px] font-extrabold text-slate-900 dark:text-white leading-snug">
+              <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white leading-tight mt-0.5 truncate">
                 {nombreGrupo}
               </h2>
+              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 flex-wrap mt-0.5">
+                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                  {medicoNombre.startsWith('Dr.') ? medicoNombre : `Dr. ${medicoNombre}`}
+                </span>
+                <span>•</span>
+                <span>{medicoEspecialidad}</span>
+                {colegiadoTexto && (
+                  <>
+                    <span>•</span>
+                    <span className="text-blue-600 dark:text-blue-400 font-medium">{colegiadoTexto}</span>
+                  </>
+                )}
+              </div>
             </div>
+          </div>
+
+          <div className="flex items-center gap-2 sm:ml-auto shrink-0 justify-end">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsCollapsed(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
+              title="Minimizar protocolo"
+              aria-label="Minimizar protocolo"
+            >
+              <span>Minimizar</span>
+              <ChevronUp className="w-4 h-4 stroke-[2.5]" />
+            </button>
+          </div>
+        </div>
+
+        {/* Bloque de Dos Columnas: Izquierda Resumen / Derecha Sesiones */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* 1. Columna Izquierda: Tarjeta de Resumen del Protocolo (lg:col-span-4) */}
+          <div className="lg:col-span-4 bg-[#f8f9fc] dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/80 rounded-2xl p-5 flex flex-col gap-4">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+              Resumen del Protocolo
+            </span>
 
             {/* Tarjeta de Resumen Financiero/Progreso */}
-            <div className="grid grid-cols-2 gap-4 bg-[#f8f9fc] dark:bg-slate-900/60 rounded-xl p-4 border border-slate-100 dark:border-slate-800">
-              <div className="flex flex-col border-r border-slate-200/60 dark:border-slate-800 pr-2">
+            <div className="grid grid-cols-2 gap-4 bg-white dark:bg-slate-800/80 rounded-xl p-4 border border-slate-200/70 dark:border-slate-700 shadow-2xs">
+              <div className="flex flex-col border-r border-slate-200/60 dark:border-slate-700 pr-2">
                 <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Cumplimiento</span>
                 <span className="text-[22px] font-extrabold text-slate-900 dark:text-white leading-tight mt-0.5">
                   {completed} <span className="text-slate-400 text-[16px] font-bold">/ {total}</span>
@@ -2655,38 +2691,77 @@ function SerieCard({
                 </span>
               </div>
             </div>
-          </div>
 
-          {/* Botón de Acción Principal y Opciones */}
-          <div className="flex flex-col gap-2 pt-2">
-            <button
-              type="button"
-              onClick={handleNuevaCitaEnGrupo}
-              className="w-full bg-[#0047b3] hover:bg-blue-800 text-white font-bold text-sm py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-md shadow-blue-900/20 active:scale-95 cursor-pointer"
-            >
-              <CalendarPlus className="w-4 h-4" />
-              <span>Agendar Sesión de Refuerzo</span>
-            </button>
-
-            {onDeleteGroup && (
+            {/* Reseña si aplica */}
+            {citaConResena ? (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onDeleteGroup(grupoId, nombreGrupo);
+                  onVerResena?.(citaConResena);
                 }}
-                className="text-[11px] font-semibold text-slate-400 hover:text-rose-500 text-center transition-colors cursor-pointer py-1"
+                className="w-full flex items-center justify-between px-3.5 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 text-xs font-bold hover:bg-amber-100 dark:hover:bg-amber-900/40 transition cursor-pointer group/rev"
+                title="Ver reseña registrada para este protocolo"
               >
-                Eliminar tema de seguimiento
+                <div className="flex items-center gap-2 truncate">
+                  <Star className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0" />
+                  <span className="truncate">Reseña ({citaConResena.ctaCalificacion}/5 ⭐)</span>
+                </div>
+                <span className="text-[11px] text-amber-700 dark:text-amber-300 font-semibold underline shrink-0 group-hover/rev:text-amber-900 dark:group-hover/rev:text-white">
+                  Ver
+                </span>
               </button>
-            )}
-          </div>
-        </div>
+            ) : primeraCitaCompletada && onReview ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onReview?.(primeraCitaCompletada);
+                }}
+                className="w-full flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 border border-amber-200/80 dark:border-amber-800/60 text-amber-800 dark:text-amber-200 text-xs font-bold transition shadow-2xs active:scale-95 cursor-pointer"
+                title="Calificar el protocolo con el médico tratante"
+              >
+                <Star className="w-4 h-4 text-amber-500 shrink-0" />
+                <span>Calificar atención del protocolo</span>
+              </button>
+            ) : null}
 
-        {/* 2. Columna Derecha: Línea de Tiempo de Sesiones (lg:col-span-8 con min-h-[400px]) */}
-        <div className="lg:col-span-8 flex flex-col gap-3 min-h-[400px]">
-          {/* Contenedor con Scroll Y para cuando hay muchas sesiones */}
-          <div className="flex flex-col gap-3 max-h-[500px] overflow-y-auto pr-1 sm:pr-2 [scrollbar-width:thin]">
+            {/* Botón de Acción Principal y Opciones */}
+            <div className="flex flex-col gap-2 pt-2 mt-auto">
+              <button
+                type="button"
+                onClick={handleNuevaCitaEnGrupo}
+                className="w-full bg-[#0047b3] hover:bg-blue-800 text-white font-bold text-xs sm:text-sm py-3 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-md shadow-blue-900/20 active:scale-95 cursor-pointer"
+              >
+                <CalendarPlus className="w-4 h-4" />
+                <span>Agendar Sesión de Refuerzo</span>
+              </button>
+
+              {onDeleteGroup && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteGroup(grupoId, nombreGrupo);
+                  }}
+                  className="text-[11px] font-semibold text-slate-400 hover:text-rose-500 text-center transition-colors cursor-pointer py-1"
+                >
+                  Eliminar tema de seguimiento
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 2. Columna Derecha: Línea de Tiempo de Sesiones (lg:col-span-8 con Scroll Moderno y Minimalista) */}
+          <div className="lg:col-span-8 flex flex-col gap-3 min-h-[300px]">
+            <div className="flex items-center justify-between pb-1">
+              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                Sesiones Programadas ({citasGrupo.length})
+              </span>
+            </div>
+
+            {/* Contenedor con Scroll Moderno y Minimalista */}
+            <div className="flex flex-col gap-3 max-h-[460px] overflow-y-auto pr-2 [scrollbar-width:thin] [scrollbar-color:rgba(148,163,184,0.35)_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 dark:hover:[&::-webkit-scrollbar-thumb]:bg-slate-600">
             {citasGrupo.map((cita, index) => {
             const cleanState = (cita.ctaEstado || '').toLowerCase().trim().replace(/[\s\-]+/g, '_');
             const isCompleted = ['completada', 'finalizada', 'realizada', 'atendida'].includes(cleanState);
@@ -2748,6 +2823,23 @@ function SerieCard({
 
                     {/* Acciones Visibles de la Sesión de Cierre */}
                     <div className="flex items-center gap-1 border-l border-blue-700/80 pl-2">
+                      {!isCancelled && !isNoShow && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const fechaQuery = cita.ctaFecha ? cita.ctaFecha.split('T')[0] : '';
+                            router.push(
+                              `/dashboard/citas/sala-espera?citaId=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}&fecha=${fechaQuery}`
+                            );
+                          }}
+                          title="Ver sala de espera y cola del médico"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-blue-200 hover:text-white hover:bg-blue-700/60 transition-colors cursor-pointer"
+                        >
+                          <Activity className="w-4 h-4" />
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         onClick={(e) => {
@@ -2863,6 +2955,23 @@ function SerieCard({
 
                   {/* Acciones Visibles de la Sesión */}
                   <div className="flex items-center gap-1 border-l border-slate-200/80 dark:border-slate-800 pl-2">
+                    {!isCancelled && !isNoShow && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const fechaQuery = cita.ctaFecha ? cita.ctaFecha.split('T')[0] : '';
+                          router.push(
+                            `/dashboard/citas/sala-espera?citaId=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}&fecha=${fechaQuery}`
+                          );
+                        }}
+                        title="Ver sala de espera y cola del médico"
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-[#006194] dark:hover:text-sky-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors cursor-pointer"
+                      >
+                        <Activity className="w-4 h-4" />
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       onClick={(e) => {
@@ -2942,6 +3051,7 @@ function SerieCard({
             </div>
           </button>
         </div>
+      </div>
       </div>
 
       {/* Drawer de Detalle Completo de la Sesión */}

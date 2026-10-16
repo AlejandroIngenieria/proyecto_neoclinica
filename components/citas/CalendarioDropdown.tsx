@@ -154,16 +154,16 @@ export function CalendarioDropdown({
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
         aria-expanded={isOpen}
-        className={`inline-flex items-center gap-2 rounded-xl sm:rounded-2xl border-2 px-3 py-2 sm:px-4 sm:py-2.5 text-xs font-black shadow-xs transition-all active:scale-95 cursor-pointer ${
+        className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 sm:px-4 sm:py-2.5 text-xs font-semibold shadow-2xs transition-all active:scale-95 cursor-pointer ${
           isOpen
-            ? 'border-blue-600 bg-blue-600 text-white shadow-blue-500/20'
-            : 'border-blue-600/30 dark:border-blue-500/30 bg-blue-50/60 dark:bg-blue-950/40 hover:bg-blue-100/70 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300'
+            ? 'border-[#006194] bg-[#006194] text-white shadow-xs'
+            : 'border-slate-200/60 dark:border-slate-700/60 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-750'
         }`}
       >
-        <CalendarIcon className="h-4 w-4 shrink-0" />
+        <CalendarIcon className={`h-4 w-4 shrink-0 ${isOpen ? 'text-white' : 'text-[#006194] dark:text-sky-400'}`} />
         <span>Elegir Fecha</span>
         <ChevronDown
-          className={`h-3.5 w-3.5 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+          className={`h-3.5 w-3.5 transition-transform duration-200 ${isOpen ? 'rotate-180 text-white' : 'text-slate-400 dark:text-slate-500'}`}
         />
       </button>
 
@@ -175,7 +175,7 @@ export function CalendarioDropdown({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.96 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
-            className="absolute right-0 top-full mt-2.5 z-50 w-[310px] sm:w-[330px] rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] p-4 sm:p-5 shadow-2xl shadow-slate-900/15 dark:shadow-slate-950/50 backdrop-blur-md"
+            className="absolute right-0 top-full mt-2 z-50 w-[310px] sm:w-[330px] rounded-3xl border border-slate-200/60 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 shadow-[0_20px_60px_rgba(11,28,48,0.12)] backdrop-blur-md"
           >
             {/* Header del Calendario: Mes/Año y botones anterior/siguiente */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800/80 mb-3">
@@ -188,7 +188,7 @@ export function CalendarioDropdown({
                 <ChevronLeft className="h-4 w-4" />
               </button>
 
-              <h4 className="text-sm font-black text-slate-900 dark:text-white capitalize select-none">
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white capitalize select-none">
                 {format(currentMonth, 'MMMM yyyy', { locale: es })}
               </h4>
 
@@ -207,7 +207,7 @@ export function CalendarioDropdown({
               {diasSemana.map((d) => (
                 <span
                   key={d}
-                  className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider py-0.5"
+                  className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider py-0.5"
                 >
                   {d}
                 </span>
@@ -229,11 +229,11 @@ export function CalendarioDropdown({
                     onClick={() => handleSelectDay(day)}
                     className={`relative h-9 w-full rounded-xl text-xs font-semibold flex flex-col items-center justify-center transition-all cursor-pointer ${
                       isSelected
-                        ? 'bg-blue-600 text-white font-black shadow-md shadow-blue-500/30 scale-105 z-10'
+                        ? 'bg-[#006194] text-white font-bold shadow-xs scale-105 z-10'
                         : isCurMonth
-                        ? 'text-slate-800 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400'
+                        ? 'text-slate-800 dark:text-slate-200 hover:bg-[#eff4ff] dark:hover:bg-slate-800 hover:text-[#006194] dark:hover:text-sky-300'
                         : 'text-slate-300 dark:text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800/40'
-                    } ${isToday && !isSelected ? 'border border-blue-400/60 dark:border-blue-500/60' : ''}`}
+                    } ${isToday && !isSelected ? 'border border-[#006194]/40 dark:border-sky-500/40' : ''}`}
                   >
                     <span>{format(day, 'd')}</span>
 
@@ -242,13 +242,13 @@ export function CalendarioDropdown({
                       {isMiCitaDay && (
                         <span
                           className={`h-1 w-1 rounded-full ${
-                            isSelected ? 'bg-amber-300' : 'bg-indigo-500 dark:bg-indigo-400'
+                            isSelected ? 'bg-amber-300' : 'bg-[#006194] dark:bg-sky-400'
                           }`}
                           title="Día de tu cita"
                         />
                       )}
                       {isToday && !isSelected && !isMiCitaDay && (
-                        <span className="h-1 w-1 rounded-full bg-blue-600 dark:bg-blue-400" />
+                        <span className="h-1 w-1 rounded-full bg-[#006194] dark:bg-sky-400" />
                       )}
                     </div>
                   </button>
@@ -262,7 +262,7 @@ export function CalendarioDropdown({
                 <button
                   type="button"
                   onClick={handleIrAHoy}
-                  className="rounded-xl px-2.5 py-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition cursor-pointer"
+                  className="rounded-xl px-2.5 py-1 text-[11px] font-semibold text-[#006194] dark:text-sky-300 bg-[#eff4ff] dark:bg-slate-800 hover:bg-[#e0ecff] dark:hover:bg-slate-750 border border-slate-200/50 dark:border-slate-700/50 transition cursor-pointer"
                 >
                   Hoy
                 </button>
@@ -271,7 +271,7 @@ export function CalendarioDropdown({
                   <button
                     type="button"
                     onClick={handleIrAMiCita}
-                    className="rounded-xl px-2.5 py-1 text-[11px] font-bold text-indigo-600 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition cursor-pointer"
+                    className="rounded-xl px-2.5 py-1 text-[11px] font-semibold text-[#006194] dark:text-sky-300 bg-[#eff4ff] dark:bg-slate-800 hover:bg-[#e0ecff] dark:hover:bg-slate-750 border border-slate-200/50 dark:border-slate-700/50 transition cursor-pointer"
                   >
                     Mi Cita
                   </button>

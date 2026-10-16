@@ -33,33 +33,33 @@ const VARIANT_CONFIG: Record<
 > = {
   danger: {
     icon: AlertTriangle,
-    iconBg: 'bg-rose-50 dark:bg-rose-950/40 border border-rose-200/80 dark:border-rose-800/60',
+    iconBg: 'bg-rose-50 dark:bg-rose-950/40 border border-rose-200/80 dark:border-rose-900/60',
     iconColor: 'text-rose-600 dark:text-rose-400',
-    confirmButtonClass: 'bg-rose-600 hover:bg-rose-700 active:scale-95 text-white shadow-sm shadow-rose-600/20',
+    confirmButtonClass: 'bg-rose-600 hover:bg-rose-700 active:scale-95 text-white shadow-xs',
   },
   warning: {
     icon: AlertCircle,
-    iconBg: 'bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/60',
+    iconBg: 'bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-900/60',
     iconColor: 'text-amber-600 dark:text-amber-400',
-    confirmButtonClass: 'bg-amber-600 hover:bg-amber-700 active:scale-95 text-white shadow-sm shadow-amber-600/20',
+    confirmButtonClass: 'bg-amber-600 hover:bg-amber-700 active:scale-95 text-white shadow-xs',
   },
   primary: {
     icon: HelpCircle,
-    iconBg: 'bg-blue-50 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-800/60',
-    iconColor: 'text-blue-600 dark:text-blue-400',
-    confirmButtonClass: 'bg-blue-600 hover:bg-blue-700 active:scale-95 text-white shadow-sm shadow-blue-600/20',
+    iconBg: 'bg-[#eff4ff] dark:bg-slate-800 border border-slate-200/50 dark:border-slate-700/60',
+    iconColor: 'text-[#006194] dark:text-sky-400',
+    confirmButtonClass: 'bg-[#006194] hover:bg-[#00517c] active:scale-95 text-white shadow-xs',
   },
   success: {
     icon: CheckCircle2,
-    iconBg: 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/60',
+    iconBg: 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-900/60',
     iconColor: 'text-emerald-600 dark:text-emerald-400',
-    confirmButtonClass: 'bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white shadow-sm shadow-emerald-600/20',
+    confirmButtonClass: 'bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white shadow-xs',
   },
   info: {
     icon: Info,
-    iconBg: 'bg-sky-50 dark:bg-sky-950/40 border border-sky-200/80 dark:border-sky-800/60',
-    iconColor: 'text-sky-600 dark:text-sky-400',
-    confirmButtonClass: 'bg-sky-600 hover:bg-sky-700 active:scale-95 text-white shadow-sm shadow-sky-600/20',
+    iconBg: 'bg-[#eff4ff] dark:bg-slate-800 border border-slate-200/50 dark:border-slate-700/60',
+    iconColor: 'text-[#006194] dark:text-sky-400',
+    confirmButtonClass: 'bg-[#006194] hover:bg-[#00517c] active:scale-95 text-white shadow-xs',
   },
 };
 
@@ -117,7 +117,7 @@ export function ConfirmModal({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
           {/* Overlay / Backdrop con desenfoque suave */}
           <motion.div
-            className="fixed inset-0 bg-slate-950/60 dark:bg-black/75 backdrop-blur-xs"
+            className="fixed inset-0 bg-slate-950/40 dark:bg-slate-950/70 backdrop-blur-md"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -135,7 +135,7 @@ export function ConfirmModal({
             exit={{ opacity: 0, scale: 0.95, y: 15 }}
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
             onClick={(e) => e.stopPropagation()}
-            className={`relative w-full ${maxWidthClass} bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 p-6 sm:p-7 z-10`}
+            className={`relative w-full ${maxWidthClass} bg-white dark:bg-slate-900 rounded-3xl shadow-[0_20px_60px_rgba(11,28,48,0.12)] border border-slate-200/50 dark:border-slate-800 p-6 sm:p-7 z-10`}
           >
             {/* Opcional botón de cerrar X en esquina superior derecha */}
             {showCloseButton && (
@@ -143,7 +143,7 @@ export function ConfirmModal({
                 type="button"
                 onClick={onClose}
                 disabled={isLoading}
-                className="absolute top-4 right-4 p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer disabled:opacity-50"
+                className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer disabled:opacity-50"
                 aria-label="Cerrar"
               >
                 <X className="w-4 h-4" />
@@ -169,7 +169,7 @@ export function ConfirmModal({
 
               {/* Título y Descripción */}
               <div className="flex-1 min-w-0">
-                <h3 className="text-lg font-black tracking-tight text-slate-900 dark:text-white">
+                <h3 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white">
                   {title}
                 </h3>
                 {description && (
@@ -189,7 +189,7 @@ export function ConfirmModal({
                 type="button"
                 onClick={onClose}
                 disabled={isLoading}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition active:scale-95 cursor-pointer disabled:opacity-50 text-center"
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700 transition active:scale-95 cursor-pointer disabled:opacity-50 text-center"
               >
                 {cancelText}
               </button>
@@ -197,7 +197,7 @@ export function ConfirmModal({
                 type="button"
                 onClick={onConfirm}
                 disabled={isLoading}
-                className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer disabled:opacity-60 text-center ${config.confirmButtonClass}`}
+                className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer disabled:opacity-60 text-center ${config.confirmButtonClass}`}
               >
                 {isLoading ? (
                   <>

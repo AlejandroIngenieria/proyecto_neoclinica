@@ -337,7 +337,7 @@ export function PacienteForm({
   };
 
   const inputClasses =
-    'w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 outline-none transition-all focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/40';
+    'w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 outline-none transition-all focus:border-[#006194] focus:ring-2 focus:ring-[#006194]/20';
   const labelClasses = 'mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400';
 
   return (
@@ -346,15 +346,15 @@ export function PacienteForm({
       initial="hidden"
       animate="visible"
       exit="exit"
-      className="w-full max-w-4xl mx-auto rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1E293B] shadow-2xl overflow-hidden"
+      className="w-full max-w-4xl mx-auto rounded-3xl border border-slate-200/50 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-[0_20px_60px_rgba(11,28,48,0.12)] text-slate-900 dark:text-slate-100 overflow-hidden"
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-[#1E293B] px-6 py-5 sm:px-8">
+      <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 bg-[#eff4ff]/30 dark:bg-slate-800/30 px-6 py-5 sm:px-8">
         <div>
-          <h2 className="text-xl font-black tracking-tight text-slate-900 dark:text-white">
+          <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
             {mode === 'add' ? 'Agregar Paciente Dependiente' : 'Editar Paciente'}
           </h2>
-          <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
             {mode === 'add'
               ? 'Completa los datos del nuevo familiar o dependiente.'
               : 'Modifica la información del paciente.'}
@@ -363,9 +363,10 @@ export function PacienteForm({
         <button
           type="button"
           onClick={onClose}
-          className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 transition-colors"
+          className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white/80 dark:hover:bg-slate-800 transition"
+          aria-label="Cerrar modal"
         >
-          <X className="h-5 w-5" />
+          <X className="h-4 w-4" />
         </button>
       </div>
 
@@ -384,7 +385,7 @@ export function PacienteForm({
 
         {/* Section: Datos Personales */}
         <fieldset className="mb-8">
-          <legend className="mb-4 flex items-center gap-2 text-sm font-black uppercase tracking-[0.15em] text-blue-600 dark:text-blue-400">
+          <legend className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#006194] dark:text-sky-400">
             <User className="h-4 w-4" />
             Datos Personales
           </legend>
@@ -703,18 +704,18 @@ export function PacienteForm({
         </fieldset>
 
         {/* Form Actions */}
-        <div className="flex items-center justify-end gap-3 pt-6 border-t border-slate-100 dark:border-slate-800">
+        <div className="flex items-center justify-end gap-3 pt-6 border-t border-slate-100 dark:border-slate-800/80">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-5 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+            className="rounded-xl border border-slate-200/80 dark:border-slate-700 px-5 py-2.5 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition"
           >
             Cancelar
           </button>
           <button
             type="submit"
             disabled={isSubmitting}
-            className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 text-xs font-bold shadow-md transition-all active:scale-95 disabled:opacity-50"
+            className="rounded-xl bg-[#006194] hover:bg-[#00517c] text-white px-6 py-2.5 text-xs font-semibold shadow-xs transition active:scale-95 disabled:opacity-50"
           >
             {isSubmitting ? 'Guardando...' : mode === 'add' ? 'Guardar Paciente' : 'Actualizar Paciente'}
           </button>
@@ -744,8 +745,8 @@ export function PacienteFormModal({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-sm p-4 sm:p-6 md:p-10 flex items-center justify-center">
-        <div className="w-full max-w-4xl max-h-full">
+      <div className="fixed inset-0 z-[1000] overflow-y-auto bg-slate-950/40 dark:bg-slate-950/70 backdrop-blur-md p-4 sm:p-6 md:p-10 flex items-center justify-center">
+        <div className="w-full max-w-4xl max-h-full my-auto">
           <PacienteForm
             mode={mode}
             paciente={paciente}

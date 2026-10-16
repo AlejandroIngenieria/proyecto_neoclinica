@@ -7,7 +7,7 @@ import {
   Star,
   Gift,
   Clock,
-  Sparkles,
+  Award,
   ArrowDownRight,
   ArrowUpRight,
   Tag,
@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   Info,
   Copy,
+  Share2,
 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { toast } from 'sonner';
@@ -63,6 +64,39 @@ function PuntosContent() {
   const [historialFiltro, setHistorialFiltro] = useState<'todos' | 'ganados' | 'canjeados'>('todos');
   const [recompensaACanjear, setRecompensaACanjear] = useState<Recompensa | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [copiedReferral, setCopiedReferral] = useState(false);
+
+  const referralCode =
+    titular?.pac_codigo_referencia ||
+    (titular?.pac_codigo ? `NC-${titular.pac_codigo.replace(/-/g, '').slice(0, 8).toUpperCase()}` : null);
+
+  const handleCopyReferral = (code: string) => {
+    navigator.clipboard.writeText(code);
+    setCopiedReferral(true);
+    toast.success('Código de referido copiado al portapapeles');
+    setTimeout(() => setCopiedReferral(false), 2500);
+  };
+
+  const handleShareReferral = async (code: string) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://proyecto-neoclinica.vercel.app';
+    const text = `¡Agenda tu consulta médica en NeoClínica! Utiliza mi código de referido ${code} al confirmar tu cita médica: ${origin}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Código de Referido NeoClínica',
+          text,
+          url: origin,
+        });
+        return;
+      } catch {
+        // Fallback a copiar mensaje completo
+      }
+    }
+    navigator.clipboard.writeText(text);
+    setCopiedReferral(true);
+    toast.success('Mensaje con código y enlace copiado al portapapeles');
+    setTimeout(() => setCopiedReferral(false), 2500);
+  };
 
   // Puntos calculados
   const totalPuntos = lealtadEstado?.puntosActuales ?? puntosData?.totalPuntos ?? 0;
@@ -142,59 +176,131 @@ function PuntosContent() {
     return defaultMisiones;
   }, [uniqueTareas]);
 
-  // Contexto detallado de transacciones del historial
+  // Contexto detallado de transacciones del historial de puntos
   const getDetalleMovimiento = (item: any) => {
     const rawMotivo = item.trpMotivo || item.TrpMotivo || item.motivo || item.hisMotivo || item.hisDescripcion || item.descripcion || item.concepto || '';
     const motivoLower = rawMotivo.toLowerCase();
 
-    if (motivoLower.includes('perfil')) {
+    // 1. Referidos / Invitaciones (DEBE EVALUARSE PRIMERO porque 'Referencia a paciente y cita concluida' incluye la palabra 'cita')
+    if (
+      motivoLower.includes('refer') ||
+      motivoLower.includes('invit') ||
+      motivoLower.includes('recomen')
+    ) {
       return {
-        tipoEtiqueta: 'Expediente Completo',
-        categoria: 'Perfil de Paciente',
-        detalle: 'Completaste con éxito tus antecedentes médicos y datos de contacto en tu expediente.',
-        icono: 'perfil',
-      };
-    }
-    if (motivoLower.includes('cita') || motivoLower.includes('consulta')) {
-      return {
-        tipoEtiqueta: 'Consulta Concluida',
-        categoria: 'Atención Médica',
-        detalle: 'Asistencia confirmada a consulta con tu especialista.',
-        icono: 'cita',
-      };
-    }
-    if (motivoLower.includes('reseña') || motivoLower.includes('resena') || motivoLower.includes('opin')) {
-      return {
-        tipoEtiqueta: 'Reseña de Atención',
-        categoria: 'Calificación de Médico',
-        detalle: 'Publicaste una valoración y comentario sobre la atención recibida.',
-        icono: 'resena',
-      };
-    }
-    if (motivoLower.includes('refer') || motivoLower.includes('invit')) {
-      return {
+        titulo: 'Bono por Paciente Referido',
         tipoEtiqueta: 'Recomendación Exitosa',
-        categoria: 'Pacientes Invitados',
-        detalle: 'Un paciente referido agendó y concluyó su consulta médica.',
+        categoria: 'Programa de Referidos',
+        detalle: 'Un familiar o amigo utilizó tu código de referido, se registró en NeoClínica y concluyó exitosamente su primera atención médica.',
+        comoSeObtuvo: 'Validación automática al registrarse la conclusión de la primera cita del paciente que utilizó tu código de invitación personal.',
         icono: 'referido',
-      };
-    }
-    if (motivoLower.includes('canje') || motivoLower.includes('cupon') || motivoLower.includes('cupón')) {
-      return {
-        tipoEtiqueta: 'Recompensa Canjeada',
-        categoria: 'Tienda de Beneficios',
-        detalle: rawMotivo.includes(':')
-          ? `Canjeaste puntos por el beneficio: ${rawMotivo.split(':')[1]?.trim() || rawMotivo}.`
-          : 'Canjeaste puntos por un cupón activo para consultas o servicios de farmacia.',
-        icono: 'canje',
+        badgeBg: 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+        dotColor: 'bg-emerald-500',
       };
     }
 
+    // 2. Primera cita concluida (Bono especial de bienvenida)
+    if (
+      motivoLower.includes('primera cita') ||
+      motivoLower.includes('primer consulta') ||
+      motivoLower.includes('primera_cita')
+    ) {
+      return {
+        titulo: 'Bono de Bienvenida: Primera Consulta',
+        tipoEtiqueta: 'Bienvenida al Programa',
+        categoria: 'Primera Consulta Médica',
+        detalle: '¡Completaste tu primera consulta médica en NeoClínica! Recibiste puntos de bienvenida para inaugurar tu saldo de beneficios.',
+        comoSeObtuvo: 'Acreditación automática tras concluir satisfactoriamente tu primera cita programada con un médico especialista.',
+        icono: 'bienvenida',
+        badgeBg: 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+        dotColor: 'bg-amber-500',
+      };
+    }
+
+    // 3. Reseña y calificación de atención médica
+    if (
+      motivoLower.includes('reseña') ||
+      motivoLower.includes('resena') ||
+      motivoLower.includes('opin') ||
+      motivoLower.includes('calific')
+    ) {
+      return {
+        titulo: 'Valoración y Reseña Publicada',
+        tipoEtiqueta: 'Opinión de Atención',
+        categoria: 'Calificación de Médico',
+        detalle: 'Publicaste una valoración y reseña constructiva sobre la calidad de atención brindada por tu especialista.',
+        comoSeObtuvo: 'Envío verificado de calificación con estrellas y opinión en el perfil del médico especialista tras tu cita.',
+        icono: 'resena',
+        badgeBg: 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+        dotColor: 'bg-indigo-500',
+      };
+    }
+
+    // 4. Expediente o perfil médico completado
+    if (
+      motivoLower.includes('perfil') ||
+      motivoLower.includes('expediente')
+    ) {
+      return {
+        titulo: 'Expediente Médico Completo',
+        tipoEtiqueta: 'Ficha Clínica Digital',
+        categoria: 'Perfil de Paciente',
+        detalle: 'Completaste con éxito tus datos personales, antecedentes de salud básicos e información de contacto para emergencias.',
+        comoSeObtuvo: 'Guardado y validación satisfactoria de tus datos clínicos y de contacto en tu perfil de paciente.',
+        icono: 'perfil',
+        badgeBg: 'bg-teal-50 dark:bg-teal-950/50 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800',
+        dotColor: 'bg-teal-500',
+      };
+    }
+
+    // 5. Canje de recompensa o cupones
+    if (
+      motivoLower.includes('canje') ||
+      motivoLower.includes('cupon') ||
+      motivoLower.includes('cupón')
+    ) {
+      const nombreRecompensa = rawMotivo.includes(':')
+        ? rawMotivo.split(':')[1]?.trim() || rawMotivo
+        : 'Cupón de Beneficio Canjeado';
+      return {
+        titulo: nombreRecompensa,
+        tipoEtiqueta: 'Beneficio Canjeado',
+        categoria: 'Tienda de Recompensas',
+        detalle: 'Canjeaste puntos acumulados por un cupón activo con código alfanumérico para aplicar en consulta o farmacia.',
+        comoSeObtuvo: 'Intercambio voluntario de puntos en el catálogo de beneficios NeoClínica.',
+        icono: 'canje',
+        badgeBg: 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800',
+        dotColor: 'bg-rose-500',
+      };
+    }
+
+    // 6. Citas médicas concluidas regulares
+    if (
+      motivoLower.includes('cita') ||
+      motivoLower.includes('consulta')
+    ) {
+      return {
+        titulo: 'Consulta Médica Realizada',
+        tipoEtiqueta: 'Atención Especializada',
+        categoria: 'Consulta Asistida',
+        detalle: 'Asististe y concluiste tu cita médica programada con tu especialista tratante.',
+        comoSeObtuvo: 'El especialista médico confirmó la realización y conclusión de tu atención clínica.',
+        icono: 'cita',
+        badgeBg: 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+        dotColor: 'bg-blue-500',
+      };
+    }
+
+    // 7. General / Fallback
     return {
-      tipoEtiqueta: 'Actividad de Lealtad',
-      categoria: 'Programa SaludYa',
-      detalle: rawMotivo || 'Puntos registrados en tu cuenta.',
+      titulo: rawMotivo || 'Actividad de Fidelidad',
+      tipoEtiqueta: 'Punto Registrado',
+      categoria: 'Programa NeoClínica',
+      detalle: rawMotivo ? `Movimiento registrado: ${rawMotivo}.` : 'Puntos procesados en tu cuenta.',
+      comoSeObtuvo: 'Actividad validada y registrada por el sistema de lealtad de NeoClínica.',
       icono: 'estrella',
+      badgeBg: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700',
+      dotColor: 'bg-slate-400',
     };
   };
 
@@ -265,13 +371,14 @@ function PuntosContent() {
   }
 
   return (
-    <div className="min-h-screen px-4 py-6 sm:px-8 lg:px-10 max-w-7xl mx-auto space-y-10 bg-slate-50 dark:bg-[#0B1120] text-slate-900 dark:text-white">
+    <div className="min-h-screen px-4 py-6 sm:px-8 lg:px-10 max-w-7xl mx-auto space-y-10 bg-[#F8F9FF] dark:bg-[#0B1120] text-slate-900 dark:text-white">
       
       {/* ─── Encabezado Principal ─── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <span className="text-xs font-black uppercase tracking-widest text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-3 py-1 rounded-full border border-blue-200/60 dark:border-blue-900/40 inline-flex items-center gap-1.5 mb-2">
-            <Sparkles className="h-3.5 w-3.5" /> Club de Beneficios
+          <span className="text-xs font-bold uppercase tracking-widest text-[#006194] dark:text-sky-300 bg-[#eff4ff] dark:bg-slate-800 px-3 py-1 rounded-full border border-slate-200/50 dark:border-slate-700/60 inline-flex items-center gap-1.5 mb-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#0284c7]" />
+            Club de Beneficios
           </span>
           <h1 className="text-3xl md:text-5xl font-black tracking-tight text-slate-900 dark:text-white">
             Puntos y Recompensas
@@ -283,66 +390,66 @@ function PuntosContent() {
 
         <Link
           href="/dashboard"
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-[#006194] dark:hover:text-sky-300 transition"
         >
           ← Volver al Dashboard
         </Link>
       </div>
 
-      {/* ─── Hero Loyalty Card (Taco Bell / Puma Rewards Style) ─── */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-white p-6 sm:p-8 md:p-10 shadow-xl border border-slate-700/60">
+      {/* ─── Hero Loyalty Card (Apple Minimalist Clinical - Blanco Capa 2) ─── */}
+      <div className="relative overflow-hidden rounded-3xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white p-6 sm:p-8 md:p-10 shadow-[0_2px_12px_rgba(11,28,48,0.03)] border border-slate-200/50 dark:border-slate-800">
         
-        {/* Glow de fondo decorativo */}
-        <div className="absolute -right-20 -top-20 h-72 w-72 rounded-full bg-blue-500/20 blur-3xl pointer-events-none" />
-        <div className="absolute -left-20 -bottom-20 h-72 w-72 rounded-full bg-indigo-500/15 blur-3xl pointer-events-none" />
+        {/* Glow de fondo decorativo etéreo */}
+        <div className="absolute -right-20 -top-20 h-72 w-72 rounded-full bg-[#eff4ff]/60 dark:bg-sky-950/20 blur-3xl pointer-events-none" />
+        <div className="absolute -left-20 -bottom-20 h-72 w-72 rounded-full bg-[#eff4ff]/40 dark:bg-slate-800/20 blur-3xl pointer-events-none" />
 
         <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
           
           {/* Columna Izquierda: Saldo Grande de Puntos */}
           <div className="lg:col-span-5 space-y-4">
-            <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 text-xs font-bold text-amber-300">
-              <Star className="h-4 w-4 fill-amber-300 text-amber-300" />
+            <div className="inline-flex items-center gap-2 bg-[#eff4ff] dark:bg-slate-800 px-3.5 py-1.5 rounded-full border border-slate-200/50 dark:border-slate-700/60 text-xs font-bold text-[#006194] dark:text-sky-300">
+              <Star className="h-3.5 w-3.5 fill-[#0284c7] text-[#0284c7]" />
               <span>SaludYa Rewards</span>
             </div>
 
             <div>
-              <p className="text-xs uppercase tracking-widest text-slate-300 font-bold">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                 Tus Puntos Disponibles
               </p>
               <div className="flex items-baseline gap-3 mt-1">
-                <span className="text-5xl sm:text-6xl md:text-7xl font-black tracking-tight text-white drop-shadow-sm">
+                <span className="text-5xl sm:text-6xl md:text-7xl font-black tracking-tight text-slate-900 dark:text-white drop-shadow-2xs">
                   {totalPuntos}
                 </span>
-                <span className="text-xl sm:text-2xl font-bold text-amber-400">
+                <span className="text-xl sm:text-2xl font-bold text-[#006194] dark:text-sky-400">
                   pts
                 </span>
               </div>
             </div>
 
-            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-sm">
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed max-w-sm font-medium">
               {totalPuntos >= 5
                 ? '¡Has alcanzado 5 puntos este mes! Aprovéchalos canjeando recompensas antes de fin de mes.'
                 : `Tienes ${totalPuntos} de 5 puntos posibles este mes. ¡Canjéalos por tus beneficios favoritos!`}
             </p>
           </div>
 
-          {/* Columna Derecha: Barra de Puntos del Mes (0 a 5 pts con marcas) */}
-          <div className="lg:col-span-7 bg-white/10 backdrop-blur-md border border-white/15 rounded-3xl p-5 sm:p-7 space-y-5">
+          {/* Columna Derecha: Barra de Puntos del Mes (Bandeja Capa 1) */}
+          <div className="lg:col-span-7 bg-[#eff4ff]/50 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/60 rounded-3xl p-5 sm:p-7 space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
-                  <Zap className="h-5 w-5 text-amber-400" /> Meta Mensual de Puntos
+                <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <Zap className="h-5 w-5 text-amber-500" /> Meta Mensual de Puntos
                 </h3>
-                <p className="text-xs text-slate-300 mt-0.5">
-                  Puedes ganar hasta <strong className="text-amber-300 font-black">{MAX_PUNTOS_MENSUALES} puntos</strong> cada mes
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Puedes ganar hasta <strong className="text-slate-900 dark:text-white font-bold">{MAX_PUNTOS_MENSUALES} puntos</strong> cada mes
                 </p>
               </div>
 
               <div className="text-right shrink-0">
-                <span className="text-2xl font-black text-amber-300">
-                  {puntosMes} <span className="text-sm font-semibold text-slate-300">/ {MAX_PUNTOS_MENSUALES} pts</span>
+                <span className="text-2xl font-black text-[#006194] dark:text-sky-400">
+                  {puntosMes} <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">/ {MAX_PUNTOS_MENSUALES} pts</span>
                 </span>
-                <p className="text-[11px] text-slate-300 font-medium">
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
                   {progresoPorcentaje}% alcanzado este mes
                 </p>
               </div>
@@ -350,16 +457,16 @@ function PuntosContent() {
 
             {/* Barra Visual de Puntos con Marcadores (1 a 5) */}
             <div className="space-y-3 pt-1">
-              <div className="relative h-4 w-full rounded-full bg-slate-800/90 overflow-hidden border border-white/20 p-0.5">
+              <div className="relative h-3.5 w-full rounded-full bg-slate-200/80 dark:bg-slate-700/80 overflow-hidden p-0.5 border border-slate-200/50 dark:border-slate-600/50">
                 <motion.div
-                  className="h-full rounded-full bg-gradient-to-r from-amber-400 via-yellow-400 to-emerald-400 shadow-md"
+                  className="h-full rounded-full bg-gradient-to-r from-[#0284c7] via-sky-400 to-emerald-400 shadow-2xs"
                   initial={{ width: 0 }}
                   animate={{ width: `${Math.max(progresoPorcentaje, 2)}%` }}
                   transition={{ duration: 0.9, ease: 'easeOut' }}
                 />
               </div>
 
-              {/* Marcadores de 1 a 5 puntos (Puma/Taco Bell milestone dots) */}
+              {/* Marcadores de 1 a 5 puntos */}
               <div className="grid grid-cols-5 gap-1 text-center">
                 {[1, 2, 3, 4, 5].map((punto) => {
                   const alcanzado = totalPuntos >= punto;
@@ -368,13 +475,13 @@ function PuntosContent() {
                       <div
                         className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-black transition-all ${
                           alcanzado
-                            ? 'bg-amber-400 text-slate-900 ring-2 ring-amber-300/60 shadow-sm'
-                            : 'bg-white/10 text-slate-400 border border-white/20'
+                            ? 'bg-[#006194] text-white ring-2 ring-[#006194]/20 shadow-xs'
+                            : 'bg-white dark:bg-slate-700 text-slate-400 dark:text-slate-400 border border-slate-200/80 dark:border-slate-600'
                         }`}
                       >
-                        {alcanzado ? '✓' : punto}
+                        {alcanzado ? <Check className="w-2.5 h-2.5" /> : punto}
                       </div>
-                      <span className={`text-[10px] font-semibold ${alcanzado ? 'text-amber-300 font-bold' : 'text-slate-400'}`}>
+                      <span className={`text-[10px] font-semibold ${alcanzado ? 'text-[#006194] dark:text-sky-300 font-bold' : 'text-slate-400 dark:text-slate-500'}`}>
                         {punto === 5 ? '5 pts (Máx)' : `${punto} pt`}
                       </span>
                     </div>
@@ -388,26 +495,57 @@ function PuntosContent() {
 
       </div>
 
-      {/* ─── IMPORTANTE: AVISO DESTACADO (LOS PUNTOS NO SON ACUMULABLES) ─── */}
-      <div className="rounded-2xl border-2 border-amber-400/80 bg-amber-50 dark:bg-amber-950/40 p-4 sm:p-5 text-amber-950 dark:text-amber-100 shadow-sm flex flex-col sm:flex-row items-start sm:items-center gap-4">
-        <div className="h-11 w-11 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 shadow-sm">
-          <AlertTriangle className="h-6 w-6 stroke-[2.5]" />
-        </div>
-
-        <div className="flex-1 space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-black uppercase tracking-wider bg-amber-200 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200 px-2 py-0.5 rounded">
-              Aviso Obligatorio
-            </span>
-            <h4 className="text-sm sm:text-base font-black text-amber-950 dark:text-amber-100">
-              Los puntos no son acumulables para meses posteriores
-            </h4>
+      {/* ─── Tarjeta de Código de Referido ─── */}
+      {referralCode && (
+        <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800 p-6 sm:p-8 shadow-[0_2px_12px_rgba(11,28,48,0.03)] flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all">
+          <div className="space-y-1.5 max-w-xl">
+            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-sky-400 bg-blue-50 dark:bg-blue-950/60 px-3 py-1 rounded-full border border-blue-200/60 dark:border-blue-900/40">
+              <Gift className="w-3.5 h-3.5" />
+              <span>Programa de Referidos NeoClínica</span>
+            </div>
+            <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
+              Invita a tus amigos y gana puntos
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
+              Comparte tu código personal con familiares y amigos.
+            </p>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500">
+              * Los puntos se acreditan automáticamente cuando el médico especialista inicie y concluya la primera cita agendada con tu código.
+            </p>
           </div>
-          <p className="text-xs sm:text-sm text-amber-900/90 dark:text-amber-200/90 leading-relaxed">
-            En SaludYa puedes ganar hasta un <strong>máximo de 5 puntos por mes</strong>. Si superas esos 5 puntos o no los canjeas dentro del mes, <strong>no se acumulan para el siguiente mes y se pierden</strong>. Te recomendamos canjear tus recompensas antes de que comience el nuevo mes.
-          </p>
+
+          <div className="bg-[#eff4ff]/60 dark:bg-slate-800/60 p-4 sm:p-5 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 flex flex-col sm:flex-row items-center gap-4 shrink-0 shadow-2xs">
+            <div className="text-center sm:text-left">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+                Tu Código de Referido
+              </span>
+              <span className="text-2xl font-black tracking-widest font-mono text-slate-900 dark:text-white">
+                {referralCode}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleCopyReferral(referralCode)}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-2 cursor-pointer shadow-2xs active:scale-95"
+              >
+                {copiedReferral ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                <span>{copiedReferral ? 'Copiado' : 'Copiar'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleShareReferral(referralCode)}
+                className="px-4 py-2.5 rounded-xl bg-[#006194] hover:bg-[#00517c] text-white text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-2xs active:scale-95"
+              >
+                <Share2 className="w-4 h-4" />
+                <span>Compartir</span>
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ══════════════════════════════════════════════════════════════════════
           SECCIÓN 1: CATÁLOGO DE RECOMPENSAS PARA CANJEAR
@@ -509,9 +647,9 @@ function PuntosContent() {
                       type="button"
                       onClick={() => handleCanjear(item)}
                       disabled={!canAfford || canjearMutation.isPending}
-                      className={`w-full py-3 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                      className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
                         canAfford
-                          ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-md active:scale-95'
+                          ? 'bg-[#006194] hover:bg-[#00517c] text-white shadow-xs active:scale-95'
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'
                       }`}
                     >
@@ -694,7 +832,7 @@ function PuntosContent() {
                     Acreditación automática
                   </span>
                   <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                    <Sparkles className="h-3 w-3" /> SaludYa Rewards
+                    <Award className="h-3 w-3" /> SaludYa Rewards
                   </span>
                 </div>
               </div>
@@ -814,32 +952,39 @@ function PuntosContent() {
 
                 const detalleInfo = getDetalleMovimiento(item);
 
+                const renderTransactionIcon = () => {
+                  if (detalleInfo.icono === 'referido') return <Users className="h-5 w-5" />;
+                  if (detalleInfo.icono === 'bienvenida') return <Gift className="h-5 w-5" />;
+                  if (detalleInfo.icono === 'resena') return <MessageSquare className="h-5 w-5" />;
+                  if (detalleInfo.icono === 'perfil') return <UserCheck className="h-5 w-5" />;
+                  if (detalleInfo.icono === 'canje') return <Gift className="h-5 w-5" />;
+                  if (detalleInfo.icono === 'cita') return <Calendar className="h-5 w-5" />;
+                  return esGanancia ? <ArrowUpRight className="h-5 w-5" /> : <ArrowDownRight className="h-5 w-5" />;
+                };
+
                 return (
                   <div
                     key={item.trpCodigo || item.TrpCodigo || item.id || item.hisCodigo || idx}
-                    className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-50/80 dark:hover:bg-slate-900/40 transition"
+                    className="p-4 sm:p-5 flex flex-col md:flex-row md:items-start justify-between gap-4 hover:bg-slate-50/80 dark:hover:bg-slate-900/40 transition"
                   >
                     <div className="flex items-start gap-3.5 min-w-0 flex-1">
                       <div
-                        className={`h-11 w-11 rounded-2xl flex items-center justify-center shrink-0 mt-0.5 ${
+                        className={`h-11 w-11 rounded-2xl flex items-center justify-center shrink-0 mt-0.5 border ${
                           esGanancia
-                            ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400'
-                            : 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
+                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border-emerald-200/60 dark:border-emerald-800/50'
+                            : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border-rose-200/60 dark:border-rose-800/50'
                         }`}
                       >
-                        {esGanancia ? <ArrowUpRight className="h-5 w-5" /> : <ArrowDownRight className="h-5 w-5" />}
+                        {renderTransactionIcon()}
                       </div>
 
-                      <div className="space-y-1 min-w-0 flex-1">
+                      <div className="space-y-1.5 min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <span
-                            className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded ${
-                              esGanancia
-                                ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                                : 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
-                            }`}
+                            className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded border inline-flex items-center gap-1.5 ${detalleInfo.badgeBg}`}
                           >
-                            {esGanancia ? 'Punto Obtenido' : 'Punto Canjeado'}
+                            <span className={`w-1.5 h-1.5 rounded-full ${detalleInfo.dotColor}`} />
+                            {detalleInfo.tipoEtiqueta}
                           </span>
                           <span className="text-[11px] font-semibold text-slate-400">
                             {detalleInfo.categoria}
@@ -847,12 +992,23 @@ function PuntosContent() {
                         </div>
 
                         <h4 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
-                          {motivoStr}
+                          {detalleInfo.titulo}
                         </h4>
 
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                        <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                           {detalleInfo.detalle}
                         </p>
+
+                        {/* Bloque explicativo detallado de cómo se obtuvieron los puntos */}
+                        <div className="mt-2 rounded-xl bg-slate-50/90 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800 p-2.5 text-xs text-slate-500 dark:text-slate-400 flex items-start gap-2">
+                          <Info className="h-3.5 w-3.5 text-blue-600 dark:text-sky-400 shrink-0 mt-0.5" />
+                          <div className="min-w-0 leading-relaxed">
+                            <span className="font-bold text-slate-700 dark:text-slate-200">
+                              {esGanancia ? '¿Cómo se obtuvieron? ' : 'Detalle de canje: '}
+                            </span>
+                            <span>{detalleInfo.comoSeObtuvo}</span>
+                          </div>
+                        </div>
 
                         <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium pt-0.5">
                           <Clock className="h-3 w-3" />

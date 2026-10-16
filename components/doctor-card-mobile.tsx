@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, memo } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import {
@@ -29,12 +29,14 @@ import { InsuranceLogoBadge } from '@/components/insurance-logo-badge';
 type DoctorCardMobileProps = {
   data: DoctorCardData;
   onVisit?: (data: DoctorCardData) => void;
+  onSelect?: (data: DoctorCardData) => void;
   isSelected?: boolean;
 };
 
-export function DoctorCardMobile({
+function DoctorCardMobileComponent({
   data,
   onVisit,
+  onSelect,
   isSelected = false,
 }: DoctorCardMobileProps) {
   const router = useRouter();
@@ -117,10 +119,14 @@ export function DoctorCardMobile({
     router.push(`/dashboard/agendar/${doctor.exp_codigo}`);
   };
 
-  // Al presionar la tarjeta general en móvil, navegar a ver perfil directamente
+  // Al presionar la tarjeta general en móvil, abrir detalle si onSelect está disponible, sino navegar a ver perfil
   const handleCardClick = () => {
-    onVisit?.(data);
-    router.push(`/dashboard/${doctor.exp_codigo}`);
+    if (onSelect) {
+      onSelect(data);
+    } else {
+      onVisit?.(data);
+      router.push(`/dashboard/${doctor.exp_codigo}`);
+    }
   };
 
   return (
@@ -217,7 +223,7 @@ export function DoctorCardMobile({
         {/* Fila de Calificación, Precio y Modalidades */}
         <div className="flex items-center gap-2 flex-wrap pt-0.5">
           {/* Calificación */}
-          {doctor.promedio_valoracion && doctor.promedio_valoracion > 0 ? (
+          {doctor.total_resenas > 0 && doctor.promedio_valoracion > 0 ? (
             <div className="flex items-center gap-0.5 text-[11px] font-bold text-slate-800 bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-200/60 leading-none">
               <Star className="w-3 h-3 fill-amber-400 text-amber-400 shrink-0" />
               <span>{doctor.promedio_valoracion.toFixed(1)}</span>
@@ -285,3 +291,17 @@ export function DoctorCardMobile({
     </div>
   );
 }
+
+function areDoctorCardMobilePropsEqual(prev: DoctorCardMobileProps, next: DoctorCardMobileProps) {
+  return (
+    prev.data.doctor.exp_codigo === next.data.doctor.exp_codigo &&
+    prev.data.fullName === next.data.fullName &&
+    prev.data.matchedSpecialty === next.data.matchedSpecialty &&
+    prev.data.matchedLocation === next.data.matchedLocation &&
+    prev.data.searchHighlight === next.data.searchHighlight &&
+    prev.isSelected === next.isSelected
+  );
+}
+
+export const DoctorCardMobile = memo(DoctorCardMobileComponent, areDoctorCardMobilePropsEqual);
+

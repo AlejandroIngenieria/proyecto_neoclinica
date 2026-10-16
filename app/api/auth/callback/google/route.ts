@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
       `<html>
         <head><title>Error OAuth</title></head>
         <body style="font-family: system-ui; padding: 40px; background: #0B1120; color: #fff; text-align: center;">
-          <h2 style="color: #EF4444;">❌ Error de Autorización</h2>
+          <h2 style="color: #EF4444;">Error de Autorización</h2>
           <p>${error}</p>
         </body>
       </html>`,
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
         `<html>
           <head><title>Error Canjeando Código</title></head>
           <body style="font-family: system-ui; padding: 40px; background: #0B1120; color: #fff; text-align: center;">
-            <h2 style="color: #EF4444;">❌ No se pudo obtener el Refresh Token</h2>
+            <h2 style="color: #EF4444;">No se pudo obtener el Refresh Token</h2>
             <p>${JSON.stringify(tokenData)}</p>
             <p><a href="/api/auth/callback/google" style="color: #38BDF8;">Reintentar autorización</a></p>
           </body>
@@ -152,7 +152,7 @@ export async function GET(request: NextRequest) {
         </head>
         <body>
           <div class="card">
-            <div class="badge">✓ Conexión Exitosa</div>
+            <div class="badge">Conexión Exitosa</div>
             <h1>¡Google Meet Vinculado!</h1>
             <p>Se ha generado el <strong>RefreshToken</strong> oficial y se ha guardado automáticamente en el archivo <code>appsettings.json</code> del backend.</p>
             <div class="token-box">${refreshToken}</div>
@@ -167,7 +167,7 @@ export async function GET(request: NextRequest) {
       `<html>
         <head><title>Error</title></head>
         <body style="font-family: system-ui; padding: 40px; background: #0B1120; color: #fff; text-align: center;">
-          <h2 style="color: #EF4444;">❌ Excepción al procesar token</h2>
+          <h2 style="color: #EF4444;">Excepción al procesar token</h2>
           <p>${err?.message || err}</p>
         </body>
       </html>`,

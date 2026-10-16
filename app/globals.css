@@ -4,12 +4,12 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #F9FAFB;
+  --background: #F8F9FF;
   --foreground: #111827;
   
-  --primary: #2563EB;
+  --primary: #0284C7;
   --on-primary: #ffffff;
-  --secondary: #1E40AF;
+  --secondary: #006194;
   --on-secondary: #ffffff;
   
   --surface: #FFFFFF;
@@ -40,10 +40,10 @@
 }
 
 .dark {
-  --background: #111827;
+  --background: #0B1120;
   --foreground: #F9FAFB;
   
-  --primary: #3B82F6; /* Lighter primary for dark mode */
+  --primary: #38BDF8; /* Clinical sky blue for dark mode */
   --on-primary: #ffffff;
   --secondary: #60A5FA; /* Lighter secondary for dark mode */
   --on-secondary: #ffffff;

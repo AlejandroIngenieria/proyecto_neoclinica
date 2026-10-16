@@ -418,7 +418,7 @@ export function getDoctorGroupedServices(doctor: DoctorResponse): LocationServic
 
         return {
           ...s,
-          syp_codigo: s.syp_codigo ? s.syp_codigo * 100 + idx : (idx + 1) * 1000 + sIdx,
+          syp_codigo: s.syp_codigo ?? (idx + 1) * 1000 + sIdx,
           syp_costo_total: finalCost,
           cli_descripcion: clinicName,
           modalidad: 'presencial',
@@ -465,7 +465,7 @@ export function getDoctorGroupedServices(doctor: DoctorResponse): LocationServic
     if (domServices.length === 0) {
       domServices = [
         {
-          syp_codigo: 9001,
+          syp_codigo: rawServices[0]?.syp_codigo ?? 9001,
           servicio: `Consulta Médica a Domicilio`,
           syp_costo_total: domBasePrice,
           syp_costo_sin_iva: domBasePrice,
@@ -477,7 +477,7 @@ export function getDoctorGroupedServices(doctor: DoctorResponse): LocationServic
         },
         ...rawServices.slice(1, 4).map((s, sIdx) => ({
           ...s,
-          syp_codigo: 9002 + sIdx,
+          syp_codigo: s.syp_codigo ?? 9002 + sIdx,
           servicio: `${s.servicio} a Domicilio`,
           syp_costo_total: Math.round(((s.syp_costo_total || domBasePrice) * 1.15) / 10) * 10,
           syp_observaciones: zonasStr ? `Atención a domicilio en ${zonasStr}` : s.syp_observaciones,

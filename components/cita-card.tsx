@@ -10,7 +10,7 @@ import type { CitaListDto, SolicitudCambioDto } from '@/types/citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { usePagarCita, isCitaPasada, useMarcarLlegadaClinica } from '@/hooks/use-flujo-citas';
 import { useDropzone } from 'react-dropzone';
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, memo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
@@ -32,7 +32,7 @@ type CitaCardProps = {
   onVerResena?: (cita: CitaListDto) => void;
 };
 
-export function CitaCard({
+function CitaCardComponent({
   cita,
   onModify,
   onCancel,
@@ -756,7 +756,7 @@ export function CitaCard({
 </head>
 <body>
   <div class="no-print no-print-bar">
-    <button class="btn-print" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
+    <button class="btn-print" onclick="window.print()">Imprimir / Guardar como PDF</button>
     <button class="btn-close" onclick="window.close()">Cerrar</button>
   </div>
 
@@ -891,20 +891,20 @@ export function CitaCard({
         {/* Modal 1: Archivos y Documentos Adjuntos */}
         {mostrarModalArchivos && createPortal(
           <div 
-            className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in"
+            className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-slate-950/40 dark:bg-slate-950/70 backdrop-blur-md animate-in fade-in"
             onClick={(e) => { e.stopPropagation(); setMostrarModalArchivos(false); }}
           >
             <div 
-              className="relative w-full max-w-2xl bg-white dark:bg-[#0F172A] rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[85vh] flex flex-col"
+              className="relative w-full max-w-2xl bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 shadow-[0_20px_60px_rgba(11,28,48,0.12)] border border-slate-200/50 dark:border-slate-800 text-slate-900 dark:text-slate-100 max-h-[85vh] flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 mb-6">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800/80 mb-6">
                 <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 rounded-2xl">
+                  <div className="p-2.5 bg-[#eff4ff] dark:bg-slate-800 text-[#006194] dark:text-sky-400 border border-[#006194]/20 dark:border-slate-700/60 rounded-2xl">
                     <Paperclip className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-black text-slate-900 dark:text-white leading-tight">Archivos y Exámenes Adjuntos</h3>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white leading-tight">Archivos y Exámenes Adjuntos</h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
                       {cita.pacienteNombre ? `Paciente: ${cita.pacienteNombre}` : ''} ({format(dateObj, "d 'de' MMMM", { locale: es })})
                     </p>
@@ -913,9 +913,10 @@ export function CitaCard({
                 <button
                   type="button"
                   onClick={() => setMostrarModalArchivos(false)}
-                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition cursor-pointer"
+                  className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                  aria-label="Cerrar modal"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
@@ -973,25 +974,25 @@ export function CitaCard({
         {/* Modal de Pago: Subir comprobante de transferencia */}
         {mostrarModalPago && createPortal(
           <div
-            className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in"
+            className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-slate-950/40 dark:bg-slate-950/70 backdrop-blur-md animate-in fade-in"
             onClick={(e) => { e.stopPropagation(); if (!pagarCitaMutation.isPending) { setMostrarModalPago(false); setArchivoPago(null); } }}
           >
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 12 }}
-              transition={{ duration: 0.2 }}
-              className="relative w-full max-w-lg bg-white dark:bg-[#0F172A] rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 dark:border-slate-800"
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 shadow-[0_20px_60px_rgba(11,28,48,0.12)] border border-slate-200/50 dark:border-slate-800 text-slate-900 dark:text-slate-100"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
-              <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 mb-6">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800/80 mb-6">
                 <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-2xl">
+                  <div className="p-2.5 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-2xl border border-amber-200/60 dark:border-amber-800/40">
                     <CreditCard className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-black text-slate-900 dark:text-white leading-tight">Confirmar Pago</h3>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white leading-tight">Confirmar Pago</h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
                       {cita.tipoPagoDescripcion ?? 'Transferencia'} · Q{cita.ctaPrecio.toFixed(2)}
                     </p>
@@ -1001,9 +1002,10 @@ export function CitaCard({
                   type="button"
                   disabled={pagarCitaMutation.isPending}
                   onClick={() => { setMostrarModalPago(false); setArchivoPago(null); }}
-                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition cursor-pointer disabled:opacity-50"
+                  className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer disabled:opacity-50"
+                  aria-label="Cerrar modal"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
@@ -1063,7 +1065,7 @@ export function CitaCard({
                   type="button"
                   disabled={pagarCitaMutation.isPending}
                   onClick={() => { setMostrarModalPago(false); setArchivoPago(null); }}
-                  className="flex-1 h-11 rounded-2xl border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition disabled:opacity-50 cursor-pointer"
+                  className="flex-1 h-11 rounded-xl border border-slate-200/80 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition disabled:opacity-50 cursor-pointer"
                 >
                   Cancelar
                 </button>
@@ -1071,7 +1073,7 @@ export function CitaCard({
                   type="button"
                   disabled={pagarCitaMutation.isPending}
                   onClick={handleSubmitPago}
-                  className="flex-1 h-11 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-black shadow-md transition active:scale-[.98] disabled:opacity-60 cursor-pointer inline-flex items-center justify-center gap-2"
+                  className="flex-1 h-11 rounded-xl bg-[#006194] hover:bg-[#00517c] text-white text-xs font-semibold shadow-xs transition active:scale-95 disabled:opacity-60 cursor-pointer inline-flex items-center justify-center gap-2"
                 >
                   {pagarCitaMutation.isPending ? (
                     <><Loader2 className="w-4 h-4 animate-spin" /><span>Enviando...</span></>
@@ -1090,20 +1092,20 @@ export function CitaCard({
         {/* Modal 2: Información y Resumen Clínico */}
         {mostrarModalInfo && createPortal(
           <div 
-            className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in"
+            className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-slate-950/40 dark:bg-slate-950/70 backdrop-blur-md animate-in fade-in"
             onClick={(e) => { e.stopPropagation(); setMostrarModalInfo(false); }}
           >
             <div 
-              className="relative w-full max-w-2xl bg-white dark:bg-[#0F172A] rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[85vh] flex flex-col"
+              className="relative w-full max-w-2xl bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 shadow-[0_20px_60px_rgba(11,28,48,0.12)] border border-slate-200/50 dark:border-slate-800 text-slate-900 dark:text-slate-100 max-h-[85vh] flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-start justify-between pb-4 border-b border-slate-100 dark:border-slate-800 mb-5">
+              <div className="flex items-start justify-between pb-4 border-b border-slate-100 dark:border-slate-800/80 mb-5">
                 <div className="flex items-start gap-3">
-                  <div className="p-2.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-2xl shrink-0 mt-0.5">
+                  <div className="p-2.5 bg-[#eff4ff] dark:bg-slate-800 text-[#006194] dark:text-sky-400 border border-[#006194]/20 dark:border-slate-700/60 rounded-2xl shrink-0 mt-0.5">
                     <ClipboardList className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-black text-slate-900 dark:text-white leading-tight">
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white leading-tight">
                       Información
                     </h3>
                     <div className="flex flex-wrap items-center gap-2 mt-1.5">
@@ -1585,10 +1587,10 @@ export function CitaCard({
                       setMostrarModalInfo(false);
                       router.push(colaUrl);
                     }}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-bold transition active:scale-95 cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-[#eff4ff] hover:bg-[#e0ecff] dark:bg-slate-800 dark:hover:bg-slate-750 text-[#006194] dark:text-sky-300 border border-slate-200/60 dark:border-slate-700/60 text-xs font-semibold transition active:scale-95 cursor-pointer"
                     title="Ver cola y turnos de atención en la fecha de esta cita"
                   >
-                    <Activity className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <Activity className="w-4 h-4 text-[#006194] dark:text-sky-400" />
                     <span>Ver cola de esta fecha</span>
                   </button>
                   {isCompletedState && (
@@ -1598,7 +1600,7 @@ export function CitaCard({
                         e.stopPropagation();
                         handleImprimirRecetaPdf();
                       }}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition active:scale-95 cursor-pointer"
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#006194] hover:bg-[#00517c] text-white text-xs font-semibold shadow-xs transition active:scale-95 cursor-pointer"
                       title="Descargar o imprimir informe clínico y receta médica en PDF"
                     >
                       <FileText className="w-4 h-4" />
@@ -1609,7 +1611,7 @@ export function CitaCard({
                 <button
                   type="button"
                   onClick={() => setMostrarModalInfo(false)}
-                  className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition active:scale-95 cursor-pointer"
+                  className="px-5 py-2.5 rounded-xl border border-slate-200/80 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white text-xs font-semibold transition active:scale-95 cursor-pointer"
                 >
                   Cerrar
                 </button>
@@ -1622,32 +1624,33 @@ export function CitaCard({
         {/* Modal 3: Ver Reseña (Solo Lectura) */}
         {mostrarModalResena && createPortal(
           <div 
-            className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in"
+            className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-slate-950/40 dark:bg-slate-950/70 backdrop-blur-md animate-in fade-in"
             onClick={(e) => { e.stopPropagation(); setMostrarModalResena(false); }}
           >
             <div 
-              className="relative w-full max-w-lg bg-white dark:bg-[#0F172A] rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col"
+              className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 shadow-[0_20px_60px_rgba(11,28,48,0.12)] border border-slate-200/50 dark:border-slate-800 text-slate-900 dark:text-slate-100 flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 mb-6">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800/80 mb-6">
                 <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-amber-50 dark:bg-amber-900/30 text-amber-500 rounded-2xl">
+                  <div className="p-2.5 bg-amber-50 dark:bg-amber-900/30 text-amber-500 rounded-2xl border border-amber-200/60 dark:border-amber-800/40">
                     <Star className="w-5 h-5 fill-amber-400 text-amber-400" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-black text-slate-900 dark:text-white leading-tight">Reseña de la Consulta</h3>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white leading-tight">Reseña de la Consulta</h3>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <Lock className="w-3 h-3 text-slate-400" />
-                      <span className="text-xs font-bold text-slate-400 dark:text-slate-500">Solo lectura • No editable</span>
+                      <span className="text-xs font-semibold text-slate-400 dark:text-slate-500">Solo lectura • No editable</span>
                     </div>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setMostrarModalResena(false)}
-                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition cursor-pointer"
+                  className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                  aria-label="Cerrar modal"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
@@ -1687,11 +1690,11 @@ export function CitaCard({
                 </div>
               </div>
 
-              <div className="pt-5 mt-5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end">
+              <div className="pt-5 mt-5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-end">
                 <button
                   type="button"
                   onClick={() => setMostrarModalResena(false)}
-                  className="px-6 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition active:scale-95 cursor-pointer"
+                  className="px-6 py-2.5 rounded-xl border border-slate-200/80 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white text-xs font-semibold transition active:scale-95 cursor-pointer"
                 >
                   Cerrar
                 </button>
@@ -1761,10 +1764,10 @@ export function CitaCard({
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); router.push(colaUrl); }}
-          className={`${btnBaseClass} bg-sky-50 dark:bg-sky-950/50 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800/80`}
+          className={`${btnBaseClass} bg-[#eff4ff] dark:bg-slate-800 hover:bg-[#e0ecff] dark:hover:bg-slate-750 text-[#006194] dark:text-sky-300 border border-slate-200/60 dark:border-slate-700/60`}
           title="Ver cola y turnos de atención en la fecha de esta cita"
         >
-          <Activity className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+          <Activity className="w-3.5 h-3.5 text-[#006194] dark:text-sky-400 shrink-0" />
           <span className="truncate">Ver cola</span>
         </button>
 
@@ -1943,7 +1946,7 @@ export function CitaCard({
     return (
       <div
         onClick={() => setMostrarModalInfo(true)}
-        className={`w-full flex flex-col bg-white dark:bg-[#0B1120] border border-slate-200/90 dark:border-slate-800 rounded-2xl overflow-hidden hover:shadow-md transition-shadow cursor-pointer ${
+        className={`w-full flex flex-col bg-white dark:bg-[#0B1120] border border-slate-200/40 dark:border-slate-800/60 rounded-2xl overflow-hidden shadow-[0_2px_12px_rgba(11,28,48,0.03)] hover:shadow-[0_4px_20px_rgba(11,28,48,0.06)] hover:border-slate-300/80 dark:hover:border-slate-700/80 transition-all cursor-pointer ${
           isCancelada || isNoAsistio ? 'opacity-85' : ''
         }`}
       >
@@ -1953,7 +1956,7 @@ export function CitaCard({
           {/* Izquierda: Info del Médico y Consulta */}
           <div className="flex gap-4 items-start min-w-0 flex-1">
             {/* Avatar Doctor */}
-            <div className={`w-14 h-14 rounded-2xl overflow-hidden object-cover border border-slate-200/80 dark:border-slate-700 shrink-0 relative bg-slate-100 dark:bg-slate-800 flex items-center justify-center ${
+            <div className={`w-14 h-14 rounded-2xl overflow-hidden object-cover border border-slate-200/50 dark:border-slate-700 shrink-0 relative bg-slate-100 dark:bg-slate-800 flex items-center justify-center ${
               isCancelada || isNoAsistio ? 'opacity-70 grayscale-[40%]' : ''
             }`}>
               {isLoading ? (
@@ -1971,7 +1974,7 @@ export function CitaCard({
                 <h3 className="text-[17px] font-bold text-slate-900 dark:text-white leading-tight">
                   Dr. {cita.medicoNombre}
                 </h3>
-                <BadgeCheck className="w-4 h-4 text-blue-500 fill-blue-50 dark:fill-blue-950 shrink-0" />
+                <BadgeCheck className="w-4 h-4 text-[#006194] dark:text-sky-400 fill-[#eff4ff] dark:fill-slate-900 shrink-0" />
               </div>
               <p className="text-[13px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
                 {cita.medicoEspecialidad || doctor?.exp_profesion || 'Médico y Cirujano'} · {clinicaNombreReal || 'Centro Médico SaludYa'}
@@ -1981,11 +1984,11 @@ export function CitaCard({
               <div className="flex flex-wrap items-center gap-2 mt-3 text-[12px] font-medium text-slate-600 dark:text-slate-300">
                 <div className="flex items-center gap-1.5 shrink-0">
                   {cita.ctaModalidad === 'virtual' ? (
-                    <Video className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                    <Video className="w-3.5 h-3.5 text-[#006194] dark:text-sky-400 shrink-0" />
                   ) : cita.ctaModalidad === 'domicilio' ? (
-                    <Home className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                    <Home className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   ) : (
-                    <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                    <Building2 className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 shrink-0" />
                   )}
                   <span>{getModalityLabelHeader(cita.ctaModalidad)}</span>
                 </div>
@@ -2000,8 +2003,8 @@ export function CitaCard({
                 <span className="text-slate-300 dark:text-slate-600">/</span>
 
                 {cita.ctaModalidad === 'virtual' ? (
-                  <div className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 shrink-0">
-                    <div className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400 shrink-0" />
+                  <div className="flex items-center gap-1.5 text-[#006194] dark:text-sky-400 shrink-0">
+                    <div className="w-1.5 h-1.5 rounded-full bg-[#006194] dark:bg-sky-400 shrink-0" />
                     <span>
                       {cita.enlaceVideollamada ? 'Videollamada disponible' : 'Enlace en sala de espera'}
                     </span>
@@ -2026,7 +2029,7 @@ export function CitaCard({
             </div>
             <div className="flex items-center gap-1 mt-3 text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase">
               <span>Honorario:</span>
-              <span className="text-[15px] font-bold text-blue-600 dark:text-blue-400 normal-case ml-1">
+              <span className="text-[15px] font-bold text-[#006194] dark:text-sky-400 normal-case ml-1">
                 Q{(Number(cita.ctaPrecio) || 0).toFixed(2)}
               </span>
               <span className="normal-case font-normal text-slate-400 dark:text-slate-500">
@@ -2038,7 +2041,7 @@ export function CitaCard({
         </div>
 
         {/* 2. Sección Inferior (Estado y Acciones - Fondo Gris/Azul Muy Pálido) */}
-        <div className="flex flex-col sm:flex-row items-center justify-between px-5 py-3 bg-[#f8f9fc] dark:bg-slate-900/60 border-t border-slate-100 dark:border-slate-800 gap-3">
+        <div className="flex flex-col sm:flex-row items-center justify-between px-5 py-3 bg-[#eff4ff]/40 dark:bg-slate-900/60 border-t border-slate-100/80 dark:border-slate-800/60 gap-3">
           
           {/* Izquierda: Estados */}
           <div className="flex items-center gap-3 text-[12px] w-full sm:w-auto justify-between sm:justify-start">
@@ -2057,7 +2060,7 @@ export function CitaCard({
           <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-end">
             
             {/* Contenedor Píldora para Íconos */}
-            <div className="flex items-center gap-0.5 sm:gap-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-1 shadow-2xs">
+            <div className="flex items-center gap-0.5 sm:gap-1 bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 rounded-xl p-1 shadow-2xs">
               {/* Información */}
               <button
                 type="button"
@@ -2065,7 +2068,7 @@ export function CitaCard({
                   e.stopPropagation();
                   setMostrarModalInfo(true);
                 }}
-                className="p-1.5 text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700/60 rounded-md transition-colors cursor-pointer"
+                className="p-1.5 text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700/60 rounded-lg transition-colors cursor-pointer"
                 title="Información detallada de la cita"
               >
                 <Info className="w-4 h-4" />
@@ -2079,7 +2082,7 @@ export function CitaCard({
                     e.stopPropagation();
                     onModify(cita);
                   }}
-                  className="p-1.5 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-md transition-colors cursor-pointer"
+                  className="p-1.5 text-slate-500 hover:text-[#006194] dark:hover:text-sky-400 hover:bg-[#eff4ff] dark:hover:bg-blue-950/50 rounded-lg transition-colors cursor-pointer"
                   title="Reprogramar cita"
                 >
                   <CalendarClock className="w-4 h-4" />
@@ -2094,7 +2097,7 @@ export function CitaCard({
                     e.stopPropagation();
                     handleNuevaCita();
                   }}
-                  className="p-1.5 text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-md transition-colors cursor-pointer"
+                  className="p-1.5 text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-lg transition-colors cursor-pointer"
                   title="Agendar nueva cita con este médico"
                 >
                   <CalendarPlus className="w-4 h-4" />
@@ -2109,7 +2112,7 @@ export function CitaCard({
                     e.stopPropagation();
                     setMostrarModalResena(true);
                   }}
-                  className="p-1.5 text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-md transition-colors cursor-pointer"
+                  className="p-1.5 text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-lg transition-colors cursor-pointer"
                   title={`Ver reseña (${cita.ctaCalificacion}/5)`}
                 >
                   <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
@@ -2121,7 +2124,7 @@ export function CitaCard({
                     e.stopPropagation();
                     router.push(`/paciente/resenas/nueva?cita=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}`);
                   }}
-                  className="p-1.5 text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-md transition-colors cursor-pointer"
+                  className="p-1.5 text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-lg transition-colors cursor-pointer"
                   title="Escribir reseña"
                 >
                   <Star className="w-4 h-4" />
@@ -2137,7 +2140,7 @@ export function CitaCard({
                       e.stopPropagation();
                       onUnlinkGroup(cita);
                     }}
-                    className="p-1.5 text-slate-500 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-md transition-colors cursor-pointer"
+                    className="p-1.5 text-slate-500 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-lg transition-colors cursor-pointer"
                     title={`Quitar del grupo: ${cita.grupoTema || 'Grupo'}`}
                   >
                     <FolderMinus className="w-4 h-4" />
@@ -2151,7 +2154,7 @@ export function CitaCard({
                       e.stopPropagation();
                       onLinkGroup(cita);
                     }}
-                    className="p-1.5 text-slate-500 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/50 rounded-md transition-colors cursor-pointer"
+                    className="p-1.5 text-slate-500 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/50 rounded-lg transition-colors cursor-pointer"
                     title="Incluir cita en un grupo"
                   >
                     <FolderPlus className="w-4 h-4" />
@@ -2166,7 +2169,7 @@ export function CitaCard({
                     ref={navButtonRef}
                     type="button"
                     onClick={handleToggleNavMenu}
-                    className="p-1.5 text-slate-500 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/50 rounded-md transition-colors cursor-pointer"
+                    className="p-1.5 text-slate-500 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/50 rounded-lg transition-colors cursor-pointer"
                     title="Cómo llegar (Waze / Google Maps)"
                   >
                     <Navigation className="w-4 h-4" />
@@ -2185,7 +2188,7 @@ export function CitaCard({
                         left: `${menuPos.left}px`,
                         zIndex: 999999,
                       }}
-                      className="min-w-[160px] overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-1.5 shadow-2xl text-slate-800 dark:text-slate-100"
+                      className="min-w-[160px] overflow-hidden rounded-2xl border border-slate-200/60 dark:border-slate-800 bg-white dark:bg-slate-900 p-1.5 shadow-2xl text-slate-800 dark:text-slate-100"
                     >
                       <p className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
                         ¿Cómo llegar?
@@ -2198,9 +2201,9 @@ export function CitaCard({
                           e.stopPropagation();
                           setIsNavMenuOpen(false);
                         }}
-                        className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-950/50 hover:text-blue-600 dark:hover:text-blue-400 transition cursor-pointer"
+                        className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-[#eff4ff] dark:hover:bg-blue-950/50 hover:text-[#006194] dark:hover:text-sky-400 transition cursor-pointer"
                       >
-                        <MapPin className="h-3.5 w-3.5 text-blue-600" />
+                        <MapPin className="h-3.5 w-3.5 text-[#006194]" />
                         Google Maps
                       </a>
                       <a
@@ -2229,7 +2232,7 @@ export function CitaCard({
                   e.stopPropagation();
                   handleImprimirRecetaPdf();
                 }}
-                className="p-1.5 text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700/60 rounded-md transition-colors cursor-pointer"
+                className="p-1.5 text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700/60 rounded-lg transition-colors cursor-pointer"
                 title="Imprimir resumen o receta en PDF"
               >
                 <Printer className="w-4 h-4" />
@@ -2243,7 +2246,7 @@ export function CitaCard({
                     e.stopPropagation();
                     onCancel(cita);
                   }}
-                  className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 rounded-md transition-colors cursor-pointer"
+                  className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 rounded-lg transition-colors cursor-pointer"
                   title="Cancelar cita médica"
                 >
                   <XCircle className="w-4 h-4" />
@@ -2256,7 +2259,7 @@ export function CitaCard({
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); onCancelarSolicitud?.(solicitudCambio); }}
-                    className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-md transition-colors cursor-pointer"
+                    className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors cursor-pointer"
                     title="Cancelar solicitud de intercambio de horario"
                   >
                     <Clock className="w-4 h-4" />
@@ -2265,7 +2268,7 @@ export function CitaCard({
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); onResponderSolicitud?.(solicitudCambio); }}
-                    className="p-1.5 text-orange-600 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950/50 rounded-md transition-colors cursor-pointer animate-pulse"
+                    className="p-1.5 text-orange-600 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950/50 rounded-lg transition-colors cursor-pointer animate-pulse"
                     title="Responder solicitud de intercambio de horario"
                   >
                     <ArrowLeftRight className="w-4 h-4" />
@@ -2281,14 +2284,14 @@ export function CitaCard({
                 target="_blank"
                 rel="noreferrer"
                 onClick={(e) => e.stopPropagation()}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[13px] font-bold flex items-center gap-2 transition-colors shadow-xs shrink-0 cursor-pointer"
+                className="bg-[#006194] hover:bg-[#00517c] text-white px-4 py-2 rounded-xl text-[13px] font-bold flex items-center gap-2 transition-all shadow-xs shrink-0 cursor-pointer"
               >
                 <Video className="w-4 h-4" />
                 <span>Abrir Consulta</span>
               </a>
             ) : canMarcarLlegada ? (
               ctaEnClinica ? (
-                <div className="bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800 px-3.5 py-2 rounded-lg text-[13px] font-bold flex items-center gap-1.5 shadow-2xs shrink-0">
+                <div className="bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800 px-3.5 py-2 rounded-xl text-[13px] font-bold flex items-center gap-1.5 shadow-2xs shrink-0">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                   <span>En la clínica</span>
                 </div>
@@ -2297,7 +2300,7 @@ export function CitaCard({
                   type="button"
                   disabled={marcarLlegadaMutation.isPending}
                   onClick={handleMarcarLlegada}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-[13px] font-bold flex items-center gap-2 transition-colors shadow-xs shrink-0 cursor-pointer"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-[13px] font-bold flex items-center gap-2 transition-colors shadow-xs shrink-0 cursor-pointer"
                 >
                   {marcarLlegadaMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Building2 className="w-4 h-4" />}
                   <span>Llegué a clínica</span>
@@ -2307,7 +2310,7 @@ export function CitaCard({
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); router.push(colaUrl); }}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[13px] font-bold flex items-center gap-2 transition-colors shadow-xs shrink-0 cursor-pointer"
+                className="bg-[#006194] hover:bg-[#00517c] text-white px-4 py-2 rounded-xl text-[13px] font-bold flex items-center gap-2 transition-all shadow-xs shrink-0 cursor-pointer"
               >
                 <Activity className="w-4 h-4" />
                 <span>Ver Cola</span>
@@ -2319,7 +2322,7 @@ export function CitaCard({
                   e.stopPropagation();
                   router.push(`/paciente/resenas/nueva?cita=${cita.ctaCodigo}&doc=${cita.ctaCoddoc}`);
                 }}
-                className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-[13px] font-bold flex items-center gap-2 transition-colors shadow-xs shrink-0 cursor-pointer"
+                className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-xl text-[13px] font-bold flex items-center gap-2 transition-colors shadow-xs shrink-0 cursor-pointer"
               >
                 <Star className="w-4 h-4 fill-white" />
                 <span>Calificar</span>
@@ -2328,7 +2331,7 @@ export function CitaCard({
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); handleImprimirRecetaPdf(); }}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[13px] font-bold flex items-center gap-2 transition-colors shadow-xs shrink-0 cursor-pointer"
+                className="bg-[#006194] hover:bg-[#00517c] text-white px-4 py-2 rounded-xl text-[13px] font-bold flex items-center gap-2 transition-all shadow-xs shrink-0 cursor-pointer"
               >
                 <FileText className="w-4 h-4" />
                 <span>Ver Receta</span>
@@ -2337,7 +2340,7 @@ export function CitaCard({
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); handleNuevaCita(); }}
-                className="bg-slate-700 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-[13px] font-bold flex items-center gap-2 transition-colors shadow-xs shrink-0 cursor-pointer"
+                className="bg-slate-700 hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-[13px] font-bold flex items-center gap-2 transition-colors shadow-xs shrink-0 cursor-pointer"
               >
                 <CalendarPlus className="w-4 h-4" />
                 <span>Reagendar</span>
@@ -2359,10 +2362,10 @@ export function CitaCard({
 
   if (layout === 'series-child') {
     return (
-      <div className={`group relative flex flex-col rounded-xl border shadow-sm transition-all overflow-visible py-3 px-4 w-full ${
+      <div className={`group relative flex flex-col rounded-2xl border shadow-sm transition-all overflow-visible py-3 px-4 w-full ${
         isIndependizado
-          ? 'bg-slate-50/80 dark:bg-slate-900/60 border-slate-300 dark:border-slate-700 opacity-90'
-          : 'bg-white dark:bg-[#0B1120] border-slate-100 dark:border-slate-800 hover:shadow hover:border-sky-200'
+          ? 'bg-slate-50/80 dark:bg-slate-900/60 border-slate-200/80 dark:border-slate-700 opacity-90'
+          : 'bg-white dark:bg-[#0B1120] border-slate-200/40 dark:border-slate-800/60 hover:shadow-md hover:border-slate-300'
       }`}>
         {/* Botón de anclar en la esquina superior derecha con hover suave */}
         {renderPinButton()}
@@ -2434,10 +2437,10 @@ export function CitaCard({
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); router.push(colaUrl); }}
-                    className="px-2 py-1 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 hover:bg-blue-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-blue-200/50 dark:border-blue-800/40 cursor-pointer"
+                    className="px-2 py-1 bg-[#eff4ff] text-[#006194] dark:bg-slate-800 dark:text-sky-300 hover:bg-[#e0ecff] dark:hover:bg-slate-750 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-slate-200/50 dark:border-slate-700/60 cursor-pointer"
                     title="Ver cola y turnos de atención en la fecha de esta cita"
                   >
-                    <Activity className="w-3 h-3 text-blue-600 dark:text-blue-400" /> Ver cola
+                    <Activity className="w-3 h-3 text-[#006194] dark:text-sky-400" /> Ver cola
                   </button>
                   <button
                     type="button"
@@ -2463,15 +2466,15 @@ export function CitaCard({
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); router.push(colaUrl); }}
-                    className="px-2 py-1 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 hover:bg-blue-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-blue-200/50 dark:border-blue-800/40 cursor-pointer"
+                    className="px-2 py-1 bg-[#eff4ff] text-[#006194] dark:bg-slate-800 dark:text-sky-300 hover:bg-[#e0ecff] dark:hover:bg-slate-750 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-slate-200/50 dark:border-slate-700/60 cursor-pointer"
                     title="Ver cola y turnos de atención en la fecha de esta cita"
                   >
-                    <Activity className="w-3 h-3 text-blue-600 dark:text-blue-400" /> Ver cola
+                    <Activity className="w-3 h-3 text-[#006194] dark:text-sky-400" /> Ver cola
                   </button>
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); setMostrarModalInfo(true); }}
-                    className="px-2 py-1 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 hover:bg-blue-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-blue-200/50 dark:border-blue-800/40 cursor-pointer"
+                    className="px-2 py-1 bg-[#eff4ff] text-[#006194] dark:bg-slate-800 dark:text-sky-300 hover:bg-[#e0ecff] dark:hover:bg-slate-750 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-slate-200/50 dark:border-slate-700/60 cursor-pointer"
                     title="Ver detalle de la cita"
                   >
                     <ClipboardList className="w-3 h-3 text-blue-600 dark:text-blue-400" /> Detalle
@@ -2560,20 +2563,20 @@ export function CitaCard({
                         e.stopPropagation();
                         router.push(colaUrl);
                       }}
-                      className="px-2 py-1 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 hover:bg-blue-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-blue-200/50 dark:border-blue-800/40 cursor-pointer"
+                      className="px-2 py-1 bg-[#eff4ff] text-[#006194] dark:bg-slate-800 dark:text-sky-300 hover:bg-[#e0ecff] dark:hover:bg-slate-750 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-slate-200/50 dark:border-slate-700/60 cursor-pointer"
                       title="Ver sala de espera y cola de atención"
                     >
-                      <Activity className="w-3 h-3 text-blue-600 dark:text-blue-400" /> Ver cola
+                      <Activity className="w-3 h-3 text-[#006194] dark:text-sky-400" /> Ver cola
                     </button>
                   )}
 
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); setMostrarModalInfo(true); }}
-                    className="px-2 py-1 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 hover:bg-blue-100 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-blue-200/50 dark:border-blue-800/40 cursor-pointer"
+                    className="px-2 py-1 bg-[#eff4ff] text-[#006194] dark:bg-slate-800 dark:text-sky-300 hover:bg-[#e0ecff] dark:hover:bg-slate-750 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-slate-200/50 dark:border-slate-700/60 cursor-pointer"
                     title="Ver información de la cita"
                   >
-                    <ClipboardList className="w-3 h-3 text-blue-600 dark:text-blue-400" /> Detalle
+                    <ClipboardList className="w-3 h-3 text-[#006194] dark:text-sky-400" /> Detalle
                   </button>
 
                   {!isIndependizado && (
@@ -2633,3 +2636,18 @@ export function CitaCard({
   // === CARD LAYOUT (Bento Action Rail) ===
   return renderBentoCard();
 }
+
+function areCitaCardPropsEqual(prev: CitaCardProps, next: CitaCardProps) {
+  return (
+    prev.cita.ctaCodigo === next.cita.ctaCodigo &&
+    prev.cita.ctaEstado === next.cita.ctaEstado &&
+    prev.cita.ctaFecha === next.cita.ctaFecha &&
+    prev.isPast === next.isPast &&
+    prev.size === next.size &&
+    prev.layout === next.layout &&
+    prev.solicitudCambio?.solCodigo === next.solicitudCambio?.solCodigo &&
+    prev.solicitudCambio?.estado === next.solicitudCambio?.estado
+  );
+}
+
+export const CitaCard = memo(CitaCardComponent, areCitaCardPropsEqual);

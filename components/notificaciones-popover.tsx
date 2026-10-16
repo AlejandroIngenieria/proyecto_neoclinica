@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -10,7 +11,6 @@ import {
   Clock,
   MessageSquare,
   Info,
-  Sparkles,
   ChevronRight,
   X,
   ExternalLink,
@@ -86,6 +86,11 @@ export function NotificacionesPopover() {
   const [isOpen, setIsOpen] = useState(false);
   const [filter, setFilter] = useState<'todas' | 'no_leidas'>('todas');
   const [selectedNotification, setSelectedNotification] = useState<NotificacionDto | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const { notificaciones, unreadCount, isLoading } = useNotificaciones();
   const marcarLeidaMutation = useMarcarNotificacionLeida();
@@ -99,8 +104,11 @@ export function NotificacionesPopover() {
     };
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setIsOpen(false);
-        setSelectedNotification(null);
+        if (selectedNotification) {
+          setSelectedNotification(null);
+        } else {
+          setIsOpen(false);
+        }
       }
     };
 
@@ -110,7 +118,7 @@ export function NotificacionesPopover() {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleEscape);
     };
-  }, []);
+  }, [selectedNotification]);
 
   const filteredItems = notificaciones.filter((n) => {
     if (filter === 'no_leidas') return !n.leida;
@@ -121,6 +129,8 @@ export function NotificacionesPopover() {
     if (!item.leida) {
       marcarLeidaMutation.mutate(item.notCodigo);
     }
+    // Cerrar el popover del menú de notificaciones para no solapar vistas
+    setIsOpen(false);
     setSelectedNotification(item);
   };
 
@@ -228,7 +238,7 @@ export function NotificacionesPopover() {
               ) : filteredItems.length === 0 ? (
                 <div className="p-8 text-center space-y-2">
                   <div className="w-12 h-12 rounded-full bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 flex items-center justify-center mx-auto">
-                    <Sparkles className="w-6 h-6" />
+                    <Bell className="w-6 h-6" />
                   </div>
                   <p className="text-sm font-bold text-on-surface dark:text-white">
                     {filter === 'no_leidas' ? 'No tienes notificaciones sin leer' : 'Sin notificaciones por ahora'}
@@ -306,95 +316,106 @@ export function NotificacionesPopover() {
         )}
       </AnimatePresence>
 
-      {/* Modal de Detalle de Notificación */}
-      <AnimatePresence>
-        {selectedNotification && (() => {
-          const { Icon, bg, border, label } = getNotificationIcon(selectedNotification.tipo);
-          return (
-            <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.94, y: 12 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.94, y: 12 }}
-                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="w-full max-w-lg bg-surface dark:bg-slate-900 rounded-3xl border border-outline-variant/30 shadow-2xl overflow-hidden p-6 sm:p-8 space-y-6"
+      {/* Modal de Detalle de Notificación (Portal al body para desacoplar del navbar transform) */}
+      {mounted && typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {selectedNotification && (() => {
+            const { Icon, bg, border, label } = getNotificationIcon(selectedNotification.tipo);
+            return (
+              <div
+                onClick={(e) => {
+                  if (e.target === e.currentTarget) {
+                    setSelectedNotification(null);
+                  }
+                }}
+                className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-slate-950/40 dark:bg-slate-950/70 backdrop-blur-md"
               >
-                {/* Modal Header */}
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-12 h-12 rounded-2xl ${bg} ${border} border flex items-center justify-center shrink-0 shadow-sm`}>
-                      <Icon className="w-6 h-6" />
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/50 dark:border-slate-800 shadow-[0_20px_60px_rgba(11,28,48,0.12)] overflow-hidden p-6 sm:p-8 space-y-6 text-slate-900 dark:text-slate-100"
+                >
+                  {/* Modal Header */}
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-12 h-12 rounded-2xl ${bg} ${border} border flex items-center justify-center shrink-0 shadow-xs`}>
+                        <Icon className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-[#eff4ff] dark:bg-slate-800 text-[#006194] dark:text-sky-400 border border-slate-200/50 dark:border-slate-700/60">
+                          {label}
+                        </span>
+                        <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1">
+                          {formatFecha(selectedNotification.fecha)}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-[11px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-surface-container dark:bg-slate-800 text-outline dark:text-slate-300 border border-outline-variant/20">
-                        {label}
-                      </span>
-                      <p className="text-xs font-semibold text-outline dark:text-slate-400 mt-1">
-                        {formatFecha(selectedNotification.fecha)}
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedNotification(null)}
+                      className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                      aria-label="Cerrar modal"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Modal Content */}
+                  <div className="space-y-4">
+                    <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white leading-snug">
+                      {selectedNotification.titulo}
+                    </h3>
+
+                    <div className="p-4 sm:p-5 rounded-2xl bg-slate-50/70 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-800">
+                      <p className="text-sm font-medium text-slate-700 dark:text-slate-200 leading-relaxed whitespace-pre-line">
+                        {selectedNotification.mensaje}
                       </p>
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setSelectedNotification(null)}
-                    className="p-2 text-outline hover:text-on-surface hover:bg-surface-container dark:hover:bg-slate-800 rounded-full transition cursor-pointer"
-                    aria-label="Cerrar modal"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                {/* Modal Content */}
-                <div className="space-y-4">
-                  <h3 className="text-xl sm:text-2xl font-black tracking-tight text-on-surface dark:text-white leading-snug">
-                    {selectedNotification.titulo}
-                  </h3>
-
-                  <div className="p-4 sm:p-5 rounded-2xl bg-surface-container-lowest/60 dark:bg-slate-800/60 border border-outline-variant/15 dark:border-slate-800">
-                    <p className="text-sm font-medium text-on-surface-variant dark:text-slate-200 leading-relaxed whitespace-pre-line">
-                      {selectedNotification.mensaje}
-                    </p>
+                  {/* Status Indicator */}
+                  <div className="flex items-center gap-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1.5 rounded-xl w-fit border border-emerald-200/60 dark:border-emerald-800/40">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Notificación leída</span>
                   </div>
-                </div>
 
-                {/* Status Indicator */}
-                <div className="flex items-center gap-2 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1.5 rounded-xl w-fit border border-emerald-200/60 dark:border-emerald-800/40">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Notificación leída</span>
-                </div>
-
-                {/* Modal Actions */}
-                <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-4 border-t border-outline-variant/15 dark:border-slate-800">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedNotification(null)}
-                    className="w-full sm:w-auto px-5 py-3 rounded-2xl text-xs font-bold text-outline hover:bg-surface-container dark:hover:bg-slate-800 transition cursor-pointer"
-                  >
-                    Cerrar
-                  </button>
-
-                  {selectedNotification.accionUrl && (
+                  {/* Modal Actions */}
+                  <div className="flex flex-col sm:flex-row items-center justify-end gap-2.5 pt-4 border-t border-slate-100 dark:border-slate-800/80">
                     <button
                       type="button"
-                      onClick={() => {
-                        const url = selectedNotification.accionUrl!;
-                        setSelectedNotification(null);
-                        setIsOpen(false);
-                        router.push(url);
-                      }}
-                      className="w-full sm:w-auto px-6 py-3 rounded-2xl text-xs font-bold bg-sky-600 hover:bg-sky-700 text-white shadow-lg shadow-sky-600/25 flex items-center justify-center gap-2 transition cursor-pointer active:scale-95"
+                      onClick={() => setSelectedNotification(null)}
+                      className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-200/80 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
                     >
-                      <span>Ir al módulo relacionado</span>
-                      <ExternalLink className="w-4 h-4" />
+                      Cerrar
                     </button>
-                  )}
-                </div>
-              </motion.div>
-            </div>
-          );
-        })()}
-      </AnimatePresence>
+
+                    {selectedNotification.accionUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const url = selectedNotification.accionUrl!;
+                          setSelectedNotification(null);
+                          setIsOpen(false);
+                          router.push(url);
+                        }}
+                        className="w-full sm:w-auto px-5 py-2.5 rounded-xl text-xs font-semibold bg-[#006194] hover:bg-[#00517c] text-white shadow-xs flex items-center justify-center gap-2 transition cursor-pointer active:scale-95"
+                      >
+                        <span>Ir al módulo relacionado</span>
+                        <ExternalLink className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </motion.div>
+              </div>
+            );
+          })()}
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   );
 }

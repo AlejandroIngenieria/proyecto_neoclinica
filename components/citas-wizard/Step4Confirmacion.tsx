@@ -4,11 +4,20 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { toast } from 'sonner';
-import { useCreateCita, usePagarCita, useMetodosPago, useBilletera, useCreateGrupo, useCrearSolicitudCambio } from '@/hooks/use-flujo-citas';
+import {
+  useCreateCita,
+  usePagarCita,
+  useMetodosPago,
+  useBilletera,
+  useCreateGrupo,
+  useCrearSolicitudCambio,
+} from '@/hooks/use-flujo-citas';
 import { useDoctorByCode } from '@/hooks/use-doctors';
 import { useCitaStore } from '@/store/use-cita-store';
 import { completarTareaLealtad } from '@/services/lealtad';
 import { crearNotificacion } from '@/services/notificaciones';
+import { useVincularReferido } from '@/hooks/use-recompensas';
+import { usePacienteTitular } from '@/hooks/use-pacientes';
 import {
   ChevronLeft,
   Check,
@@ -29,28 +38,56 @@ import {
   ShieldCheck,
   Home,
   Video,
-  Sparkles,
   ArrowLeftRight,
   User,
   CheckCircle2,
   ClipboardList,
+  Banknote,
+  Landmark,
+  Clock,
+  Copy,
+  Gift,
 } from 'lucide-react';
 import type { CrearCitaRequest } from '@/types/citas';
+import { buildDoctorFullName } from '@/types';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { formatBytes } from '@/utils/image-compression';
 
 export function Step4Confirmacion() {
   const router = useRouter();
   const { data: session } = useSession();
   const {
-    codMedico, medicoName, modalidad, clinicaSeleccionada, areaDomicilio,
-    servicioSeleccionado, tipoConsulta,
-    fecha, hora, pacienteSeleccionado, grupoId, grupoNombre, creandoNuevoGrupo, nuevoGrupoTema, motivo,
-    archivos, prevStep, tipoPagoId, billeteraItemId,
-    comprobanteTransferencia, referenciaTransferencia,
-    direccionDomicilio, referenciasDomicilio, recompensaSeleccionada, reset,
-    setCitaConfirmada, solicitudIntercambio,
-    citasMultiples, pacienteModoCita, omitirPago
+    codMedico,
+    medicoName,
+    modalidad,
+    clinicaSeleccionada,
+    areaDomicilio,
+    servicioSeleccionado,
+    tipoConsulta,
+    fecha,
+    hora,
+    pacienteSeleccionado,
+    grupoId,
+    grupoNombre,
+    creandoNuevoGrupo,
+    nuevoGrupoTema,
+    motivo,
+    archivos,
+    prevStep,
+    tipoPagoId,
+    billeteraItemId,
+    comprobanteTransferencia,
+    referenciaTransferencia,
+    direccionDomicilio,
+    referenciasDomicilio,
+    recompensaSeleccionada,
+    reset,
+    setCitaConfirmada,
+    solicitudIntercambio,
+    citasMultiples,
+    pacienteModoCita,
+    omitirPago,
   } = useCitaStore();
 
   const { mutateAsync: createCita } = useCreateCita();
@@ -67,6 +104,36 @@ export function Step4Confirmacion() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [createdCitaId, setCreatedCitaId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [copiedCode, setCopiedCode] = useState(false);
+
+  // Código de Referido
+  const { titular: pacienteTitular } = usePacienteTitular();
+  const pacCodigoReferido = pacienteSeleccionado?.pacCodigo || pacienteTitular?.pac_codigo;
+  const { mutateAsync: vincularReferido, isPending: isApplyingReferido } = useVincularReferido(pacCodigoReferido);
+
+  const [codigoReferidoInput, setCodigoReferidoInput] = useState('');
+  const [codigoReferidoAplicado, setCodigoReferidoAplicado] = useState<string | null>(null);
+  const [referidoError, setReferidoError] = useState<string | null>(null);
+
+  const handleAplicarCodigoReferido = async () => {
+    const cleanCode = codigoReferidoInput.trim().toUpperCase();
+    if (!cleanCode) return;
+
+    if (!pacCodigoReferido) {
+      toast.error('No se pudo identificar el paciente para vincular el código.');
+      return;
+    }
+
+    setReferidoError(null);
+    try {
+      await vincularReferido({ codigoReferencia: cleanCode });
+      setCodigoReferidoAplicado(cleanCode);
+    } catch (err: any) {
+      const msg = err?.message || 'El código de referido es inválido o no se pudo aplicar.';
+      setReferidoError(msg);
+      toast.error(msg);
+    }
+  };
 
   // Desplazar la vista inmediatamente hasta arriba al iniciar o procesar la confirmación
   useEffect(() => {
@@ -102,7 +169,9 @@ export function Step4Confirmacion() {
 
   const metodoSeleccionado = metodosPago.find(m => m.tipoPagoId === tipoPagoId);
   const itemBilletera = billetera.find(b => b.id_metodo === billeteraItemId);
-  const isTransferenciaSeleccionada = metodoSeleccionado?.descripcion.toLowerCase().includes('transferencia') || metodoSeleccionado?.descripcion.toLowerCase().includes('banco');
+  const isTransferenciaSeleccionada =
+    metodoSeleccionado?.descripcion.toLowerCase().includes('transferencia') ||
+    metodoSeleccionado?.descripcion.toLowerCase().includes('banco');
 
   const formatHoraDisplay = (rawHora: string | null) => {
     if (!rawHora) return '';
@@ -114,6 +183,10 @@ export function Step4Confirmacion() {
     hourNum = hourNum ? hourNum : 12;
     return `${hourNum}:${m} ${ampm}`;
   };
+
+  const nombreDoctor = doctor ? buildDoctorFullName(doctor) : (medicoName || 'Especialista Médico');
+  const docPhoto = doctor?.exp_foto_perfil || null;
+  const docSpecialties = doctor?.especialidades?.map(e => e.especialidad).join(', ') || doctor?.exp_profesion || 'Especialista Médico';
 
   const handleConfirm = async () => {
     if (isMultiMode) {
@@ -130,7 +203,6 @@ export function Step4Confirmacion() {
       document.body.scrollTop = 0;
 
       try {
-        // 0. Crear grupo si es nuevo
         let finalGrupoId = grupoId || undefined;
         if (creandoNuevoGrupo && nuevoGrupoTema.trim() && codMedico) {
           try {
@@ -168,7 +240,6 @@ export function Step4Confirmacion() {
 
         const createdIds: string[] = [];
 
-        // Loop secuencial sobre las citas del grupo
         for (let i = 0; i < citasMultiples.length; i++) {
           const item = citasMultiples[i];
           setSubmitStatusText(`Agendando cita ${i + 1} de ${citasMultiples.length}...`);
@@ -223,7 +294,6 @@ export function Step4Confirmacion() {
           }
         }
 
-        // Registrar pago para cada cita si se asignó un método
         if (!omitirPago && tipoPagoId && createdIds.length > 0) {
           setSubmitStatusText('Registrando método de pago...');
           for (const cId of createdIds) {
@@ -265,7 +335,6 @@ export function Step4Confirmacion() {
     document.body.scrollTop = 0;
 
     try {
-      // 0. Si se solicitó crear un nuevo grupo de citas, crearlo primero
       let finalGrupoId = grupoId || undefined;
 
       if (creandoNuevoGrupo && nuevoGrupoTema.trim() && pacienteSeleccionado && codMedico) {
@@ -286,7 +355,6 @@ export function Step4Confirmacion() {
         }
       }
 
-      // 1. Preparar DTO
       setSubmitStatusText('Guardando los datos de tu consulta...');
       let consultorioId = undefined;
       let dirDomicilio = null;
@@ -307,6 +375,16 @@ export function Step4Confirmacion() {
           (recompensaSeleccionada as any).rcpCodigo ||
           (recompensaSeleccionada as any).rcp_codigo
         : undefined;
+
+      // Si el paciente ingresó un código de referido y aún no lo aplicó manualmente, intentamos aplicarlo
+      if (codigoReferidoInput.trim() && !codigoReferidoAplicado && pacCodigoReferido) {
+        try {
+          await vincularReferido({ codigoReferencia: codigoReferidoInput.trim().toUpperCase() });
+          setCodigoReferidoAplicado(codigoReferidoInput.trim().toUpperCase());
+        } catch (errRef: any) {
+          console.warn('No se pudo vincular código de referido antes de agendar:', errRef?.message);
+        }
+      }
 
       const request: CrearCitaRequest = {
         codPaciente: pacienteSeleccionado.pacCodigo,
@@ -333,11 +411,9 @@ export function Step4Confirmacion() {
         comprobanteTransferencia: comprobanteTransferencia || undefined,
       };
 
-      // 2. Crear Cita
       const citaId = await createCita(request);
       setCreatedCitaId(citaId);
 
-      // 2.1 Si el usuario solicitó un intercambio de horario ocupado, registrar la solicitud
       if (solicitudIntercambio && codMedico) {
         try {
           setSubmitStatusText('Enviando solicitud de intercambio de horario...');
@@ -353,7 +429,6 @@ export function Step4Confirmacion() {
         }
       }
 
-      // Trigger automatic loyalty task and notification for creating appointment
       const sessionToken = (session as any)?.accessToken;
       if (sessionToken) {
         completarTareaLealtad(sessionToken, 'CREAR_CITA').catch(() => {});
@@ -368,7 +443,6 @@ export function Step4Confirmacion() {
         }).catch(() => {});
       }
 
-      // 3. Registrar método de pago
       if (!omitirPago && tipoPagoId) {
         try {
           setSubmitStatusText('Confirmando cita programada...');
@@ -385,7 +459,6 @@ export function Step4Confirmacion() {
         }
       }
 
-      // 4. Marcar éxito
       setCitaConfirmada(true);
       setIsSuccess(true);
       window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
@@ -396,104 +469,477 @@ export function Step4Confirmacion() {
     }
   };
 
-  // 1. ESTADO DE ÉXITO (CITA PROGRAMADA CON ÉXITO)
-  if (isSuccess) {
-    const docPhoto = doctor?.exp_foto_perfil || `https://ui-avatars.com/api/?name=${encodeURIComponent(medicoName || 'Doctor')}&background=0284c7&color=fff`;
-    const docSpecialties = doctor?.especialidades?.map(e => e.especialidad).join(', ') || 'Especialista Médico';
+  // Helper para datos de pago visual
+  const paymentBadgeText = omitirPago
+    ? 'EFECTIVO'
+    : itemBilletera?.tipo === 'TARJETA'
+    ? (itemBilletera.proveedor?.slice(0, 4)?.toUpperCase() || 'VISA')
+    : isTransferenciaSeleccionada
+    ? 'BANCO'
+    : itemBilletera?.tipo === 'SEGURO'
+    ? 'SEGURO'
+    : 'PAGO';
 
+  const paymentTitle = omitirPago
+    ? 'Pago en Consultorio / Clínica'
+    : itemBilletera?.tipo === 'TARJETA'
+    ? 'Tarjeta de Débito / Crédito'
+    : isTransferenciaSeleccionada
+    ? 'Transferencia Bancaria'
+    : itemBilletera?.tipo === 'SEGURO'
+    ? 'Pago con Seguro Médico'
+    : (metodoSeleccionado?.descripcion || 'Método Seleccionado');
+
+  const paymentSubtitle = omitirPago
+    ? 'Abonar en efectivo o con tarjeta al asistir a la recepción'
+    : itemBilletera?.tipo === 'TARJETA'
+    ? `Terminada en ${itemBilletera.descripcion || '•••• 4242'}`
+    : isTransferenciaSeleccionada
+    ? (referenciaTransferencia ? `Boleta / Ref: ${referenciaTransferencia}` : 'Comprobante verificado')
+    : itemBilletera?.tipo === 'SEGURO'
+    ? `${itemBilletera.proveedor || 'Aseguradora'} · Póliza: ${itemBilletera.descripcion || 'Activa'}`
+    : (metodoSeleccionado?.observaciones || 'Pago registrado');
+
+  const paymentSecurityNote = omitirPago
+    ? 'Abono directo en recepción sin cobro previo en línea'
+    : itemBilletera?.tipo === 'TARJETA'
+    ? 'Tarjeta tokenizada y verificada con 3D Secure'
+    : isTransferenciaSeleccionada
+    ? (comprobanteTransferencia ? `Comprobante adjuntado (${formatBytes(comprobanteTransferencia.size)})` : 'Procesamiento seguro verificado')
+    : itemBilletera?.tipo === 'SEGURO'
+    ? 'Póliza y carné validados para cobertura médica directa'
+    : 'Procesamiento seguro encriptado';
+
+  const codigoCitaFormateado = createdCitaId
+    ? `CIT-${createdCitaId.replace(/-/g, '').slice(0, 8).toUpperCase()}`
+    : `NC-APP-${new Date().getFullYear()}-${pacienteSeleccionado?.pacCodigo?.slice(0, 4)?.toUpperCase() || '9812'}`;
+
+  // =========================================================================
+  // 1. ESTADO DE ÉXITO (DASHBOARD DISTRIBUIDO A TODO EL ANCHO SIN SCROLL)
+  // =========================================================================
+  if (isSuccess) {
     return (
-      <div className="max-w-2xl mx-auto py-6 sm:py-10 animate-in fade-in zoom-in-95 duration-300">
-        <div className="bg-white dark:bg-[#1E293B] rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-700/80 shadow-xl text-center">
-          
-          {/* Success Check Icon Badge */}
-          <div className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center mx-auto mb-4 shadow-lg shadow-emerald-500/30">
-            <Check className="w-9 h-9 stroke-[3]" />
+      <div className="w-full max-w-7xl mx-auto font-sans pb-6 animate-in fade-in zoom-in-[0.98] duration-300">
+        {/* Luces sutiles y decorativas de fondo */}
+        <div className="absolute -top-32 left-1/4 w-96 h-96 rounded-full bg-[#dce9ff]/40 dark:bg-blue-900/15 blur-3xl pointer-events-none -z-10" />
+        <div className="absolute top-1/2 right-10 w-80 h-80 rounded-full bg-[#cce5ff]/25 dark:bg-sky-900/15 blur-3xl pointer-events-none -z-10" />
+
+        <div className="w-full flex flex-col space-y-6">
+          {/* Header Superior con Código, Estado y Botones Rápidos de Acción */}
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 border border-slate-100 dark:border-slate-800 shadow-[0_2px_14px_rgba(11,28,48,0.04)] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-[#dcfce7] dark:bg-emerald-950/60 text-[#006c4a] dark:text-emerald-400 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-6 h-6 stroke-[2.2]" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h1 className="text-xl sm:text-2xl font-black text-[#0b1c30] dark:text-white tracking-tight">
+                    {isMultiMode ? `¡${citasMultiples.length} Citas Programadas con Éxito!` : '¡Cita Programada con Éxito!'}
+                  </h1>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(codigoCitaFormateado);
+                      setCopiedCode(true);
+                      toast.success('Código copiado al portapapeles');
+                      setTimeout(() => setCopiedCode(false), 2500);
+                    }}
+                    title="Copiar código de cita"
+                    className="font-mono text-xs font-bold text-[#006194] dark:text-sky-400 bg-[#eff4ff] dark:bg-blue-950/60 hover:bg-[#dce9ff] dark:hover:bg-blue-900/60 px-3 py-1 rounded-full border border-blue-200/60 dark:border-blue-800/80 inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <span>{codigoCitaFormateado}</span>
+                    {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+                  {isMultiMode
+                    ? `Tus ${citasMultiples.length} consultas médicas han sido reservadas y confirmadas en la agenda de NeoClínica.`
+                    : 'Tu consulta médica ha sido reservada y confirmada en la agenda de NeoClínica.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Botones de acción principales directamente arriba para evitar scrollear */}
+            <div className="flex items-center gap-3 w-full md:w-auto justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  reset();
+                  router.push('/dashboard/citas');
+                }}
+                className="flex-1 md:flex-none px-5 py-2.5 rounded-xl bg-[#006194] hover:bg-[#007bb9] text-white font-bold text-xs sm:text-sm shadow-xs flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98]"
+              >
+                <CalendarDays className="w-4 h-4" />
+                <span>Ver mis Citas</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  reset();
+                  router.push('/dashboard');
+                }}
+                className="flex-1 md:flex-none px-5 py-2.5 rounded-xl bg-[#eff4ff]/60 hover:bg-[#dce9ff] dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs sm:text-sm border border-slate-200/60 dark:border-slate-700 flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-[0.98]"
+              >
+                <span>Ir al Inicio</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
-          <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-            {isMultiMode ? `¡${citasMultiples.length} Citas Programadas con Éxito!` : '¡Cita Programada con Éxito!'}
-          </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
-            {isMultiMode
-              ? `Tus ${citasMultiples.length} consultas médicas han sido reservadas y registradas en el grupo de citas.`
-              : 'Tu consulta médica ha sido reservada y registrada en el sistema de SaludYa.'}
+          {/* Grilla de 3 Columnas a todo el ancho aprovechando las dimensiones de pantalla */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+            {/* Columna 1: Especialista y Horario */}
+            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-7 border border-slate-100 dark:border-slate-800 shadow-[0_2px_14px_rgba(11,28,48,0.04)] flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-4">
+                  ESPECIALISTA Y HORARIO
+                </span>
+                <div className="flex items-center gap-3.5 mb-5">
+                  {docPhoto ? (
+                    <img
+                      src={docPhoto}
+                      alt={nombreDoctor}
+                      className="w-12 h-12 rounded-full object-cover shrink-0 ring-2 ring-slate-100 dark:ring-slate-700 shadow-2xs"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-[#eff4ff] dark:bg-slate-800 text-[#006194] dark:text-sky-400 font-bold text-sm flex items-center justify-center shrink-0 ring-2 ring-slate-100 dark:ring-slate-700">
+                      {getInitials(nombreDoctor)}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <h3 className="text-base font-bold text-[#0b1c30] dark:text-white truncate">
+                      {nombreDoctor}
+                    </h3>
+                    <p className="text-xs font-semibold text-[#006194] dark:text-sky-400 truncate">
+                      {docSpecialties}
+                    </p>
+                    <p className="text-[11px] text-slate-400 font-mono mt-0.5">
+                      {doctor?.exp_colegiado_gt ? `Colegiado No. ${doctor.exp_colegiado_gt}` : 'Colegiado No. 19135'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Fecha y Hora Card */}
+                <div className="bg-[#eff4ff]/60 dark:bg-slate-800/60 rounded-2xl p-3.5 sm:p-4 flex items-center gap-3.5 border border-blue-50/50 dark:border-slate-800 mb-3">
+                  <div className="w-10 h-10 rounded-xl bg-white dark:bg-slate-900 text-[#006194] dark:text-sky-400 shadow-2xs flex items-center justify-center shrink-0">
+                    <Calendar className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-sm text-[#0b1c30] dark:text-white capitalize">
+                      {fecha ? (
+                        format(fecha, "EEEE d 'De' MMMM, yyyy", { locale: es })
+                          .split(' ')
+                          .map(w => w ? w.charAt(0).toUpperCase() + w.slice(1) : '')
+                          .join(' ')
+                      ) : 'Jueves 22 De Octubre, 2026'}
+                    </p>
+                    <p className="text-xs font-bold text-[#006194] dark:text-sky-400 font-mono mt-0.5">
+                      {formatHoraDisplay(hora)} (Horario Centroamérica)
+                    </p>
+                  </div>
+                </div>
+
+                {/* Modalidad Card */}
+                <div className="bg-[#eff4ff]/60 dark:bg-slate-800/60 rounded-2xl p-3.5 sm:p-4 flex items-center gap-3.5 border border-blue-50/50 dark:border-slate-800">
+                  <div className="w-10 h-10 rounded-xl bg-white dark:bg-slate-900 text-[#006194] dark:text-sky-400 shadow-2xs flex items-center justify-center shrink-0">
+                    {modalidad === 'virtual' ? (
+                      <Video className="w-5 h-5" />
+                    ) : modalidad === 'domicilio' ? (
+                      <Home className="w-5 h-5" />
+                    ) : (
+                      <MapPin className="w-5 h-5" />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-sm text-[#0b1c30] dark:text-white capitalize">
+                      {modalidad === 'presencial' ? 'Consulta Presencial' : modalidad === 'virtual' ? 'Videoconsulta Virtual' : 'Consulta a Domicilio'}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                      {modalidad === 'virtual' ? 'Telemedicina Encriptada' : clinicaSeleccionada ? clinicaSeleccionada.cliDescripcion : modalidad === 'domicilio' ? (direccionDomicilio || 'Domicilio acordado') : 'Sede Central NeoClínica'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs font-semibold text-[#006c4a] dark:text-emerald-400 mt-6 pt-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>Horario reservado sin tiempos de espera</span>
+              </div>
+            </div>
+
+            {/* Columna 2: Paciente y Detalles Médicos */}
+            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-7 border border-slate-100 dark:border-slate-800 shadow-[0_2px_14px_rgba(11,28,48,0.04)] flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-4">
+                  PACIENTE Y CONSULTA
+                </span>
+
+                {/* Paciente Card */}
+                <div className="bg-[#eff4ff]/60 dark:bg-slate-800/60 rounded-2xl p-3.5 sm:p-4 flex items-center gap-3.5 mb-5 border border-blue-50/50 dark:border-slate-800">
+                  <div className="w-10 h-10 rounded-full bg-blue-100/70 dark:bg-blue-900/40 text-[#006194] dark:text-sky-400 flex items-center justify-center shrink-0">
+                    <User className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">PACIENTE</span>
+                    <p className="text-sm font-bold text-[#0b1c30] dark:text-white truncate">
+                      {pacienteSeleccionado?.nombreCompleto || 'Josué Alejandro Pérez Benito'}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">
+                      Exp. #{pacienteSeleccionado?.pacCodigo?.slice(0, 8)?.toUpperCase() || 'F9A0E16C'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Fila de Datos Limpios */}
+                <div className="space-y-4 text-xs">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500 font-medium">Servicio</span>
+                    <span className="font-semibold text-[#0b1c30] dark:text-white truncate max-w-[200px]">
+                      {servicioSeleccionado?.servicio || 'Examen de la vista'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500 font-medium">Tipo</span>
+                    <span className="font-bold text-xs text-[#006194] dark:text-sky-400 bg-[#eff4ff] dark:bg-blue-950/60 px-3 py-0.5 rounded-full">
+                      {tipoConsulta || 'Control'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-start">
+                    <span className="text-slate-500 font-medium shrink-0 mr-2">Síntomas</span>
+                    <span className="font-semibold text-[#0b1c30] dark:text-white text-right truncate max-w-[200px]">
+                      {motivo || servicioSeleccionado?.servicio || 'Examen de la vista'}
+                    </span>
+                  </div>
+                  {archivos.length > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 font-medium">Adjuntos</span>
+                      <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                        {archivos.length} archivo(s) vinculados
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {solicitudIntercambio && (
+                <div className="mt-4 p-2.5 rounded-xl bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 text-[11px] text-orange-900 dark:text-orange-200">
+                  <span className="font-bold">Intercambio solicitado:</span> Turno de las {formatHoraDisplay(solicitudIntercambio.hora)}. Se actualizará automáticamente si es cedido.
+                </div>
+              )}
+            </div>
+
+            {/* Columna 3: Facturación y Confirmación */}
+            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-7 border border-slate-100 dark:border-slate-800 shadow-[0_2px_14px_rgba(11,28,48,0.04)] flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-4">
+                  PAGO Y CONFIRMACIÓN
+                </span>
+
+                {/* Tarjeta de Pago */}
+                <div className="bg-[#eff4ff]/60 dark:bg-slate-800/60 rounded-2xl p-4 sm:p-5 mb-5 border border-blue-50/50 dark:border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      {paymentTitle}
+                    </span>
+                    <span className="text-[11px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-md bg-white dark:bg-slate-900 text-[#0b1c30] dark:text-white shadow-2xs">
+                      {paymentBadgeText}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between pt-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      TOTAL PAGADO
+                    </span>
+                    <span className="text-2xl sm:text-3xl font-black text-[#006194] dark:text-sky-400 font-mono tracking-tight">
+                      Q {totalGeneral.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Recordatorio de Asistencia */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-[#0b1c30] dark:text-white mb-1.5">
+                    <Info className="w-4 h-4 text-[#006194] shrink-0" />
+                    <span>Recordatorio de asistencia:</span>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed pl-5.5">
+                    Preséntate 10 minutos antes en la recepción del centro médico. Recibirás una notificación y el comprobante oficial en tu correo electrónico.
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-6 block">
+                NeoClínica · Cuidado médico especializado con expediente unificado
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // 2. ESTADO DE CARGA (PROCESANDO LA CITA)
+  // =========================================================================
+  if (isSubmitting) {
+    return (
+      <div className="relative w-full overflow-hidden font-sans py-12 sm:py-16 animate-in fade-in duration-300">
+        <div className="absolute -top-32 left-1/4 w-96 h-96 rounded-full bg-[#dce9ff]/40 dark:bg-blue-900/15 blur-3xl pointer-events-none -z-10" />
+        <div className="absolute top-1/2 right-10 w-80 h-80 rounded-full bg-[#cce5ff]/25 dark:bg-sky-900/15 blur-3xl pointer-events-none -z-10" />
+
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 sm:p-12 border border-slate-100 dark:border-slate-800 shadow-[0_4px_28px_rgba(11,28,48,0.06)] max-w-xl mx-auto text-center flex flex-col items-center justify-center">
+          <div className="relative mb-6">
+            <div className="w-16 h-16 rounded-full border-4 border-blue-100 dark:border-blue-950 animate-spin border-t-[#006194] dark:border-t-sky-400" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Stethoscope className="w-6 h-6 text-[#006194] dark:text-sky-400 animate-pulse" />
+            </div>
+          </div>
+
+          <h3 className="text-2xl font-black text-[#0b1c30] dark:text-white tracking-tight">
+            Procesando tu Consulta Médica
+          </h3>
+
+          <p className="text-sm font-semibold text-[#006194] dark:text-sky-400 mt-2">
+            {submitStatusText}
           </p>
 
-          {createdCitaId && (
-            <div className="inline-flex items-center gap-2 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 px-4 py-1.5 rounded-full text-xs font-mono font-bold mt-3 shadow-xs">
-              <span className="text-slate-500 dark:text-slate-400 font-sans font-medium">Código oficial:</span>
-              <span className="text-blue-700 dark:text-blue-400 font-extrabold tracking-wider">
-                CIT-{createdCitaId.replace(/-/g, '').slice(0, 8).toUpperCase()}
-              </span>
+          <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 max-w-sm">
+            Estamos comunicándonos con el servidor para agendar tu horario y garantizar tu cita con {nombreDoctor}.
+          </p>
+
+          <div className="mt-8 w-full max-w-xs bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
+            <div className="bg-[#006194] h-full rounded-full w-2/3 animate-pulse" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // 3. ESTADO NORMAL DE REVISIÓN Y CONFIRMACIÓN PREVIA (MOCKUP EXACTO)
+  // =========================================================================
+  return (
+    <div className="relative w-full overflow-hidden font-sans pb-10">
+      {/* Luces sutiles y decorativas de fondo */}
+      <div className="absolute -top-32 left-1/4 w-96 h-96 rounded-full bg-[#dce9ff]/40 dark:bg-blue-900/15 blur-3xl pointer-events-none -z-10" />
+      <div className="absolute top-1/2 right-10 w-80 h-80 rounded-full bg-[#cce5ff]/25 dark:bg-sky-900/15 blur-3xl pointer-events-none -z-10" />
+
+      <div className="w-full flex flex-col space-y-6">
+        {/* ENCABEZADO DE PÁGINA */}
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-[#0b1c30] dark:text-white tracking-tight">
+            Confirma tu cita
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+            Revisa los detalles de tu consulta médica y confirma para asegurar tu espacio en la agenda de NeoClínica.
+          </p>
+        </div>
+
+        {error && (
+          <div className="rounded-2xl bg-rose-50 dark:bg-rose-900/20 p-4 text-xs font-semibold text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {/* CONTENEDOR PRINCIPAL TIPO TARJETA (MOCKUP) */}
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-7 border border-slate-100 dark:border-slate-800 shadow-[0_2px_14px_rgba(11,28,48,0.04)] space-y-6">
+          
+          {/* CÁPSULA SUPERIOR CON DOCTOR Y ESTADO VERDE */}
+          <div className="bg-[#eff4ff]/60 dark:bg-slate-800/50 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-4">
+              {docPhoto ? (
+                <img
+                  src={docPhoto}
+                  alt={nombreDoctor}
+                  className="w-14 h-14 rounded-full object-cover shrink-0 ring-2 ring-white dark:ring-slate-700 shadow-xs"
+                />
+              ) : (
+                <div className="w-14 h-14 rounded-full bg-[#eff4ff] dark:bg-slate-700 text-[#006194] dark:text-sky-400 font-bold text-base flex items-center justify-center shrink-0 ring-2 ring-white dark:ring-slate-700 shadow-xs">
+                  {getInitials(nombreDoctor)}
+                </div>
+              )}
+              <div className="min-w-0">
+                <h3 className="text-base sm:text-lg font-bold text-[#0b1c30] dark:text-white truncate">
+                  {nombreDoctor}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium truncate">
+                  {docSpecialties}
+                </p>
+                {doctor?.exp_colegiado_gt && (
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">
+                    Colegiado Médico No. {doctor.exp_colegiado_gt}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="inline-flex items-center gap-2 self-start sm:self-center px-3.5 py-1.5 rounded-full text-xs font-bold bg-[#dcfce7] text-[#006c4a] dark:bg-emerald-950/60 dark:text-emerald-300 border border-[#006c4a]/15">
+              <span className="w-2 h-2 rounded-full bg-[#006c4a] animate-pulse" />
+              <span>Consulta Confirmada - Sin Esperas</span>
+            </div>
+          </div>
+
+          {/* Banner de Solicitud de Intercambio (si aplica) */}
+          {solicitudIntercambio && (
+            <div className="p-4 rounded-2xl bg-orange-50/90 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-800/80 flex items-start gap-3 shadow-2xs">
+              <div className="p-2 bg-orange-500 text-white rounded-xl shrink-0 mt-0.5">
+                <ArrowLeftRight className="w-4 h-4" />
+              </div>
+              <div className="text-xs">
+                <p className="font-bold text-orange-950 dark:text-orange-200">
+                  Petición de intercambio incluida para las {formatHoraDisplay(solicitudIntercambio.hora)}
+                </p>
+                <p className="text-orange-800 dark:text-orange-300 mt-0.5 leading-relaxed">
+                  Tu cita quedará reservada para las <strong>{formatHoraDisplay(hora)}</strong>. Simultáneamente, enviaremos tu solicitud al paciente del turno de las {formatHoraDisplay(solicitudIntercambio.hora)}. Si acepta, tu consulta se moverá automáticamente.
+                </p>
+              </div>
             </div>
           )}
 
-          {/* Doctor Info with Circular Photo */}
-          <div className="my-6 p-4 sm:p-5 rounded-2xl bg-sky-50/60 dark:bg-sky-950/40 border border-sky-200/80 dark:border-sky-800/60 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
-            <div className="w-20 h-20 rounded-full overflow-hidden border-3 border-white dark:border-slate-700 shadow-md shrink-0 bg-slate-100 dark:bg-slate-800">
-              <img
-                src={docPhoto}
-                alt={medicoName || 'Doctor'}
-                className="w-full h-full object-cover object-top"
-              />
-            </div>
-            <div className="min-w-0">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-sky-600 dark:text-sky-400 block mb-0.5">
-                Especialista Asignado
-              </span>
-              <h3 className="text-lg font-black text-slate-900 dark:text-white truncate">
-                Dr{doctor?.exp_sexo === 'F' ? 'a' : ''}. {medicoName}
+          {/* ========================================================================= */}
+          {/* SECCIÓN 1: RESUMEN DE LA CONSULTA (6 TILES EN GRID 2 COLUMNAS)           */}
+          {/* ========================================================================= */}
+          <div>
+            <div className="flex items-center justify-between mb-3.5">
+              <h3 className="text-base font-bold text-[#0b1c30] dark:text-white">
+                Resumen de la Consulta
               </h3>
-              <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                {docSpecialties}
-              </p>
-            </div>
-          </div>
-
-          {/* Appointment Details Card */}
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-[#0F172A]/80 p-5 text-left space-y-3.5 mb-8">
-            <div className="flex items-center justify-between text-xs pb-3 border-b border-slate-200/70 dark:border-slate-800">
-              <span className="font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                {isMultiMode ? `Detalles del Grupo (${citasMultiples.length} Citas)` : 'Detalles de la Cita'}
-              </span>
-              <span className="inline-flex items-center gap-1 font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100/80 dark:bg-emerald-950 px-2 py-0.5 rounded-md text-[11px]">
-                <ShieldCheck className="w-3.5 h-3.5" /> Confirmadas
+              <span className="text-xs font-mono font-semibold text-slate-400 dark:text-slate-500 tracking-wider">
+                ID: NC-APP-{new Date().getFullYear()}-{pacienteSeleccionado?.pacCodigo?.slice(0, 4)?.toUpperCase() || '9812'}
               </span>
             </div>
 
-            {createdCitaId && (
-              <div className="flex items-center justify-between py-1 border-b border-slate-200/50 dark:border-slate-800/60 text-xs">
-                <span className="font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Código de Confirmación</span>
-                <span className="font-mono font-black text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-2.5 py-0.5 rounded-md border border-blue-200 dark:border-blue-800">
-                  CIT-{createdCitaId.replace(/-/g, '').slice(0, 8).toUpperCase()}
-                </span>
-              </div>
-            )}
-
-            {/* Si es multi-citas, mostramos la lista de todas las citas confirmadas */}
             {isMultiMode ? (
-              <div className="space-y-2 pt-1">
-                <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  Citas Agendadas:
-                </p>
-                <div className="divide-y divide-slate-200/60 dark:divide-slate-800">
+              /* En grupo de citas: Resumen de las citas múltiples */
+              <div className="bg-[#eff4ff]/30 dark:bg-slate-800/40 rounded-2xl p-4 sm:p-5 border border-slate-100 dark:border-slate-800 space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700">
+                  <span className="text-xs font-bold text-[#006194] dark:text-sky-400 uppercase tracking-wider">
+                    {citasMultiples.length} Citas del Grupo de Seguimiento
+                  </span>
+                  <span className="text-[11px] font-bold text-slate-500">
+                    {pacienteModoCita === 'mismo' ? 'Mismo paciente' : 'Pacientes por cita'}
+                  </span>
+                </div>
+                <div className="divide-y divide-slate-200/50 dark:divide-slate-800">
                   {citasMultiples.map((c, idx) => {
                     const pacItem = (pacienteModoCita === 'variado' && c.paciente) ? c.paciente : pacienteSeleccionado;
                     return (
-                      <div key={c.id} className="py-2 flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="w-5 h-5 rounded-md bg-emerald-600 text-white font-bold flex items-center justify-center text-[10px]">
+                      <div key={c.id} className="py-2.5 flex items-center justify-between text-xs gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="w-5 h-5 rounded-md bg-[#006194] text-white font-black flex items-center justify-center text-[10px] shrink-0">
                             {idx + 1}
                           </span>
-                          <span className="font-bold text-slate-800 dark:text-slate-200 capitalize">
-                            {format(c.fecha, "EEE d 'de' MMMM", { locale: es })}
+                          <span className="font-bold text-[#0b1c30] dark:text-slate-200 capitalize truncate">
+                            {format(c.fecha, "EEEE d 'de' MMMM", { locale: es })}
                           </span>
-                          <span className="text-sky-600 dark:text-sky-400 font-bold">
+                          <span className="font-bold text-[#006194] dark:text-sky-400 shrink-0 font-mono">
                             · {formatHoraDisplay(c.hora)}
                           </span>
                         </div>
-                        <span className="text-slate-600 dark:text-slate-300 font-medium">
-                          👤 {pacItem?.nombreCompleto || 'Yo'}
+                        <span className="text-slate-600 dark:text-slate-300 font-semibold flex items-center gap-1.5 shrink-0 bg-white dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-200/60 dark:border-slate-700">
+                          <User className="w-3 h-3 text-slate-400" />
+                          {pacItem?.pacTitular ? 'Yo' : (pacItem?.nombreCompleto || 'Paciente')}
                         </span>
                       </div>
                     );
@@ -501,498 +947,376 @@ export function Step4Confirmacion() {
                 </div>
               </div>
             ) : (
-              <div className="flex items-start gap-3">
-                <CalendarDays className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Fecha y Horario</p>
-                  <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                    {fecha ? format(fecha, "EEEE dd 'de' MMMM, yyyy", { locale: es }) : ''} · {formatHoraDisplay(hora)}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Servicio Médico */}
-            {servicioSeleccionado && (
-              <div className="flex items-start gap-3">
-                <Stethoscope className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Servicio</p>
-                  <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                    {servicioSeleccionado.servicio} <span className="text-sky-600 dark:text-sky-400 font-extrabold">(Q{totalGeneral.toFixed(2)})</span>
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Tipo de Consulta */}
-            <div className="flex items-start gap-3">
-              <ClipboardList className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Tipo de Consulta</p>
-                <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                  {tipoConsulta || 'Primera vez'}
-                </p>
-              </div>
-            </div>
-
-            {/* Modalidad y Ubicación */}
-            <div className="flex items-start gap-3">
-              {modalidad === 'virtual' ? (
-                <Video className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
-              ) : modalidad === 'domicilio' ? (
-                <Home className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
-              ) : (
-                <MapPin className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
-              )}
-              <div>
-                <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Modalidad / Ubicación</p>
-                <p className="text-sm font-bold text-slate-900 dark:text-slate-100 capitalize">
-                  {modalidad === 'presencial' && clinicaSeleccionada
-                    ? `Presencial · ${clinicaSeleccionada.cliDescripcion}`
-                    : modalidad === 'domicilio'
-                    ? `A Domicilio · ${direccionDomicilio || areaDomicilio?.municipio || 'Domicilio'}`
-                    : 'Telemedicina Virtual (Videollamada)'}
-                </p>
-              </div>
-            </div>
-
-            {/* Paciente (si no es variado) */}
-            {(!isMultiMode || pacienteModoCita === 'mismo') && (
-              <div className="flex items-start gap-3">
-                <Activity className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Paciente</p>
-                  <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                    {pacienteSeleccionado?.nombreCompleto || 'Paciente titular'}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Grupo de Citas (si aplica) */}
-            {(grupoId || creandoNuevoGrupo) && (
-              <div className="flex items-start gap-3">
-                <FolderPlus className="w-5 h-5 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-xs font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider">Grupo de Citas</p>
-                  <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                    {creandoNuevoGrupo ? nuevoGrupoTema : (grupoNombre || 'Grupo vinculado')}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Solicitud de Intercambio Activa */}
-            {solicitudIntercambio && (
-              <div className="p-4 rounded-xl bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-800 text-orange-950 dark:text-orange-200 flex items-start gap-3">
-                <ArrowLeftRight className="w-5 h-5 text-orange-600 dark:text-orange-400 mt-0.5 shrink-0" />
-                <div className="text-xs">
-                  <span className="font-bold text-slate-900 dark:text-white block">Solicitud de intercambio enviada:</span>
-                  <span className="text-orange-800 dark:text-orange-300 mt-0.5 block">
-                    Has solicitado el turno de las <strong>{formatHoraDisplay(solicitudIntercambio.hora)}</strong> al otro paciente. Si acepta ceder su horario, tu cita se moverá automáticamente.
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Action Navigation Buttons */}
-          <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
-            <button
-              type="button"
-              onClick={() => {
-                reset();
-                router.push('/dashboard/citas');
-              }}
-              className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-sm shadow-md shadow-sky-600/25 flex items-center justify-center gap-2 transition cursor-pointer"
-            >
-              <CalendarDays className="w-4 h-4" />
-              <span>Ver mis Citas</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                reset();
-                router.push('/dashboard');
-              }}
-              className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-sm border border-slate-200 dark:border-slate-700 transition flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <span>Volver al Inicio</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-
-        </div>
-      </div>
-    );
-  }
-
-  // 2. ESTADO DE CARGA (IN-PAGE SPINNER SIN MODALES)
-  if (isSubmitting) {
-    return (
-      <div className="max-w-2xl mx-auto py-12 sm:py-20 animate-in fade-in duration-300">
-        <div className="bg-white dark:bg-[#1E293B] rounded-3xl p-8 sm:p-12 border border-slate-200 dark:border-slate-700 shadow-xl text-center flex flex-col items-center justify-center">
-          
-          {/* Animated Spinner with Glow */}
-          <div className="relative mb-6">
-            <div className="w-16 h-16 rounded-full border-4 border-sky-200 dark:border-sky-900 animate-spin border-t-sky-600 dark:border-t-sky-400" />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Stethoscope className="w-6 h-6 text-sky-600 dark:text-sky-400 animate-pulse" />
-            </div>
-          </div>
-
-          <h3 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-            Procesando tu Consulta Médica
-          </h3>
-          
-          <p className="text-sm font-semibold text-sky-600 dark:text-sky-400 mt-2">
-            {submitStatusText}
-          </p>
-
-          <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 max-w-sm">
-            Estamos comunicándonos con el servidor para agendar tu horario y garantizar tu cita con {medicoName}.
-          </p>
-
-          <div className="mt-8 w-full max-w-xs bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
-            <div className="bg-sky-600 h-full rounded-full w-2/3 animate-pulse" />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // 3. ESTADO NORMAL DE REVISIÓN Y CONFIRMACIÓN
-  return (
-    <div className="space-y-8">
-      <div>
-        <h2 className="text-2xl font-black text-slate-900 dark:text-white">Confirma tu cita</h2>
-        <p className="mt-1 text-slate-500 dark:text-slate-400">Revisa los datos de tu consulta y confirma para finalizar.</p>
-      </div>
-
-      {error && (
-        <div className="rounded-xl bg-rose-50 dark:bg-rose-900/20 p-4 text-sm font-semibold text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 flex items-center gap-2">
-          <AlertCircle className="w-5 h-5 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
-        {solicitudIntercambio && (
-          <div className="p-4 rounded-2xl bg-orange-50/90 dark:bg-orange-950/40 border-2 border-orange-300 dark:border-orange-800/80 mb-6 flex items-start gap-3 shadow-xs">
-            <div className="p-2 bg-orange-500 text-white rounded-xl shrink-0 mt-0.5">
-              <ArrowLeftRight className="w-4 h-4" />
-            </div>
-            <div className="text-xs">
-              <p className="font-bold text-orange-950 dark:text-orange-200">
-                Petición de intercambio incluida para las {formatHoraDisplay(solicitudIntercambio.hora)}
-              </p>
-              <p className="text-orange-800 dark:text-orange-300 mt-0.5 leading-relaxed">
-                Tu cita quedará reservada para las <strong>{formatHoraDisplay(hora)}</strong>. Simultáneamente, enviaremos tu solicitud al paciente que tiene las {formatHoraDisplay(solicitudIntercambio.hora)}. Si acepta ceder su horario, tu consulta se actualizará automáticamente.
-              </p>
-            </div>
-          </div>
-        )}
-
-        <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-          <Info className="h-6 w-6 text-sky-500" />
-          Resumen de tu cita
-        </h3>
-        
-        {/* Grilla de Resumen */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          
-          {isMultiMode ? (
-            /* Resumen Multi-Citas de Grupo */
-            <div className="md:col-span-2 bg-slate-50 dark:bg-slate-900/40 rounded-2xl p-5 border border-slate-200/80 dark:border-slate-800">
-              <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200/70 dark:border-slate-800">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                    <CalendarDays className="h-5 w-5" />
+              /* En cita individual: 6 tiles idénticos al mockup de referencia */
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                {/* Tile 1: Paciente Titular */}
+                <div className="bg-[#eff4ff]/30 dark:bg-slate-800/40 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 flex items-start gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-[#eff4ff] dark:bg-blue-950/60 text-[#006194] dark:text-sky-400 flex items-center justify-center shrink-0">
+                    <User className="w-5 h-5" />
                   </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                      {citasMultiples.length} Citas del Grupo Programadas
-                    </h4>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Fechas y horarios seleccionados para este seguimiento
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      PACIENTE TITULAR
+                    </span>
+                    <p className="text-sm font-bold text-[#0b1c30] dark:text-white truncate">
+                      {pacienteSeleccionado?.nombreCompleto || 'Josué Pérez'} {pacienteSeleccionado?.pacTitular ? '(Yo - Titular)' : '(Dependiente)'}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate font-mono">
+                      Expediente Clínico #{pacienteSeleccionado?.pacCodigo?.slice(0, 8)?.toUpperCase() || 'NC-8921'}
                     </p>
                   </div>
                 </div>
-                <span className="text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-100/80 dark:bg-indigo-950 px-2.5 py-1 rounded-lg border border-indigo-200/60 dark:border-indigo-800/80">
-                  {pacienteModoCita === 'mismo' ? 'Mismo paciente' : 'Pacientes variados'}
-                </span>
-              </div>
 
-              <div className="divide-y divide-slate-200/60 dark:divide-slate-800/70">
-                {citasMultiples.map((c, idx) => {
-                  const pacItem = (pacienteModoCita === 'variado' && c.paciente) ? c.paciente : pacienteSeleccionado;
-                  return (
-                    <div key={c.id} className="py-2.5 flex items-center justify-between text-xs gap-3">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="w-5 h-5 rounded-md bg-indigo-600 text-white font-black flex items-center justify-center text-[10px] shrink-0">
-                          {idx + 1}
-                        </span>
-                        <span className="font-bold text-slate-800 dark:text-slate-200 capitalize truncate">
-                          {format(c.fecha, "EEEE d 'de' MMMM", { locale: es })}
-                        </span>
-                        <span className="font-bold text-sky-600 dark:text-sky-400 shrink-0">
-                          · {formatHoraDisplay(c.hora)}
-                        </span>
-                      </div>
-                      <span className="text-slate-600 dark:text-slate-300 font-semibold flex items-center gap-1.5 shrink-0 bg-white dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-200/60 dark:border-slate-700">
-                        <User className="w-3 h-3 text-slate-400" />
-                        {pacItem?.pacTitular ? 'Yo' : (pacItem?.nombreCompleto || 'Paciente')}
+                {/* Tile 2: Fecha y Hora Programada */}
+                <div className="bg-[#eff4ff]/30 dark:bg-slate-800/40 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 flex items-start gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-[#eff4ff] dark:bg-blue-950/60 text-[#006194] dark:text-sky-400 flex items-center justify-center shrink-0">
+                    <Calendar className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      FECHA Y HORA PROGRAMADA
+                    </span>
+                    <p className="text-sm font-bold text-[#0b1c30] dark:text-white truncate capitalize">
+                      {fecha ? format(fecha, "EEEE, d 'de' MMMM yyyy", { locale: es }) : 'Miércoles, 12 de Noviembre 2026'}
+                    </p>
+                    <p className="text-xs text-[#006194] dark:text-sky-400 font-bold mt-0.5 truncate font-mono">
+                      {formatHoraDisplay(hora) || '10:30 AM'} (Horario de Centroamérica)
+                    </p>
+                  </div>
+                </div>
+
+                {/* Tile 3: Modalidad y Sede */}
+                <div className="bg-[#eff4ff]/30 dark:bg-slate-800/40 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 flex items-start gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-[#eff4ff] dark:bg-blue-950/60 text-[#006194] dark:text-sky-400 flex items-center justify-center shrink-0">
+                    {modalidad === 'virtual' ? (
+                      <Video className="w-5 h-5" />
+                    ) : modalidad === 'domicilio' ? (
+                      <Home className="w-5 h-5" />
+                    ) : (
+                      <MapPin className="w-5 h-5" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      MODALIDAD Y SEDE
+                    </span>
+                    <p className="text-sm font-bold text-[#0b1c30] dark:text-white truncate">
+                      {modalidad === 'presencial' ? 'Consulta Presencial' : modalidad === 'virtual' ? 'Videoconsulta Virtual' : 'Consulta a Domicilio'}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                      {clinicaSeleccionada
+                        ? `${clinicaSeleccionada.cliDescripcion}${clinicaSeleccionada.cliDireccionCompleta ? ` · ${clinicaSeleccionada.cliDireccionCompleta}` : ''}`
+                        : modalidad === 'domicilio'
+                        ? (direccionDomicilio || 'Domicilio acordado')
+                        : 'Sala de Telemedicina Encriptada'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Tile 4: Médico Responsable */}
+                <div className="bg-[#eff4ff]/30 dark:bg-slate-800/40 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 flex items-start gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-[#eff4ff] dark:bg-blue-950/60 text-[#006194] dark:text-sky-400 flex items-center justify-center shrink-0">
+                    <Stethoscope className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      MÉDICO RESPONSABLE
+                    </span>
+                    <p className="text-sm font-bold text-[#0b1c30] dark:text-white truncate">
+                      {nombreDoctor}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                      {docSpecialties}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Tile 5: Servicio Médico Agendado */}
+                <div className="bg-[#eff4ff]/30 dark:bg-slate-800/40 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 flex items-start gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-[#eff4ff] dark:bg-blue-950/60 text-[#006194] dark:text-sky-400 flex items-center justify-center shrink-0">
+                    <Activity className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      SERVICIO MÉDICO AGENDADO
+                    </span>
+                    <p className="text-sm font-bold text-[#0b1c30] dark:text-white truncate">
+                      {servicioSeleccionado?.servicio || (modalidad === 'virtual' ? 'Videoconsulta Médica' : 'Consulta Médica General')}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                      Duración estimada: 45 minutos
+                    </p>
+                  </div>
+                </div>
+
+                {/* Tile 6: Naturaleza de la Consulta */}
+                <div className="bg-[#eff4ff]/30 dark:bg-slate-800/40 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 flex items-start gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-[#eff4ff] dark:bg-blue-950/60 text-[#006194] dark:text-sky-400 flex items-center justify-center shrink-0">
+                    <ClipboardList className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      NATURALEZA DE LA CONSULTA
+                    </span>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs font-bold text-[#006194] dark:text-sky-400 bg-[#eff4ff] dark:bg-blue-950/60 px-2.5 py-0.5 rounded-md">
+                        {tipoConsulta || 'Primera vez'}
+                      </span>
+                      <span className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                        Apertura de ficha clínica
                       </span>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : (
-            /* Resumen Cita Individual */
-            <>
-              {/* Paciente y Motivo */}
-              <div className="flex gap-4">
-                <div className="w-12 h-12 rounded-full border-[2px] border-transparent p-0.5 shrink-0 overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-blue-700 dark:text-blue-400">
-                  {pacienteSeleccionado?.pacFotoPerfilUrl || pacienteSeleccionado?.pacTitular ? (
-                    <img
-                      src={pacienteSeleccionado?.pacFotoPerfilUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(pacienteSeleccionado?.nombreCompleto || 'Paciente')}&background=0D8ABC&color=fff`}
-                      alt={pacienteSeleccionado?.nombreCompleto}
-                      className="w-full h-full rounded-full object-cover"
-                    />
-                  ) : (
-                    <span className="text-sm font-bold">{getInitials(pacienteSeleccionado?.nombreCompleto || '')}</span>
-                  )}
+                  </div>
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* ========================================================================= */}
+          {/* SECCIÓN 2: INFORMACIÓN DE FACTURACIÓN Y PAGO (MOCKUP EXACTO)              */}
+          {/* ========================================================================= */}
+          <div>
+            <h3 className="text-base font-bold text-[#0b1c30] dark:text-white mb-3.5">
+              Información de Facturación y Pago
+            </h3>
+
+            <div className="bg-[#eff4ff]/30 dark:bg-slate-800/40 rounded-2xl p-4 sm:p-5 border border-slate-100 dark:border-slate-800 grid grid-cols-1 md:grid-cols-2 gap-5">
+              {/* Columna Izquierda: Método de Pago */}
+              <div className="flex flex-col justify-between space-y-3">
                 <div>
-                  <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Paciente</p>
-                  <p className="font-bold text-slate-900 dark:text-slate-100 leading-tight">
-                    {pacienteSeleccionado?.pacTitular ? 'Yo' : pacienteSeleccionado?.nombreCompleto}
-                  </p>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-1">
-                    <Activity className="w-3.5 h-3.5" />
-                    {motivo}
-                  </p>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                    MÉTODO DE PAGO SELECCIONADO
+                  </span>
+                  <div className="bg-white dark:bg-slate-900 rounded-xl p-3.5 border border-slate-100 dark:border-slate-800 flex items-center gap-3">
+                    <div className="w-12 h-9 rounded-md bg-slate-900 dark:bg-slate-800 text-white flex items-center justify-center text-[10px] font-black shrink-0 tracking-wider">
+                      {paymentBadgeText}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs sm:text-sm font-bold text-[#0b1c30] dark:text-white truncate">
+                        {paymentTitle}
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono truncate">
+                        {paymentSubtitle}
+                      </p>
+                    </div>
+                  </div>
                 </div>
+
+                <p className="text-[11px] text-[#006c4a] dark:text-emerald-400 font-medium flex items-center gap-1.5 pt-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>{paymentSecurityNote}</span>
+                </p>
               </div>
 
-              {/* Fecha y Hora */}
-              <div className="flex gap-4">
-                <div className="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
-                  <Calendar className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+              {/* Columna Derecha: Desglose de Aranceles */}
+              <div className="space-y-3">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  DESGLOSE DE ARANCELES
+                </span>
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between items-center text-slate-600 dark:text-slate-300">
+                    <span>
+                      {isMultiMode ? `Subtotal Consulta (${countCitas} citas)` : 'Subtotal Consulta Médica'}
+                    </span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-100 font-mono">
+                      Q {subtotalGeneral.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-600 dark:text-slate-300">
+                    <span>Impuestos y Emisión de FEL</span>
+                    <span className="font-semibold text-[#006c4a] dark:text-emerald-400 font-mono">
+                      Q {ivaGeneral.toFixed(2)} (Exento / Incluido)
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Fecha y Hora</p>
-                  <p className="font-bold text-slate-900 dark:text-slate-100 leading-tight">
-                    {fecha ? `${fecha.getDate()} ${fecha.toLocaleString('es', { month: 'short', year: 'numeric' })}` : 'Pendiente'}
-                  </p>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-1">
-                    A las {formatHoraDisplay(hora)}
-                  </p>
+
+                <div className="bg-white dark:bg-slate-900 rounded-xl p-3.5 border border-slate-100 dark:border-slate-800 flex items-center justify-between mt-2 shadow-2xs">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                    TOTAL A PAGAR
+                  </span>
+                  <span className="text-2xl font-black text-[#006194] dark:text-sky-400 font-mono">
+                    Q {totalGeneral.toFixed(2)}
+                  </span>
                 </div>
               </div>
-            </>
-          )}
-
-          {/* Modalidad y Ubicación */}
-          <div className="flex gap-4">
-            <div className="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
-              <MapPin className="h-6 w-6 text-blue-600 dark:text-blue-400" />
             </div>
-            <div>
-              <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Ubicación</p>
-              <p className="font-bold text-slate-900 dark:text-slate-100 leading-tight capitalize">
-                Consulta {modalidad}
-              </p>
-              <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-1">
-                {modalidad === 'presencial' && clinicaSeleccionada && (
-                  <><Building2 className="w-3.5 h-3.5" /> {clinicaSeleccionada.cliDescripcion}</>
+          </div>
+
+          {/* ========================================================================= */}
+          {/* CÓDIGO DE REFERIDO (OPCIONAL)                                             */}
+          {/* ========================================================================= */}
+          <div className="bg-[#eff4ff]/40 dark:bg-slate-800/40 rounded-2xl p-5 border border-slate-200/80 dark:border-slate-800 space-y-3.5">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-100 dark:border-blue-900/40 shrink-0">
+                <Gift className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                  ¿Tienes un código de referido?
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Si alguien te invitó a NeoClínica, ingresa su código aquí.
+                </p>
+              </div>
+            </div>
+
+            {codigoReferidoAplicado || (pacienteTitular?.pac_referido_por && !codigoReferidoInput) ? (
+              <div className="flex items-center justify-between p-3.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span className="text-xs font-bold text-emerald-900 dark:text-emerald-200 truncate">
+                    {codigoReferidoAplicado ? (
+                      <>Código <span className="font-mono">{codigoReferidoAplicado}</span> aplicado exitosamente</>
+                    ) : (
+                      'Ya cuentas con un código de referido vinculado a tu cuenta'
+                    )}
+                  </span>
+                </div>
+                {codigoReferidoAplicado && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCodigoReferidoAplicado(null);
+                      setCodigoReferidoInput('');
+                      setReferidoError(null);
+                    }}
+                    className="text-xs font-semibold text-slate-400 hover:text-rose-500 transition-colors ml-2 cursor-pointer"
+                  >
+                    Cambiar
+                  </button>
                 )}
-                {modalidad === 'domicilio' && areaDomicilio && (
-                  <><MapPin className="w-3.5 h-3.5" /> {areaDomicilio.municipio}</>
-                )}
-                {modalidad === 'virtual' && (
-                  <span>Videollamada</span>
-                )}
-              </p>
-            </div>
-          </div>
-
-          {/* Médico */}
-          <div className="flex gap-4">
-            <div className="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
-              <Stethoscope className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Especialista</p>
-              <p className="font-bold text-slate-900 dark:text-slate-100 leading-tight">
-                {medicoName}
-              </p>
-            </div>
-          </div>
-
-          {/* Servicio Médico */}
-          {servicioSeleccionado && (
-            <div className="flex gap-4">
-              <div className="w-12 h-12 rounded-full bg-teal-50 dark:bg-teal-900/30 flex items-center justify-center shrink-0">
-                <Activity className="h-6 w-6 text-teal-600 dark:text-teal-400" />
               </div>
-              <div>
-                <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Servicio Médico</p>
-                <p className="font-bold text-slate-900 dark:text-slate-100 leading-tight">
-                  {servicioSeleccionado.servicio}
-                </p>
-                <p className="text-xs text-teal-600 dark:text-teal-400 font-semibold mt-1">
-                  Q{servicioSeleccionado.costoTotal.toFixed(2)}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Tipo de Consulta */}
-          <div className="flex gap-4">
-            <div className="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
-              <ClipboardList className="h-6 w-6 text-[#0B3B60] dark:text-blue-400" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Tipo de Consulta</p>
-              <p className="font-bold text-slate-900 dark:text-slate-100 leading-tight">
-                {tipoConsulta || 'Primera vez'}
-              </p>
-              <span className="inline-flex items-center gap-1 mt-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#0B3B60] text-white shadow-2xs">
-                <Check className="w-3 h-3 stroke-[3]" />
-                {tipoConsulta || 'Primera vez'}
-              </span>
-            </div>
-          </div>
-
-          {/* Grupo de Citas */}
-          {(grupoId || creandoNuevoGrupo) && (
-            <div className="flex gap-4">
-              <div className="w-12 h-12 rounded-full bg-purple-50 dark:bg-purple-900/30 flex items-center justify-center shrink-0">
-                <FolderPlus className="h-6 w-6 text-purple-600 dark:text-purple-400" />
-              </div>
-              <div>
-                <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Grupo de Citas</p>
-                <p className="font-bold text-slate-900 dark:text-slate-100 leading-tight">
-                  {creandoNuevoGrupo ? (nuevoGrupoTema || 'Nuevo grupo') : (grupoNombre || 'Grupo activo')}
-                </p>
-                <p className="text-xs text-purple-600 dark:text-purple-400 font-semibold mt-1">
-                  {creandoNuevoGrupo ? 'Se creará e iniciará una nueva serie' : 'Continuidad con grupo asignado'}
-                </p>
-              </div>
-            </div>
-          )}
-
-        </div>
-
-        {/* Info Pago & Desglose */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start mt-6 pt-6 border-t border-slate-100 dark:border-slate-700">
-          <div className="bg-slate-50 dark:bg-[#0B1120] rounded-xl p-4 border border-slate-100 dark:border-slate-700 flex items-center gap-4 h-full">
-            <div className="p-3 bg-white dark:bg-[#0F172A] rounded-lg shadow-sm">
-              {omitirPago ? (
-                <CheckCircle2 className="w-6 h-6 text-emerald-500" />
-              ) : itemBilletera?.tipo === 'TARJETA' ? (
-                <CreditCard className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-              ) : (
-                <Wallet className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-              )}
-            </div>
-            <div>
-              <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Pago Seleccionado</p>
-              <p className="font-bold text-slate-700 dark:text-slate-200 text-sm mt-0.5">
-                {omitirPago ? 'Pago directo en clínica / Pendiente de asignación' : (metodoSeleccionado?.descripcion || 'Pendiente')}
-              </p>
-              {!omitirPago && itemBilletera && (
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  {itemBilletera.proveedor} • {itemBilletera.descripcion}
-                </p>
-              )}
-              {!omitirPago && isTransferenciaSeleccionada && comprobanteTransferencia && (
-                <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1.5 font-semibold flex items-center gap-1">
-                  ✓ Comprobante adjunto · {(comprobanteTransferencia.size / 1024).toFixed(1)} KB
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-[#0F172A] rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col gap-2">
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-slate-500 dark:text-slate-400 font-medium">
-                {isMultiMode ? `Subtotal (${countCitas} citas)` : 'Subtotal de la consulta'}
-              </span>
-              <span className="font-semibold text-slate-700 dark:text-slate-200">Q{subtotalGeneral.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-slate-500 dark:text-slate-400 font-medium">Impuestos (12% IVA)</span>
-              <span className="font-semibold text-slate-700 dark:text-slate-200">Q{ivaGeneral.toFixed(2)}</span>
-            </div>
-            <div className="border-t border-slate-100 dark:border-slate-800 my-1 pt-2 flex justify-between items-center">
-              <span className="font-bold text-slate-900 dark:text-white">Total a Pagar</span>
-              <span className="font-black text-lg text-blue-600 dark:text-blue-400">Q{totalGeneral.toFixed(2)}</span>
-            </div>
-          </div>
-        </div>
-        
-        {archivos.length > 0 && (
-          <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-700">
-            <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">Documentos adjuntos:</h4>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {archivos.map((file, idx) => (
-                <div key={idx} className="flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-700 p-3 bg-slate-50 dark:bg-[#0B1120] shadow-sm overflow-hidden">
-                  <FileText className="h-5 w-5 shrink-0 text-sky-500" />
-                  <p className="truncate text-sm font-semibold text-slate-700 dark:text-slate-300">{file.name}</p>
+            ) : (
+              <div className="flex flex-col sm:flex-row gap-2.5">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={codigoReferidoInput}
+                    onChange={(e) => {
+                      setCodigoReferidoInput(e.target.value.toUpperCase());
+                      setReferidoError(null);
+                    }}
+                    placeholder="Ej. ALEJ-2F5A"
+                    disabled={isApplyingReferido}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono uppercase text-xs font-bold tracking-wider placeholder:normal-case placeholder:font-sans placeholder:font-normal placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:opacity-50"
+                  />
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Términos y Condiciones Informativos (Sin checkbox obligatorio) */}
-        <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-700 space-y-4">
-          {modalidad === 'virtual' && (
-            <div className="bg-sky-50 dark:bg-sky-900/30 text-sky-800 dark:text-sky-300 p-4 rounded-xl flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 shrink-0 text-sky-600 dark:text-sky-400 mt-0.5" />
-              <div>
-                <p className="text-sm font-bold">Instrucciones para tu cita virtual</p>
-                <p className="text-sm font-medium mt-1">Recibirás un enlace de conexión segura (Google Meet/Zoom) por correo electrónico y WhatsApp 15 minutos antes de tu cita.</p>
+                <button
+                  type="button"
+                  onClick={handleAplicarCodigoReferido}
+                  disabled={!codigoReferidoInput.trim() || isApplyingReferido}
+                  className="px-5 py-2.5 rounded-xl bg-[#006194] hover:bg-[#00517c] active:scale-95 text-white text-xs font-bold shadow-xs transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                >
+                  {isApplyingReferido ? <Loader2 className="w-4 h-4 animate-spin" /> : <Gift className="w-4 h-4" />}
+                  <span>Aplicar Código</span>
+                </button>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Términos informativos */}
-          <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0B1120] border border-slate-200 dark:border-slate-700/80 flex items-start gap-3">
-            <Info className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
-            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-              Al hacer clic en <strong>{isMultiMode ? `Confirmar ${countCitas} Citas` : 'Confirmar Cita'}</strong>, aceptas los <strong>Términos y Condiciones</strong>, el consentimiento informado y las políticas de cancelación y reembolso de <strong>SaludYa</strong>. Las cancelaciones con menos de 24 horas de anticipación pueden estar sujetas a cargos según las políticas del especialista.
+            {/* LEYENDA OBLIGATORIA */}
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
+              Quien te invitó recibe puntos cuando ingresas su código. ¡Gracias por unirte a NeoClínica!
             </p>
+
+            {referidoError && (
+              <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/40 text-xs text-rose-700 dark:text-rose-300 font-medium flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
+                <span>{referidoError}</span>
+              </div>
+            )}
+          </div>
+
+          {/* ========================================================================= */}
+          {/* INDICACIONES IMPORTANTES (BANNER AZUL SUAVE)                               */}
+          {/* ========================================================================= */}
+          <div className="bg-[#eff4ff]/60 dark:bg-blue-950/30 rounded-2xl p-4 border border-blue-100 dark:border-blue-900/40 flex items-start gap-3">
+            <Info className="w-5 h-5 text-[#006194] dark:text-sky-400 shrink-0 mt-0.5" />
+            <div className="text-xs text-slate-600 dark:text-slate-300">
+              <strong className="text-[#0b1c30] dark:text-white font-bold block mb-0.5">
+                Indicaciones importantes para tu consulta:
+              </strong>
+              <p className="leading-relaxed">
+                {modalidad === 'presencial'
+                  ? 'Por favor, preséntate 10 minutos antes en la recepción del centro médico para la toma de signos vitales preliminar. Recibirás una copia de tu cita vía WhatsApp y al correo registrado.'
+                  : modalidad === 'virtual'
+                  ? 'Recibirás un enlace seguro de telemedicina por correo y WhatsApp 15 minutos antes de la hora acordada. Asegúrate de contar con buena conexión a internet.'
+                  : 'El especialista se desplazará a la dirección indicada. Por favor mantente atento al teléfono registrado para coordinar el ingreso al inmueble.'}
+              </p>
+            </div>
+          </div>
+
+          {/* Documentos Adjuntos si existen */}
+          {archivos.length > 0 && (
+            <div className="pt-2">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                Documentos Clínicos Adjuntos ({archivos.length})
+              </span>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {archivos.map((file, idx) => (
+                  <div key={idx} className="flex items-center gap-2.5 rounded-xl border border-slate-200 dark:border-slate-800 p-2.5 bg-slate-50 dark:bg-slate-800/40 text-xs">
+                    <FileText className="h-4 w-4 shrink-0 text-[#006194]" />
+                    <span className="truncate font-semibold text-slate-700 dark:text-slate-300">{file.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Texto de Términos Informativo */}
+          <p className="text-[11px] text-slate-400 text-center max-w-3xl mx-auto pt-2 leading-relaxed">
+            Al hacer clic en <strong className="text-slate-600 dark:text-slate-300">Confirmar y Agendar Cita</strong>, aceptas los <span className="underline cursor-pointer">Términos del Servicio</span>, el consentimiento informado de atención médica y las <span className="underline cursor-pointer">políticas de cancelación flexible</span> (cancelación o reprogramación sin penalidad hasta 24 horas antes de la consulta).
+          </p>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* BARRA INFERIOR DE ACCIÓN (ESTILO STEP 1, 2 Y 3)                           */}
+        {/* ========================================================================= */}
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 shadow-[0_4px_28px_rgba(11,28,48,0.06)] border border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 mt-8">
+          <button
+            type="button"
+            onClick={() => {
+              window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+              document.documentElement.scrollTop = 0;
+              document.body.scrollTop = 0;
+              prevStep();
+            }}
+            disabled={isSubmitting}
+            className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            <span>Volver a Método de Pago</span>
+          </button>
+
+          <div className="flex flex-col sm:flex-row items-center gap-6 w-full sm:w-auto justify-end">
+            <div className="text-center sm:text-right">
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+                TOTAL CONSULTA
+              </span>
+              <span className="text-2xl sm:text-3xl font-black text-[#0b1c30] dark:text-white font-mono">
+                Q {totalGeneral.toFixed(2)}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleConfirm}
+              disabled={isSubmitting}
+              className="w-full sm:w-auto px-8 h-12 rounded-xl text-sm font-semibold bg-[#006194] hover:bg-[#007bb9] text-white shadow-[0_4px_16px_rgba(0,97,148,0.22)] active:scale-[0.99] transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Confirmando Cita...</span>
+                </>
+              ) : (
+                <>
+                  <span>Confirmar y Agendar Cita</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
           </div>
         </div>
-      </div>
-
-      {/* Botones de Navegación */}
-      <div className="sticky bottom-0 z-30 bg-transparent flex flex-col-reverse sm:flex-row justify-between items-center gap-3 py-4 border-t border-slate-200/60 dark:border-slate-800/40 mt-8">
-        <button
-          onClick={() => {
-            prevStep();
-            window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-          }}
-          disabled={isSubmitting}
-          className="w-full sm:w-auto font-bold py-3.5 px-8 rounded-xl transition-all flex items-center justify-center gap-2 bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#0F172A] shadow-sm cursor-pointer"
-        >
-          <ChevronLeft className="h-5 w-5" /> Regresar
-        </button>
-
-        <button
-          onClick={handleConfirm}
-          disabled={isSubmitting}
-          className="w-full sm:w-auto font-bold py-3.5 px-10 rounded-xl transition-all flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-600/25 cursor-pointer"
-        >
-          {isMultiMode ? `Confirmar ${countCitas} Citas` : 'Confirmar Cita'}
-          <Check className="h-5 w-5 stroke-[2.5]" />
-        </button>
       </div>
     </div>
   );
