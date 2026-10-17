@@ -31,6 +31,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import ConfirmLogoutModal from '@/components/confirm-logout-modal';
+import { useUIStore } from '@/stores/ui-store';
 
 // ─── Navigation Items ────────────────────────────────────────────────────────
 
@@ -47,29 +48,14 @@ export function ProfileSidebar() {
   const isCollapsed = state === 'collapsed';
 
   const [showLogoutModal, setShowLogoutModal] = React.useState(false);
-  const [theme, setTheme] = React.useState<'light' | 'dark'>('light');
+  const { isDarkMode, toggleDarkMode } = useUIStore();
+  const [mounted, setMounted] = React.useState(false);
 
-  // Sincronizar tema con document y localStorage
   React.useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const isDark =
-        document.documentElement.classList.contains('dark') ||
-        localStorage.getItem('theme') === 'dark';
-      setTheme(isDark ? 'dark' : 'light');
-    }
+    setMounted(true);
   }, []);
 
-  const toggleTheme = () => {
-    const nextTheme = theme === 'dark' ? 'light' : 'dark';
-    setTheme(nextTheme);
-    if (nextTheme === 'dark') {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-    }
-  };
+  const activeDarkMode = mounted ? isDarkMode : false;
 
   const isActive = (href: string) => {
     if (href === '/dashboard/perfil') {
@@ -187,22 +173,22 @@ export function ProfileSidebar() {
             {/* Theme Toggle Button */}
             <SidebarMenuItem className="flex justify-center">
               <SidebarMenuButton
-                onClick={toggleTheme}
-                tooltip={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+                onClick={toggleDarkMode}
+                tooltip={activeDarkMode ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
                 className={`rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-white/60 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white cursor-pointer transition-colors ${
                   isCollapsed
                     ? 'size-9! p-0! justify-center! items-center!'
                     : 'w-full px-3 py-2'
                 }`}
               >
-                {theme === 'dark' ? (
+                {activeDarkMode ? (
                   <Sun className="h-4 w-4 text-amber-400 shrink-0" />
                 ) : (
                   <Moon className="h-4 w-4 text-[#006194] dark:text-sky-400 shrink-0" />
                 )}
                 {!isCollapsed && (
                   <span className="truncate">
-                    {theme === 'dark' ? 'Modo Claro' : 'Modo Oscuro'}
+                    {activeDarkMode ? 'Modo Claro' : 'Modo Oscuro'}
                   </span>
                 )}
               </SidebarMenuButton>

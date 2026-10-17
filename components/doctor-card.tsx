@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, memo } from 'react';
+import { useState, useEffect, useMemo, memo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -42,7 +42,8 @@ import {
   cleanZonaShort,
   cleanZonasDomicilio,
 } from '@/types/doctor';
-import { APIProvider, Map as GoogleMap, AdvancedMarker } from '@vis.gl/react-google-maps';
+import { APIProvider, Map as GoogleMap, AdvancedMarker, useMap } from '@vis.gl/react-google-maps';
+import { resolveDomicilioCoverage, MapCircle, type DomicilioCircle } from '@/components/directory-map';
 
 const MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 const GUATEMALA_CENTER = { lat: 14.601, lng: -90.515 };
@@ -57,6 +58,106 @@ const ZONA_OFFSETS: Record<string, { lat: number; lng: number }> = {
   '4': { lat: 14.621, lng: -90.518 },
 };
 
+// Controlador interno para trazar ruta desde usuario al médico y ajustar límites de visualización
+function MiniMapRouteAndBounds({
+  origin,
+  destination,
+  coverageCircles,
+  isDomicilio,
+}: {
+  origin?: { lat: number; lng: number } | null;
+  destination: { lat: number; lng: number };
+  coverageCircles?: DomicilioCircle[];
+  isDomicilio?: boolean;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map || typeof window === 'undefined' || !(window as any).google?.maps) return;
+    const googleMaps = (window as any).google.maps;
+
+    let directionsRenderer: any = null;
+    let fallbackPolyline: any = null;
+
+    const bounds = new googleMaps.LatLngBounds();
+
+    if (isDomicilio && coverageCircles && coverageCircles.length > 0) {
+      coverageCircles.forEach((c) => {
+        const latDelta = c.radiusMeters / 111000;
+        const lngDelta = c.radiusMeters / (111000 * Math.cos(c.lat * (Math.PI / 180)));
+        bounds.extend({ lat: c.lat + latDelta, lng: c.lng + lngDelta });
+        bounds.extend({ lat: c.lat - latDelta, lng: c.lng - lngDelta });
+      });
+      if (origin) {
+        bounds.extend(origin);
+      }
+      map.fitBounds(bounds, { top: 40, bottom: 40, left: 40, right: 40 });
+    } else if (origin) {
+      bounds.extend(origin);
+      bounds.extend(destination);
+      map.fitBounds(bounds, { top: 55, bottom: 55, left: 55, right: 55 });
+    } else {
+      map.panTo(destination);
+      map.setZoom(15);
+    }
+
+    // Trazo de ruta de la ubicación del usuario al médico / centroide de cobertura
+    if (origin) {
+      const directionsService = new googleMaps.DirectionsService();
+      directionsService.route(
+        {
+          origin,
+          destination,
+          travelMode: googleMaps.TravelMode.DRIVING,
+        },
+        (result: any, status: any) => {
+          if (status === googleMaps.DirectionsStatus.OK && result) {
+            directionsRenderer = new googleMaps.DirectionsRenderer({
+              map,
+              directions: result,
+              suppressMarkers: true,
+              preserveViewport: true,
+              polylineOptions: {
+                strokeColor: isDomicilio ? '#059669' : '#0284C7',
+                strokeOpacity: 0.85,
+                strokeWeight: 4,
+              },
+            });
+          } else {
+            fallbackPolyline = new googleMaps.Polyline({
+              path: [origin, destination],
+              geodesic: true,
+              strokeColor: isDomicilio ? '#059669' : '#0284C7',
+              strokeOpacity: 0.85,
+              strokeWeight: 3.5,
+              map,
+              icons: [
+                {
+                  icon: {
+                    path: googleMaps.SymbolPath.FORWARD_CLOSED_ARROW,
+                    scale: 3,
+                    strokeColor: isDomicilio ? '#047857' : '#0073B1',
+                    fillColor: isDomicilio ? '#059669' : '#0284C7',
+                    fillOpacity: 1,
+                  },
+                  offset: '100%',
+                },
+              ],
+            });
+          }
+        }
+      );
+    }
+
+    return () => {
+      if (directionsRenderer) directionsRenderer.setMap(null);
+      if (fallbackPolyline) fallbackPolyline.setMap(null);
+    };
+  }, [map, origin?.lat, origin?.lng, destination.lat, destination.lng, isDomicilio, coverageCircles]);
+
+  return null;
+}
+
 function ClinicMiniMap({
   lat,
   lng,
@@ -64,6 +165,9 @@ function ClinicMiniMap({
   address,
   distanceFormatted,
   googleMapsUrl,
+  userLocation,
+  isDomicilio,
+  domicilioZonas,
 }: {
   lat: number;
   lng: number;
@@ -71,6 +175,9 @@ function ClinicMiniMap({
   address?: string | null;
   distanceFormatted?: string | null;
   googleMapsUrl?: string | null;
+  userLocation?: { lat: number; lng: number } | null;
+  isDomicilio?: boolean;
+  domicilioZonas?: DomicilioCircle[];
 }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -80,12 +187,12 @@ function ClinicMiniMap({
   if (!mounted || !MAPS_API_KEY) {
     return (
       <div className="w-full h-full min-h-[300px] lg:min-h-[420px] rounded-2xl bg-slate-100 dark:bg-slate-800/80 flex flex-col items-center justify-center p-6 text-center relative overflow-hidden">
-        <div className="w-14 h-14 rounded-2xl bg-[#EFF4FF] dark:bg-sky-950/60 flex items-center justify-center mb-3 text-[#0284C7] dark:text-sky-400">
-          <MapPin className="w-7 h-7" />
+        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-3 ${isDomicilio ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400' : 'bg-[#EFF4FF] dark:bg-sky-950/60 text-[#0284C7] dark:text-sky-400'}`}>
+          {isDomicilio ? <Home className="w-7 h-7" /> : <MapPin className="w-7 h-7" />}
         </div>
         <span className="text-sm font-bold text-slate-800 dark:text-slate-100">{title}</span>
         {address && <span className="text-xs text-[#64748B] dark:text-slate-400 mt-1 max-w-[280px] leading-relaxed">{address}</span>}
-        {googleMapsUrl && (
+        {googleMapsUrl && !isDomicilio && (
           <a
             href={googleMapsUrl}
             target="_blank"
@@ -101,40 +208,96 @@ function ClinicMiniMap({
     );
   }
 
+  const effectiveOrigin = userLocation || GUATEMALA_CENTER;
+
   return (
     <div className="w-full h-full min-h-[300px] lg:min-h-[420px] rounded-2xl overflow-hidden relative bg-slate-100 dark:bg-slate-900 group">
       <APIProvider apiKey={MAPS_API_KEY} libraries={['marker']}>
         <GoogleMap
           mapId="CLINIC_MINI_MAP"
           center={{ lat, lng }}
-          defaultZoom={15}
+          defaultZoom={isDomicilio ? 13 : 15}
           gestureHandling="cooperative"
           disableDefaultUI={true}
           zoomControl={true}
           className="w-full h-full min-h-[300px] lg:min-h-[420px]"
         >
-          <AdvancedMarker position={{ lat, lng }}>
-            <div className="relative flex flex-col items-center select-none cursor-pointer -translate-y-full pb-1">
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-[#0284C7] to-[#0073B1] text-white font-semibold text-xs shadow-md border-2 border-white ring-1 ring-black/10">
-                <MapPin className="w-3.5 h-3.5 text-sky-200 shrink-0" />
-                <span className="truncate max-w-[170px]">{title}</span>
+          {/* Controlador de bounds y trazo de ruta con DirectionsService */}
+          <MiniMapRouteAndBounds
+            origin={effectiveOrigin}
+            destination={{ lat, lng }}
+            coverageCircles={domicilioZonas}
+            isDomicilio={isDomicilio}
+          />
+
+          {/* Círculos de cobertura resaltada en caso de Atención a Domicilio */}
+          {isDomicilio && domicilioZonas && domicilioZonas.map((zone, zIdx) => (
+            <MapCircle
+              key={`mini_circle_${zIdx}_${zone.lat}_${zone.lng}`}
+              center={{ lat: zone.lat, lng: zone.lng }}
+              radius={zone.radiusMeters}
+              options={{
+                fillColor: '#10B981',
+                fillOpacity: 0.22,
+                strokeColor: '#059669',
+                strokeOpacity: 0.85,
+                strokeWeight: 2,
+              }}
+            />
+          ))}
+
+          {/* Marcador de Ubicación del Usuario con indicador de pulso */}
+          {effectiveOrigin && (
+            <AdvancedMarker position={effectiveOrigin} zIndex={100}>
+              <div className="relative flex flex-col items-center select-none group cursor-pointer -translate-y-full pb-1">
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900 text-white font-extrabold text-[11px] shadow-xl border-2 border-sky-400">
+                  <Navigation className="w-3 h-3 fill-sky-400 text-sky-400 shrink-0" />
+                  <span>Tu ubicación</span>
+                </div>
+                <div className="w-2 h-2 bg-slate-900 border-r-2 border-b-2 border-sky-400 rotate-45 -mt-1 shadow-xs" />
               </div>
-              <div className="w-2.5 h-2.5 bg-[#0073B1] rotate-45 -mt-1 shadow-xs" />
+            </AdvancedMarker>
+          )}
+
+          {/* Marcador del Médico / Sede o Centroide de Cobertura a Domicilio */}
+          <AdvancedMarker position={{ lat, lng }} zIndex={110}>
+            <div className="relative flex flex-col items-center select-none cursor-pointer -translate-y-full pb-1">
+              {isDomicilio ? (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-emerald-600 to-teal-700 text-white font-bold text-xs shadow-md border-2 border-white ring-1 ring-black/10">
+                  <Home className="w-3.5 h-3.5 text-emerald-200 shrink-0" />
+                  <span className="truncate max-w-[170px]">{title}</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-[#0284C7] to-[#0073B1] text-white font-semibold text-xs shadow-md border-2 border-white ring-1 ring-black/10">
+                  <MapPin className="w-3.5 h-3.5 text-sky-200 shrink-0" />
+                  <span className="truncate max-w-[170px]">{title}</span>
+                </div>
+              )}
+              <div className={`w-2.5 h-2.5 rotate-45 -mt-1 shadow-xs ${isDomicilio ? 'bg-teal-700' : 'bg-[#0073B1]'}`} />
             </div>
           </AdvancedMarker>
         </GoogleMap>
       </APIProvider>
 
-      {/* Badge flotante de distancia */}
-      {distanceFormatted && (
-        <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md text-emerald-700 dark:text-emerald-300 px-3 py-1.5 rounded-full text-xs font-semibold shadow-sm">
-          <Navigation className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-          <span>{distanceFormatted}</span>
-        </div>
-      )}
+      {/* Badge flotante superior izquierdo: Estado / Distancia con ruta */}
+      <div className={`absolute top-3 left-3 z-10 flex items-center gap-1.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-3 py-1.5 rounded-full text-xs font-semibold shadow-sm ${
+        isDomicilio ? 'text-emerald-700 dark:text-emerald-300' : 'text-[#0284C7] dark:text-sky-300'
+      }`}>
+        {isDomicilio ? (
+          <>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>Cobertura a Domicilio</span>
+          </>
+        ) : (
+          <>
+            <Navigation className="w-3.5 h-3.5 text-[#0284C7] dark:text-sky-400 shrink-0" />
+            <span>{distanceFormatted || 'Ruta trazada'}</span>
+          </>
+        )}
+      </div>
 
-      {/* Botón flotante para abrir en Google Maps */}
-      {googleMapsUrl && (
+      {/* Botón flotante para abrir en Google Maps (solo para sedes físicas) */}
+      {googleMapsUrl && !isDomicilio && (
         <a
           href={googleMapsUrl}
           target="_blank"
@@ -148,13 +311,20 @@ function ClinicMiniMap({
         </a>
       )}
 
-      {/* Badge flotante inferior con nombre de sede */}
-      {title && (
-        <div className="absolute bottom-3 left-3 z-10 hidden sm:flex items-center gap-1.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md text-[#475569] dark:text-slate-200 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-sm max-w-[280px]">
-          <MapPin className="w-3.5 h-3.5 text-[#0284C7] dark:text-sky-400 shrink-0" />
-          <span className="truncate">{title}</span>
-        </div>
-      )}
+      {/* Badge flotante inferior con nombre de sede o zonas cubiertas */}
+      <div className="absolute bottom-3 left-3 z-10 hidden sm:flex items-center gap-1.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md text-[#475569] dark:text-slate-200 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-sm max-w-[280px]">
+        {isDomicilio ? (
+          <>
+            <Home className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span className="truncate">{address || 'Zonas de Cobertura'}</span>
+          </>
+        ) : (
+          <>
+            <MapPin className="w-3.5 h-3.5 text-[#0284C7] dark:text-sky-400 shrink-0" />
+            <span className="truncate">{title}</span>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -192,6 +362,8 @@ type DoctorCardProps = {
   onSelectClinic?: (clinicIndex: number | null) => void;
   selectedClinicIndex?: number | null;
   variant?: 'compact' | 'expanded';
+  hideMap?: boolean;
+  userLocation?: { lat: number; lng: number } | null;
   isHovered?: boolean;
   isSelected?: boolean;
   isHighlightedByLocation?: boolean;
@@ -278,8 +450,10 @@ function DoctorCardComponent({
   onSelect,
   onClose,
   onSelectClinic,
-  selectedClinicIndex = 0,
+  selectedClinicIndex: controlledClinicIndex,
   variant = 'compact',
+  hideMap = true,
+  userLocation,
   isHovered = false,
   isSelected = false,
   isHighlightedByLocation = false,
@@ -291,6 +465,18 @@ function DoctorCardComponent({
   const [isHorariosModalOpen, setIsHorariosModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+
+  const hasDocClinicas = (data.doctor.clinicas || []).length > 0;
+  const hasDocDomicilio = !!(data.doctor.atencion_domicilio && data.doctor.atencion_domicilio.length > 0);
+  const [internalClinicIndex, setInternalClinicIndex] = useState<number | null>(
+    (!hasDocClinicas && hasDocDomicilio) ? -1 : 0
+  );
+
+  const selectedClinicIndex = controlledClinicIndex !== undefined ? controlledClinicIndex : internalClinicIndex;
+  const handleClinicChange = (idx: number | null) => {
+    setInternalClinicIndex(idx);
+    onSelectClinic?.(idx);
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -311,6 +497,7 @@ function DoctorCardComponent({
   const addFavMutation = useAddFavorito();
   const removeFavMutation = useRemoveFavorito();
   const { location, getDistanceToDoctor } = useUserLocation();
+  const effectiveUserOrigin = userLocation || location || GUATEMALA_CENTER;
 
   const isFavorito = favoritos.some((f) => f.expCodigo === data.doctor.exp_codigo);
 
@@ -508,15 +695,15 @@ function DoctorCardComponent({
   const renderDoctorCardBase = (isInsideSelected = false) => {
     return (
       <div
-        className={`doctor-card group relative overflow-hidden transition-all duration-300 ease-out flex flex-col ${
+        className={`doctor-card group relative overflow-hidden transition-all duration-200 ease-out flex flex-col ${
           isInsideSelected
             ? 'w-full h-full'
-            : 'rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/90 hover:border-[#0284C7]/40 dark:hover:border-sky-500/40 shadow-[0_2px_12px_rgba(0,0,0,0.03)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.35)] hover:shadow-[0_12px_32px_rgba(2,132,199,0.12)] hover:-translate-y-1 w-full max-w-[320px] h-fit mx-auto cursor-pointer p-5 z-0'
+            : 'rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/90 hover:border-[#0284C7] dark:hover:border-sky-400 shadow-[0_2px_12px_rgba(0,0,0,0.03)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.35)] hover:shadow-[0_4px_20px_rgba(2,132,199,0.14)] hover:ring-2 hover:ring-[#0284C7]/20 dark:hover:ring-sky-400/20 w-full max-w-[360px] h-full mx-auto cursor-pointer p-4 sm:p-5 z-0 justify-between'
         } ${
           isSelected && !isInsideSelected
-            ? 'ring-2 ring-[#0284C7]/50 border-[#0284C7]/40'
+            ? 'ring-2 ring-[#0284C7]/70 border-[#0284C7] shadow-sm'
             : ''
-        } ${isHovered && !isSelected ? 'border-[#0284C7]/40 ring-1 ring-[#0284C7]/20' : ''}`}
+        } ${isHovered && !isSelected ? 'border-[#0284C7] dark:border-sky-400 ring-2 ring-[#0284C7]/30 dark:ring-sky-400/30 shadow-[0_4px_20px_rgba(2,132,199,0.14)]' : ''}`}
       >
         {/* ── 1. FILA SUPERIOR: RATING (SOLO SI TIENE RESEÑAS) + BOTONES ACCIÓN ── */}
         <div className="flex items-center justify-between mb-1.5 min-h-[28px]">
@@ -706,30 +893,30 @@ function DoctorCardComponent({
             </div>
           </div>
 
-          {/* Fila 2: Modalidades (Garantizado en 1 sola línea sin desfase) */}
-          <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-[11.5px] font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap overflow-hidden min-h-[20px]">
+          {/* Fila 2: Modalidades adaptativas */}
+          <div className="flex items-center gap-1 sm:gap-1.5 text-[10.5px] sm:text-[11px] font-medium text-slate-600 dark:text-slate-300 w-full min-h-[20px] overflow-hidden">
             {hasPresencial && (
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="flex items-center gap-1 shrink-0" title="Atención Presencial en clínica">
                 <MapPin className="w-3.5 h-3.5 text-slate-400 dark:text-slate-400 shrink-0" />
                 <span className="text-slate-700 dark:text-slate-200">Presencial</span>
               </div>
             )}
             {hasPresencial && (hasVirtual || hasDomicilio) && (
-              <span className="text-slate-300 dark:text-slate-600 font-bold select-none text-[10px]">·</span>
+              <span className="text-slate-300 dark:text-slate-600 font-bold select-none text-[10px] shrink-0">·</span>
             )}
             {hasVirtual && (
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="flex items-center gap-1 shrink-0" title="Consulta Virtual / Telemedicina">
                 <Video className="w-3.5 h-3.5 text-slate-400 dark:text-slate-400 shrink-0" />
                 <span className="text-slate-700 dark:text-slate-200">Virtual</span>
               </div>
             )}
             {hasVirtual && hasDomicilio && (
-              <span className="text-slate-300 dark:text-slate-600 font-bold select-none text-[10px]">·</span>
+              <span className="text-slate-300 dark:text-slate-600 font-bold select-none text-[10px] shrink-0">·</span>
             )}
             {hasDomicilio && (
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="flex items-center gap-1 min-w-0 shrink" title="Atención médica a domicilio">
                 <Home className="w-3.5 h-3.5 text-slate-400 dark:text-slate-400 shrink-0" />
-                <span className="text-slate-700 dark:text-slate-200">Domicilio</span>
+                <span className="text-slate-700 dark:text-slate-200 truncate">Domicilio</span>
               </div>
             )}
             {!hasPresencial && !hasVirtual && !hasDomicilio && (
@@ -741,19 +928,21 @@ function DoctorCardComponent({
           </div>
         </div>
 
-        {/* ── 4. BOTONES INFERIORES ── */}
-        <div className="flex gap-2 mt-6 w-full">
+        {/* Fila de Acción Binaria */}
+        <div className="flex gap-2.5 border-t border-slate-50 dark:border-slate-800/60 pt-4 mt-auto w-full">
+          {/* Botón Secundario: Detalles */}
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               handleCardClick();
             }}
-            className="flex-1 bg-[#EFF4FF] hover:bg-blue-50 dark:bg-sky-950/40 dark:hover:bg-sky-900/50 text-[#0284C7] dark:text-sky-300 font-semibold py-3 rounded-xl text-[13px] transition-colors cursor-pointer flex items-center justify-center gap-1.5 text-center"
+            className="flex-1 bg-[#EFF4FF] hover:bg-blue-50 dark:bg-sky-950/40 dark:hover:bg-sky-900/50 text-[#0284C7] dark:text-sky-300 font-semibold py-3 rounded-xl text-[13px] transition-colors cursor-pointer text-center"
           >
-            <Info className="w-4 h-4 shrink-0" />
-            <span>Información</span>
+            Detalles
           </button>
+
+          {/* Botón Primario: Agendar Cita */}
           <button
             type="button"
             onClick={(e) => {
@@ -777,11 +966,19 @@ function DoctorCardComponent({
     const hasClinicas = (doctor.clinicas || []).length > 0;
     const hasDomicilio = !!(doctor.atencion_domicilio && doctor.atencion_domicilio.length > 0);
     const isDomicilioSelected = selectedClinicIndex === -1 || (!hasClinicas && hasDomicilio);
-    const hasSelectedClinic = !isDomicilioSelected && typeof selectedClinicIndex === 'number' && selectedClinicIndex >= 0 && !!doctor.clinicas?.[selectedClinicIndex];
-    const activeClinic: DoctorClinica | undefined = hasSelectedClinic ? doctor.clinicas?.[selectedClinicIndex] : undefined;
+    const domicilioCoverage = hasDomicilio ? resolveDomicilioCoverage(doctor.atencion_domicilio) : null;
     
-    // Consulta de precio específico para la sede seleccionada
-    const locationPriceInfo = getDoctorLocationPrice(doctor, selectedClinicIndex);
+    // Si no es domicilio, determinar la clínica activa de forma segura
+    const effectiveClinicIndex = (typeof selectedClinicIndex === 'number' && selectedClinicIndex >= 0 && selectedClinicIndex < (doctor.clinicas?.length || 0))
+      ? selectedClinicIndex
+      : 0;
+    const activeClinic: DoctorClinica | undefined = (!isDomicilioSelected && hasClinicas)
+      ? doctor.clinicas?.[effectiveClinicIndex]
+      : undefined;
+    
+    // Consulta de precio específico para la sede seleccionada o a domicilio (-1)
+    const activePricingIndex = isDomicilioSelected ? -1 : effectiveClinicIndex;
+    const locationPriceInfo = getDoctorLocationPrice(doctor, activePricingIndex);
 
     // Coordenadas y enlaces de navegación
     const hasCoords = activeClinic && typeof activeClinic.cli_latitud === 'number' && typeof activeClinic.cli_longitud === 'number';
@@ -825,6 +1022,26 @@ function DoctorCardComponent({
         ? ZONA_OFFSETS[cleanZonaShort(activeClinic.cli_zona)].lng
         : GUATEMALA_CENTER.lng;
 
+    const finalMapLat = (isDomicilioSelected && domicilioCoverage)
+      ? domicilioCoverage.centroid.lat
+      : clinicLat;
+
+    const finalMapLng = (isDomicilioSelected && domicilioCoverage)
+      ? domicilioCoverage.centroid.lng
+      : clinicLng;
+
+    const finalMapTitle = isDomicilioSelected
+      ? 'Atención Médica a Domicilio'
+      : (activeClinic?.cli_descripcion || activeClinic?.cli_direccion_completa || 'Sede de Atención');
+
+    const finalMapAddress = (isDomicilioSelected && domicilioCoverage)
+      ? domicilioCoverage.labels
+      : (activeClinic?.cli_direccion_completa || activeClinic?.cli_zona || 'Ciudad de Guatemala');
+
+    const finalDistanceFormatted = isDomicilioSelected
+      ? 'Zona de Cobertura'
+      : activeClinicDistanceFormatted;
+
     return (
       <>
         <div
@@ -846,13 +1063,13 @@ function DoctorCardComponent({
             <X className="w-4 h-4" />
           </button>
 
-          {/* ════ RESPONSIVE GRID (grid-cols-1 lg:grid-cols-12) ════ */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 items-start divide-y lg:divide-y-0 lg:divide-x divide-slate-100 dark:divide-slate-800/80 w-full">
-            {/* ── 1. COLUMNA IZQUIERDA: PERFIL EXPEDIENTE CLÍNICO (lg:col-span-3) ── */}
-            <div className="lg:col-span-3 bg-white dark:bg-slate-900 p-6 flex flex-col items-start text-left h-fit lg:sticky lg:top-6">
+          {/* ════ RESPONSIVE GRID (grid-cols-1 md:grid-cols-12) ════ */}
+          <div className="grid grid-cols-1 md:grid-cols-12 items-start divide-y md:divide-y-0 md:divide-x divide-slate-100 dark:divide-slate-800/80 w-full">
+            {/* ── 1. COLUMNA IZQUIERDA: PERFIL EXPEDIENTE CLÍNICO ── */}
+            <div className={`${hideMap ? 'md:col-span-5 lg:col-span-5' : 'md:col-span-4 lg:col-span-3'} bg-white dark:bg-slate-900 p-4 sm:p-5 xl:p-6 flex flex-col items-start text-left h-fit md:sticky md:top-6`}>
               <div className="w-full">
                 {/* Badges superiores: Rating / Nuevo + Acciones Compartir/Favorito */}
-                <div className="flex items-center justify-between w-full mb-4 pr-8 lg:pr-0">
+                <div className="flex items-center justify-between w-full mb-3.5 sm:mb-4 pr-10 md:pr-0">
                   {doctor.total_resenas > 0 && doctor.promedio_valoracion > 0 ? (
                     <div className="flex items-center gap-1.5 bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-800/40 px-2.5 py-1 rounded-full text-xs shadow-2xs select-none">
                       <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400 shrink-0 drop-shadow-[0_1px_2px_rgba(245,158,11,0.4)]" />
@@ -864,7 +1081,9 @@ function DoctorCardComponent({
                       </span>
                     </div>
                   ) : (
-                    <div />
+                    <span className="inline-flex items-center text-[10px] sm:text-[11px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/80 px-2.5 py-0.5 rounded-full border border-slate-200/50 dark:border-slate-700/50 select-none">
+                      Nuevo
+                    </span>
                   )}
 
                   <div className="flex items-center gap-1.5">
@@ -873,7 +1092,7 @@ function DoctorCardComponent({
                         <button
                           type="button"
                           onClick={handleShare}
-                          className="w-8 h-8 rounded-full bg-[#F1F4FA] dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-[#64748B] hover:text-[#0F172A] dark:text-slate-400 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                          className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#F1F4FA] dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-[#64748B] hover:text-[#0F172A] dark:text-slate-400 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
                           aria-label="Compartir perfil"
                         >
                           <Share2 className="w-3.5 h-3.5" />
@@ -890,7 +1109,7 @@ function DoctorCardComponent({
                           <button
                             type="button"
                             onClick={toggleFavorite}
-                            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+                            className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
                               isFavorito
                                 ? 'bg-rose-50 dark:bg-rose-950/30 text-rose-500'
                                 : 'bg-[#F1F4FA] dark:bg-slate-800 text-[#64748B] hover:text-rose-500'
@@ -912,33 +1131,34 @@ function DoctorCardComponent({
                   </div>
                 </div>
 
-                {/* Avatar a la izquierda con borde sutil y badge */}
-                <div className="relative mb-3.5 inline-block">
-                  <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-800 shadow-[0_4px_16px_rgba(15,23,42,0.06)] bg-white dark:bg-slate-900 isolate">
-                    {doctor.exp_foto_perfil ? (
-                      <Image
-                        src={doctor.exp_foto_perfil}
-                        alt={fullName}
-                        fill
-                        sizes="112px"
-                        className="object-cover object-top"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-2xl font-black text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800">
-                        {initials}
-                      </div>
-                    )}
+                {/* Contenedor responsivo de Foto y Datos (en tablet sm: a md: en fila para ahorrar espacio vertical) */}
+                <div className="flex flex-col sm:flex-row md:flex-col items-start gap-3.5 sm:gap-4 md:gap-3.5 w-full">
+                  {/* Avatar con borde suave, efecto de elevación y badge verificado */}
+                  <div className="relative inline-block shrink-0">
+                    <div className="relative w-20 h-20 sm:w-24 sm:h-24 md:w-24 md:h-24 xl:w-28 xl:h-28 rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-800 shadow-[0_4px_16px_rgba(15,23,42,0.06)] bg-white dark:bg-slate-900 isolate">
+                      {doctor.exp_foto_perfil ? (
+                        <Image
+                          src={doctor.exp_foto_perfil}
+                          alt={fullName}
+                          fill
+                          sizes="(max-width: 640px) 80px, (max-width: 1280px) 96px, 112px"
+                          className="object-cover object-top"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-xl sm:text-2xl font-black text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800">
+                          {initials}
+                        </div>
+                      )}
+                    </div>
+                    <div className="absolute -bottom-1 -right-1 z-10 rounded-full bg-white dark:bg-slate-900 p-[2px] shadow-sm flex items-center justify-center ring-2 ring-white dark:ring-slate-900">
+                      <BadgeCheck className="w-4 h-4 sm:w-5 sm:h-5 text-white fill-[#0284C7]" />
+                    </div>
                   </div>
-                  <div className="absolute -bottom-1 -right-1 z-10 rounded-full bg-white dark:bg-slate-900 p-[2px] shadow-sm flex items-center justify-center ring-2 ring-white dark:ring-slate-900">
-                    <BadgeCheck className="w-5 h-5 text-white fill-[#0284C7]" />
-                  </div>
-                </div>
 
-                {/* Nombre y Especialidad alineados a la izquierda */}
-                <div className="w-full">
-                  <div className="flex items-center gap-1.5">
+                  {/* Nombre, Especialidad, Tarifas y Badges */}
+                  <div className="w-full min-w-0 flex-1">
                     <h3
-                      className="text-lg sm:text-xl font-bold text-[#0F172A] dark:text-white tracking-tight hover:text-[#0284C7] dark:hover:text-sky-400 transition-colors cursor-pointer"
+                      className="text-base sm:text-lg xl:text-xl font-bold text-[#0F172A] dark:text-white tracking-tight hover:text-[#0284C7] dark:hover:text-sky-400 transition-colors cursor-pointer leading-snug break-words"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleVisitProfile(e);
@@ -946,77 +1166,77 @@ function DoctorCardComponent({
                       title={fullDetailedName}
                     >
                       <HighlightText text={shortName} highlight={searchHighlight} />
+                      <span
+                        className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-emerald-500/20 shrink-0 ml-2 align-middle mb-0.5"
+                        title={isAvailableToday ? 'Disponible hoy' : 'Atención previa cita'}
+                      />
                     </h3>
-                    <span
-                      className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-emerald-500/20 shrink-0"
-                      title={isAvailableToday ? 'Disponible hoy' : 'Atención previa cita'}
-                    />
-                  </div>
 
-                  <p className="text-[12px] font-bold uppercase tracking-wider text-[#0284C7] dark:text-sky-400 mt-1">
-                    <HighlightText
-                      text={data.matchedSpecialty || specialtyPreview[0] || doctor.exp_profesion || 'Médico Especialista'}
-                      highlight={searchHighlight}
-                    />
-                  </p>
+                    <p className="text-[11px] sm:text-[12px] font-bold uppercase tracking-wider text-[#0284C7] dark:text-sky-400 mt-0.5 sm:mt-1 leading-snug break-words">
+                      <HighlightText
+                        text={data.matchedSpecialty || specialtyPreview[0] || doctor.exp_profesion || 'Médico Especialista'}
+                        highlight={searchHighlight}
+                      />
+                    </p>
 
-                  {/* Precio de Consulta */}
-                  <div className="mt-2.5 text-xs text-slate-600 dark:text-slate-300">
-                    {locationPriceInfo.hasPrice ? (
-                      <span className="font-medium">
-                        Consulta: <strong className="font-extrabold text-[#0F172A] dark:text-white text-sm">Q {locationPriceInfo.price}</strong>
-                      </span>
-                    ) : priceInfo.hasPrice ? (
-                      <span className="font-medium">
-                        Desde: <strong className="font-extrabold text-[#0F172A] dark:text-white text-sm">Q {priceInfo.price}</strong>
-                      </span>
-                    ) : (
-                      <span className="font-semibold text-slate-500 dark:text-slate-400">
-                        {isAvailableToday ? 'Atención hoy' : 'Previa cita'}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Idiomas & Modalidades chips */}
-                  <div className="mt-3 flex items-center gap-1.5 flex-wrap">
-                    <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#F8F9FF] dark:bg-slate-800 text-xs font-medium text-[#475569] dark:text-slate-300 border border-slate-100 dark:border-slate-700/80">
-                      <Globe className="w-3.5 h-3.5 text-[#0284C7] dark:text-sky-400 shrink-0" />
-                      <span>{languagesLabel}</span>
+                    {/* Precio de Consulta */}
+                    <div className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+                      {locationPriceInfo.hasPrice ? (
+                        <span className="font-medium">
+                          Consulta: <strong className="font-extrabold text-[#0F172A] dark:text-white text-xs sm:text-sm">Q {locationPriceInfo.price}</strong>
+                        </span>
+                      ) : priceInfo.hasPrice ? (
+                        <span className="font-medium">
+                          Desde: <strong className="font-extrabold text-[#0F172A] dark:text-white text-xs sm:text-sm">Q {priceInfo.price}</strong>
+                        </span>
+                      ) : (
+                        <span className="font-semibold text-slate-500 dark:text-slate-400">
+                          {isAvailableToday ? 'Atención hoy' : 'Previa cita'}
+                        </span>
+                      )}
                     </div>
 
-                    {hasPresencial && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#F8F9FF] dark:bg-slate-800 text-xs font-medium text-[#475569] dark:text-slate-300 border border-slate-100 dark:border-slate-700/80">
-                        <MapPin className="w-3.5 h-3.5 text-[#0284C7] shrink-0" />
-                        <span>Presencial</span>
-                      </span>
-                    )}
+                    {/* Idiomas & Modalidades chips */}
+                    <div className="mt-2.5 sm:mt-3 flex items-center gap-1.5 flex-wrap">
+                      <div className="inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md sm:rounded-lg bg-[#F8F9FF] dark:bg-slate-800 text-[11px] sm:text-xs font-medium text-[#475569] dark:text-slate-300 border border-slate-100 dark:border-slate-700/80">
+                        <Globe className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#0284C7] dark:text-sky-400 shrink-0" />
+                        <span>{languagesLabel}</span>
+                      </div>
 
-                    {hasVirtual && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#F8F9FF] dark:bg-slate-800 text-xs font-medium text-[#475569] dark:text-slate-300 border border-slate-100 dark:border-slate-700/80">
-                        <Video className="w-3.5 h-3.5 text-[#0284C7] shrink-0" />
-                        <span>Virtual</span>
-                      </span>
-                    )}
+                      {hasPresencial && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md sm:rounded-lg bg-[#F8F9FF] dark:bg-slate-800 text-[11px] sm:text-xs font-medium text-[#475569] dark:text-slate-300 border border-slate-100 dark:border-slate-700/80">
+                          <MapPin className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#0284C7] shrink-0" />
+                          <span>Presencial</span>
+                        </span>
+                      )}
 
-                    {hasDomicilio && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#F8F9FF] dark:bg-slate-800 text-xs font-medium text-[#475569] dark:text-slate-300 border border-slate-100 dark:border-slate-700/80">
-                        <Home className="w-3.5 h-3.5 text-[#0284C7] shrink-0" />
-                        <span>Domicilio</span>
-                      </span>
-                    )}
+                      {hasVirtual && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md sm:rounded-lg bg-[#F8F9FF] dark:bg-slate-800 text-[11px] sm:text-xs font-medium text-[#475569] dark:text-slate-300 border border-slate-100 dark:border-slate-700/80">
+                          <Video className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#0284C7] shrink-0" />
+                          <span>Virtual</span>
+                        </span>
+                      )}
+
+                      {hasDomicilio && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md sm:rounded-lg bg-[#F8F9FF] dark:bg-slate-800 text-[11px] sm:text-xs font-medium text-[#475569] dark:text-slate-300 border border-slate-100 dark:border-slate-700/80">
+                          <Home className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#0284C7] shrink-0" />
+                          <span>Domicilio</span>
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Botones verticales aquí (Agendar Cita + Ver perfil completo) */}
-              <div className="flex flex-col gap-2.5 mt-6 w-full">
+              {/* Botones de acción: apilados en móvil/escritorio, lado a lado en tablets */}
+              <div className="flex flex-col sm:flex-row md:flex-col gap-2 sm:gap-2.5 mt-5 sm:mt-6 w-full">
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleBookAppointment(e);
                   }}
-                  className="w-full bg-[#0284C7] hover:bg-[#0073B1] active:scale-[0.98] text-white font-semibold py-3.5 rounded-xl text-sm transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                  className="flex-1 w-full bg-[#0284C7] hover:bg-[#0073B1] active:scale-[0.98] text-white font-semibold py-3 sm:py-3.5 rounded-xl text-xs sm:text-sm transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
                 >
                   <CalendarDays className="w-4 h-4 shrink-0" />
                   <span>Agendar Cita</span>
@@ -1027,7 +1247,7 @@ function DoctorCardComponent({
                     e.stopPropagation();
                     handleVisitProfile(e);
                   }}
-                  className="w-full bg-[#EFF4FF] hover:bg-blue-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-[#0284C7] dark:text-sky-300 font-medium py-2.5 rounded-xl text-[13px] transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="flex-1 w-full bg-[#EFF4FF] hover:bg-blue-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-[#0284C7] dark:text-sky-300 font-medium py-2.5 sm:py-3 rounded-xl text-xs sm:text-[13px] transition-colors flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
                 >
                   <User className="w-4 h-4 shrink-0" />
                   <span>Ver perfil completo</span>
@@ -1035,8 +1255,8 @@ function DoctorCardComponent({
               </div>
             </div>
 
-            {/* ── 2. COLUMNA CENTRAL: LISTA VERTICAL DE SEDES (lg:col-span-5) ── */}
-            <div className="lg:col-span-5 p-6 flex flex-col justify-between gap-5 bg-slate-50/30 dark:bg-slate-900/40">
+            {/* ── 2. COLUMNA CENTRAL: LISTA VERTICAL DE SEDES ── */}
+            <div className={`${hideMap ? 'md:col-span-7 lg:col-span-7' : 'md:col-span-8 lg:col-span-5'} p-4 sm:p-5 xl:p-6 flex flex-col justify-between gap-5 bg-slate-50/30 dark:bg-slate-900/40`}>
               <div className="flex flex-col gap-3 w-full">
                 <h3 className="text-[13px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
                   {totalUbicaciones} {totalUbicaciones === 1 ? 'Ubicación Disponible' : 'Ubicaciones Disponibles'}
@@ -1044,7 +1264,7 @@ function DoctorCardComponent({
 
                 {/* LISTA VERTICAL DE SEDES CLÍNICAS */}
                 {hasClinicas && doctor.clinicas.map((cli, idx) => {
-                  const isCliActive = !isDomicilioSelected && (selectedClinicIndex === idx);
+                  const isCliActive = !isDomicilioSelected && (effectiveClinicIndex === idx);
                   const dist = getClinicDist(cli);
                   const cleanZona = cleanZonaText(cli.cli_zona);
                   const rawAddress = (cli.cli_direccion_completa || '').trim();
@@ -1150,7 +1370,7 @@ function DoctorCardComponent({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onSelectClinic?.(idx);
+                        handleClinicChange(idx);
                       }}
                       className="bg-white dark:bg-slate-800/80 border border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600 rounded-2xl p-4 flex justify-between items-center text-left transition-all group cursor-pointer w-full shadow-2xs hover:shadow-xs"
                     >
@@ -1249,7 +1469,7 @@ function DoctorCardComponent({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onSelectClinic?.(-1);
+                        handleClinicChange(-1);
                       }}
                       className="bg-white dark:bg-slate-800/80 border border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600 rounded-2xl p-4 flex justify-between items-center text-left transition-all group cursor-pointer w-full shadow-2xs hover:shadow-xs"
                     >
@@ -1313,19 +1533,24 @@ function DoctorCardComponent({
               </div>
             </div>
 
-            {/* ── 3. COLUMNA DERECHA: MAPA (lg:col-span-4) ── */}
-            <div className="lg:col-span-4 p-5 flex flex-col justify-center min-h-[320px] lg:min-h-full lg:self-stretch">
-              <div className="w-full h-full min-h-[300px] lg:min-h-[420px] rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-800/80 relative">
-                <ClinicMiniMap
-                  lat={clinicLat}
-                  lng={clinicLng}
-                  title={activeClinic?.cli_descripcion || 'Ubicación de Atención'}
-                  address={activeClinic?.cli_direccion_completa}
-                  distanceFormatted={activeClinicDistanceFormatted}
-                  googleMapsUrl={googleMapsUrl}
-                />
+            {/* ── 3. COLUMNA DERECHA: MAPA (Solo cuando NO se navega con el mapa principal) ── */}
+            {!hideMap && (
+              <div className="lg:col-span-4 p-5 flex flex-col justify-center min-h-[320px] lg:min-h-full lg:self-stretch">
+                <div className="w-full h-full min-h-[300px] lg:min-h-[420px] rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-800/80 relative">
+                  <ClinicMiniMap
+                    lat={finalMapLat}
+                    lng={finalMapLng}
+                    title={finalMapTitle}
+                    address={finalMapAddress}
+                    distanceFormatted={finalDistanceFormatted}
+                    googleMapsUrl={isDomicilioSelected ? null : googleMapsUrl}
+                    userLocation={effectiveUserOrigin}
+                    isDomicilio={isDomicilioSelected}
+                    domicilioZonas={domicilioCoverage?.circles}
+                  />
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
@@ -1475,7 +1700,10 @@ function areDoctorCardPropsEqual(prev: DoctorCardProps, next: DoctorCardProps) {
     prev.isHighlightedByLocation === next.isHighlightedByLocation &&
     prev.highlightedLocationName === next.highlightedLocationName &&
     prev.selectedClinicIndex === next.selectedClinicIndex &&
-    prev.variant === next.variant
+    prev.variant === next.variant &&
+    prev.hideMap === next.hideMap &&
+    prev.userLocation?.lat === next.userLocation?.lat &&
+    prev.userLocation?.lng === next.userLocation?.lng
   );
 }
 

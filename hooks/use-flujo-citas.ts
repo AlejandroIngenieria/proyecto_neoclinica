@@ -50,6 +50,7 @@ import type {
 
 import { toast } from 'sonner';
 import { crearNotificacion } from '@/services/notificaciones';
+import { CLINICAL_STALE_TIMES } from '@/lib/query-config';
 
 function useAuthInfo() {
   const { data: session, status } = useSession();
@@ -111,7 +112,8 @@ export function useHorarios(mclCodigo: number | null) {
     queryKey: ['horarios', mclCodigo],
     queryFn: () => fetchHorarios(token!, mclCodigo!),
     enabled: isAuthenticated && mclCodigo !== null,
-    staleTime: 5 * 60 * 1000,
+    staleTime: CLINICAL_STALE_TIMES.TRANSACTIONAL,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -121,7 +123,8 @@ export function useHorasOcupadas(codMedico: string | null, fecha: string | null)
     queryKey: ['horasOcupadas', codMedico, fecha],
     queryFn: () => fetchHorasOcupadas(token, codMedico!, fecha!),
     enabled: !!codMedico && !!fecha,
-    staleTime: 30 * 1000,
+    staleTime: CLINICAL_STALE_TIMES.TRANSACTIONAL,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -219,13 +222,19 @@ export function useAllCitasPacientes(codigosPacientes: string[]) {
     queryKey: ['citasTodosPacientes', codigosPacientes],
     queryFn: async () => {
       const promesas = codigosPacientes.map(cod => fetchCitasPaciente(token!, cod));
-      const resultados = await Promise.all(promesas);
+      const settled = await Promise.allSettled(promesas);
       
-      const flattened = resultados.flat();
-      const unique = Array.from(new Map(flattened.map(item => [item.ctaCodigo, item])).values());
+      const exitosos = settled
+        .filter((res): res is PromiseFulfilledResult<CitaListDto[]> => res.status === 'fulfilled')
+        .map(res => res.value)
+        .flat();
+
+      const unique = Array.from(new Map(exitosos.map(item => [item.ctaCodigo, item])).values());
       return unique;
     },
     enabled: isAuthenticated && codigosPacientes.length > 0,
+    staleTime: CLINICAL_STALE_TIMES.STANDARD,
+    refetchOnWindowFocus: true,
   });
 }
 

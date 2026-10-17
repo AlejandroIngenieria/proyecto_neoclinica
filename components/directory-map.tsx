@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react';
 import Image from 'next/image';
-import { APIProvider, Map as GoogleMap, AdvancedMarker, useMap } from '@vis.gl/react-google-maps';
+import { APIProvider, Map as GoogleMap, AdvancedMarker, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
 import {
   MapPin,
   Building2,
@@ -11,12 +11,14 @@ import {
   ChevronLeft,
   ChevronRight,
   Home,
+  Car,
 } from 'lucide-react';
 import type { DoctorCardData } from './doctor-card';
 import type { DoctorClinica } from '@/types';
 import { getDoctorPriceDisplay, buildDoctorShortName, cleanZonaText } from '@/types/doctor';
 
 const MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
+const GOOGLE_MAPS_LIBRARIES: ('places' | 'marker' | 'routes')[] = ['places', 'marker', 'routes'];
 
 const GUATEMALA_CENTER = { lat: 14.601, lng: -90.515 };
 
@@ -31,7 +33,7 @@ const ZONA_OFFSETS: Record<string, { lat: number; lng: number }> = {
   '4': { lat: 14.621, lng: -90.518 },
 };
 
-const DOMICILIO_MUNICIPIO_COORDINATES: Record<string, { lat: number; lng: number }> = {
+export const DOMICILIO_MUNICIPIO_COORDINATES: Record<string, { lat: number; lng: number }> = {
   guatemala: { lat: 14.6349, lng: -90.5069 },
   mixco: { lat: 14.6333, lng: -90.6067 },
   'villa nueva': { lat: 14.5256, lng: -90.5886 },
@@ -43,7 +45,7 @@ const DOMICILIO_MUNICIPIO_COORDINATES: Record<string, { lat: number; lng: number
   'antigua guatemala': { lat: 14.5586, lng: -90.7295 },
 };
 
-const DOMICILIO_ZONA_COORDINATES: Record<string, { lat: number; lng: number; radiusMeters: number }> = {
+export const DOMICILIO_ZONA_COORDINATES: Record<string, { lat: number; lng: number; radiusMeters: number }> = {
   // Ciudad de Guatemala
   'guatemala-1': { lat: 14.642, lng: -90.513, radiusMeters: 2000 },
   'guatemala-2': { lat: 14.656, lng: -90.509, radiusMeters: 2000 },
@@ -76,6 +78,89 @@ const DOMICILIO_ZONA_COORDINATES: Record<string, { lat: number; lng: number; rad
   'mixco-11': { lat: 14.635, lng: -90.565, radiusMeters: 2500 },
   'mixco-15': { lat: 14.595, lng: -90.580, radiusMeters: 2500 },
 };
+
+export type DomicilioCircle = {
+  lat: number;
+  lng: number;
+  radiusMeters: number;
+  label: string;
+  muni: string;
+};
+
+export type DomicilioCoverageResult = {
+  circles: DomicilioCircle[];
+  centroid: { lat: number; lng: number };
+  labels: string;
+};
+
+export function resolveDomicilioCoverage(atencionList?: any[] | null): DomicilioCoverageResult | null {
+  if (!atencionList || atencionList.length === 0) return null;
+
+  const circles: DomicilioCircle[] = [];
+
+  atencionList.forEach((ad) => {
+    const muniRaw = ad.mun_descripcion || 'Guatemala';
+    const muniKey = muniRaw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+    const rawZonas = ad.lad_zonas || '';
+    const parts = rawZonas.split(/[,;\n]+/).map((s: string) => s.trim()).filter(Boolean);
+    const zoneNumbers: string[] = [];
+
+    parts.forEach((p: string) => {
+      const nums = p.match(/\d+/g);
+      if (nums && nums.length > 0) {
+        nums.forEach((n) => zoneNumbers.push(n));
+      }
+    });
+
+    if (zoneNumbers.length > 0) {
+      const uniqueNumbers = Array.from(new Set(zoneNumbers));
+      uniqueNumbers.forEach((num) => {
+        const key = `${muniKey}-${num}`;
+        const coord = DOMICILIO_ZONA_COORDINATES[key] || DOMICILIO_ZONA_COORDINATES[`guatemala-${num}`];
+        if (coord) {
+          circles.push({
+            lat: coord.lat,
+            lng: coord.lng,
+            radiusMeters: coord.radiusMeters,
+            label: `Zona ${num}`,
+            muni: muniRaw,
+          });
+        }
+      });
+    }
+
+    if (circles.length === 0 && DOMICILIO_MUNICIPIO_COORDINATES[muniKey]) {
+      const muniCoord = DOMICILIO_MUNICIPIO_COORDINATES[muniKey];
+      circles.push({
+        lat: muniCoord.lat,
+        lng: muniCoord.lng,
+        radiusMeters: 3800,
+        label: muniRaw,
+        muni: muniRaw,
+      });
+    }
+  });
+
+  if (circles.length === 0) {
+    circles.push({
+      lat: GUATEMALA_CENTER.lat,
+      lng: GUATEMALA_CENTER.lng,
+      radiusMeters: 3000,
+      label: 'Ciudad de Guatemala',
+      muni: 'Guatemala',
+    });
+  }
+
+  const avgLat = circles.reduce((sum, c) => sum + c.lat, 0) / circles.length;
+  const avgLng = circles.reduce((sum, c) => sum + c.lng, 0) / circles.length;
+
+  return {
+    circles,
+    centroid: { lat: avgLat, lng: avgLng },
+    labels: Array.from(new Set(circles.map((c) => c.label))).join(', '),
+  };
+}
 
 export type DoctorAtBuilding = {
   expCodigo: string;
@@ -115,7 +200,7 @@ type DirectoryMapProps = {
 };
 
 // Componente para trazar un círculo de radar (Circle) en el mapa de Google
-function MapCircle({
+export function MapCircle({
   center,
   radius = 10000,
   options,
@@ -161,6 +246,120 @@ function MapCircle({
   return null;
 }
 
+export type RouteInfo = {
+  distance: string;
+  duration: string;
+};
+
+// Componente para trazar la ruta de navegación (DirectionsRenderer) entre el usuario y el consultorio
+export function MapRouteRenderer({
+  origin,
+  destination,
+  onRouteCalculated,
+}: {
+  origin?: { lat: number; lng: number } | null;
+  destination?: { lat: number; lng: number } | null;
+  onRouteCalculated?: (info: RouteInfo | null) => void;
+}) {
+  const map = useMap();
+  const routesLib = useMapsLibrary('routes');
+  const [directionsService, setDirectionsService] = useState<google.maps.DirectionsService | null>(null);
+  const [directionsRenderer, setDirectionsRenderer] = useState<google.maps.DirectionsRenderer | null>(null);
+  const onRouteCalculatedRef = useRef(onRouteCalculated);
+
+  useEffect(() => {
+    onRouteCalculatedRef.current = onRouteCalculated;
+  }, [onRouteCalculated]);
+
+  // Inicializar DirectionsService y DirectionsRenderer con Google Maps
+  useEffect(() => {
+    if (!routesLib || !map) return;
+
+    const ds = new routesLib.DirectionsService();
+    const dr = new routesLib.DirectionsRenderer({
+      map,
+      suppressMarkers: true, // Mantiene los marcadores de alta fidelidad personalizados de SaludYa
+      preserveViewport: true, // Controlamos el encuadre manualmente para que los indicadores y popups nunca queden tapados
+      polylineOptions: {
+        strokeColor: '#0284c7', // Azul corporativo de NeoClínica
+        strokeWeight: 5,
+        strokeOpacity: 0.85,
+      },
+    });
+
+    setDirectionsService(ds);
+    setDirectionsRenderer(dr);
+
+    return () => {
+      dr.setMap(null);
+    };
+  }, [routesLib, map]);
+
+  // Calcular y renderizar la ruta vial cuando existan origen y destino
+  useEffect(() => {
+    if (!directionsRenderer) return;
+
+    if (!origin || !destination || !directionsService) {
+      try {
+        directionsRenderer.set('directions', null);
+      } catch {
+        // Safe ignore
+      }
+      onRouteCalculatedRef.current?.(null);
+      return;
+    }
+
+    let isCancelled = false;
+
+    directionsService.route(
+      {
+        origin: { lat: origin.lat, lng: origin.lng },
+        destination: { lat: destination.lat, lng: destination.lng },
+        travelMode: google.maps.TravelMode.DRIVING,
+      },
+      (result, status) => {
+        if (isCancelled) return;
+
+        if (status === google.maps.DirectionsStatus.OK && result) {
+          directionsRenderer.setDirections(result);
+          const leg = result.routes[0]?.legs?.[0];
+          if (leg) {
+            onRouteCalculatedRef.current?.({
+              distance: leg.distance?.text || '',
+              duration: leg.duration?.text || '',
+            });
+          }
+
+          // Ajustar bounds con padding generoso para asegurar que los marcadores, popups e indicadores no queden tapados por la barra superior ni los bordes
+          const routeBounds = result.routes[0]?.bounds;
+          if (routeBounds && map) {
+            map.fitBounds(routeBounds, {
+              top: 270, // Margen superior amplio para que el popup del edificio y el badge flotante nunca se superpongan
+              bottom: 90, // Margen inferior para el indicador de "Tu ubicación"
+              left: 80,
+              right: 80,
+            });
+          }
+        } else {
+          console.warn('Google Maps Directions no pudo trazar ruta:', status);
+          try {
+            directionsRenderer.set('directions', null);
+          } catch {
+            // Safe ignore
+          }
+          onRouteCalculatedRef.current?.(null);
+        }
+      }
+    );
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [directionsService, directionsRenderer, origin?.lat, origin?.lng, destination?.lat, destination?.lng, map]);
+
+  return null;
+}
+
 // Controlador interno para manejar el centrado y zoom suave del mapa
 function MapController({
   userLocation,
@@ -171,6 +370,8 @@ function MapController({
   defaultCenterCoords,
   selectedDoctorBuildings,
   selectedDoctorId,
+  hasActiveRoute = false,
+  searchedLocation,
 }: {
   userLocation?: { lat: number; lng: number } | null;
   isNearMeActive?: boolean;
@@ -180,12 +381,15 @@ function MapController({
   defaultCenterCoords?: { lat: number; lng: number } | null;
   selectedDoctorBuildings?: BuildingLocation[];
   selectedDoctorId?: string | null;
+  hasActiveRoute?: boolean;
+  searchedLocation?: { lat: number; lng: number; address: string } | null;
 }) {
   const map = useMap();
   const lastCenteredNearMeRef = useRef<boolean>(false);
   const hasCenteredDefaultRef = useRef(false);
   const prevSelectedDoctorIdRef = useRef<string | null | undefined>(undefined);
   const prevTargetKeyRef = useRef<string | null>(null);
+  const prevSearchedLocationKeyRef = useRef<string | null>(null);
 
   // Desactivar iconos cliqueables de Google y ocultar POIs
   useEffect(() => {
@@ -198,6 +402,29 @@ function MapController({
         { featureType: 'transit', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
       ],
     });
+  }, [map]);
+
+  // Sincronizar Google Maps con transiciones de apertura/cierre del contenedor lateral
+  useEffect(() => {
+    if (!map) return;
+    const container = map.getDiv();
+    if (!container) return;
+
+    let rafId: number | null = null;
+    const observer = new ResizeObserver(() => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        if (typeof window !== 'undefined' && (window as any).google?.maps?.event) {
+          (window as any).google.maps.event.trigger(map, 'resize');
+        }
+      });
+    });
+
+    observer.observe(container);
+    return () => {
+      observer.disconnect();
+      if (rafId) cancelAnimationFrame(rafId);
+    };
   }, [map]);
 
   // Centrado cuando cambia el médico seleccionado o cuando se deselecciona
@@ -213,46 +440,70 @@ function MapController({
     prevSelectedDoctorIdRef.current = selectedDoctorId;
 
     if (selectedDoctorId) {
+      // Si hay una ruta activa trazada entre el usuario y la sede, DirectionsRenderer ya encuadra el trayecto
+      if (hasActiveRoute) {
+        return;
+      }
+
       // Si el médico seleccionado está en modo atención a domicilio
       if (isDoctorDomicilioSelected && targetCoords) {
         map.panTo(targetCoords);
         map.setZoom(targetZoom || 13);
       } else if (selectedDoctorBuildings && selectedDoctorBuildings.length > 0) {
-        // Si hay clínicas físicas, encuadrar sus ubicaciones
+        // Si hay clínicas físicas, encuadrar sus ubicaciones con suficiente campo visual
         if (selectedDoctorBuildings.length === 1) {
           map.panTo({ lat: selectedDoctorBuildings[0].lat, lng: selectedDoctorBuildings[0].lng });
-          map.setZoom(15);
+          map.setZoom(targetZoom || 15);
         } else {
-          const avgLat = selectedDoctorBuildings.reduce((sum, b) => sum + b.lat, 0) / selectedDoctorBuildings.length;
-          const avgLng = selectedDoctorBuildings.reduce((sum, b) => sum + b.lng, 0) / selectedDoctorBuildings.length;
-          map.panTo({ lat: avgLat, lng: avgLng });
-          map.setZoom(14);
+          const bounds = new google.maps.LatLngBounds();
+          selectedDoctorBuildings.forEach((b) => bounds.extend({ lat: b.lat, lng: b.lng }));
+          if (userLocation) {
+            bounds.extend(userLocation);
+          }
+          map.fitBounds(bounds, { top: 250, bottom: 90, left: 80, right: 80 });
         }
       }
     } else if (wasDoctorSelected) {
       // Si antes había un médico seleccionado y ahora se deseleccionó, volver a la vista general una sola vez
       const target = defaultCenterCoords || GUATEMALA_CENTER;
       map.panTo(target);
-      map.setZoom(13);
+      map.setZoom(13.5);
       prevTargetKeyRef.current = null;
     }
-  }, [map, selectedDoctorId, isDoctorDomicilioSelected, targetCoords, targetZoom, selectedDoctorBuildings, defaultCenterCoords]);
+  }, [map, selectedDoctorId, isDoctorDomicilioSelected, targetCoords, targetZoom, selectedDoctorBuildings, defaultCenterCoords, hasActiveRoute, userLocation]);
 
   // Centrado cuando el usuario selecciona una sede / clínica específica o atención a domicilio
   useEffect(() => {
     if (!map) return;
 
-    const currentKey = targetCoords ? `${targetCoords.lat.toFixed(5)}_${targetCoords.lng.toFixed(5)}_${targetZoom || 16}` : null;
+    const currentKey = targetCoords ? `${targetCoords.lat.toFixed(5)}_${targetCoords.lng.toFixed(5)}_${targetZoom || 15}` : null;
     if (currentKey === prevTargetKeyRef.current) {
       return;
     }
     prevTargetKeyRef.current = currentKey;
 
-    if (targetCoords) {
-      map.panTo(targetCoords);
-      map.setZoom(targetZoom || 16);
+    if (hasActiveRoute) {
+      return;
     }
-  }, [map, targetCoords, targetZoom]);
+
+    if (targetCoords) {
+      if (userLocation && !isDoctorDomicilioSelected) {
+        const distKm = Math.hypot(targetCoords.lat - userLocation.lat, targetCoords.lng - userLocation.lng) * 111;
+        if (distKm < 0.35) {
+          map.panTo(targetCoords);
+          map.setZoom(15.5);
+        } else {
+          const bounds = new google.maps.LatLngBounds();
+          bounds.extend(targetCoords);
+          bounds.extend(userLocation);
+          map.fitBounds(bounds, { top: 250, bottom: 90, left: 80, right: 80 });
+        }
+      } else {
+        map.panTo(targetCoords);
+        map.setZoom(targetZoom || 15);
+      }
+    }
+  }, [map, targetCoords, targetZoom, hasActiveRoute, userLocation, isDoctorDomicilioSelected]);
 
   // Manejo de "Cerca de ti" y centrado inicial dentro de Ciudad de Guatemala
   useEffect(() => {
@@ -279,6 +530,20 @@ function MapController({
     }
   }, [map, userLocation, isNearMeActive, targetCoords, defaultCenterCoords, selectedDoctorId]);
 
+  // Centrado suave cuando el usuario busca o selecciona una ubicación específica en el buscador
+  useEffect(() => {
+    if (!map || !searchedLocation) {
+      prevSearchedLocationKeyRef.current = null;
+      return;
+    }
+    const key = `${searchedLocation.lat.toFixed(5)}_${searchedLocation.lng.toFixed(5)}`;
+    if (prevSearchedLocationKeyRef.current === key) return;
+    prevSearchedLocationKeyRef.current = key;
+
+    map.panTo({ lat: searchedLocation.lat, lng: searchedLocation.lng });
+    map.setZoom(15);
+  }, [map, searchedLocation]);
+
   return null;
 }
 
@@ -304,6 +569,16 @@ export function DirectoryMap({
 
   // Índice del doctor actualmente visible en el carrusel del edificio activo
   const [carouselDoctorIndex, setCarouselDoctorIndex] = useState<number>(0);
+
+  // Información de ruta vial en tiempo real (distancia y duración en auto)
+  const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
+
+  // Resetear información de ruta al deseleccionar el médico
+  useEffect(() => {
+    if (!selectedDoctorId) {
+      setRouteInfo(null);
+    }
+  }, [selectedDoctorId]);
 
   // Agrupación de todas las clínicas y doctores por EDIFICIO / UBICACIÓN FÍSICA
   const buildings = useMemo<BuildingLocation[]>(() => {
@@ -465,21 +740,10 @@ export function DirectoryMap({
     return buildings.filter((b) => selectedDoctorBuildingIds.has(b.id));
   }, [selectedDoctorId, selectedDoctorBuildingIds, buildings]);
 
-  // Edificios a mostrar: si hay un médico seleccionado, mostrar únicamente las sedes del médico seleccionado
-  // para que el usuario se concentre en ellas; si no hay médico seleccionado (ej. al presionar "Ver mapa"),
-  // mostrar todos los punteros de las ubicaciones.
+  // Mostrar todos los edificios para permitir al usuario explorar y navegar libremente en el mapa
   const displayedBuildings = useMemo(() => {
-    if (selectedDoctorId) {
-      if (activeBuildingId) {
-        const activeBld = buildings.find((b) => b.id === activeBuildingId);
-        if (activeBld && !selectedDoctorBuildings.some((b) => b.id === activeBuildingId)) {
-          return [...selectedDoctorBuildings, activeBld];
-        }
-      }
-      return selectedDoctorBuildings;
-    }
     return buildings;
-  }, [selectedDoctorId, selectedDoctorBuildings, buildings, activeBuildingId]);
+  }, [buildings]);
 
   // Edificio más cercano a la ubicación del usuario
   const closestBuilding = useMemo(() => {
@@ -529,75 +793,7 @@ export function DirectoryMap({
   // Círculos y centroide de cobertura a domicilio para el doctor seleccionado
   const domicilioCoverage = useMemo(() => {
     if (!isDoctorDomicilioSelected || !selectedDoctorData) return null;
-    const doc = selectedDoctorData.doctor;
-    const atencionList = doc.atencion_domicilio || [];
-    if (atencionList.length === 0) return null;
-
-    const circles: { lat: number; lng: number; radiusMeters: number; label: string; muni: string }[] = [];
-
-    atencionList.forEach((ad) => {
-      const muniRaw = ad.mun_descripcion || 'Guatemala';
-      const muniKey = muniRaw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-
-      const rawZonas = ad.lad_zonas || '';
-      const parts = rawZonas.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean);
-      const zoneNumbers: string[] = [];
-
-      parts.forEach((p) => {
-        const nums = p.match(/\d+/g);
-        if (nums && nums.length > 0) {
-          nums.forEach((n) => zoneNumbers.push(n));
-        }
-      });
-
-      if (zoneNumbers.length > 0) {
-        const uniqueNumbers = Array.from(new Set(zoneNumbers));
-        uniqueNumbers.forEach((num) => {
-          const key = `${muniKey}-${num}`;
-          const coord = DOMICILIO_ZONA_COORDINATES[key] || DOMICILIO_ZONA_COORDINATES[`guatemala-${num}`];
-          if (coord) {
-            circles.push({
-              lat: coord.lat,
-              lng: coord.lng,
-              radiusMeters: coord.radiusMeters,
-              label: `Zona ${num}`,
-              muni: muniRaw,
-            });
-          }
-        });
-      }
-
-      // Si no se resolvieron círculos de zonas específicas, usar coordenada del municipio
-      if (circles.length === 0 && DOMICILIO_MUNICIPIO_COORDINATES[muniKey]) {
-        const muniCoord = DOMICILIO_MUNICIPIO_COORDINATES[muniKey];
-        circles.push({
-          lat: muniCoord.lat,
-          lng: muniCoord.lng,
-          radiusMeters: 3800,
-          label: muniRaw,
-          muni: muniRaw,
-        });
-      }
-    });
-
-    if (circles.length === 0) {
-      circles.push({
-        lat: GUATEMALA_CENTER.lat,
-        lng: GUATEMALA_CENTER.lng,
-        radiusMeters: 3000,
-        label: 'Ciudad de Guatemala',
-        muni: 'Guatemala',
-      });
-    }
-
-    const avgLat = circles.reduce((sum, c) => sum + c.lat, 0) / circles.length;
-    const avgLng = circles.reduce((sum, c) => sum + c.lng, 0) / circles.length;
-
-    return {
-      circles,
-      centroid: { lat: avgLat, lng: avgLng },
-      labels: Array.from(new Set(circles.map((c) => c.label))).join(', '),
-    };
+    return resolveDomicilioCoverage(selectedDoctorData.doctor.atencion_domicilio);
   }, [isDoctorDomicilioSelected, selectedDoctorData]);
 
   // Edificio asociado al doctor y clínica seleccionada en la lista lateral
@@ -616,10 +812,21 @@ export function DirectoryMap({
     );
   }, [selectedDoctorId, isDoctorDomicilioSelected, selectedClinicIndex, displayedBuildings]);
 
-  // Notificar al componente padre el edificio activo
+  const onBuildingSelectRef = useRef(onBuildingSelect);
   useEffect(() => {
-    onBuildingSelect?.(activeBuilding);
-  }, [activeBuilding, onBuildingSelect]);
+    onBuildingSelectRef.current = onBuildingSelect;
+  }, [onBuildingSelect]);
+
+  const prevNotifiedBuildingIdRef = useRef<string | null | undefined>(undefined);
+
+  // Notificar al componente padre el edificio activo únicamente cuando cambie realmente de ID
+  useEffect(() => {
+    const currentId = activeBuilding?.id || null;
+    if (prevNotifiedBuildingIdRef.current !== currentId) {
+      prevNotifiedBuildingIdRef.current = currentId;
+      onBuildingSelectRef.current?.(activeBuilding);
+    }
+  }, [activeBuilding]);
 
   // Coordenadas objetivo para centrado en el mapa
   const targetCoords = useMemo(() => {
@@ -635,11 +842,55 @@ export function DirectoryMap({
     return null;
   }, [isDoctorDomicilioSelected, domicilioCoverage, selectedDoctorBuilding, activeBuilding]);
 
+  // Destino seleccionado para cálculo de trazo de ruta (sede física o clínica del médico seleccionado)
+  const destinationCoords = useMemo(() => {
+    if (!selectedDoctorId || isDoctorDomicilioSelected) return null;
+
+    if (selectedDoctorBuilding) {
+      return {
+        lat: selectedDoctorBuilding.lat,
+        lng: selectedDoctorBuilding.lng,
+        title: selectedDoctorBuilding.name,
+      };
+    }
+
+    if (activeBuilding && activeBuilding.doctors.some((d) => d.expCodigo === selectedDoctorId)) {
+      return {
+        lat: activeBuilding.lat,
+        lng: activeBuilding.lng,
+        title: activeBuilding.name,
+      };
+    }
+
+    const clinic =
+      typeof selectedClinicIndex === 'number' && selectedClinicIndex >= 0 && selectedDoctorData?.doctor.clinicas?.[selectedClinicIndex]
+        ? selectedDoctorData.doctor.clinicas[selectedClinicIndex]
+        : selectedDoctorData?.doctor.clinicas?.[0];
+
+    if (
+      clinic &&
+      typeof clinic.cli_latitud === 'number' &&
+      typeof clinic.cli_longitud === 'number' &&
+      !isNaN(clinic.cli_latitud) &&
+      !isNaN(clinic.cli_longitud)
+    ) {
+      return {
+        lat: clinic.cli_latitud,
+        lng: clinic.cli_longitud,
+        title: clinic.cli_descripcion?.trim() || clinic.cli_direccion_completa?.trim() || 'Sede de atención',
+      };
+    }
+
+    return null;
+  }, [selectedDoctorId, isDoctorDomicilioSelected, selectedDoctorBuilding, activeBuilding, selectedDoctorData, selectedClinicIndex]);
+
+  const hasActiveRoute = Boolean(userLocation && destinationCoords);
+
   const targetZoom = useMemo(() => {
     if (isDoctorDomicilioSelected) {
       return 13;
     }
-    return 16;
+    return 15;
   }, [isDoctorDomicilioSelected]);
 
   // Sincronización: Al seleccionar una sede específica del doctor, abrir el edificio y posicionar el carrusel
@@ -763,7 +1014,31 @@ export function DirectoryMap({
 
   return (
     <div className="w-full h-full min-h-[500px] rounded-3xl overflow-hidden shadow-xl border border-slate-200/80 dark:border-slate-800 relative z-10 bg-slate-100 dark:bg-slate-950 font-sans">
-      <APIProvider apiKey={MAPS_API_KEY} libraries={['places', 'marker']}>
+      {/* Badge Flotante con Tiempo Estimado y Distancia de la Ruta en Auto */}
+      {routeInfo && destinationCoords && (
+        <div className="absolute top-4 left-4 z-20 flex items-center gap-3 px-3.5 py-2.5 rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shadow-xl border border-sky-200/90 dark:border-sky-800/80 text-slate-800 dark:text-slate-100 pointer-events-auto transition-all duration-200 animate-in fade-in slide-in-from-top-2">
+          <div className="w-8 h-8 rounded-xl bg-sky-500/10 dark:bg-sky-400/10 flex items-center justify-center text-sky-600 dark:text-sky-400 shrink-0">
+            <Car className="w-4 h-4" />
+          </div>
+          <div className="min-w-0 pr-1">
+            <div className="flex items-center gap-1.5 text-xs font-black text-slate-900 dark:text-white">
+              <span className="text-sky-600 dark:text-sky-400">{routeInfo.duration}</span>
+              <span className="text-slate-300 dark:text-slate-600 font-normal">·</span>
+              <span>{routeInfo.distance}</span>
+              <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider ml-0.5">
+                en auto
+              </span>
+            </div>
+            {destinationCoords.title && (
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[180px] sm:max-w-[260px] font-medium">
+                Ruta hacia {destinationCoords.title}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      <APIProvider apiKey={MAPS_API_KEY} libraries={GOOGLE_MAPS_LIBRARIES}>
         <GoogleMap
           mapId="DEMO_MAP_ID"
           clickableIcons={false}
@@ -787,6 +1062,15 @@ export function DirectoryMap({
             selectedDoctorBuildings={selectedDoctorBuildings}
             selectedDoctorId={selectedDoctorId}
             defaultCenterCoords={defaultCenterCoords}
+            hasActiveRoute={hasActiveRoute}
+            searchedLocation={searchedLocation}
+          />
+
+          {/* Trazo de Ruta (DirectionsRenderer) entre usuario y consultorio */}
+          <MapRouteRenderer
+            origin={userLocation}
+            destination={destinationCoords}
+            onRouteCalculated={setRouteInfo}
           />
 
           {/* Circulo de Radar Ajustable para Cerca de ti */}
@@ -804,26 +1088,23 @@ export function DirectoryMap({
             />
           )}
 
-          {/* Marcador de Ubicación del Usuario */}
+          {/* Marcador de Ubicación del Usuario (Minimalista) */}
           {userLocation && (
             <AdvancedMarker position={userLocation} zIndex={1000}>
-              <div className="relative flex flex-col items-center select-none group cursor-pointer -translate-y-full pb-1">
+              <div className="relative flex flex-col items-center select-none group cursor-pointer -translate-y-1/2">
                 {isNearMeActive && (
-                  <div className="absolute -inset-3 rounded-full bg-sky-400/30 animate-ping pointer-events-none" />
+                  <div className="absolute -inset-2.5 rounded-full bg-sky-400/25 animate-ping pointer-events-none" />
                 )}
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-900 text-white font-extrabold text-xs shadow-2xl border-2 border-sky-400">
-                  <Navigation className="w-3.5 h-3.5 fill-sky-400 text-sky-400" />
-                  <span>
-                    Tu ubicación {isNearMeActive ? `· Radar ${radarRadiusKm} km` : ''}
-                  </span>
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-sky-600 text-white font-bold text-[11px] shadow-md border-2 border-white backdrop-blur-xs">
+                  <Navigation className="w-3 h-3 fill-white text-white shrink-0" />
+                  <span>Tu ubicación</span>
                 </div>
-                <div className="w-2.5 h-2.5 bg-slate-900 border-r-2 border-b-2 border-sky-400 rotate-45 -mt-1.5 shadow-xs" />
-                <div className="w-2 h-0.5 bg-slate-950/40 rounded-full blur-[0.5px] mt-0.5" />
+                <div className="w-1.5 h-1.5 bg-sky-600 rounded-full border border-white mt-0.5 shadow-xs" />
               </div>
             </AdvancedMarker>
           )}
 
-          {/* Marcador y Circulo de Radar para Ubicación Buscada */}
+          {/* Marcador y Circulo de Radar para Ubicación Buscada (Minimalista) */}
           {searchedLocation && (
             <>
               <MapCircle
@@ -841,16 +1122,12 @@ export function DirectoryMap({
                 position={{ lat: searchedLocation.lat, lng: searchedLocation.lng }}
                 zIndex={1005}
               >
-                <div className="relative flex flex-col items-center select-none group cursor-pointer -translate-y-full pb-1">
-                  <div className="absolute -inset-3 rounded-full bg-sky-500/25 animate-ping pointer-events-none" />
-                  <div className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-sky-600 text-white font-black text-xs shadow-2xl border-2 border-white">
-                    <MapPin className="w-4 h-4 fill-white text-white shrink-0" />
-                    <span className="max-w-[170px] truncate">
-                      {searchedLocation.address} · Radar {radarRadiusKm} km
-                    </span>
+                <div className="relative flex flex-col items-center select-none group cursor-pointer -translate-y-1/2">
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900 text-white font-bold text-[11px] shadow-md border-2 border-white">
+                    <MapPin className="w-3 h-3 fill-white text-white shrink-0" />
+                    <span className="max-w-[150px] truncate">{searchedLocation.address}</span>
                   </div>
-                  <div className="w-2.5 h-2.5 bg-sky-600 border-r-2 border-b-2 border-white rotate-45 -mt-1.5 shadow-xs" />
-                  <div className="w-2 h-0.5 bg-slate-950/40 rounded-full blur-[0.5px] mt-0.5" />
+                  <div className="w-1.5 h-1.5 bg-slate-900 rounded-full border border-white mt-0.5 shadow-xs" />
                 </div>
               </AdvancedMarker>
             </>
@@ -872,24 +1149,15 @@ export function DirectoryMap({
             />
           ))}
 
-          {/* Marcador Central para Cobertura a Domicilio */}
+          {/* Marcador Central para Cobertura a Domicilio (Minimalista) */}
           {domicilioCoverage && (
             <AdvancedMarker position={domicilioCoverage.centroid} zIndex={1100}>
-              <div className="relative flex flex-col items-center select-none group cursor-pointer -translate-y-full pb-1 animate-in fade-in zoom-in duration-300">
-                <div className="absolute -inset-2 rounded-full bg-emerald-400/30 animate-pulse pointer-events-none" />
-                <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-700 text-white font-extrabold text-xs shadow-2xl border-2 border-white">
-                  <Home className="w-4 h-4 text-emerald-200 shrink-0" />
-                  <div className="flex flex-col text-left leading-tight">
-                    <span className="font-black text-white text-[11px]">
-                      Atención a Domicilio
-                    </span>
-                    <span className="text-[10px] text-emerald-100 font-medium max-w-[200px] truncate">
-                      {domicilioCoverage.labels}
-                    </span>
-                  </div>
+              <div className="relative flex flex-col items-center select-none group cursor-pointer -translate-y-1/2 animate-in fade-in zoom-in duration-300">
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-600 text-white font-bold text-[11px] shadow-md border-2 border-white">
+                  <Home className="w-3.5 h-3.5 text-white shrink-0" />
+                  <span>Atención a Domicilio</span>
                 </div>
-                <div className="w-3 h-3 bg-emerald-700 border-r-2 border-b-2 border-white rotate-45 -mt-1.5 shadow-xs" />
-                <div className="w-2.5 h-0.5 bg-slate-950/40 rounded-full blur-[0.5px] mt-0.5" />
+                <div className="w-1.5 h-1.5 bg-emerald-600 rounded-full border border-white mt-0.5 shadow-xs" />
               </div>
             </AdvancedMarker>
           )}
@@ -955,26 +1223,23 @@ export function DirectoryMap({
 
                       return (
                         <div className="flex flex-col items-center transition-all duration-200 animate-in zoom-in-95 pointer-events-auto">
-                          <div className="p-2.5 rounded-2xl font-black text-xs shadow-2xl border-2 transition-all flex flex-col gap-2 bg-slate-950 text-white border-white ring-4 ring-black/50 min-w-[230px] max-w-[310px]">
-                            {/* Fila 1: Cabecera con Nombre del Sitio + Flechas de navegación */}
-                            <div className="flex items-center justify-between gap-2 border-b border-white/20 pb-1.5">
+                          <div className="p-2.5 rounded-2xl text-xs shadow-xl border transition-all flex flex-col gap-2 bg-white/95 dark:bg-slate-900/95 text-slate-800 dark:text-slate-100 border-slate-200/90 dark:border-slate-800 ring-1 ring-sky-500/20 backdrop-blur-md min-w-[220px] max-w-[280px]">
+                            {/* Fila 1: Cabecera con Nombre del Sitio + Flechas */}
+                            <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-1.5">
                               <div className="flex items-center gap-2 min-w-0 flex-1">
-                                <div className="w-6 h-6 rounded-lg bg-white/15 text-white flex items-center justify-center shrink-0 border border-white/30">
-                                  <Building2 className="w-3.5 h-3.5 text-white" />
+                                <div className="w-6 h-6 rounded-lg bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
+                                  <Building2 className="w-3.5 h-3.5" />
                                 </div>
                                 <div className="flex flex-col min-w-0 text-left">
-                                  <span className="truncate text-xs font-black leading-tight text-white" title={building.name}>
+                                  <span className="truncate text-xs font-bold leading-tight text-slate-900 dark:text-white" title={building.name}>
                                     {building.name}
                                   </span>
-                                  <span className="text-[10px] text-slate-300 font-bold truncate">
-                                    {hasMultipleDoctors
-                                      ? `${building.doctors.length} especialistas en esta sede`
-                                      : '1 especialista en esta sede'}
+                                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium truncate">
+                                    {hasMultipleDoctors ? `${building.doctors.length} especialistas en esta sede` : '1 especialista en esta sede'}
                                   </span>
                                 </div>
                               </div>
 
-                              {/* Flechas para avanzar entre médicos si hay más de 1 */}
                               {hasMultipleDoctors && (
                                 <div
                                   className="flex items-center gap-1 shrink-0"
@@ -983,33 +1248,29 @@ export function DirectoryMap({
                                 >
                                   <button
                                     type="button"
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onMouseDown={(e) => e.stopPropagation()}
                                     onClick={(e) => handlePrevDoctor(building, e)}
-                                    className="p-1 rounded-md bg-white/10 hover:bg-white/25 text-white transition cursor-pointer border border-white/20 active:scale-95"
+                                    className="p-1 rounded-md bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition cursor-pointer border border-slate-200 dark:border-slate-700"
                                     title="Médico anterior"
                                   >
-                                    <ChevronLeft className="w-3.5 h-3.5" />
+                                    <ChevronLeft className="w-3 h-3" />
                                   </button>
-                                  <span className="text-[10px] font-black text-white px-0.5 select-none">
+                                  <span className="text-[10px] font-bold text-slate-500 px-0.5 select-none">
                                     {activeDoctorIdx + 1}/{building.doctors.length}
                                   </span>
                                   <button
                                     type="button"
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onMouseDown={(e) => e.stopPropagation()}
                                     onClick={(e) => handleNextDoctor(building, e)}
-                                    className="p-1 rounded-md bg-white/10 hover:bg-white/25 text-white transition cursor-pointer border border-white/20 active:scale-95"
+                                    className="p-1 rounded-md bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition cursor-pointer border border-slate-200 dark:border-slate-700"
                                     title="Siguiente médico"
                                   >
-                                    <ChevronRight className="w-3.5 h-3.5" />
+                                    <ChevronRight className="w-3 h-3" />
                                   </button>
                                 </div>
                               )}
                             </div>
 
-                            {/* Fila 2: Círculos de fotos de los médicos que trabajan allí */}
-                            <div className="flex items-center gap-2 overflow-x-auto py-0.5 px-0.5 scrollbar-none">
+                            {/* Fila 2: Fotos de los médicos */}
+                            <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 px-0.5 scrollbar-none">
                               {building.doctors.map((docItem, idx) => {
                                 const isCurrentActive = idx === activeDoctorIdx;
                                 const docName = buildDoctorShortName(docItem.doctorData.doctor) || docItem.doctorData.fullName;
@@ -1022,15 +1283,14 @@ export function DirectoryMap({
                                     onMouseDown={(e) => e.stopPropagation()}
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      e.nativeEvent?.stopImmediatePropagation?.();
                                       setActiveBuildingId(building.id);
                                       setCarouselDoctorIndex(idx);
                                       onDoctorSelect(docItem.expCodigo, docItem.clinicIndex);
                                     }}
-                                    className={`relative w-8.5 h-8.5 rounded-full overflow-hidden shrink-0 border-2 transition-all cursor-pointer ${
+                                    className={`relative w-8 h-8 rounded-full overflow-hidden shrink-0 border-2 transition-all cursor-pointer ${
                                       isCurrentActive
-                                        ? 'border-white ring-2 ring-sky-400 scale-110 shadow-lg shadow-black/80 z-10'
-                                        : 'border-white/30 opacity-60 hover:opacity-100 hover:scale-105 hover:border-white'
+                                        ? 'border-sky-500 ring-2 ring-sky-500/30 scale-105 shadow-sm z-10'
+                                        : 'border-slate-200 dark:border-slate-700 opacity-60 hover:opacity-100'
                                     }`}
                                     title={`${docName} (${docItem.doctorData.specialtyPreview[0] || 'Especialista'})`}
                                   >
@@ -1039,11 +1299,11 @@ export function DirectoryMap({
                                         src={docItem.doctorData.doctor.exp_foto_perfil}
                                         alt={docName}
                                         fill
-                                        sizes="34px"
+                                        sizes="32px"
                                         className="object-cover object-top"
                                       />
                                     ) : (
-                                      <div className="flex h-full w-full items-center justify-center bg-slate-800 text-[10px] font-black text-white">
+                                      <div className="flex h-full w-full items-center justify-center bg-slate-100 text-[10px] font-bold text-slate-700">
                                         {docName.charAt(0)}
                                       </div>
                                     )}
@@ -1052,26 +1312,25 @@ export function DirectoryMap({
                               })}
                             </div>
 
-                            {/* Fila 3: Información detallada del médico activo */}
+                            {/* Fila 3: Información del médico activo */}
                             {currentDoctor && (
                               <div
                                 onPointerDown={(e) => e.stopPropagation()}
                                 onMouseDown={(e) => e.stopPropagation()}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  e.nativeEvent?.stopImmediatePropagation?.();
                                   onDoctorSelect(currentDoctor.expCodigo, currentDoctor.clinicIndex);
                                 }}
-                                className="flex items-center justify-between gap-2 pt-1.5 border-t border-white/15 cursor-pointer hover:bg-white/5 rounded-xl px-1.5 py-1 transition text-left"
+                                className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 dark:border-slate-800 text-left"
                               >
                                 <div className="flex flex-col min-w-0 flex-1">
-                                  <span className="text-xs font-black text-white truncate">
+                                  <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
                                     {buildDoctorShortName(currentDoctor.doctorData.doctor) || currentDoctor.doctorData.fullName}
                                   </span>
-                                  <span className="text-[10px] text-sky-300 font-semibold truncate">
+                                  <span className="text-[10px] text-sky-600 dark:text-sky-400 font-semibold truncate">
                                     {currentDoctor.doctorData.specialtyPreview[0] || 'Especialista'}
                                   </span>
-                                  <span className="text-[10px] text-emerald-400 font-bold">
+                                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
                                     Consulta: {currentDoctor.priceLabel}
                                   </span>
                                 </div>
@@ -1081,10 +1340,9 @@ export function DirectoryMap({
                                   onMouseDown={(e) => e.stopPropagation()}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    e.nativeEvent?.stopImmediatePropagation?.();
                                     onNavigateToProfile(currentDoctor.expCodigo);
                                   }}
-                                  className="px-2.5 py-1 rounded-lg bg-sky-500 hover:bg-sky-400 text-white text-[10px] font-bold shrink-0 transition active:scale-95 cursor-pointer shadow-sm whitespace-nowrap"
+                                  className="px-2.5 py-1 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-[10px] font-bold shrink-0 transition cursor-pointer shadow-xs whitespace-nowrap"
                                   title="Ver perfil completo del médico"
                                 >
                                   Ver perfil
@@ -1093,84 +1351,67 @@ export function DirectoryMap({
                             )}
                           </div>
 
-                          {/* Pico / Punta inferior que apunta al suelo */}
-                          <div className="w-3.5 h-3.5 bg-slate-950 border-r-2 border-b-2 border-white rotate-45 -mt-2 shadow-md" />
-                          {/* Sombra de punto de contacto */}
-                          <div className="w-3.5 h-1 bg-black/60 rounded-full blur-[1px] mt-0.5" />
+                          <div className="w-2.5 h-2.5 bg-white dark:bg-slate-900 border-r border-b border-slate-200/90 dark:border-slate-800 rotate-45 -mt-1.5 shadow-xs" />
                         </div>
                       );
                     })()
                   ) : isThisBuildingDoctorWorkplace ? (
-                    /* ─── ESTADO 2: OTRA SEDE DEL MÉDICO SELECCIONADO (Fondo negro y contenido blanco) ─── */
+                    /* ─── ESTADO 2: OTRA SEDE DEL MÉDICO (Minimalista) ─── */
                     <div className="flex flex-col items-center transition-all duration-200 animate-in zoom-in-95 pointer-events-auto">
-                      <div className="px-3.5 py-1.5 rounded-2xl font-black text-xs shadow-2xl border-2 transition-all whitespace-nowrap flex items-center gap-2 bg-slate-950 text-white border-white ring-2 ring-black/40 hover:scale-105 cursor-pointer">
-                        <div className="w-6 h-6 rounded-lg bg-white/15 text-white flex items-center justify-center shrink-0 border border-white/30">
-                          <Building2 className="w-3.5 h-3.5 text-white" />
-                        </div>
-                        <div className="flex flex-col text-left">
-                          <span className="max-w-[160px] truncate text-xs font-black leading-tight text-white" title={building.name}>
-                            {building.name}
-                          </span>
-                          <span className="text-[10px] text-slate-300 font-bold">
-                            Sede médica · {building.doctors.length} esp.
-                          </span>
-                        </div>
+                      <div className="px-3 py-1 rounded-xl font-semibold text-xs shadow-md border transition-all whitespace-nowrap flex items-center gap-1.5 bg-white/95 dark:bg-slate-900/95 text-slate-800 dark:text-white border-sky-300 dark:border-sky-700 ring-1 ring-sky-500/20 hover:scale-105 cursor-pointer backdrop-blur-md">
+                        <Building2 className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+                        <span className="max-w-[140px] truncate text-xs font-bold text-slate-800 dark:text-white" title={building.name}>
+                          {building.name}
+                        </span>
+                        <span className="text-[10px] text-sky-600 dark:text-sky-400 font-medium">
+                          · {building.doctors.length} esp.
+                        </span>
                       </div>
-                      {/* Pico / Punta inferior que apunta al suelo */}
-                      <div className="w-3 h-3 bg-slate-950 border-r-2 border-b-2 border-white rotate-45 -mt-1.5 shadow-md" />
-                      <div className="w-3 h-0.5 bg-black/60 rounded-full blur-[1px] mt-0.5" />
+                      <div className="w-2 h-2 bg-white dark:bg-slate-900 border-r border-b border-sky-300 dark:border-sky-700 rotate-45 -mt-1 shadow-xs" />
                     </div>
                   ) : isThisBuildingHovered || isDoctorFromListHovered ? (
-                    /* ─── ESTADO 3: HOVER (Previsualización Fondo Negro + Contenido Blanco) ─── */
-                    <div className="flex flex-col items-center transition-all duration-200 animate-in zoom-in-95 duration-200 pointer-events-auto">
-                      <div className="px-3.5 py-1.5 rounded-2xl font-black text-xs shadow-2xl border-2 transition-all whitespace-nowrap flex items-center gap-2.5 bg-slate-950 text-white border-white ring-4 ring-black/40">
-                        <div className="w-7 h-7 rounded-xl bg-white/15 text-white flex items-center justify-center shrink-0 border border-white/30">
-                          <Building2 className="w-4 h-4 text-white" />
+                    /* ─── ESTADO 3: HOVER (Minimalista) ─── */
+                    <div className="flex flex-col items-center transition-all duration-200 animate-in zoom-in-95 pointer-events-auto">
+                      <div className="px-3 py-1.5 rounded-xl font-bold text-xs shadow-lg border transition-all whitespace-nowrap flex items-center gap-2 bg-white/95 dark:bg-slate-900/95 text-slate-800 dark:text-white border-slate-200 dark:border-slate-700 backdrop-blur-md">
+                        <div className="w-6 h-6 rounded-lg bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
+                          <Building2 className="w-3.5 h-3.5" />
                         </div>
                         <div className="flex flex-col text-left">
-                          <span className="max-w-[180px] truncate text-xs font-black leading-tight text-white">
+                          <span className="max-w-[160px] truncate text-xs font-bold leading-tight text-slate-900 dark:text-white">
                             {building.name}
                           </span>
-                          <span className="text-[10px] text-slate-300 font-bold">
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
                             {hasMultipleDoctors
                               ? `${building.doctors.length} especialistas`
                               : (building.doctors[0] ? buildDoctorShortName(building.doctors[0].doctorData.doctor) : null) || 'Especialista'}
                           </span>
                         </div>
                         {hasMultipleDoctors && (
-                          <span className="flex h-5 min-w-[20px] px-1 items-center justify-center rounded-full bg-white text-slate-950 text-[10px] font-black shadow-inner ml-0.5">
+                          <span className="flex h-4.5 min-w-[18px] px-1 items-center justify-center rounded-full bg-sky-100 text-sky-700 text-[9px] font-bold ml-0.5">
                             {building.doctors.length}
                           </span>
                         )}
                       </div>
-
-                      {/* Pico / Punta inferior que apunta al suelo */}
-                      <div className="w-3.5 h-3.5 bg-slate-950 border-r-2 border-b-2 border-white rotate-45 -mt-2 shadow-md" />
-                      {/* Sombra de punto de contacto */}
-                      <div className="w-3.5 h-1 bg-black/60 rounded-full blur-[1px] mt-0.5" />
+                      <div className="w-2 h-2 bg-white dark:bg-slate-900 border-r border-b border-slate-200 dark:border-slate-700 rotate-45 -mt-1 shadow-xs" />
                     </div>
                   ) : (
-                    /* ─── ESTADO 4: NO SELECCIONADO / REPOSO (Fondo Negro + Icono Blanco + Borde Blanco) ─── */
-                    <div className="flex flex-col items-center transition-transform duration-200 hover:scale-125">
-                      <div className="relative flex items-center justify-center w-8 h-8 rounded-full bg-slate-950 text-white shadow-2xl border-2 border-white ring-2 ring-black/30">
+                    /* ─── ESTADO 4: NO SELECCIONADO / REPOSO (Minimalista) ─── */
+                    <div className="flex flex-col items-center transition-transform duration-200 hover:scale-120 cursor-pointer">
+                      <div className="relative flex items-center justify-center w-7 h-7 rounded-full bg-white dark:bg-slate-900 text-sky-600 dark:text-sky-400 shadow-[0_2px_8px_rgba(0,0,0,0.12)] border border-slate-200/90 dark:border-slate-700 hover:border-sky-500 hover:text-sky-700 transition-colors">
                         {hasMultipleDoctors ? (
-                          <Building2 className="w-4 h-4 text-white shrink-0" />
+                          <Building2 className="w-3.5 h-3.5 shrink-0" />
                         ) : (
-                          <Stethoscope className="w-4 h-4 text-white shrink-0" />
+                          <Stethoscope className="w-3.5 h-3.5 shrink-0" />
                         )}
 
                         {/* Mini Badge con número si hay más de 1 médico */}
                         {hasMultipleDoctors && (
-                          <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-white text-slate-950 text-[9px] font-black border border-slate-900 shadow-md">
+                          <span className="absolute -top-1 -right-1 flex h-3.5 min-w-[14px] px-0.5 items-center justify-center rounded-full bg-sky-600 text-white text-[8px] font-bold shadow-xs">
                             {building.doctors.length}
                           </span>
                         )}
                       </div>
-
-                      {/* Pico / Punta inferior que apunta exactamente al lugar */}
-                      <div className="w-2.5 h-2.5 bg-slate-950 border-r-2 border-b-2 border-white rotate-45 -mt-1.5 shadow-md" />
-                      {/* Sombra de punto de contacto */}
-                      <div className="w-3 h-1 bg-black/60 rounded-full blur-[1px] mt-0.5" />
+                      <div className="w-1.5 h-1.5 bg-white dark:bg-slate-900 border-r border-b border-slate-200/90 dark:border-slate-700 rotate-45 -mt-1 shadow-xs" />
                     </div>
                   )}
                 </div>

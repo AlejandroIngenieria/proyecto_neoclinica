@@ -20,6 +20,7 @@ function getNavStyles(label: string) {
 import { AnimatePresence, motion } from 'framer-motion';
 import { NotificacionesPopover } from '@/components/notificaciones-popover';
 import ConfirmLogoutModal from '@/components/confirm-logout-modal';
+import { useUIStore } from '@/stores/ui-store';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -49,28 +50,14 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
   const userMenuRef = useRef<HTMLDivElement | null>(null);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const { isDarkMode, toggleDarkMode } = useUIStore();
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      if (document.documentElement.classList.contains('dark') || localStorage.getItem('theme') === 'dark') {
-        setTheme('dark');
-        document.documentElement.classList.add('dark');
-      }
-    }
+    setMounted(true);
   }, []);
 
-  const toggleTheme = () => {
-    if (theme === 'light') {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-      setTheme('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-      setTheme('light');
-    }
-  };
+  const activeDarkMode = mounted ? isDarkMode : false;
 
   const sessionName = session?.user?.name || 'Usuario';
   const userName = titular
@@ -341,15 +328,15 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
                   {/* Modo Oscuro */}
                   <button
                     type="button"
-                    onClick={toggleTheme}
+                    onClick={toggleDarkMode}
                     className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:bg-[#eff4ff]/60 hover:text-[#006194] dark:hover:bg-slate-800/60 dark:hover:text-sky-300 cursor-pointer"
                   >
                     <span className="flex items-center gap-2.5">
-                      {theme === 'dark' ? <Moon className="h-4 w-4 text-sky-400 shrink-0" /> : <Sun className="h-4 w-4 text-amber-500 shrink-0" />}
+                      {activeDarkMode ? <Moon className="h-4 w-4 text-sky-400 shrink-0" /> : <Sun className="h-4 w-4 text-amber-500 shrink-0" />}
                       <span>Modo Oscuro</span>
                     </span>
-                    <div className={`relative flex h-5 w-9 items-center rounded-full transition-colors ${theme === 'dark' ? 'bg-[#006194]' : 'bg-slate-300 dark:bg-slate-700'}`}>
-                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${theme === 'dark' ? 'translate-x-4.5' : 'translate-x-1'}`} />
+                    <div className={`relative flex h-5 w-9 items-center rounded-full transition-colors ${activeDarkMode ? 'bg-[#006194]' : 'bg-slate-300 dark:bg-slate-700'}`}>
+                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${activeDarkMode ? 'translate-x-4.5' : 'translate-x-1'}`} />
                     </div>
                   </button>
 

@@ -2,7 +2,7 @@ import type { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import type { JWT } from 'next-auth/jwt';
 import type { Session } from 'next-auth';
-import { api } from './api-client';
+import { api, setInMemoryToken } from './api-client';
 import { getAuthSecret } from './auth-secret';
 
 type BackendAuthResponse = {
@@ -217,6 +217,7 @@ export const authOptions: NextAuthOptions = {
             const base64Url = data.token.split('.')[1];
             const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
             const jsonPayload = Buffer.from(base64, 'base64').toString('utf-8');
+            setInMemoryToken(data.token);
             const decoded = JSON.parse(jsonPayload);
 
             return {
@@ -248,6 +249,7 @@ export const authOptions: NextAuthOptions = {
             const base64Url = data.token.split('.')[1];
             const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
             const jsonPayload = Buffer.from(base64, 'base64').toString('utf-8');
+            setInMemoryToken(data.token);
             const decoded = JSON.parse(jsonPayload);
 
             return {
@@ -318,6 +320,7 @@ export const authOptions: NextAuthOptions = {
             return null;
           }
 
+          setInMemoryToken(data.token);
           console.log("=> Login successful for user:", resolvedUser.email);
           return {
             ...resolvedUser,

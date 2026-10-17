@@ -62,10 +62,17 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
               try {
-                if (localStorage.getItem('theme') === 'dark') {
+                var storedTheme = localStorage.getItem('theme');
+                var legacyDark = localStorage.getItem('neoclinica:dark-mode');
+                if (storedTheme === 'dark' || (storedTheme !== 'light' && legacyDark === '1')) {
                   document.documentElement.classList.add('dark');
+                  localStorage.setItem('theme', 'dark');
+                  localStorage.setItem('neoclinica:dark-mode', '1');
                 } else {
+                  // Por defecto estricto: MODO CLARO SIEMPRE
                   document.documentElement.classList.remove('dark');
+                  localStorage.setItem('theme', 'light');
+                  localStorage.setItem('neoclinica:dark-mode', '0');
                 }
               } catch (_) {}
             `,
