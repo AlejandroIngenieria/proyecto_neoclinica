@@ -271,67 +271,41 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
 
     loginTimersRef.current = [t1, t2, t3];
 
-    const maxAttempts = 3;
     let lastError = '';
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const result = await signIn('credentials', {
+        redirect: false,
+        correo: values.correo.trim(),
+        password: values.password,
+      });
+
       if (loginAbortRef.current) {
         clearLoginTimers();
         setLoginStatusText('');
-        setLoginSlowNotice(false);
         return;
       }
 
-      try {
-        if (attempt > 1) {
-          setLoginStatusText(`Reintentando conexión (${attempt}/${maxAttempts})...`);
-        }
-
-        const result = await signIn('credentials', {
-          redirect: false,
-          correo: values.correo.trim(),
-          password: values.password,
-        });
-
-        if (loginAbortRef.current) {
-          clearLoginTimers();
-          setLoginStatusText('');
-          return;
-        }
-
-        if (result?.ok) {
-          clearLoginTimers();
-          saveEmailToHistory(values.correo);
-          setLoginStatusText('Acceso concedido. Redirigiendo...');
-          try {
-            if (typeof window !== 'undefined') {
-              sessionStorage.setItem('neoclinica_random_seed', String(Math.floor(Math.random() * 1000000) + 1));
-            }
-          } catch {}
-
-          const returnUrl = searchParams.get('returnUrl') || searchParams.get('callbackUrl');
-          router.replace(returnUrl || '/dashboard');
-          return;
-        }
-
-        if (result?.error) {
-          lastError = result.error;
-          if (lastError === 'CredentialsSignin') {
-            // Bad credentials - do not retry in vain
-            break;
+      if (result?.ok) {
+        clearLoginTimers();
+        saveEmailToHistory(values.correo);
+        setLoginStatusText('Acceso concedido. Redirigiendo...');
+        try {
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem('neoclinica_random_seed', String(Math.floor(Math.random() * 1000000) + 1));
           }
-          if (attempt < maxAttempts && !loginAbortRef.current) {
-            await new Promise((r) => setTimeout(r, 1200 * attempt));
-            continue;
-          }
-        }
-      } catch {
-        lastError = 'NetworkError';
-        if (attempt < maxAttempts && !loginAbortRef.current) {
-          await new Promise((r) => setTimeout(r, 1200 * attempt));
-          continue;
-        }
+        } catch {}
+
+        const returnUrl = searchParams.get('returnUrl') || searchParams.get('callbackUrl') || '/dashboard';
+        window.location.assign(returnUrl);
+        return;
       }
+
+      if (result?.error) {
+        lastError = result.error;
+      }
+    } catch {
+      lastError = 'NetworkError';
     }
 
     clearLoginTimers();
@@ -387,8 +361,8 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
             }
           } catch {}
 
-          const returnUrl = searchParams.get('returnUrl') || searchParams.get('callbackUrl');
-          router.replace(returnUrl || '/dashboard');
+          const returnUrl = searchParams.get('returnUrl') || searchParams.get('callbackUrl') || '/dashboard';
+          window.location.assign(returnUrl);
           return;
         }
 
@@ -459,8 +433,8 @@ export default function AuthUnifiedView({ initialTab = 'login' }: AuthUnifiedVie
           }
         } catch {}
 
-        const returnUrl = searchParams.get('returnUrl') || searchParams.get('callbackUrl');
-        router.replace(returnUrl || '/dashboard');
+        const returnUrl = searchParams.get('returnUrl') || searchParams.get('callbackUrl') || '/dashboard';
+        window.location.assign(returnUrl);
         return;
       }
 

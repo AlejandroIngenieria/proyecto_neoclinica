@@ -100,7 +100,7 @@ const apiBaseUrl =
 async function postLoginWithRetries(
   correo: string,
   password: string,
-  maxRetries = 3
+  maxRetries = 2
 ): Promise<BackendAuthResponse | null> {
   const url = `${apiBaseUrl}/api/Autenticacion/login`;
 
@@ -119,7 +119,7 @@ async function postLoginWithRetries(
       }
 
       if (attempt < maxRetries) {
-        const delayMs = attempt * 1000;
+        const delayMs = 800;
         console.log(`=> Cold-start / Server wake-up detected. Retrying in ${delayMs}ms...`);
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
