@@ -49,7 +49,11 @@ export function usePacientesByUsuario() {
     queryKey: ['pacientes', 'perfil'],
     queryFn: () => fetchPacientesByUsuario(token!),
     enabled: status === 'authenticated' && !!token,
-    staleTime: 3 * 60 * 1000,
+    staleTime: 5 * 60 * 1000,
+    retry: (failureCount, error: any) => {
+      if (error?.response?.status === 401) return false;
+      return failureCount < 2;
+    },
   });
 }
 

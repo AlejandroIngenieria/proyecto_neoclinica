@@ -360,7 +360,7 @@ export function DoctorCardExpandible({
                   onClick={(e) => {
                     e.stopPropagation();
                     onVisit?.(data);
-                    router.push(`/dashboard/${doctor.exp_codigo}/agendar`);
+                    router.push(`/dashboard/agendar/${doctor.exp_codigo}`);
                   }}
                   className="flex-1 bg-[#0284C7] hover:bg-[#0073B1] text-white font-semibold py-3 rounded-xl text-[13px] transition-colors flex justify-center items-center gap-1.5 shadow-[0_2px_8px_rgba(2,132,199,0.2)] cursor-pointer"
                 >

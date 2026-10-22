@@ -9,6 +9,7 @@ import { DirectoryMap, type BuildingLocation } from '@/components/directory-map'
 import { useSession } from 'next-auth/react';
 import {
     BadgeCheck,
+    Building2,
     ChevronLeft,
     ChevronRight,
     Filter,
@@ -29,21 +30,31 @@ import {
     Home,
     Heart,
     Globe,
+    Check,
+    Columns2,
+    LayoutGrid,
+    Share2,
     SlidersHorizontal,
     ArrowRight,
-    Check,
+    Star,
+    Sparkles,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale/es';
 
 import type { DoctorResponse, DoctorClinica } from '@/types';
-import { buildDoctorFullName, isDoctorActive, cleanZonaText, cleanZonasDomicilio } from '@/types/doctor';
+import { buildDoctorFullName, isDoctorActive, cleanZonaText, cleanZonasDomicilio, getDoctorPriceDisplay } from '@/types/doctor';
 import { Navbar } from '@/components/navbar';
 import { DoctorCard, type DoctorCardData } from '@/components/doctor-card';
 import { DoctorCardExpandible } from '@/components/doctor-card-expandible';
 import { DoctorCardMobile } from '@/components/doctor-card-mobile';
+import { DoctorCompactCard } from '@/components/doctor-compact-card';
+import { DoctorDetailPanel } from '@/components/doctor-detail-panel';
+import { DoctorExpandableModal } from '@/components/doctor-expandable-modal';
+import { ShareDoctorModal } from '@/components/share-doctor-modal';
 import { InsuranceLogoBadge } from '@/components/insurance-logo-badge';
 import { useUserLocation } from '@/hooks/use-user-location';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -54,7 +65,7 @@ import { useDoctors } from '@/hooks/use-doctors';
 import { useParamString, useParamBoolean, useParamNumber, useResetParams } from '@/hooks/use-search-params-state';
 import { useUIStore } from '@/stores/ui-store';
 import { addRecentDoctor, readRecentDoctors, RECENT_DOCTORS_EVENT, type RecentDoctorItem } from '@/lib/recent-doctors';
-import { useFavoritos } from '@/hooks/use-favoritos';
+import { useFavoritos, useAddFavorito, useRemoveFavorito } from '@/hooks/use-favoritos';
 import { usePacienteTitular } from '@/hooks/use-pacientes';
 
 type ResolvedDoctor = {
@@ -397,6 +408,7 @@ function DashboardContent() {
 
     const [showOnlyActive, setShowOnlyActive] = useParamBoolean('active');
     const [showOnlyFavorites, setShowOnlyFavorites] = useParamBoolean('favorites');
+    const [viewMode, setViewMode] = useParamString('view', 'split');
     const [priceLimit, setPriceLimit] = useParamNumber('price', PRICE_LIMIT_MAX);
     const [localPriceLimit, setLocalPriceLimit] = useState(priceLimit);
     const [radarRadiusKm, setRadarRadiusKm] = useParamNumber('radar', 10);
@@ -454,16 +466,49 @@ function DashboardContent() {
 
     const { location: userLocation, requestLocation, loading: locationLoading, getDistanceToDoctor } = useUserLocation();
     const [isNearMeActive, setIsNearMeActive] = useState(false);
-    const [isMapVisible, setIsMapVisible] = useState(false);
+    const [isMapVisible, setIsMapVisible] = useState(true);
+    const [mainPanelView, setMainPanelView] = useState<'map' | 'details'>('map');
+    const [mobileTab, setMobileTab] = useState<'list' | 'map' | 'details'>('list');
+    const [modalDoctor, setModalDoctor] = useState<DoctorCardData | null>(null);
+    const [doctorToShare, setDoctorToShare] = useState<DoctorCardData | null>(null);
+    const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+
+    const addFavMutation = useAddFavorito();
+    const removeFavMutation = useRemoveFavorito();
+
+    const handleToggleFavorito = useCallback((expCodigo: string, e?: React.MouseEvent) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        if (!codPac) {
+            toast.error('Debes iniciar sesión para guardar favoritos');
+            return;
+        }
+        const isFav = favoritos.some((f) => f.expCodigo === expCodigo);
+        if (isFav) {
+            removeFavMutation.mutate({ codPac, codDoc: expCodigo });
+        } else {
+            addFavMutation.mutate({ codPac, codDoc: expCodigo });
+        }
+    }, [codPac, favoritos, addFavMutation, removeFavMutation]);
+
+    const handleShareDoctor = useCallback((doc: DoctorCardData, e?: React.MouseEvent) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        setDoctorToShare(doc);
+        setIsShareModalOpen(true);
+    }, []);
     const [hoveredDoctorId, setHoveredDoctorId] = useState<string | null>(null);
     const rafHoverRef = useRef<number | null>(null);
     const handleDoctorHover = useCallback((docId: string | null) => {
-        if (!isMapVisible) return;
         if (rafHoverRef.current) cancelAnimationFrame(rafHoverRef.current);
         rafHoverRef.current = requestAnimationFrame(() => {
             setHoveredDoctorId(docId);
         });
-    }, [isMapVisible]);
+    }, []);
     const [selectedDoctorId, setSelectedDoctorId] = useState<string | null>(null);
     const [selectedClinicIndex, setSelectedClinicIndex] = useState<number | null>(null);
     const [selectedBuilding, setSelectedBuilding] = useState<BuildingLocation | null>(null);
@@ -475,7 +520,7 @@ function DashboardContent() {
     }, []);
     const [showMapMobile, setShowMapMobile] = useState(false);
     const [isMobileScreen, setIsMobileScreen] = useState(false);
-    const [hasMapEverOpened, setHasMapEverOpened] = useState(false);
+    const [hasMapEverOpened, setHasMapEverOpened] = useState(true);
 
     useEffect(() => {
         if (isMapVisible || showMapMobile) {
@@ -668,56 +713,64 @@ function DashboardContent() {
         [effectiveLocation]
     );
 
-    const scrollToDoctorView = (docId?: string) => {
-        if (cardsScrollContainerRef.current) {
-            cardsScrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-        const target = (docId ? document.getElementById(`doctor-card-${docId}`) : null)
-            || document.getElementById('doctores');
+    const doctorListContainerRef = useRef<HTMLDivElement | null>(null);
 
-        if (target) {
-            target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
-    };
+    const scrollToDoctorTop = useCallback((docId?: string) => {
+        if (!docId) return;
+        setTimeout(() => {
+            const container = doctorListContainerRef.current;
+            const target = document.getElementById(`doctor-card-${docId}`);
+            if (container && target) {
+                const containerRect = container.getBoundingClientRect();
+                const targetRect = target.getBoundingClientRect();
+                const scrollOffset = container.scrollTop + (targetRect.top - containerRect.top) - 10;
+                container.scrollTo({
+                    top: Math.max(0, scrollOffset),
+                    behavior: 'smooth',
+                });
+            }
+        }, 70);
+    }, []);
+
+    const handleDoctorVisit = useCallback((cardData: DoctorCardData) => {
+        const item: RecentDoctorItem = {
+            exp_codigo: cardData.doctor.exp_codigo,
+            fullName: cardData.fullName,
+            specialty: cardData.doctor.exp_profesion || 'Especialidad médica',
+            locationLabel: [cardData.doctor.pais_nacimiento, cardData.doctor.nacionalidad].filter(Boolean).join(' · ') || 'Ubicación no registrada',
+            image: cardData.doctor.exp_foto_perfil,
+            visitedAt: new Date().toISOString(),
+        };
+        setRecentDoctors(addRecentDoctor(item));
+    }, []);
 
     const handleDoctorCardSelect = useCallback((data: DoctorCardData) => {
-        const isCurrentlySelected = selectedDoctorId === data.doctor.exp_codigo;
-        const nextSelectedId = isCurrentlySelected ? null : data.doctor.exp_codigo;
-
-        setSelectedDoctorId(nextSelectedId);
+        setSelectedDoctorId(data.doctor.exp_codigo);
         
         const hasClinicas = (data.doctor.clinicas && data.doctor.clinicas.length > 0);
         const hasDomicilio = (data.doctor.atencion_domicilio && data.doctor.atencion_domicilio.length > 0);
         const isDomicilioActive = modality === 'domicilio';
-        const defaultClinicIndex = nextSelectedId
-            ? ((isDomicilioActive && hasDomicilio) ? -1 : (hasClinicas ? 0 : (hasDomicilio ? -1 : 0)))
-            : null;
+        const defaultClinicIndex = (isDomicilioActive && hasDomicilio) ? -1 : (hasClinicas ? 0 : (hasDomicilio ? -1 : 0));
         setSelectedClinicIndex(defaultClinicIndex);
 
-        if (nextSelectedId) {
-            if (!userLocation) {
-                requestLocation();
-            }
-            if (!isMobileScreen) {
-                setIsMapVisible(true);
-            }
-            if (currentPage !== 1) setCurrentPage(1);
-            setTimeout(() => {
-                scrollToDoctorView(nextSelectedId);
-            }, 80);
-        } else {
-            setSelectedBuilding(null);
-            setIsMapVisible(false);
-            setShowMapMobile(false);
+        if (!userLocation) {
+            requestLocation();
         }
-    }, [selectedDoctorId, isMobileScreen, currentPage, setCurrentPage, modality, userLocation, requestLocation]);
+
+        // Mantener siempre el mapa en el panel principal para ver los punteros de las ubicaciones del médico
+        setMainPanelView('map');
+
+        handleDoctorVisit(data);
+
+        // Desplaza su información suavemente al inicio de la lista
+        scrollToDoctorTop(data.doctor.exp_codigo);
+    }, [modality, userLocation, requestLocation, handleDoctorVisit, scrollToDoctorTop]);
 
     const handleCloseSelectedDoctor = useCallback(() => {
         setSelectedDoctorId(null);
         setSelectedBuilding(null);
-        setIsMapVisible(false);
-        setShowMapMobile(false);
         setSelectedClinicIndex(null);
+        setMainPanelView('map');
     }, []);
 
     const handleDoctorSelectFromMap = (expCodigo: string, clinicIndex?: number | null) => {
@@ -729,13 +782,15 @@ function DashboardContent() {
         if (!userLocation) {
             requestLocation();
         }
+        const docMatch = resolvedDoctors.find(d => d.doctor.exp_codigo === expCodigo);
+        if (docMatch) {
+            handleDoctorVisit(docMatch);
+        }
         setSelectedDoctorId(expCodigo);
         setSelectedClinicIndex(typeof clinicIndex === 'number' ? clinicIndex : null);
         if (!isMapVisible) setIsMapVisible(true);
         if (currentPage !== 1) setCurrentPage(1);
-        setTimeout(() => {
-            scrollToDoctorView(expCodigo);
-        }, 80);
+        scrollToDoctorTop(expCodigo);
     };
 
     const handleNavigateToProfile = (expCodigo: string) => {
@@ -928,8 +983,12 @@ function DashboardContent() {
     }, [resolvedDoctors]);
 
     const visibleDoctors = useMemo(() => {
-        const activeTags = [...searchTags, deferredSearchTerm.trim()].filter(Boolean);
-        const normalizedLocation = normalizeText(locationTerm.trim());
+        const activeTags = [
+            ...searchTags,
+            ...(deferredSearchTerm.trim() ? deferredSearchTerm.trim().split(/\s+/) : []),
+        ].filter(Boolean);
+        const effectiveLocationQuery = locationSearchTerm.trim() || locationTerm.trim();
+        const normalizedLocation = normalizeText(effectiveLocationQuery);
 
         const filteredDoctors = resolvedDoctors.map((doctor) => {
             let isMatch = true;
@@ -962,7 +1021,9 @@ function DashboardContent() {
 
             if (!isMatch) return null;
 
-            const matchesLocation = !normalizedLocation || normalizeText(doctor.locationLabel).includes(normalizedLocation);
+            const matchesLocation = !normalizedLocation
+                || normalizeText(doctor.locationLabel).includes(normalizedLocation)
+                || doctor.locationPreview.some(loc => normalizeText(loc).includes(normalizedLocation));
             const matchesActive = !showOnlyActive || isDoctorActive(doctor.doctor);
             const isFavorite = favoritos.some(f => f.expCodigo === doctor.doctor.exp_codigo);
             if (showOnlyFavorites && !isFavorite) return null;
@@ -975,8 +1036,8 @@ function DashboardContent() {
             if (!activeModalities.includes('all')) {
                 matchesModality = activeModalities.some(m => {
                     if (m === 'virtual') return doctorModalities.some((item) => item.includes('telemedicina') || item.includes('virtual'));
-                    if (m === 'presencial') return doctorModalities.some((item) => item.includes('presencial'));
-                    if (m === 'hybrid') return doctorModalities.some((item) => item.includes('telemedicina') || item.includes('virtual')) && doctorModalities.some((item) => item.includes('presencial'));
+                    if (m === 'presencial') return doctorModalities.some((item) => item.includes('presencial')) || (doctor.doctor.clinicas && doctor.doctor.clinicas.length > 0);
+                    if (m === 'hybrid') return (doctorModalities.some((item) => item.includes('telemedicina') || item.includes('virtual'))) && (doctorModalities.some((item) => item.includes('presencial')) || (doctor.doctor.clinicas && doctor.doctor.clinicas.length > 0));
                     if (m === 'domicilio') return doctorModalities.some((item) => item.includes('domicilio'));
                     return true;
                 });
@@ -1061,7 +1122,7 @@ function DashboardContent() {
             // Por defecto: Presentación aleatoria (única y diferente en cada inicio de sesión)
             return getDoctorHash(leftDoctor.doctor.exp_codigo, sessionSeed) - getDoctorHash(rightDoctor.doctor.exp_codigo, sessionSeed);
         });
-    }, [locationTerm, activeModalities, availability, priceLimit, resolvedDoctors, deferredSearchTerm, showOnlyActive, showOnlyFavorites, favoritos, sortBy, activeSpecialties, searchTags, selectedLanguages, selectedInsurances, isNearMeActive, searchedLocation, getDistanceToDoctorCustom, sessionSeed, gender, radarRadiusKm]);
+    }, [locationTerm, locationSearchTerm, activeModalities, availability, priceLimit, resolvedDoctors, deferredSearchTerm, showOnlyActive, showOnlyFavorites, favoritos, sortBy, activeSpecialties, searchTags, selectedLanguages, selectedInsurances, isNearMeActive, searchedLocation, getDistanceToDoctorCustom, sessionSeed, gender, radarRadiusKm]);
 
 
     const catalogLocationSuggestions = useMemo(() => {
@@ -1134,82 +1195,11 @@ function DashboardContent() {
         return Array.from(suggestions.values()).slice(0, 8);
     }, [searchTerm, resolvedDoctors, searchTags]);
 
-    const handleDoctorVisit = useCallback((cardData: DoctorCardData) => {
-        const item: RecentDoctorItem = {
-            exp_codigo: cardData.doctor.exp_codigo,
-            fullName: cardData.fullName,
-            specialty: cardData.doctor.exp_profesion || 'Especialidad médica',
-            locationLabel: [cardData.doctor.pais_nacimiento, cardData.doctor.nacionalidad].filter(Boolean).join(' · ') || 'Ubicación no registrada',
-            image: cardData.doctor.exp_foto_perfil,
-            visitedAt: new Date().toISOString(),
-        };
-        setRecentDoctors(addRecentDoctor(item));
-    }, []);
-
     const gridContainerRef = useRef<HTMLDivElement | null>(null);
     const cardsScrollContainerRef = useRef<HTMLDivElement | null>(null);
 
-    // ─── Columnas adaptativas y Paginación dinámica inteligente (basada en el ancho real del contenedor) ───
-    const [columnsPerRow, setColumnsPerRow] = useState<number>(() => {
-        if (typeof window !== 'undefined') {
-            const width = window.innerWidth;
-            if (width >= 2250) return 6;
-            if (width >= 1650) return 5;
-            if (width >= 1100) return 4;
-            if (width >= 768) return 3;
-            if (width >= 550) return 2;
-            return 1;
-        }
-        return 4;
-    });
-
-    useEffect(() => {
-        const updateColumns = () => {
-            const el = gridContainerRef.current;
-            if (el && el.clientWidth > 0) {
-                // Ancho de tarjeta compacta ~275px + gap 20px
-                const cols = Math.max(1, Math.floor((el.clientWidth + 20) / (275 + 20)));
-                setColumnsPerRow(cols);
-                return;
-            }
-
-            const width = window.innerWidth;
-            if (isMapVisible) {
-                // Modo mapa lateral activo: el listado de doctores ocupa ~48%-52% del ancho disponible
-                const effectiveW = width * 0.48;
-                const cols = Math.max(1, Math.floor((effectiveW + 16) / (275 + 16)));
-                setColumnsPerRow(cols);
-            } else {
-                // Modo listado completo
-                const cols = Math.max(1, Math.floor((width + 24) / (280 + 24)));
-                setColumnsPerRow(cols);
-            }
-        };
-
-        updateColumns();
-
-        const el = gridContainerRef.current;
-        let observer: ResizeObserver | null = null;
-        if (el && typeof ResizeObserver !== 'undefined') {
-            observer = new ResizeObserver(() => {
-                updateColumns();
-            });
-            observer.observe(el);
-        }
-
-        window.addEventListener('resize', updateColumns);
-        return () => {
-            window.removeEventListener('resize', updateColumns);
-            if (observer) observer.disconnect();
-        };
-    }, [isMapVisible]);
-
-    // La cantidad de elementos por página se calcula como: número de elementos por fila x 4 filas completas
-    const itemsPerPage = useMemo(() => {
-        if (columnsPerRow <= 1) return 8;
-        return columnsPerRow * 4;
-    }, [columnsPerRow]);
-
+    // En Split View, la lista lateral compacta utiliza 10 médicos por página para una navegación ágil
+    const itemsPerPage = 10;
     const totalPages = Math.max(1, Math.ceil(visibleDoctors.length / itemsPerPage));
     const currentPageForView = Math.min(currentPage, totalPages);
     const paginatedDoctors = useMemo(
@@ -1225,6 +1215,14 @@ function DashboardContent() {
         const res = resolvedDoctors.find((d) => d.doctor.exp_codigo === selectedDoctorId);
         return res ? { ...res, selectedInsurances } : null;
     }, [selectedDoctorId, visibleDoctors, resolvedDoctors, selectedInsurances]);
+
+    // Filtrar médicos en el mapa: cuando se selecciona un médico, el mapa se enfoca exclusivamente en sus sedes/ubicaciones
+    const mapDoctors = useMemo(() => {
+        if (selectedDoctorId && selectedDoctorCard) {
+            return [selectedDoctorCard];
+        }
+        return visibleDoctors.length > 0 ? visibleDoctors : paginatedDoctors;
+    }, [selectedDoctorId, selectedDoctorCard, visibleDoctors, paginatedDoctors]);
 
     // Cuando se selecciona/expande una card, se pasa al inicio de la lista de médicos para máxima visibilidad
     const orderedDoctors = useMemo(() => {
@@ -1312,1162 +1310,1326 @@ function DashboardContent() {
     return (
         <main className="min-h-screen text-slate-900 pb-16">
             <div className="mx-auto w-[92%] 2xl:w-[94%] max-w-[2400px] mt-2 flex flex-col gap-2">
-                {/* FILA ÚNICA ULTRA-LIMPIA ESTILO AIRBNB CENTRADA */}
-                <div className={`w-full flex justify-center items-center my-4 relative ${isSearchFocused || isLocationSearchFocused || isModalityMenuOpen || isFiltersModalOpen ? 'z-[700]' : 'z-[400]'}`}>
-                    
-                    {/* Píldora Triple estilo Airbnb centrada y con ancho generoso */}
-                    <div className="w-full max-w-3xl xl:max-w-4xl 2xl:max-w-5xl mx-auto h-14 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-full shadow-sm hover:shadow-md transition-all flex items-center p-1.5 divide-x divide-slate-200 dark:divide-slate-800 relative z-40">
-                            
-                            {/* Segmento 1 (Especialista - Proporción líder para tags y búsqueda) */}
-                            <div ref={searchMenuRef} className="flex-[1.35] h-full px-3.5 sm:px-4 lg:px-5 py-1 flex flex-col justify-center relative min-w-0">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 leading-none mb-1 select-none truncate">
-                                    Especialista
-                                </span>
-                                
-                                <div className="flex items-center gap-1.5 w-full min-w-0">
-                                    {searchTags.length > 0 && (
-                                        <div className="flex items-center gap-1 shrink-0 overflow-x-auto no-scrollbar max-w-[40%]">
-                                            {searchTags.map((tag, idx) => (
-                                                <span key={idx} className="inline-flex items-center gap-1 h-5 rounded-md bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 px-1.5 text-[10px] font-bold whitespace-nowrap">
-                                                    {tag}
-                                                    <button 
-                                                        type="button" 
-                                                        onClick={() => {
-                                                            const tagToRemove = tag;
-                                                            setSearchTags(tags => tags.filter((_, i) => i !== idx));
-                                                            if (specialtyPicks.includes(tagToRemove)) {
-                                                                let next = activeSpecialties.filter(s => s !== 'all' && s !== tagToRemove);
-                                                                setSpecialtyParam(next.length === 0 ? 'all' : next.join(','));
-                                                            }
-                                                        }}
-                                                        className="hover:bg-sky-200 dark:hover:bg-sky-800 rounded-full p-0.5"
-                                                    >
-                                                        <X className="h-2.5 w-2.5" />
-                                                    </button>
+                {/* VISTA DIVIDIDA (SPLIT VIEW): Panel Lateral (Lista Compacta) + Panel Principal (Mapa / Detalles) */}
+                <div className="w-full mb-6">
+                    {error ? (
+                        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 mb-4">
+                            No fue posible cargar la lista de médicos.
+                        </div>
+                    ) : null}
+
+                    {/* ─── FILA GLOBAL: PÍLDORA DE FILTROS CENTRADA CON ANCHO ÓPTIMO ─── */}
+                    <div className={`w-full max-w-4xl xl:max-w-5xl mx-auto mt-4 mb-4 relative transition-all ${
+                        isSearchFocused || isLocationSearchFocused || isModalityMenuOpen || isFiltersModalOpen ? 'z-[600]' : 'z-30'
+                    }`}>
+                        {/* Píldora Triple estilo Airbnb integrada en el header del mapa */}
+                                    <div className="w-full flex items-center justify-between gap-2 relative">
+                                        <div className="w-full h-13 sm:h-14 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-full shadow-2xs hover:shadow-xs transition-all flex items-center px-4 sm:px-5 relative z-40">
+                                            {/* Segmento 1: Especialista (flex-1 para distribución proporcional) */}
+                                            <div ref={searchMenuRef} className="flex-1 h-full pr-3 sm:pr-4 flex flex-col justify-center relative min-w-0">
+                                                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 leading-none mb-0.5 select-none truncate">
+                                                    Especialista
                                                 </span>
-                                            ))}
-                                        </div>
-                                    )}
-
-                                    <input
-                                        id="searchTerm"
-                                        name="doctor-search-input"
-                                        type="text"
-                                        autoComplete="off"
-                                        autoCorrect="off"
-                                        autoCapitalize="off"
-                                        spellCheck={false}
-                                        role="combobox"
-                                        aria-autocomplete="list"
-                                        aria-expanded={isSearchFocused}
-                                        data-lpignore="true"
-                                        data-1p-ignore="true"
-                                        value={searchTerm}
-                                        onClick={() => {
-                                            setRecentDoctors(readRecentDoctors());
-                                            setIsSearchFocused(true);
-                                        }}
-                                        onFocus={() => {
-                                            setRecentDoctors(readRecentDoctors());
-                                            setIsSearchFocused(true);
-                                        }}
-                                        onChange={(event) => {
-                                            setSearchTerm(event.target.value);
-                                            setIsSearchFocused(true);
-                                        }}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter' && searchTerm.trim()) {
-                                                e.preventDefault();
-                                                const term = searchTerm.trim();
-                                                if (!searchTags.includes(term)) {
-                                                    setSearchTags(prev => [...prev, term]);
-                                                    if (specialtyPicks.includes(term)) {
-                                                        let next = activeSpecialties.filter(s => s !== 'all');
-                                                        if (!next.includes(term)) next.push(term);
-                                                        setSpecialtyParam(next.join(','));
-                                                    }
-                                                }
-                                                setSearchTerm('');
-                                            } else if (e.key === 'Backspace' && !searchTerm && searchTags.length > 0) {
-                                                const tagToRemove = searchTags[searchTags.length - 1];
-                                                setSearchTags(prev => prev.slice(0, -1));
-                                                if (specialtyPicks.includes(tagToRemove)) {
-                                                    let next = activeSpecialties.filter(s => s !== 'all' && s !== tagToRemove);
-                                                    setSpecialtyParam(next.length === 0 ? 'all' : next.join(','));
-                                                }
-                                            }
-                                        }}
-                                        placeholder={searchTags.length === 0 ? "Nombre o especialidad..." : "Añadir..."}
-                                        className="text-xs sm:text-[13px] text-slate-600 dark:text-slate-300 placeholder:text-slate-400 dark:placeholder:text-slate-500 bg-transparent outline-none flex-1 min-w-0 truncate leading-tight"
-                                    />
-
-                                    {(searchTerm || searchTags.length > 0 || specialtyParam !== 'all') && (
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setSearchTerm('');
-                                                setSearchTags([]);
-                                                setSpecialtyParam('all');
-                                                setIsSearchFocused(true);
-                                            }}
-                                            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 transition"
-                                        >
-                                            <X className="h-3 w-3" />
-                                        </button>
-                                    )}
-                                </div>
-
-                            {/* Dropdown de Sugerencias de Médicos */}
-                            {isSearchFocused && (
-                                <div className="absolute left-0 top-[calc(100%+8px)] z-[700] w-[420px] sm:w-[480px] max-w-[90vw] overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface dark:bg-slate-900 shadow-[0_25px_60px_rgba(0,0,0,0.25)] text-on-surface dark:text-slate-100">
-                                    {!searchTerm.trim() ? (
-                                        <div className="p-3 space-y-4 max-h-[380px] overflow-y-auto">
-                                            <div>
-                                                <p className="text-[11px] font-bold uppercase tracking-wider text-outline dark:text-slate-400 px-3 py-1 flex items-center gap-1.5">
-                                                    <Users className="w-3.5 h-3.5 text-primary" /> Médicos Vistos Recientemente
-                                                </p>
-                                                {recentDoctors.length > 0 ? (
-                                                    <div className="mt-1 space-y-1">
-                                                        {recentDoctors.map((doc) => (
-                                                            <button
-                                                                key={doc.exp_codigo}
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    handleDoctorVisit({
-                                                                        doctor: resolvedDoctors.find(d => d.doctor.exp_codigo === doc.exp_codigo)?.doctor || ({} as any),
-                                                                        fullName: doc.fullName,
-                                                                        specialtyPreview: [doc.specialty],
-                                                                        modalityPreview: [],
-                                                                        locationPreview: [doc.locationLabel],
-                                                                    });
-                                                                    router.push(`/dashboard/${doc.exp_codigo}`);
-                                                                    setIsSearchFocused(false);
-                                                                }}
-                                                                className="flex w-full items-center justify-between px-3 py-2 rounded-xl hover:bg-surface-container-high dark:hover:bg-slate-800 transition text-left group"
-                                                            >
-                                                                <div className="flex items-center gap-3 min-w-0">
-                                                                    <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden relative border border-outline-variant/20">
-                                                                        {doc.image ? (
-                                                                            <Image src={doc.image} alt={doc.fullName} fill sizes="36px" className="object-cover" />
-                                                                        ) : (
-                                                                            doc.fullName.charAt(0)
-                                                                        )}
-                                                                    </div>
-                                                                    <div className="min-w-0">
-                                                                        <p className="text-sm font-bold text-on-surface dark:text-white leading-tight truncate group-hover:text-primary transition-colors">{doc.fullName}</p>
-                                                                        <p className="text-xs text-outline dark:text-slate-400 truncate">{doc.specialty} · {doc.locationLabel}</p>
-                                                                    </div>
-                                                                </div>
-                                                                <ChevronRight className="w-4 h-4 text-outline dark:text-slate-400 shrink-0 group-hover:translate-x-0.5 transition-transform" />
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                ) : (
-                                                    <div className="mx-3 my-1.5 p-3 rounded-xl bg-surface-container/60 dark:bg-slate-800/60 border border-outline-variant/20 dark:border-slate-800 flex items-center gap-3">
-                                                        <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                                                            <Users className="w-4 h-4 text-primary" />
+                                                <div className="flex items-center gap-1.5 w-full min-w-0">
+                                                    {searchTags.length > 0 && (
+                                                        <div className="flex items-center gap-1 shrink-0 overflow-x-auto no-scrollbar max-w-[40%]">
+                                                            {searchTags.map((tag, idx) => (
+                                                                <span key={idx} className="inline-flex items-center gap-1 h-5 rounded-md bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 px-1.5 text-[10px] font-bold whitespace-nowrap">
+                                                                    {tag}
+                                                                    <button 
+                                                                        type="button" 
+                                                                        onClick={() => {
+                                                                            const tagToRemove = tag;
+                                                                            setSearchTags(tags => tags.filter((_, i) => i !== idx));
+                                                                            if (specialtyPicks.includes(tagToRemove)) {
+                                                                                let next = activeSpecialties.filter(s => s !== 'all' && s !== tagToRemove);
+                                                                                setSpecialtyParam(next.length === 0 ? 'all' : next.join(','));
+                                                                            }
+                                                                        }}
+                                                                        className="hover:bg-sky-200 dark:hover:bg-sky-800 rounded-full p-0.5"
+                                                                    >
+                                                                        <X className="h-2.5 w-2.5" />
+                                                                    </button>
+                                                                </span>
+                                                            ))}
                                                         </div>
-                                                        <p className="text-xs text-outline dark:text-slate-400 font-medium leading-relaxed">
-                                                            Tus perfiles de médicos visitados aparecerán aquí automáticamente al hacer clic en un médico.
-                                                        </p>
-                                                    </div>
-                                                )}
-                                            </div>
-                                            {specialtyPicks.length > 0 && (
-                                                <div>
-                                                    <p className="text-[11px] font-bold uppercase tracking-wider text-outline dark:text-slate-400 px-3 py-1">
-                                                        Especialidades Populares
-                                                    </p>
-                                                    <div className="mt-1 flex flex-wrap gap-1.5 px-3 py-1">
-                                                        {specialtyPicks.slice(0, 8).map((spec) => (
-                                                            <button
-                                                                key={spec}
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    if (!searchTags.includes(spec)) {
-                                                                        setSearchTags(prev => [...prev, spec]);
-                                                                        let next = activeSpecialties.filter(s => s !== 'all');
-                                                                        if (!next.includes(spec)) next.push(spec);
-                                                                        setSpecialtyParam(next.join(','));
-                                                                    }
-                                                                    setIsSearchFocused(false);
-                                                                }}
-                                                                className="px-3 py-1.5 bg-surface-container hover:bg-primary/10 hover:text-primary dark:bg-slate-800 dark:hover:bg-slate-700 rounded-xl text-xs font-semibold text-on-surface dark:text-slate-200 transition"
-                                                            >
-                                                                {spec}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <div className="p-3 space-y-4 max-h-[380px] overflow-y-auto">
-                                            <div>
-                                                <p className="text-[11px] font-bold uppercase tracking-wider text-outline dark:text-slate-400 px-3 py-1 flex items-center gap-1.5">
-                                                    <Search className="w-3.5 h-3.5 text-primary" /> Sugerencias para "{searchTerm}"
-                                                </p>
-                                                <div className="mt-1 space-y-0.5">
-                                                    {searchSuggestions.length > 0 ? searchSuggestions.map((suggestion, idx) => (
-                                                        <button
-                                                            key={idx}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                if (suggestion.type === 'doctor') {
-                                                                    const docMatch = resolvedDoctors.find(d => d.fullName === suggestion.label);
-                                                                    if (docMatch) {
-                                                                        handleDoctorVisit({
-                                                                            doctor: docMatch.doctor,
-                                                                            fullName: docMatch.fullName,
-                                                                            specialtyPreview: docMatch.specialtyPreview,
-                                                                            modalityPreview: docMatch.modalityPreview,
-                                                                            locationPreview: docMatch.locationPreview,
-                                                                        });
-                                                                        router.push(`/dashboard/${docMatch.doctor.exp_codigo}`);
-                                                                        setIsSearchFocused(false);
-                                                                        return;
-                                                                    }
-                                                                }
-                                                                if (!searchTags.includes(suggestion.label)) {
-                                                                    const term = suggestion.label;
+                                                    )}
+
+                                                    <input
+                                                        id="searchTerm"
+                                                        name="doctor-search-input"
+                                                        type="text"
+                                                        autoComplete="off"
+                                                        autoCorrect="off"
+                                                        autoCapitalize="off"
+                                                        spellCheck={false}
+                                                        role="combobox"
+                                                        aria-autocomplete="list"
+                                                        aria-expanded={isSearchFocused}
+                                                        data-lpignore="true"
+                                                        data-1p-ignore="true"
+                                                        value={searchTerm}
+                                                        onClick={() => {
+                                                            setRecentDoctors(readRecentDoctors());
+                                                            setIsSearchFocused(true);
+                                                        }}
+                                                        onFocus={() => {
+                                                            setRecentDoctors(readRecentDoctors());
+                                                            setIsSearchFocused(true);
+                                                        }}
+                                                        onChange={(event) => {
+                                                            setSearchTerm(event.target.value);
+                                                            setIsSearchFocused(true);
+                                                        }}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter' && searchTerm.trim()) {
+                                                                e.preventDefault();
+                                                                const term = searchTerm.trim();
+                                                                if (!searchTags.includes(term)) {
                                                                     setSearchTags(prev => [...prev, term]);
-                                                                    if (suggestion.type === 'specialty' || specialtyPicks.includes(term)) {
+                                                                    if (specialtyPicks.includes(term)) {
                                                                         let next = activeSpecialties.filter(s => s !== 'all');
                                                                         if (!next.includes(term)) next.push(term);
                                                                         setSpecialtyParam(next.join(','));
                                                                     }
                                                                 }
                                                                 setSearchTerm('');
-                                                                setIsSearchFocused(false);
+                                                            } else if (e.key === 'Backspace' && !searchTerm && searchTags.length > 0) {
+                                                                const tagToRemove = searchTags[searchTags.length - 1];
+                                                                setSearchTags(prev => prev.slice(0, -1));
+                                                                if (specialtyPicks.includes(tagToRemove)) {
+                                                                    let next = activeSpecialties.filter(s => s !== 'all' && s !== tagToRemove);
+                                                                    setSpecialtyParam(next.length === 0 ? 'all' : next.join(','));
+                                                                }
+                                                            }
+                                                        }}
+                                                        placeholder={searchTags.length === 0 ? "Nombre o especialidad..." : "Añadir..."}
+                                                        className="text-xs sm:text-[13px] text-slate-600 dark:text-slate-300 placeholder:text-slate-400 dark:placeholder:text-slate-500 bg-transparent outline-none flex-1 min-w-0 truncate leading-tight"
+                                                    />
+
+                                                    {(searchTerm || searchTags.length > 0 || specialtyParam !== 'all') && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setSearchTerm('');
+                                                                setSearchTags([]);
+                                                                setSpecialtyParam('all');
+                                                                setIsSearchFocused(true);
                                                             }}
-                                                            className="flex w-full items-center gap-3 px-3 py-2.5 rounded-xl text-left transition hover:bg-surface-container-high dark:hover:bg-slate-800"
+                                                            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 transition"
                                                         >
-                                                            <Search className="h-4 w-4 text-primary shrink-0" />
-                                                            <div className="min-w-0 flex-1">
-                                                                <span className="text-sm font-medium text-on-surface dark:text-slate-100">{suggestion.label}</span>
-                                                                {suggestion.sublabel && (
-                                                                    <span className="ml-2 text-xs text-outline dark:text-slate-400">({suggestion.sublabel})</span>
-                                                                )}
-                                                            </div>
+                                                            <X className="h-3 w-3" />
                                                         </button>
-                                                    )) : (
-                                                        <div className="px-3 py-2 text-sm text-outline dark:text-slate-400">Sin coincidencias de catálogo</div>
                                                     )}
                                                 </div>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
 
-                        {/* Segmento 2 (Ubicación - Proporción equilibrada con GPS) */}
-                        <div ref={locationSearchRef} className="flex-1 h-full px-3 sm:px-4 lg:px-4 py-1 flex items-center justify-between gap-1.5 sm:gap-2 relative min-w-0">
-                            <div className="flex-1 flex flex-col justify-center min-w-0">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 leading-none mb-1 select-none truncate">
-                                    Ubicación
-                                </span>
-                                <input
-                                    id="locationSearchInput"
-                                    name="location-search-input"
-                                    type="text"
-                                    autoComplete="off"
-                                    autoCorrect="off"
-                                    autoCapitalize="off"
-                                    spellCheck={false}
-                                    role="combobox"
-                                    aria-autocomplete="list"
-                                    aria-expanded={isLocationSearchFocused}
-                                    data-lpignore="true"
-                                    data-1p-ignore="true"
-                                    value={locationSearchTerm}
-                                    onClick={() => setIsLocationSearchFocused(true)}
-                                    onFocus={() => setIsLocationSearchFocused(true)}
-                                    onChange={(e) => {
-                                        setLocationSearchTerm(e.target.value);
-                                        setIsLocationSearchFocused(true);
-                                    }}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter' && locationSearchTerm.trim()) {
-                                            e.preventDefault();
-                                            handleGeocodeSearchText(locationSearchTerm.trim());
-                                        }
-                                    }}
-                                    placeholder="Zona o clínica..."
-                                    className="text-xs sm:text-[13px] text-slate-600 dark:text-slate-300 placeholder:text-slate-400 dark:placeholder:text-slate-500 bg-transparent outline-none w-full truncate leading-tight"
-                                />
-                            </div>
-
-                            <div className="flex items-center gap-1 shrink-0">
-                                {(locationSearchTerm || searchedLocation) && (
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setLocationSearchTerm('');
-                                            setSearchedLocation(null);
-                                            setIsNearMeActive(false);
-                                            setIsLocationSearchFocused(false);
-                                        }}
-                                        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-rose-500 transition"
-                                    >
-                                        <X className="h-3.5 w-3.5 text-rose-500" />
-                                    </button>
-                                )}
-                            </div>
-
-                            {/* Dropdown de Sugerencias de Ubicación (Google Places + Catálogo) */}
-                            {isLocationSearchFocused && (
-                                <div className="absolute left-0 sm:left-auto sm:right-0 lg:left-0 lg:right-auto top-[calc(100%+8px)] z-[800] w-[380px] sm:w-[450px] max-w-[90vw] overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface dark:bg-slate-900 shadow-[0_25px_60px_rgba(0,0,0,0.25)] text-on-surface dark:text-slate-100 p-3 space-y-3 max-h-[380px] overflow-y-auto">
-                                    <p className="text-[11px] font-bold uppercase tracking-wider text-sky-600 dark:text-sky-400 px-3 py-1 flex items-center gap-1.5 border-b border-outline-variant/15">
-                                        <MapPin className="w-3.5 h-3.5 text-sky-600" /> Lugares y Direcciones (Guatemala)
-                                    </p>
-
-                                    {/* Sugerencias de Google Places API */}
-                                    {placeSuggestions.length > 0 && (
-                                        <div className="space-y-0.5">
-                                            {placeSuggestions.map((place) => (
-                                                <button
-                                                    key={place.place_id}
-                                                    type="button"
-                                                    onClick={() => handleSelectPlaceSuggestion(place.place_id, place.description)}
-                                                    className="flex w-full items-center justify-between px-3 py-2.5 rounded-xl hover:bg-sky-50 dark:hover:bg-slate-800 transition text-left group cursor-pointer"
-                                                >
-                                                    <div className="flex items-center gap-3 min-w-0">
-                                                        <div className="w-8 h-8 rounded-full bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300 flex items-center justify-center shrink-0">
-                                                            <MapPin className="w-4 h-4 text-sky-600" />
-                                                        </div>
-                                                        <div className="min-w-0">
-                                                            <p className="text-sm font-bold text-on-surface dark:text-white truncate leading-tight group-hover:text-sky-600 transition-colors">
-                                                                {place.main_text}
-                                                            </p>
-                                                            {place.secondary_text && (
-                                                                <p className="text-xs text-outline dark:text-slate-400 truncate">{place.secondary_text}</p>
-                                                            )}
-                                                        </div>
+                                                {/* Dropdown de Sugerencias de Médicos */}
+                                                {isSearchFocused && (
+                                                    <div className="absolute left-0 top-[calc(100%+8px)] z-[800] w-[400px] sm:w-[460px] max-w-[90vw] overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-[0_25px_60px_rgba(0,0,0,0.25)] text-slate-900 dark:text-slate-100">
+                                                        {!searchTerm.trim() ? (
+                                                            <div className="p-3 space-y-4 max-h-[360px] overflow-y-auto">
+                                                                <div>
+                                                                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-3 py-1 flex items-center gap-1.5">
+                                                                        <Users className="w-3.5 h-3.5 text-sky-600" /> Médicos Vistos Recientemente
+                                                                    </p>
+                                                                    {recentDoctors.length > 0 ? (
+                                                                        <div className="mt-1 space-y-1">
+                                                                            {recentDoctors.map((doc) => (
+                                                                                <button
+                                                                                    key={doc.exp_codigo}
+                                                                                    type="button"
+                                                                                    onClick={() => {
+                                                                                        handleDoctorVisit({
+                                                                                            doctor: resolvedDoctors.find(d => d.doctor.exp_codigo === doc.exp_codigo)?.doctor || ({} as any),
+                                                                                            fullName: doc.fullName,
+                                                                                            specialtyPreview: [doc.specialty],
+                                                                                            modalityPreview: [],
+                                                                                            locationPreview: [doc.locationLabel],
+                                                                                        });
+                                                                                        router.push(`/dashboard/${doc.exp_codigo}`);
+                                                                                        setIsSearchFocused(false);
+                                                                                    }}
+                                                                                    className="flex w-full items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition text-left group"
+                                                                                >
+                                                                                    <div className="flex items-center gap-3 min-w-0">
+                                                                                        <div className="w-9 h-9 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden relative border border-slate-200">
+                                                                                            {doc.image ? (
+                                                                                                <Image src={doc.image} alt={doc.fullName} fill sizes="36px" className="object-cover" />
+                                                                                            ) : (
+                                                                                                doc.fullName.charAt(0)
+                                                                                            )}
+                                                                                        </div>
+                                                                                        <div className="min-w-0">
+                                                                                            <p className="text-sm font-bold text-slate-900 dark:text-white leading-tight truncate group-hover:text-sky-600 transition-colors">{doc.fullName}</p>
+                                                                                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{doc.specialty} · {doc.locationLabel}</p>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                    <ChevronRight className="w-4 h-4 text-slate-400 shrink-0 group-hover:translate-x-0.5 transition-transform" />
+                                                                                </button>
+                                                                            ))}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="mx-3 my-1.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 flex items-center gap-3">
+                                                                            <div className="w-8 h-8 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center shrink-0">
+                                                                                <Users className="w-4 h-4 text-sky-600" />
+                                                                            </div>
+                                                                            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
+                                                                                Tus perfiles de médicos visitados aparecerán aquí automáticamente al hacer clic en un médico.
+                                                                            </p>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                                {specialtyPicks.length > 0 && (
+                                                                    <div>
+                                                                        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-3 py-1">
+                                                                            Especialidades Populares
+                                                                        </p>
+                                                                        <div className="mt-1 flex flex-wrap gap-1.5 px-3">
+                                                                            {specialtyPicks.slice(0, 8).map((spec) => (
+                                                                                <button
+                                                                                    key={spec}
+                                                                                    type="button"
+                                                                                    onClick={() => {
+                                                                                        if (!searchTags.includes(spec)) {
+                                                                                            setSearchTags(prev => [...prev, spec]);
+                                                                                            let next = activeSpecialties.filter(s => s !== 'all');
+                                                                                            if (!next.includes(spec)) next.push(spec);
+                                                                                            setSpecialtyParam(next.join(','));
+                                                                                        }
+                                                                                        setIsSearchFocused(false);
+                                                                                    }}
+                                                                                    className="px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-sky-50 dark:hover:bg-sky-950/50 hover:text-sky-600 transition"
+                                                                                >
+                                                                                    {spec}
+                                                                                </button>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="p-2 max-h-[360px] overflow-y-auto space-y-1">
+                                                                {searchSuggestions.map((item, idx) => (
+                                                                    <button
+                                                                        key={idx}
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            if (item.type === 'specialty') {
+                                                                                if (!searchTags.includes(item.label)) {
+                                                                                    setSearchTags(prev => [...prev, item.label]);
+                                                                                    let next = activeSpecialties.filter(s => s !== 'all');
+                                                                                    if (!next.includes(item.label)) next.push(item.label);
+                                                                                    setSpecialtyParam(next.join(','));
+                                                                                }
+                                                                            } else if (item.type === 'doctor') {
+                                                                                setSearchTerm(item.label);
+                                                                            } else {
+                                                                                setLocationTerm(item.label);
+                                                                            }
+                                                                            setIsSearchFocused(false);
+                                                                        }}
+                                                                        className="flex w-full items-center justify-between px-3 py-2 rounded-xl hover:bg-sky-50 dark:hover:bg-slate-800 transition text-left cursor-pointer"
+                                                                    >
+                                                                        <div className="flex items-center gap-2.5 min-w-0">
+                                                                            <Search className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                                                                            <div className="truncate">
+                                                                                <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{item.label}</p>
+                                                                                {item.sublabel && (
+                                                                                    <p className="text-[10px] text-slate-500 truncate">{item.sublabel}</p>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                        <span className="text-[10px] font-bold text-slate-400 capitalize">{item.type}</span>
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                    <span className="text-[10px] font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950 px-2.5 py-1 rounded-full border border-sky-200 dark:border-sky-800 shrink-0">
-                                                        Centrar mapa
-                                                    </span>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
-
-                                    {/* Sugerencias del Catálogo de Clínicas */}
-                                    {catalogLocationSuggestions.length > 0 && (
-                                        <div className="pt-2 border-t border-outline-variant/15 space-y-0.5">
-                                            <p className="text-[10px] font-bold uppercase tracking-wider text-outline dark:text-slate-400 px-3 py-1">
-                                                Zonas y Sedes del Catálogo
-                                            </p>
-                                            {catalogLocationSuggestions.map((loc, idx) => (
-                                                <button
-                                                    key={idx}
-                                                    type="button"
-                                                    onClick={() => handleGeocodeSearchText(loc)}
-                                                    className="flex w-full items-center justify-between px-3 py-2 rounded-xl hover:bg-surface-container-high dark:hover:bg-slate-800 transition text-left group cursor-pointer"
-                                                >
-                                                    <div className="flex items-center gap-2.5 min-w-0">
-                                                        <MapPin className="w-4 h-4 text-primary shrink-0" />
-                                                        <span className="text-sm font-semibold text-on-surface dark:text-slate-200 truncate">{loc}</span>
-                                                    </div>
-                                                    <ChevronRight className="w-4 h-4 text-outline shrink-0 group-hover:translate-x-0.5 transition-transform" />
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
-
-                                    {placeSuggestions.length === 0 && catalogLocationSuggestions.length === 0 && (
-                                        <div className="p-3 text-center text-xs font-medium text-outline">
-                                            Presiona <kbd className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border rounded font-mono text-[10px]">Enter</kbd> para buscar "{locationSearchTerm}" en Google Maps
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Segmento 3 (Modalidad + Acciones - Proporción equilibrada) */}
-                        <div className="flex-[1.15] h-full pl-3 sm:pl-4 lg:px-4 pr-1.5 py-1 flex items-center justify-between gap-1.5 sm:gap-2 min-w-0">
-                            {/* Trigger y Dropdown de Modalidad - Posicionamiento relativo dedicado */}
-                            <div ref={modalityMenuRef} className="relative flex-1 h-full flex flex-col justify-center min-w-0">
-                                <button
-                                    type="button"
-                                    onClick={() => setIsModalityMenuOpen(!isModalityMenuOpen)}
-                                    className="w-full flex flex-col justify-center text-left min-w-0 cursor-pointer group pr-1"
-                                >
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 leading-none mb-1 group-hover:text-blue-600 transition-colors select-none truncate">
-                                        Modalidad
-                                    </span>
-                                    <div className="flex items-center gap-1 min-w-0">
-                                        <span className="text-xs sm:text-[13px] text-slate-600 dark:text-slate-300 truncate leading-tight font-normal">
-                                            {modalityLabel}
-                                        </span>
-                                        <ChevronDown className={`w-3 h-3 text-slate-400 shrink-0 transition-transform ${isModalityMenuOpen ? 'rotate-180' : ''}`} />
-                                    </div>
-                                </button>
-
-                                {/* Dropdown de Modalidad - Alineado directamente debajo del selector de Modalidad */}
-                                {isModalityMenuOpen && (
-                                    <div className="absolute left-0 top-[calc(100%+8px)] z-[800] w-52 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-[0_20px_50px_rgba(0,0,0,0.18)] text-slate-800 dark:text-slate-100 p-1.5 space-y-1 animate-in fade-in zoom-in-95 duration-150">
-                                        {[
-                                            { value: 'all', label: 'Todas' },
-                                            { value: 'presencial', label: 'Presencial' },
-                                            { value: 'virtual', label: 'Virtual' },
-                                            { value: 'domicilio', label: 'A domicilio' },
-                                        ].map((option) => (
-                                            <button
-                                                key={option.value}
-                                                type="button"
-                                                onClick={() => {
-                                                    setModality(option.value);
-                                                    setIsModalityMenuOpen(false);
-                                                }}
-                                                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-left transition cursor-pointer ${
-                                                    modality === option.value
-                                                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
-                                                        : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
-                                                }`}
-                                            >
-                                                <span>{option.label}</span>
-                                                {modality === option.value && (
-                                                    <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                                                 )}
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
+                                            </div>
 
-                            {/* Acciones de la derecha: Filtros + Favoritos */}
-                            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-                                {/* Botón circular de Filtros (a la izquierda de favoritos) */}
-                                <button
-                                    ref={filterButtonRef}
-                                    type="button"
-                                    onClick={() => setIsFiltersModalOpen(!isFiltersModalOpen)}
-                                    title="Filtros avanzados"
-                                    aria-label="Filtros avanzados"
-                                    className={`relative w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all cursor-pointer border shrink-0 ${
-                                        isFiltersModalOpen || consolidatedFiltersCount > 0
-                                            ? 'border-blue-300 bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:border-blue-800 dark:text-blue-300'
-                                            : 'border-slate-200 bg-slate-50 text-slate-500 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 dark:border-slate-800 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:text-blue-400 dark:hover:border-blue-900/60 dark:hover:bg-blue-950/40'
-                                    }`}
-                                >
-                                    <SlidersHorizontal className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                                    {consolidatedFiltersCount > 0 && (
-                                        <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-blue-600 text-white text-[9px] font-bold flex items-center justify-center shadow-xs">
-                                            {consolidatedFiltersCount}
-                                        </span>
-                                    )}
-                                </button>
+                                            {/* Línea divisoria simétrica 1 */}
+                                            <div className="w-px h-6 sm:h-7 bg-slate-200 dark:bg-slate-800 shrink-0 self-center" aria-hidden="true" />
 
-                                {/* Botón circular de Favoritos */}
-                                <button
-                                    type="button"
-                                    onClick={() => setShowOnlyFavorites(!showOnlyFavorites)}
-                                    title="Ver mis favoritos"
-                                    className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all cursor-pointer border shrink-0 ${
-                                        showOnlyFavorites
-                                            ? 'border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-400'
-                                            : 'border-slate-200 bg-slate-50 text-slate-500 hover:text-rose-500 hover:border-rose-200 hover:bg-rose-50 dark:border-slate-800 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:text-rose-400 dark:hover:border-rose-900/60 dark:hover:bg-rose-950/40'
-                                    }`}
-                                >
-                                    <Heart className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${showOnlyFavorites ? 'fill-current text-rose-600' : ''}`} />
-                                </button>
-                            </div>
-                        </div>
-                    </div>
+                                            {/* Segmento 2: Ubicación (flex-1 proporcional a especialista) */}
+                                            <div ref={locationSearchRef} className="flex-1 h-full px-3 sm:px-4 py-1 flex items-center justify-between relative min-w-0">
+                                                <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 leading-none mb-0.5 select-none truncate">
+                                                        Ubicación
+                                                    </span>
+                                                    <input
+                                                        id="locationSearch"
+                                                        name="location-search-input"
+                                                        type="text"
+                                                        autoComplete="off"
+                                                        autoCorrect="off"
+                                                        autoCapitalize="off"
+                                                        spellCheck={false}
+                                                        role="combobox"
+                                                        aria-autocomplete="list"
+                                                        aria-expanded={isLocationSearchFocused}
+                                                        data-lpignore="true"
+                                                        data-1p-ignore="true"
+                                                        value={locationSearchTerm}
+                                                        onClick={() => setIsLocationSearchFocused(true)}
+                                                        onFocus={() => setIsLocationSearchFocused(true)}
+                                                        onChange={(e) => {
+                                                            setLocationSearchTerm(e.target.value);
+                                                            setIsLocationSearchFocused(true);
+                                                        }}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter' && locationSearchTerm.trim()) {
+                                                                e.preventDefault();
+                                                                handleGeocodeSearchText(locationSearchTerm.trim());
+                                                            }
+                                                        }}
+                                                        placeholder="Zona, clínica o dirección..."
+                                                        className="text-xs sm:text-[13px] text-slate-600 dark:text-slate-300 placeholder:text-slate-400 dark:placeholder:text-slate-500 bg-transparent outline-none w-full truncate leading-tight"
+                                                    />
+                                                </div>
 
-                    {/* Dropdown Panel Horizontal de Filtros (Responsive, ancho inteligente y separación clara) */}
-                    {isFiltersModalOpen && (
-                        <div
-                            ref={filterDropdownRef}
-                            className="absolute left-0 right-0 top-[calc(100%+8px)] z-[850] w-full max-w-4xl xl:max-w-5xl 2xl:max-w-6xl mx-auto bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-[0_20px_50px_rgba(0,0,0,0.18)] p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 text-slate-900 dark:text-slate-100 max-h-[85vh] overflow-y-auto"
-                        >
-                            {/* Contenido en 4 Columnas Inteligentes:
-                                Col 1: Disponibilidad (ancho exacto y justo)
-                                Col 2: Arriba: Precio / Abajo: Aseguradoras
-                                Col 3: Arriba: Idiomas / Abajo: Sexo (Género)
-                                Col 4: Ordenar
-                            */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[auto_1fr_1fr_auto] gap-6 pt-1 items-start divide-y md:divide-y-0 divide-slate-100 dark:divide-slate-800">
-                                {/* 1. DISPONIBILIDAD (Columna 1 - Ancho exacto y justo sin márgenes excesivos) */}
-                                <div className="md:col-span-1 xl:col-span-1 pr-0 xl:pr-6 space-y-3 pt-3 md:pt-0 w-fit">
-                                    <div className="flex items-center justify-between">
-                                        <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                                            <Calendar className="w-3.5 h-3.5 text-sky-600" />
-                                            Disponibilidad
-                                        </label>
-                                        {availability && (
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setAvailability('');
-                                                    setCalendarMonth(new Date());
-                                                }}
-                                                className="text-xs font-medium text-sky-600 dark:text-sky-400 hover:underline cursor-pointer"
-                                            >
-                                                Restablecer
-                                            </button>
-                                        )}
-                                    </div>
+                                                <div className="flex items-center gap-1 shrink-0">
+                                                    {(locationSearchTerm || searchedLocation) && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setLocationSearchTerm('');
+                                                                setSearchedLocation(null);
+                                                                setIsNearMeActive(false);
+                                                                setIsLocationSearchFocused(false);
+                                                            }}
+                                                            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-rose-500 transition"
+                                                        >
+                                                            <X className="h-3.5 w-3.5 text-rose-500" />
+                                                        </button>
+                                                    )}
+                                                </div>
 
-                                    <div className="flex flex-wrap gap-1.5">
-                                        {[
-                                            { label: 'Cualquier fecha', val: '' },
-                                            { label: 'Hoy', val: format(new Date(), 'yyyy-MM-dd') },
-                                            {
-                                                label: 'Mañana',
-                                                val: format(new Date(Date.now() + 86400000), 'yyyy-MM-dd'),
-                                            },
-                                        ].map((p) => {
-                                            const isSelected = availability === p.val;
-                                            return (
+                                                {/* Dropdown de Sugerencias de Ubicación */}
+                                                {isLocationSearchFocused && (
+                                                    <div className="absolute left-0 top-[calc(100%+8px)] z-[800] w-[360px] sm:w-[420px] max-w-[90vw] overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-[0_25px_60px_rgba(0,0,0,0.25)] text-slate-900 dark:text-slate-100 p-3 space-y-3 max-h-[360px] overflow-y-auto">
+                                                        <p className="text-[11px] font-bold uppercase tracking-wider text-sky-600 dark:text-sky-400 px-3 py-1 flex items-center gap-1.5 border-b border-slate-100 dark:border-slate-800">
+                                                            <MapPin className="w-3.5 h-3.5 text-sky-600" /> Lugares y Direcciones (Guatemala)
+                                                        </p>
+
+                                                        {/* Sugerencias de Google Places API */}
+                                                        {placeSuggestions.length > 0 && (
+                                                            <div className="space-y-0.5">
+                                                                {placeSuggestions.map((place) => (
+                                                                    <button
+                                                                        key={place.place_id}
+                                                                        type="button"
+                                                                        onClick={() => handleSelectPlaceSuggestion(place.place_id, place.description)}
+                                                                        className="flex w-full items-center justify-between px-3 py-2 rounded-xl hover:bg-sky-50 dark:hover:bg-slate-800 transition text-left group cursor-pointer"
+                                                                    >
+                                                                        <div className="flex items-center gap-3 min-w-0">
+                                                                            <div className="w-7 h-7 rounded-full bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300 flex items-center justify-center shrink-0">
+                                                                                <MapPin className="w-3.5 h-3.5 text-sky-600" />
+                                                                            </div>
+                                                                            <div className="min-w-0">
+                                                                                <p className="text-xs font-bold text-slate-900 dark:text-white truncate leading-tight group-hover:text-sky-600 transition-colors">
+                                                                                    {place.main_text}
+                                                                                </p>
+                                                                                {place.secondary_text && (
+                                                                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{place.secondary_text}</p>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                        <span className="text-[9px] font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950 px-2 py-0.5 rounded-full border border-sky-200 dark:border-sky-800 shrink-0">
+                                                                            Ubicar
+                                                                        </span>
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        )}
+
+                                                        {/* Sugerencias del Catálogo de Clínicas */}
+                                                        {catalogLocationSuggestions.length > 0 && (
+                                                            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-0.5">
+                                                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-3 py-1">
+                                                                    Zonas y Sedes Populares
+                                                                </p>
+                                                                {catalogLocationSuggestions.map((loc, idx) => (
+                                                                    <button
+                                                                        key={idx}
+                                                                        type="button"
+                                                                        onClick={() => handleGeocodeSearchText(loc)}
+                                                                        className="flex w-full items-center justify-between px-3 py-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition text-left group cursor-pointer"
+                                                                    >
+                                                                        <div className="flex items-center gap-2 min-w-0">
+                                                                            <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                                                                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate">{loc}</span>
+                                                                        </div>
+                                                                        <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0 group-hover:translate-x-0.5 transition-transform" />
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Línea divisoria simétrica 2 */}
+                                            <div className="w-px h-6 sm:h-7 bg-slate-200 dark:bg-slate-800 shrink-0 self-center" aria-hidden="true" />
+
+                                            {/* Segmento 3: Modalidad (ancho fijo menor) */}
+                                            <div ref={modalityMenuRef} className="w-28 sm:w-32 lg:w-36 shrink-0 h-full px-3 sm:px-4 flex flex-col justify-center relative min-w-0">
                                                 <button
-                                                    key={p.label}
                                                     type="button"
-                                                    onClick={() => {
-                                                        setAvailability(p.val);
-                                                        if (p.val) setCalendarMonth(new Date(p.val + 'T00:00:00'));
-                                                        else setCalendarMonth(new Date());
-                                                    }}
-                                                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                                                        isSelected
-                                                            ? 'bg-sky-600 text-white font-bold shadow-2xs'
-                                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                                                    }`}
+                                                    onClick={() => setIsModalityMenuOpen(!isModalityMenuOpen)}
+                                                    className="w-full flex flex-col justify-center text-left min-w-0 cursor-pointer group pr-1"
                                                 >
-                                                    {p.label}
+                                                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 leading-none mb-0.5 select-none truncate">
+                                                        Modalidad
+                                                    </span>
+                                                    <div className="flex items-center gap-1 min-w-0">
+                                                        <span className="text-xs sm:text-[13px] text-slate-600 dark:text-slate-300 truncate leading-tight font-normal">
+                                                            {modalityLabel}
+                                                        </span>
+                                                        <ChevronDown className={`w-3 h-3 text-slate-400 shrink-0 transition-transform ${isModalityMenuOpen ? 'rotate-180' : ''}`} />
+                                                    </div>
                                                 </button>
-                                            );
-                                        })}
-                                    </div>
 
-                                    <div className="pt-1.5 w-fit">
-                                        <div className="w-[260px]">
-                                            {/* Cabecera personalizada de mes ajustada al ancho del calendario */}
-                                            <div className="flex items-center justify-between mb-2 px-0.5">
-                                                <span className="text-xs font-bold capitalize text-slate-800 dark:text-slate-100">
-                                                    {format(calendarMonth, 'MMMM yyyy', { locale: es })}
-                                                </span>
-                                                <div className="flex items-center gap-1">
+                                                {/* Dropdown de Modalidad */}
+                                                {isModalityMenuOpen && (
+                                                    <div className="absolute left-0 top-[calc(100%+8px)] z-[800] w-48 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-[0_20px_50px_rgba(0,0,0,0.18)] text-slate-800 dark:text-slate-100 p-1.5 space-y-1 animate-in fade-in zoom-in-95 duration-150">
+                                                        {[
+                                                            { value: 'all', label: 'Todas' },
+                                                            { value: 'presencial', label: 'Presencial' },
+                                                            { value: 'virtual', label: 'Virtual' },
+                                                            { value: 'domicilio', label: 'A domicilio' },
+                                                        ].map((option) => (
+                                                            <button
+                                                                key={option.value}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setModality(option.value);
+                                                                    setIsModalityMenuOpen(false);
+                                                                }}
+                                                                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-left transition cursor-pointer ${
+                                                                    modality === option.value
+                                                                        ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300'
+                                                                        : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                                                                }`}
+                                                            >
+                                                                <span>{option.label}</span>
+                                                                {modality === option.value && (
+                                                                    <Check className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                                                                )}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Línea divisoria simétrica 3 */}
+                                            <div className="w-px h-6 sm:h-7 bg-slate-200 dark:bg-slate-800 shrink-0 self-center" aria-hidden="true" />
+
+                                            {/* Acciones: Selector de Tipo de Vista + Filtros Avanzados + Favoritos */}
+                                            <div className="flex items-center self-center pl-3 sm:pl-4 gap-3 sm:gap-3.5 shrink-0">
+                                                {/* Selector de Tipo de Vista: Dividida (Mapa) vs Cuadrícula (Grid) */}
+                                                <div className="flex items-center p-0.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 shrink-0">
                                                     <button
                                                         type="button"
-                                                        onClick={() => {
-                                                            setCalendarMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
-                                                        }}
-                                                        disabled={isPastCalendarMonth(calendarMonth)}
-                                                        className={`h-7 w-7 inline-flex items-center justify-center rounded-lg transition ${
-                                                            isPastCalendarMonth(calendarMonth)
-                                                                ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed opacity-40'
-                                                                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer active:scale-95'
+                                                        onClick={() => setViewMode('split')}
+                                                        title="Vista de mapa y lista"
+                                                        aria-label="Vista de mapa y lista"
+                                                        className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                                                            viewMode !== 'grid'
+                                                                ? 'bg-white dark:bg-slate-900 text-sky-700 dark:text-sky-300 shadow-2xs'
+                                                                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
                                                         }`}
-                                                        title={isPastCalendarMonth(calendarMonth) ? 'Mes actual' : 'Mes anterior'}
                                                     >
-                                                        <ChevronLeft className="w-4 h-4" />
+                                                        <Columns2 className="w-3.5 h-3.5" />
+                                                        <span className="hidden sm:inline text-[11px]">Mapa</span>
                                                     </button>
                                                     <button
                                                         type="button"
-                                                        onClick={() => {
-                                                            setCalendarMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
-                                                        }}
-                                                        className="h-7 w-7 inline-flex items-center justify-center rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer active:scale-95"
-                                                        title="Mes siguiente"
+                                                        onClick={() => setViewMode('grid')}
+                                                        title="Vista en cuadrícula de médicos"
+                                                        aria-label="Vista en cuadrícula de médicos"
+                                                        className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                                                            viewMode === 'grid'
+                                                                ? 'bg-white dark:bg-slate-900 text-sky-700 dark:text-sky-300 shadow-2xs'
+                                                                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                                                        }`}
                                                     >
-                                                        <ChevronRight className="w-4 h-4" />
+                                                        <LayoutGrid className="w-3.5 h-3.5" />
+                                                        <span className="hidden sm:inline text-[11px]">Grid</span>
+                                                    </button>
+                                                </div>
+
+                                                {/* Botones circulares con margen y gap aumentados */}
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    <button
+                                                        ref={filterButtonRef}
+                                                        type="button"
+                                                        onClick={() => setIsFiltersModalOpen(!isFiltersModalOpen)}
+                                                        title="Filtros avanzados"
+                                                        aria-label="Filtros avanzados"
+                                                        className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer border shrink-0 ${
+                                                            isFiltersModalOpen || consolidatedFiltersCount > 0
+                                                                ? 'border-sky-300 bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:border-sky-800 dark:text-sky-300'
+                                                                : 'border-slate-200 bg-slate-50 text-slate-500 hover:text-sky-600 hover:border-sky-200 hover:bg-sky-50 dark:border-slate-800 dark:bg-slate-800/80 dark:text-slate-400'
+                                                        }`}
+                                                    >
+                                                        <SlidersHorizontal className="w-3.5 h-3.5" />
+                                                        {consolidatedFiltersCount > 0 && (
+                                                            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-sky-600 text-white text-[9px] font-bold flex items-center justify-center shadow-xs">
+                                                                {consolidatedFiltersCount}
+                                                            </span>
+                                                        )}
+                                                    </button>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowOnlyFavorites(!showOnlyFavorites)}
+                                                        title="Ver mis favoritos"
+                                                        aria-label="Ver mis favoritos"
+                                                        className={`w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer border shrink-0 ${
+                                                            showOnlyFavorites
+                                                                ? 'border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-400'
+                                                                : 'border-slate-200 bg-slate-50 text-slate-500 hover:text-rose-500 hover:border-rose-200 hover:bg-rose-50 dark:border-slate-800 dark:bg-slate-800/80 dark:text-slate-400'
+                                                        }`}
+                                                    >
+                                                        <Heart className={`w-3.5 h-3.5 ${showOnlyFavorites ? 'fill-current text-rose-600' : ''}`} />
                                                     </button>
                                                 </div>
                                             </div>
-
-                                            <div
-                                                style={
-                                                    {
-                                                        '--rdp-day-height': '34px',
-                                                        '--rdp-day-width': '36px',
-                                                        '--rdp-day_button-height': '32px',
-                                                        '--rdp-day_button-width': '34px',
-                                                        '--rdp-accent-color': '#0284c7',
-                                                    } as React.CSSProperties
-                                                }
-                                                className="w-full flex justify-start"
-                                            >
-                                                <DayPicker
-                                                    mode="single"
-                                                    locale={es}
-                                                    month={calendarMonth}
-                                                    onMonthChange={setCalendarMonth}
-                                                    hideNavigation
-                                                    selected={availability ? new Date(availability + 'T00:00:00') : undefined}
-                                                    onSelect={(date) => {
-                                                        const val = date ? format(date, 'yyyy-MM-dd') : '';
-                                                        setAvailability(val);
-                                                        if (date) setCalendarMonth(date);
-                                                    }}
-                                                    disabled={{ before: new Date(new Date().setHours(0, 0, 0, 0)) }}
-                                                    className="!m-0 text-xs w-full"
-                                                    classNames={{
-                                                        month_caption: "hidden",
-                                                        selected: "bg-sky-600 !text-white font-bold hover:bg-sky-700 shadow-xs",
-                                                        today: "font-bold text-sky-600 dark:text-sky-400",
-                                                        day: "hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors text-xs font-medium",
-                                                    }}
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* 2. COLUMNA 2: ARRIBA PRECIO | ABAJO ASEGURADORAS */}
-                                <div className="md:col-span-1 xl:col-span-1 md:border-l md:border-slate-200/80 dark:md:border-slate-800 md:pl-6 xl:pr-6 space-y-5 pt-3 md:pt-0 min-w-0">
-                                    {/* Arriba: Precio Consulta */}
-                                    <div className="space-y-3">
-                                        <div className="flex items-center justify-between">
-                                            <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                                                <DollarSign className="w-3.5 h-3.5 text-sky-600" />
-                                                Precio Consulta
-                                            </label>
-                                            {priceLimit < PRICE_LIMIT_MAX && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setPriceLimit(PRICE_LIMIT_MAX);
-                                                        setLocalPriceLimit(PRICE_LIMIT_MAX);
-                                                    }}
-                                                    className="text-xs font-medium text-sky-600 dark:text-sky-400 hover:underline cursor-pointer"
-                                                >
-                                                    Restablecer
-                                                </button>
-                                            )}
-                                        </div>
-
-                                        <div className="flex items-center gap-2">
-                                            <div className="relative flex-1">
-                                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 dark:text-slate-500">
-                                                    Q
-                                                </span>
-                                                <input
-                                                    type="number"
-                                                    min={0}
-                                                    max={PRICE_LIMIT_MAX}
-                                                    step={25}
-                                                    placeholder={`Hasta ${PRICE_LIMIT_MAX}`}
-                                                    value={localPriceLimit === 0 ? '' : localPriceLimit}
-                                                    onChange={(e) => {
-                                                        const raw = e.target.value;
-                                                        const num = raw === '' ? 0 : Math.max(0, Number(raw));
-                                                        setLocalPriceLimit(num);
-                                                        setPriceLimit(num);
-                                                    }}
-                                                    className="w-full pl-6 pr-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-sky-500 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                                />
-                                            </div>
-                                            <span className="text-xs font-bold text-sky-600 dark:text-sky-400 whitespace-nowrap">
-                                                {localPriceLimit < PRICE_LIMIT_MAX ? `Q${localPriceLimit}` : 'Sin límite'}
-                                            </span>
-                                        </div>
-
-                                        <div className="space-y-1">
-                                            <input
-                                                type="range"
-                                                min={0}
-                                                max={PRICE_LIMIT_MAX}
-                                                step={50}
-                                                value={Math.min(localPriceLimit, PRICE_LIMIT_MAX)}
-                                                onChange={(e) => {
-                                                    const val = Number(e.target.value);
-                                                    setLocalPriceLimit(val);
-                                                    setPriceLimit(val);
-                                                }}
-                                                className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-600"
-                                            />
-                                            <div className="flex justify-between text-[10px] font-medium text-slate-400">
-                                                <span>Q0</span>
-                                                <span>Q500</span>
-                                                <span>Q{PRICE_LIMIT_MAX}</span>
-                                            </div>
-                                        </div>
-
-                                        <div className="flex flex-wrap gap-1.5 pt-0.5">
-                                            {[150, 300, 500, 1000].map((preset) => (
-                                                <button
-                                                    key={preset}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setLocalPriceLimit(preset);
-                                                        setPriceLimit(preset);
-                                                    }}
-                                                    className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                                                        localPriceLimit === preset
-                                                            ? 'bg-sky-600 text-white shadow-2xs'
-                                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                                                    }`}
-                                                >
-                                                    Q{preset}
-                                                </button>
-                                            ))}
                                         </div>
                                     </div>
 
-                                    {/* Abajo: Aseguradoras */}
-                                    <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-3">
-                                        <div className="flex items-center justify-between">
-                                            <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                                                <ShieldCheck className="w-3.5 h-3.5 text-sky-600" />
-                                                Aseguradoras
-                                            </label>
-                                            {selectedInsurances.length > 0 && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setSelectedInsurances([])}
-                                                    className="text-xs font-medium text-sky-600 dark:text-sky-400 hover:underline cursor-pointer"
-                                                >
-                                                    Restablecer
-                                                </button>
-                                            )}
-                                        </div>
+                                    {/* Dropdown Panel Horizontal de Filtros Avanzados (flotando sobre el mapa) */}
+                                    {isFiltersModalOpen && (
+                                        <div
+                                            ref={filterDropdownRef}
+                                            className="absolute left-2 right-2 top-[calc(100%+8px)] z-[850] max-w-4xl xl:max-w-5xl 2xl:max-w-6xl mx-auto bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-[0_20px_50px_rgba(0,0,0,0.18)] p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 text-slate-900 dark:text-slate-100 max-h-[75vh] overflow-y-auto"
+                                        >
+                                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[auto_1fr_1fr_auto] gap-6 pt-1 items-start divide-y md:divide-y-0 divide-slate-100 dark:divide-slate-800">
+                                                {/* Columna 1: Disponibilidad */}
+                                                <div className="md:col-span-1 xl:col-span-1 pr-0 xl:pr-6 space-y-3 pt-3 md:pt-0 w-fit">
+                                                    <div className="flex items-center justify-between">
+                                                        <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                                                            <Calendar className="w-3.5 h-3.5 text-sky-600" />
+                                                            Disponibilidad
+                                                        </label>
+                                                        {availability && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setAvailability('');
+                                                                    setCalendarMonth(new Date());
+                                                                }}
+                                                                className="text-xs font-medium text-sky-600 dark:text-sky-400 hover:underline cursor-pointer"
+                                                            >
+                                                                Restablecer
+                                                            </button>
+                                                        )}
+                                                    </div>
 
-                                        <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
-                                            {insurancePicks.map((ins) => {
-                                                const isChecked = selectedInsurances.includes(ins.aseguradora);
-                                                return (
-                                                    <label
-                                                        key={ins.aseguradora}
-                                                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg cursor-pointer transition text-xs select-none ${
-                                                            isChecked
-                                                                ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-900 dark:text-sky-100 font-bold'
-                                                                : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 font-medium'
-                                                        }`}
-                                                    >
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={isChecked}
-                                                            onChange={(e) => {
-                                                                if (e.target.checked) setSelectedInsurances((prev) => [...prev, ins.aseguradora]);
-                                                                else setSelectedInsurances((prev) => prev.filter((i) => i !== ins.aseguradora));
+                                                    <div className="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-2xl border border-slate-200/60 dark:border-slate-800 flex justify-center scale-90 sm:scale-95 origin-top-left">
+                                                        <DayPicker
+                                                            mode="single"
+                                                            selected={availability ? new Date(availability + 'T00:00:00') : undefined}
+                                                            onSelect={(date) => {
+                                                                if (date) {
+                                                                    const y = date.getFullYear();
+                                                                    const m = String(date.getMonth() + 1).padStart(2, '0');
+                                                                    const d = String(date.getDate()).padStart(2, '0');
+                                                                    setAvailability(`${y}-${m}-${d}`);
+                                                                } else {
+                                                                    setAvailability('');
+                                                                }
                                                             }}
-                                                            className="rounded text-sky-600 focus:ring-sky-500 h-3.5 w-3.5 shrink-0 border-slate-300"
+                                                            month={calendarMonth}
+                                                            onMonthChange={setCalendarMonth}
+                                                            locale={es}
+                                                            disabled={{ before: new Date() }}
+                                                            classNames={{
+                                                                selected: "bg-sky-600 text-white hover:bg-sky-700 font-bold rounded-lg",
+                                                                today: "font-black text-sky-600 underline",
+                                                            }}
                                                         />
-                                                        <InsuranceLogoBadge asg={ins} size="xs" isHighlighted={isChecked} />
-                                                        <span className="truncate text-xs">{ins.aseguradora}</span>
-                                                    </label>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                </div>
+                                                    </div>
+                                                </div>
 
-                                {/* 3. COLUMNA 3: ARRIBA IDIOMAS | ABAJO SEXO (GÉNERO) */}
-                                <div className="md:col-span-1 xl:col-span-1 md:border-t md:border-slate-200/80 dark:md:border-slate-800 md:pt-6 xl:border-t-0 xl:border-l xl:pt-0 xl:pl-6 xl:pr-6 space-y-5 pt-3 md:pt-0 min-w-0">
-                                    {/* Arriba: Idiomas */}
-                                    <div className="space-y-3">
-                                        <div className="flex items-center justify-between">
-                                            <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                                                <Globe className="w-3.5 h-3.5 text-sky-600" />
-                                                Idiomas
-                                            </label>
-                                            {selectedLanguages.length > 0 && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setSelectedLanguages([])}
-                                                    className="text-xs font-medium text-sky-600 dark:text-sky-400 hover:underline cursor-pointer"
-                                                >
-                                                    Restablecer
-                                                </button>
-                                            )}
-                                        </div>
-
-                                        <div className="flex flex-wrap gap-1.5">
-                                            {languagePicks.map((lang) => {
-                                                const isSelected = selectedLanguages.includes(lang);
-                                                return (
-                                                    <button
-                                                        key={lang}
-                                                        type="button"
-                                                        onClick={() => {
-                                                            if (isSelected) setSelectedLanguages((prev) => prev.filter((l) => l !== lang));
-                                                            else setSelectedLanguages((prev) => [...prev, lang]);
-                                                        }}
-                                                        className={`px-2.5 py-1 rounded-full text-xs transition-all cursor-pointer ${
-                                                            isSelected
-                                                                ? 'bg-sky-600 text-white font-bold shadow-2xs'
-                                                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 font-medium'
-                                                        }`}
-                                                    >
-                                                        {lang}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-
-                                    {/* Abajo: Sexo (Género) */}
-                                    <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-3">
-                                        <div className="flex items-center justify-between">
-                                            <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                                                <User className="w-3.5 h-3.5 text-sky-600" />
-                                                Sexo
-                                            </label>
-                                            {gender !== 'all' && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setGender('all')}
-                                                    className="text-xs font-medium text-sky-600 dark:text-sky-400 hover:underline cursor-pointer"
-                                                >
-                                                    Restablecer
-                                                </button>
-                                            )}
-                                        </div>
-
-                                        <div className="space-y-1">
-                                            {[
-                                                { id: 'all', label: 'Todos' },
-                                                { id: 'F', label: 'Femenino' },
-                                                { id: 'M', label: 'Masculino' },
-                                            ].map((opt) => {
-                                                const isSelected = gender === opt.id;
-                                                return (
-                                                    <button
-                                                        key={opt.id}
-                                                        type="button"
-                                                        onClick={() => setGender(opt.id)}
-                                                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition cursor-pointer text-left ${
-                                                            isSelected
-                                                                ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 font-bold'
-                                                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium'
-                                                        }`}
-                                                    >
-                                                        <span>{opt.label}</span>
-                                                        {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-sky-600 dark:bg-sky-400 shrink-0" />}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* 4. COLUMNA 4: ORDENAR POR */}
-                                <div className="md:col-span-1 xl:col-span-1 md:border-l md:border-t md:border-slate-200/80 dark:md:border-slate-800 md:pl-6 md:pt-6 xl:border-t-0 xl:border-l xl:pt-0 xl:pl-6 space-y-3 pt-3 md:pt-0 min-w-0">
-                                    <div className="flex items-center justify-between">
-                                        <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                                            <ArrowDownUp className="w-3.5 h-3.5 text-sky-600" />
-                                            Ordenar por
-                                        </label>
-                                        {sortBy !== 'default' && (
-                                            <button
-                                                type="button"
-                                                onClick={() => setSortBy('default')}
-                                                className="text-xs font-medium text-sky-600 dark:text-sky-400 hover:underline cursor-pointer"
-                                            >
-                                                Restablecer
-                                            </button>
-                                        )}
-                                    </div>
-
-                                    <div className="space-y-1">
-                                        {[
-                                            { id: 'default', label: 'Relevancia' },
-                                            { id: 'name-asc', label: 'Nombre A-Z' },
-                                            { id: 'name-desc', label: 'Nombre Z-A' },
-                                            { id: 'rating-desc', label: 'Mejor valorados' },
-                                            { id: 'price-asc', label: 'Precio menor' },
-                                        ].map((opt) => {
-                                            const isSelected = sortBy === opt.id;
-                                            return (
-                                                <button
-                                                    key={opt.id}
-                                                    type="button"
-                                                    onClick={() => setSortBy(opt.id as SortOption)}
-                                                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition cursor-pointer text-left ${
-                                                        isSelected
-                                                            ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 font-bold'
-                                                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium'
-                                                    }`}
-                                                >
-                                                    <span className="truncate">{opt.label}</span>
-                                                    {isSelected && <Check className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Footer del Dropdown */}
-                            <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
-                                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                                    Mostrando <strong className="text-slate-800 dark:text-slate-200">{visibleDoctors.length}</strong> especialistas disponibles
-                                </p>
-                                <div className="flex items-center gap-2">
-                                    {consolidatedFiltersCount > 0 && (
-                                        <button
-                                            type="button"
-                                            onClick={handleClearConsolidatedFilters}
-                                            className="px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 transition cursor-pointer"
-                                        >
-                                            Restablecer todo
-                                        </button>
-                                    )}
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsFiltersModalOpen(false)}
-                                        className="px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 active:scale-95 text-white text-xs font-bold shadow-xs transition cursor-pointer"
-                                    >
-                                        Aplicar y cerrar
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-
-
-                {/* Lista de Médicos */}
-                <div className="w-full space-y-3 mb-3">
-                    {error ? (
-                        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                            No fue posible cargar la lista de médicos.
-                        </div>
-                    ) : null}
-
-                    <section id="doctores" className="scroll-mt-24 sm:scroll-mt-28 space-y-3 relative z-0 min-h-[400px]">
-                        <div className="flex flex-col lg:flex-row items-start relative z-0 w-full gap-6">
-                            {/* Contenedor de Tarjetas (Framer Motion layout: se ajusta automáticamente y contiene el scroll cuando el mapa está abierto) */}
-                            <motion.div
-                                ref={cardsScrollContainerRef}
-                                layout
-                                transition={{ type: "spring", stiffness: 220, damping: 26, mass: 0.8 }}
-                                className={`w-full min-w-0 flex flex-col gap-4 ${
-                                    isMapVisible
-                                        ? 'lg:flex-[1.1] xl:flex-[1.15] lg:max-h-[calc(100vh-140px)] lg:overflow-y-auto lg:pr-2.5 scrollbar-thin scroll-smooth'
-                                        : 'flex-1'
-                                } ${showMapMobile ? 'hidden lg:flex' : 'flex'}`}
-                            >
-                                {searchedLocation && (
-                                    <div className="flex items-center justify-between bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 px-4 py-2.5 rounded-2xl mb-2 shadow-xs">
-                                        <div className="flex items-center gap-2 text-xs font-bold text-sky-900 dark:text-sky-200 min-w-0">
-                                            <MapPin className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0 animate-bounce" />
-                                            <span className="truncate">Mostrando médicos y sedes más cercanos a: <strong className="text-sky-700 dark:text-sky-300">{searchedLocation.address}</strong></span>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setSearchedLocation(null);
-                                                setIsNearMeActive(false);
-                                            }}
-                                            className="text-xs font-bold text-sky-700 dark:text-sky-300 hover:text-rose-600 dark:hover:text-rose-400 underline transition cursor-pointer flex items-center gap-1 shrink-0 ml-2"
-                                        >
-                                            <X className="w-3.5 h-3.5" /> Limpiar filtro
-                                        </button>
-                                    </div>
-                                )}
-
-                                {isPaginating ? (
-                                    <div className="flex h-[400px] flex-col items-center justify-center">
-                                        <div className="h-20 w-20 animate-spin rounded-full border-8 border-slate-200 border-t-sky-600" />
-                                    </div>
-                                ) : orderedDoctors.length > 0 ? (
-                                    <div ref={gridContainerRef} className="w-full">
-                                        <AnimatedList
-                                            className="grid gap-5 w-full items-stretch"
-                                            style={{
-                                                gridTemplateColumns: isMapVisible
-                                                    ? 'repeat(auto-fill, minmax(min(100%, 285px), 1fr))'
-                                                    : 'repeat(auto-fill, minmax(min(100%, 305px), 1fr))',
-                                            }}
-                                        >
-                                            {orderedDoctors.map((doctor) => {
-                                                const isExpanded = selectedDoctorId === doctor.doctor.exp_codigo;
-
-                                                return (
-                                                    <div
-                                                        key={doctor.doctor.exp_codigo}
-                                                        id={`doctor-card-${doctor.doctor.exp_codigo}`}
-                                                        className={`w-full h-full flex justify-center ${isExpanded ? 'col-span-full' : ''}`}
-                                                    >
-                                                        {/* Vista Móvil: Tarjeta horizontal de 3 zonas */}
-                                                        <div className="block md:hidden w-full">
-                                                            <DoctorCardMobile
-                                                                data={doctor}
-                                                                onVisit={handleDoctorVisit}
-                                                                onSelect={handleDoctorCardSelect}
-                                                                isSelected={isExpanded}
-                                                            />
+                                                {/* Columna 2: Arriba: Precio / Abajo: Aseguradoras */}
+                                                <div className="md:col-span-1 xl:col-span-1 md:border-l md:border-slate-200/80 dark:md:border-slate-800 md:pl-6 xl:border-l xl:pl-6 xl:pr-6 space-y-5 pt-3 md:pt-0 min-w-0">
+                                                    {/* Precio Máximo */}
+                                                    <div className="space-y-3">
+                                                        <div className="flex items-center justify-between">
+                                                            <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                                                                <DollarSign className="w-3.5 h-3.5 text-sky-600" />
+                                                                Presupuesto Consulta
+                                                            </label>
+                                                            {localPriceLimit < PRICE_LIMIT_MAX && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setLocalPriceLimit(PRICE_LIMIT_MAX);
+                                                                        setPriceLimit(PRICE_LIMIT_MAX);
+                                                                    }}
+                                                                    className="text-xs font-medium text-sky-600 dark:text-sky-400 hover:underline cursor-pointer"
+                                                                >
+                                                                    Restablecer
+                                                                </button>
+                                                            )}
                                                         </div>
 
-                                                        {/* Vista Escritorio / Tablet: Tarjeta Expandible Unificada */}
-                                                        <div className="hidden md:block w-full h-full flex justify-center">
-                                                            <DoctorCardExpandible
-                                                                data={doctor}
-                                                                isExpanded={isExpanded}
-                                                                onExpand={() => {
-                                                                    handleDoctorCardSelect(doctor);
-                                                                    if (!isMapVisible) setIsMapVisible(true);
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="relative flex-1">
+                                                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">Q</span>
+                                                                <input
+                                                                    type="number"
+                                                                    min={0}
+                                                                    max={PRICE_LIMIT_MAX}
+                                                                    step={50}
+                                                                    value={localPriceLimit === PRICE_LIMIT_MAX ? '' : localPriceLimit}
+                                                                    placeholder={`Máx ${PRICE_LIMIT_MAX}`}
+                                                                    onChange={(e) => {
+                                                                        const val = e.target.value === '' ? PRICE_LIMIT_MAX : Number(e.target.value);
+                                                                        setLocalPriceLimit(val);
+                                                                        setPriceLimit(val);
+                                                                    }}
+                                                                    className="w-full pl-6 pr-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-sky-500 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                                />
+                                                            </div>
+                                                            <span className="text-xs font-bold text-sky-600 dark:text-sky-400 whitespace-nowrap">
+                                                                {localPriceLimit < PRICE_LIMIT_MAX ? `Q${localPriceLimit}` : 'Sin límite'}
+                                                            </span>
+                                                        </div>
+
+                                                        <div className="space-y-1">
+                                                            <input
+                                                                type="range"
+                                                                min={0}
+                                                                max={PRICE_LIMIT_MAX}
+                                                                step={50}
+                                                                value={Math.min(localPriceLimit, PRICE_LIMIT_MAX)}
+                                                                onChange={(e) => {
+                                                                    const val = Number(e.target.value);
+                                                                    setLocalPriceLimit(val);
+                                                                    setPriceLimit(val);
                                                                 }}
-                                                                onCollapse={() => {
-                                                                    setSelectedDoctorId(null);
-                                                                    setSelectedClinicIndex(null);
-                                                                    setIsMapVisible(false);
-                                                                    setShowMapMobile(false);
-                                                                    setSelectedBuilding(null);
-                                                                }}
-                                                                onVisit={handleDoctorVisit}
-                                                                onSelectClinic={setSelectedClinicIndex}
-                                                                selectedClinicIndex={isExpanded ? selectedClinicIndex : 0}
-                                                                userLocation={effectiveLocation}
-                                                                isHovered={isMapVisible && hoveredDoctorId === doctor.doctor.exp_codigo}
-                                                                isHighlightedByLocation={selectedBuildingDoctorCodes.has(doctor.doctor.exp_codigo)}
-                                                                highlightedLocationName={selectedBuilding?.name}
-                                                                onMouseEnter={isMapVisible ? () => handleDoctorHover(doctor.doctor.exp_codigo) : undefined}
-                                                                onMouseLeave={isMapVisible ? () => handleDoctorHover(null) : undefined}
+                                                                className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-600"
                                                             />
+                                                            <div className="flex justify-between text-[10px] font-medium text-slate-400">
+                                                                <span>Q0</span>
+                                                                <span>Q500</span>
+                                                                <span>Q{PRICE_LIMIT_MAX}</span>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="flex flex-wrap gap-1.5 pt-0.5">
+                                                            {[150, 300, 500, 1000].map((preset) => (
+                                                                <button
+                                                                    key={preset}
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setLocalPriceLimit(preset);
+                                                                        setPriceLimit(preset);
+                                                                    }}
+                                                                    className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
+                                                                        localPriceLimit === preset
+                                                                            ? 'bg-sky-600 text-white shadow-2xs'
+                                                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                                                    }`}
+                                                                >
+                                                                    Q{preset}
+                                                                </button>
+                                                            ))}
                                                         </div>
                                                     </div>
-                                                );
-                                            })}
-                                        </AnimatedList>
-                                    </div>
-                                ) : (
-                                    <section className="rounded-4xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-                                        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-sky-50 text-sky-700">
-                                            <Search className="h-7 w-7" />
-                                        </div>
-                                        <h4 className="mt-4 text-2xl font-black tracking-tight text-slate-900">No hay coincidencias</h4>
-                                        <p className="mx-auto mt-2 max-w-2xl text-sm leading-7 text-slate-600">
-                                             Prueba con otro nombre, especialidad, correo o colegiado.
-                                        </p>
-                                        {hasActiveFilters && (
-                                            <button
-                                                type="button"
-                                                onClick={handleClearAllFilters}
-                                                className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-sky-600 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-sky-700 transition cursor-pointer"
-                                            >
-                                                <X className="w-4 h-4" /> Limpiar todos los filtros
-                                            </button>
-                                        )}
-                                    </section>
-                                )}
 
-                                {visibleDoctors.length > itemsPerPage ? (
-                                    <div className="flex items-center justify-center px-4 py-4">
-                                        <div className="flex items-center justify-center gap-3">
-                                            <button
-                                                type="button"
-                                                onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
-                                                disabled={currentPageForView === 1}
-                                                className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                                                aria-label="Página anterior"
-                                            >
-                                                <ChevronRight className="h-4 w-4 rotate-180" />
-                                            </button>
+                                                    {/* Aseguradoras */}
+                                                    <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-3">
+                                                        <div className="flex items-center justify-between">
+                                                            <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                                                                <ShieldCheck className="w-3.5 h-3.5 text-sky-600" />
+                                                                Aseguradoras
+                                                            </label>
+                                                            {selectedInsurances.length > 0 && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setSelectedInsurances([])}
+                                                                    className="text-xs font-medium text-sky-600 dark:text-sky-400 hover:underline cursor-pointer"
+                                                                >
+                                                                    Restablecer
+                                                                </button>
+                                                            )}
+                                                        </div>
 
-                                            <div className="flex h-12 w-12 items-center justify-center rounded-full border border-sky-200 bg-sky-50 text-sm font-black text-sky-700 shadow-sm">
-                                                {currentPageForView}
+                                                        <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                                                            {insurancePicks.map((ins) => {
+                                                                const isChecked = selectedInsurances.includes(ins.aseguradora);
+                                                                return (
+                                                                    <label
+                                                                        key={ins.aseguradora}
+                                                                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg cursor-pointer transition text-xs select-none ${
+                                                                            isChecked
+                                                                                ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-900 dark:text-sky-100 font-bold'
+                                                                                : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 font-medium'
+                                                                        }`}
+                                                                    >
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={isChecked}
+                                                                            onChange={(e) => {
+                                                                                if (e.target.checked) setSelectedInsurances((prev) => [...prev, ins.aseguradora]);
+                                                                                else setSelectedInsurances((prev) => prev.filter((i) => i !== ins.aseguradora));
+                                                                            }}
+                                                                            className="rounded text-sky-600 focus:ring-sky-500 h-3.5 w-3.5 shrink-0 border-slate-300"
+                                                                        />
+                                                                        <InsuranceLogoBadge asg={ins} size="xs" isHighlighted={isChecked} />
+                                                                        <span className="truncate text-xs">{ins.aseguradora}</span>
+                                                                    </label>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Columna 3: Idiomas y Sexo */}
+                                                <div className="md:col-span-1 xl:col-span-1 md:border-t md:border-slate-200/80 dark:md:border-slate-800 md:pt-6 xl:border-t-0 xl:border-l xl:pt-0 xl:pl-6 xl:pr-6 space-y-5 pt-3 md:pt-0 min-w-0">
+                                                    {/* Idiomas */}
+                                                    <div className="space-y-3">
+                                                        <div className="flex items-center justify-between">
+                                                            <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                                                                <Globe className="w-3.5 h-3.5 text-sky-600" />
+                                                                Idiomas
+                                                            </label>
+                                                            {selectedLanguages.length > 0 && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setSelectedLanguages([])}
+                                                                    className="text-xs font-medium text-sky-600 dark:text-sky-400 hover:underline cursor-pointer"
+                                                                >
+                                                                    Restablecer
+                                                                </button>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="flex flex-wrap gap-1.5">
+                                                            {languagePicks.map((lang) => {
+                                                                const isSelected = selectedLanguages.includes(lang);
+                                                                return (
+                                                                    <button
+                                                                        key={lang}
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            if (isSelected) setSelectedLanguages((prev) => prev.filter((l) => l !== lang));
+                                                                            else setSelectedLanguages((prev) => [...prev, lang]);
+                                                                        }}
+                                                                        className={`px-2.5 py-1 rounded-full text-xs transition-all cursor-pointer ${
+                                                                            isSelected
+                                                                                ? 'bg-sky-600 text-white font-bold shadow-2xs'
+                                                                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 font-medium'
+                                                                        }`}
+                                                                    >
+                                                                        {lang}
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Sexo */}
+                                                    <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-3">
+                                                        <div className="flex items-center justify-between">
+                                                            <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                                                                <User className="w-3.5 h-3.5 text-sky-600" />
+                                                                Sexo
+                                                            </label>
+                                                            {gender !== 'all' && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setGender('all')}
+                                                                    className="text-xs font-medium text-sky-600 dark:text-sky-400 hover:underline cursor-pointer"
+                                                                >
+                                                                    Restablecer
+                                                                </button>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="space-y-1">
+                                                            {[
+                                                                { id: 'all', label: 'Todos' },
+                                                                { id: 'F', label: 'Femenino' },
+                                                                { id: 'M', label: 'Masculino' },
+                                                            ].map((opt) => {
+                                                                const isSelected = gender === opt.id;
+                                                                return (
+                                                                    <button
+                                                                        key={opt.id}
+                                                                        type="button"
+                                                                        onClick={() => setGender(opt.id)}
+                                                                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition cursor-pointer text-left ${
+                                                                            isSelected
+                                                                                ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 font-bold'
+                                                                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium'
+                                                                        }`}
+                                                                    >
+                                                                        <span>{opt.label}</span>
+                                                                        {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-sky-600 dark:bg-sky-400 shrink-0" />}
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Columna 4: Ordenar por */}
+                                                <div className="md:col-span-1 xl:col-span-1 md:border-l md:border-t md:border-slate-200/80 dark:md:border-slate-800 md:pl-6 md:pt-6 xl:border-t-0 xl:border-l xl:pt-0 xl:pl-6 space-y-3 pt-3 md:pt-0 min-w-0">
+                                                    <div className="flex items-center justify-between">
+                                                        <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                                                            <ArrowDownUp className="w-3.5 h-3.5 text-sky-600" />
+                                                            Ordenar por
+                                                        </label>
+                                                        {sortBy !== 'default' && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setSortBy('default')}
+                                                                className="text-xs font-medium text-sky-600 dark:text-sky-400 hover:underline cursor-pointer"
+                                                            >
+                                                                Restablecer
+                                                            </button>
+                                                        )}
+                                                    </div>
+
+                                                    <div className="space-y-1">
+                                                        {[
+                                                            { id: 'default', label: 'Relevancia' },
+                                                            { id: 'name-asc', label: 'Nombre A-Z' },
+                                                            { id: 'name-desc', label: 'Nombre Z-A' },
+                                                            { id: 'rating-desc', label: 'Mejor valorados' },
+                                                            { id: 'price-asc', label: 'Precio menor' },
+                                                        ].map((opt) => {
+                                                            const isSelected = sortBy === opt.id;
+                                                            return (
+                                                                <button
+                                                                    key={opt.id}
+                                                                    type="button"
+                                                                    onClick={() => setSortBy(opt.id as SortOption)}
+                                                                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition cursor-pointer text-left ${
+                                                                        isSelected
+                                                                            ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 font-bold'
+                                                                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium'
+                                                                    }`}
+                                                                >
+                                                                    <span className="truncate">{opt.label}</span>
+                                                                    {isSelected && <Check className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
                                             </div>
 
-                                            <button
-                                                type="button"
-                                                onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
-                                                disabled={currentPageForView >= totalPages}
-                                                className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                                                aria-label="Página siguiente"
-                                            >
-                                                <ChevronRight className="h-4 w-4" />
-                                            </button>
+                                            {/* Footer del Dropdown */}
+                                            <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
+                                                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                                                    Mostrando <strong className="text-slate-800 dark:text-slate-200">{visibleDoctors.length}</strong> especialistas disponibles
+                                                </p>
+                                                <div className="flex items-center gap-2">
+                                                    {consolidatedFiltersCount > 0 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleClearConsolidatedFilters}
+                                                            className="px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 transition cursor-pointer"
+                                                        >
+                                                            Restablecer todo
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setIsFiltersModalOpen(false)}
+                                                        className="px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 active:scale-95 text-white text-xs font-bold shadow-xs transition cursor-pointer"
+                                                    >
+                                                        Aplicar y cerrar
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
+                                    )}
+                    </div>
+
+                    {/* Selector de pestañas para móvil (< 1024px) - Solo en vista Split */}
+                    {viewMode !== 'grid' && (
+                        <div className="flex lg:hidden items-center justify-center p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 mb-4">
+                            <button
+                                type="button"
+                                onClick={() => setMobileTab('list')}
+                                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                                    mobileTab === 'list'
+                                        ? 'bg-white dark:bg-slate-900 text-sky-600 dark:text-sky-400 shadow-xs'
+                                        : 'text-slate-600 dark:text-slate-400'
+                                }`}
+                            >
+                                <List className="w-3.5 h-3.5" />
+                                <span>Lista ({visibleDoctors.length})</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setMobileTab('map');
+                                    setMainPanelView('map');
+                                }}
+                                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                                    mobileTab === 'map'
+                                        ? 'bg-white dark:bg-slate-900 text-sky-600 dark:text-sky-400 shadow-xs'
+                                        : 'text-slate-600 dark:text-slate-400'
+                                }`}
+                            >
+                                <MapPin className="w-3.5 h-3.5" />
+                                <span>Mapa</span>
+                            </button>
+                        </div>
+                    )}
+
+                    <section id="doctores" className="scroll-mt-24 relative z-0">
+                        {viewMode === 'grid' ? (
+                            /* ─── VISTA CUADRÍCULA: GRID DE MÉDICOS (Aceternity Expandable Card Pattern) ─── */
+                            <div className="w-full space-y-6">
+                                <div className="flex items-center justify-between px-1">
+                                    <div>
+                                        <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                                            <span>Especialistas Disponibles</span>
+                                            <span className="px-2.5 py-0.5 rounded-full bg-sky-100 dark:bg-sky-950/70 text-sky-700 dark:text-sky-300 text-xs font-black">
+                                                {visibleDoctors.length}
+                                            </span>
+                                        </h2>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                            Haz clic en cualquier médico para expandir su ficha clínica y consultar disponibilidad
+                                        </p>
                                     </div>
-                                ) : null}
-                            </motion.div>
+                                </div>
 
-                            {/* Contenedor del Mapa (Framer Motion layout + AnimatePresence, FIJO durante scroll) */}
-                            <AnimatePresence>
-                                {(isMapVisible || showMapMobile) && (
-                                    <motion.div
-                                        key="directorio-map-panel"
-                                        layout
-                                        initial={{ width: 0, opacity: 0 }}
-                                        animate={{
-                                            width: showMapMobile ? "100%" : "46%",
-                                            opacity: 1,
-                                        }}
-                                        exit={{ width: 0, opacity: 0 }}
-                                        transition={{ type: "spring", stiffness: 220, damping: 26, mass: 0.8 }}
-                                        className={`shrink-0 ${
-                                            showMapMobile
-                                                ? 'relative block w-full h-[calc(100vh-140px)]'
-                                                : 'hidden lg:block lg:flex-1 h-[calc(100vh-140px)] sticky top-20'
-                                        }`}
-                                    >
-                                        <div className="w-full h-full rounded-3xl overflow-hidden relative shadow-xl border border-slate-200/90 dark:border-slate-800">
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setIsMapVisible(false);
-                                                    setSelectedDoctorId(null);
-                                                    setShowMapMobile(false);
+                                {visibleDoctors.length === 0 ? (
+                                    <div className="w-full py-16 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800">
+                                        <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                                            No se encontraron médicos con los filtros actuales
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={resetParams}
+                                            className="mt-4 px-4 py-2 rounded-xl text-xs font-bold bg-sky-600 text-white hover:bg-sky-700 transition cursor-pointer"
+                                        >
+                                            Limpiar filtros
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <ul className="w-full grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-5 items-stretch">
+                                        {visibleDoctors.map((doc) => {
+                                            const priceInfo = getDoctorPriceDisplay(doc.doctor);
+                                            const primarySpecialty = doc.specialtyPreview[0] || doc.doctor.exp_profesion || 'Especialista';
+                                            const initials = doc.fullName.split(' ').filter(Boolean).slice(0, 2).map((p) => p[0]).join('') || 'DR';
+                                            const clinicas = doc.doctor.clinicas || [];
+                                            const aseguradoras = doc.doctor.aseguradoras || [];
+                                            const hasPresencial = clinicas.length > 0;
+                                            const hasVirtual = (doc.modalityPreview || []).some((m) => m.toLowerCase().includes('virtual'));
+                                            const hasDomicilio = (doc.doctor.atencion_domicilio && doc.doctor.atencion_domicilio.length > 0);
+                                            const isDocFav = favoritos.some((f) => f.expCodigo === doc.doctor.exp_codigo);
+                                            const hasReviews = Boolean(doc.doctor.total_resenas && doc.doctor.total_resenas > 0 && (doc.doctor.promedio_valoracion || 0) > 0);
+
+                                            return (
+                                                <motion.li
+                                                    layoutId={`card-${doc.doctor.exp_codigo}`}
+                                                    key={doc.doctor.exp_codigo}
+                                                    onClick={() => setModalDoctor(doc)}
+                                                    className="group p-4 flex flex-col justify-between bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 hover:border-sky-400 dark:hover:border-sky-600 hover:shadow-xl hover:-translate-y-1 transition-all rounded-3xl cursor-pointer relative overflow-hidden"
+                                                >
+                                                    <div className="flex flex-col w-full">
+                                                        {/* Foto de perfil */}
+                                                        <motion.div
+                                                            layoutId={`image-${doc.doctor.exp_codigo}`}
+                                                            className="relative w-full h-52 sm:h-56 rounded-2xl overflow-hidden bg-gradient-to-br from-sky-100 to-slate-100 dark:from-slate-800 dark:to-slate-900 shrink-0"
+                                                        >
+                                                            {doc.doctor.exp_foto_perfil ? (
+                                                                <img
+                                                                    src={doc.doctor.exp_foto_perfil}
+                                                                    alt={doc.fullName}
+                                                                    className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300"
+                                                                />
+                                                            ) : (
+                                                                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-sky-500 to-blue-600 text-white font-black text-3xl">
+                                                                    {initials}
+                                                                </div>
+                                                            )}
+
+                                                            {/* Badge superior izquierdo: Estrellas para quienes tengan referencias o 'Nuevo' */}
+                                                            <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 z-10">
+                                                                {hasReviews ? (
+                                                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-white/95 dark:bg-slate-900/95 text-slate-800 dark:text-slate-100 shadow-2xs backdrop-blur-md border border-slate-200/60 dark:border-slate-700">
+                                                                        <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500 shrink-0" />
+                                                                        <span>{doc.doctor.promedio_valoracion.toFixed(1)}</span>
+                                                                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">({doc.doctor.total_resenas})</span>
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-white/95 dark:bg-slate-900/95 text-sky-700 dark:text-sky-300 shadow-2xs backdrop-blur-md border border-sky-200/60 dark:border-sky-800/60">
+                                                                        <Sparkles className="w-3 h-3 text-sky-500 shrink-0" />
+                                                                        <span>Nuevo</span>
+                                                                    </span>
+                                                                )}
+                                                            </div>
+
+                                                            {/* Acciones flotantes en la imagen: Favorito + Compartir */}
+                                                            <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => handleToggleFavorito(doc.doctor.exp_codigo, e)}
+                                                                    title={isDocFav ? "Quitar de favoritos" : "Guardar en favoritos"}
+                                                                    aria-label={isDocFav ? "Quitar de favoritos" : "Guardar en favoritos"}
+                                                                    className="w-7 h-7 rounded-full bg-white/95 dark:bg-slate-900/95 text-slate-700 dark:text-slate-200 hover:scale-110 active:scale-95 flex items-center justify-center transition shadow-2xs cursor-pointer backdrop-blur-md border border-slate-200/60 dark:border-slate-700"
+                                                                >
+                                                                    <Heart className={`w-3.5 h-3.5 ${isDocFav ? 'fill-rose-500 text-rose-500' : 'text-slate-500 dark:text-slate-400 hover:text-rose-500'}`} />
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => handleShareDoctor(doc, e)}
+                                                                    title="Compartir especialista"
+                                                                    aria-label="Compartir especialista"
+                                                                    className="w-7 h-7 rounded-full bg-white/95 dark:bg-slate-900/95 text-slate-700 dark:text-slate-200 hover:text-sky-600 dark:hover:text-sky-400 hover:scale-110 active:scale-95 flex items-center justify-center transition shadow-2xs cursor-pointer backdrop-blur-md border border-slate-200/60 dark:border-slate-700"
+                                                                >
+                                                                    <Share2 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                            </div>
+
+                                                            {/* Badge disponible */}
+                                                            <div className="absolute bottom-2.5 right-2.5 px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[9px] font-bold shadow-xs flex items-center gap-1 border border-white/60">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                                                                <span>Disponible</span>
+                                                            </div>
+                                                        </motion.div>
+
+                                                        {/* Datos del Médico */}
+                                                        <div className="mt-3.5 space-y-1">
+                                                            <motion.h3
+                                                                layoutId={`title-${doc.doctor.exp_codigo}`}
+                                                                className="font-bold text-slate-900 dark:text-white text-base truncate group-hover:text-sky-600 transition-colors flex items-center gap-1 min-w-0"
+                                                            >
+                                                                <span className="truncate">{doc.fullName}</span>
+                                                                <BadgeCheck className="w-4 h-4 text-sky-500 shrink-0" />
+                                                            </motion.h3>
+
+                                                            <motion.p
+                                                                layoutId={`description-${doc.doctor.exp_codigo}`}
+                                                                className="text-xs text-slate-500 dark:text-slate-400 font-medium truncate"
+                                                            >
+                                                                {doc.doctor.exp_profesion || primarySpecialty}
+                                                                {doc.doctor.exp_colegiado_gt && ` · Col. ${doc.doctor.exp_colegiado_gt}`}
+                                                            </motion.p>
+
+                                                            {/* Ubicación / Sede principal */}
+                                                            {doc.locationPreview.length > 0 && (
+                                                                <div className="flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400 truncate pt-0.5">
+                                                                    <MapPin className="w-3 h-3 text-sky-600 shrink-0" />
+                                                                    <span className="truncate">{doc.locationPreview[0]}</span>
+                                                                    {clinicas.length > 1 && (
+                                                                        <span className="text-[10px] text-sky-600 dark:text-sky-400 font-bold shrink-0">
+                                                                            (+{clinicas.length - 1} sedes)
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Modalidades */}
+                                                        <div className="flex items-center gap-1.5 mt-2.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                                                            {hasPresencial && (
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                                                                    <MapPin className="w-3.5 h-3.5 text-sky-600" /> Presencial
+                                                                </span>
+                                                            )}
+                                                            {hasVirtual && (
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300">
+                                                                    <Video className="w-3.5 h-3.5 text-blue-600" /> Virtual
+                                                                </span>
+                                                            )}
+                                                            {hasDomicilio && (
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300">
+                                                                    <Home className="w-3.5 h-3.5 text-emerald-600" /> Domicilio
+                                                                </span>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Aseguradoras Aceptadas en pequeño con separación respectiva */}
+                                                        {aseguradoras.length > 0 && (
+                                                            <div className="flex items-center gap-1.5 mt-2.5 pt-2 border-t border-slate-100/90 dark:border-slate-800/80">
+                                                                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider shrink-0">
+                                                                    Seguros:
+                                                                </span>
+                                                                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                                                    {aseguradoras.slice(0, 4).map((ins, iIdx) => (
+                                                                        <InsuranceLogoBadge key={iIdx} asg={ins} size="xs" showName={false} />
+                                                                    ))}
+                                                                    {aseguradoras.length > 4 && (
+                                                                        <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-md">
+                                                                            +{aseguradoras.length - 4}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Pie de la card: Tarifa y Botones de Acción (Ver Perfil y Agendar Cita) */}
+                                                    <div className="mt-3.5 pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2.5">
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-wider">
+                                                                Consulta desde
+                                                            </span>
+                                                            <span className="text-sm font-black text-[#006194] dark:text-sky-300">
+                                                                {priceInfo.hasPrice ? `Q${new Intl.NumberFormat('es-GT').format(priceInfo.price)}` : priceInfo.label}
+                                                            </span>
+                                                        </div>
+
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    router.push(`/dashboard/${doc.doctor.exp_codigo}`);
+                                                                }}
+                                                                className="w-full py-2 px-2.5 rounded-xl font-bold text-xs border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                                                                title="Ver perfil completo del especialista"
+                                                            >
+                                                                <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                                                <span>Perfil</span>
+                                                            </button>
+
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    router.push(`/dashboard/agendar/${doc.doctor.exp_codigo}`);
+                                                                }}
+                                                                className="w-full py-2 px-2.5 rounded-xl font-bold text-xs bg-sky-600 hover:bg-sky-700 text-white shadow-xs hover:shadow-sky-500/25 transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                                                                title="Agendar cita con este especialista"
+                                                            >
+                                                                <Calendar className="w-3.5 h-3.5 shrink-0" />
+                                                                <span>Agendar</span>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </motion.li>
+                                            );
+                                        })}
+                                    </ul>
+                                )}
+                            </div>
+                        ) : (
+                            /* ─── VISTA DIVIDIDA (SPLIT VIEW): Lista + Mapa ─── */
+                            <div className="flex flex-col lg:flex-row items-start relative z-0 w-full gap-5 xl:gap-6">
+{/* PANEL LATERAL: Lista Compacta O Card Expandida del Médico Seleccionado */}
+                            <div className={`w-full lg:w-[440px] xl:w-[480px] 2xl:w-[500px] shrink-0 lg:sticky lg:top-20 lg:h-[calc(100vh-155px)] flex flex-col gap-3 min-w-0 ${
+                                mobileTab !== 'list' ? 'hidden lg:flex' : 'flex'
+                            }`}>
+                                {selectedDoctorCard ? (
+                                    /* VISTA MÉDICO SELECCIONADO: Ocultar las demás cards y mostrar la card expandida con botón X */
+                                    <div className="w-full h-full flex flex-col min-h-0 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                                        {/* Panel de detalles expandido con todas sus ubicaciones, modalidades y opciones */}
+                                        <div className="flex-1 min-h-0 overflow-hidden">
+                                            <DoctorDetailPanel
+                                                key={selectedDoctorCard.doctor.exp_codigo}
+                                                data={selectedDoctorCard}
+                                                onClose={handleCloseSelectedDoctor}
+                                                onViewOnMap={(clinicIdx) => {
+                                                    if (typeof clinicIdx === 'number') {
+                                                        setSelectedClinicIndex(clinicIdx);
+                                                    }
+                                                    setMainPanelView('map');
+                                                    setMobileTab('map');
                                                 }}
-                                                className="absolute top-4 right-4 z-20 px-3.5 py-1.5 rounded-full bg-slate-900/90 text-white font-bold text-xs shadow-xl hover:bg-slate-800 transition-all border border-slate-700 flex items-center gap-1.5 cursor-pointer backdrop-blur-md"
-                                            >
-                                                <X className="w-3.5 h-3.5 text-rose-400" />
-                                                <span>Ocultar mapa</span>
-                                            </button>
-
-                                            <DirectoryMap
-                                                doctors={visibleDoctors.length > 0 ? visibleDoctors : paginatedDoctors}
-                                                hoveredDoctorId={hoveredDoctorId}
-                                                selectedDoctorId={selectedDoctorId}
+                                                onSelectClinic={(idx) => {
+                                                    setSelectedClinicIndex(idx);
+                                                }}
                                                 selectedClinicIndex={selectedClinicIndex}
-                                                radarRadiusKm={radarRadiusKm}
-                                                userLocation={effectiveLocation}
-                                                searchedLocation={searchedLocation}
-                                                isNearMeActive={isNearMeActive || !!searchedLocation}
-                                                onDoctorHover={setHoveredDoctorId}
-                                                onDoctorSelect={handleDoctorSelectFromMap}
-                                                onNavigateToProfile={handleNavigateToProfile}
-                                                onBuildingSelect={handleBuildingSelect}
+                                                className="h-full border-none shadow-none rounded-none"
                                             />
                                         </div>
-                                    </motion.div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {/* Encabezado de la lista lateral */}
+                                        <div className="flex items-center justify-between px-1">
+                                            <div>
+                                                <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                                    <span>Especialistas Disponibles</span>
+                                                    <span className="px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-950/70 text-sky-700 dark:text-sky-300 text-xs font-black">
+                                                        {visibleDoctors.length}
+                                                    </span>
+                                                </h2>
+                                                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                                    Selecciona un especialista para ver su perfil completo y ubicación en el mapa
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {searchedLocation && (
+                                            <div className="flex items-center justify-between bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 px-3.5 py-2 rounded-2xl shadow-2xs">
+                                                <div className="flex items-center gap-2 text-xs font-bold text-sky-900 dark:text-sky-200 min-w-0">
+                                                    <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                                                    <span className="truncate">Cerca de: <strong>{searchedLocation.address}</strong></span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSearchedLocation(null);
+                                                        setIsNearMeActive(false);
+                                                    }}
+                                                    className="text-xs font-bold text-sky-700 dark:text-sky-300 hover:text-rose-600 underline shrink-0 ml-1 cursor-pointer"
+                                                >
+                                                    Limpiar
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {isPaginating ? (
+                                            <div className="flex h-80 flex-col items-center justify-center">
+                                                <div className="h-12 w-12 animate-spin rounded-full border-4 border-slate-200 border-t-sky-600" />
+                                            </div>
+                                        ) : paginatedDoctors.length > 0 ? (
+                                            <div
+                                                ref={doctorListContainerRef}
+                                                className="flex flex-col gap-3 p-1 flex-1 min-h-0 overflow-y-auto pr-2 scroll-smooth [scrollbar-gutter:stable] [scrollbar-width:thin] [scrollbar-color:rgba(148,163,184,0.4)_transparent] overscroll-contain pb-24"
+                                            >
+                                                {paginatedDoctors.map((doc) => {
+                                                    return (
+                                                        <DoctorCompactCard
+                                                            key={doc.doctor.exp_codigo}
+                                                            data={doc}
+                                                            isSelected={false}
+                                                            isHovered={hoveredDoctorId === doc.doctor.exp_codigo}
+                                                            onSelect={handleDoctorCardSelect}
+                                                            onCollapse={handleCloseSelectedDoctor}
+                                                            onSelectClinic={(idx) => {
+                                                                setSelectedClinicIndex(idx);
+                                                                setMainPanelView('map');
+                                                            }}
+                                                            selectedClinicIndex={selectedClinicIndex}
+                                                            onVisit={handleDoctorVisit}
+                                                            onShare={(d) => {
+                                                                setDoctorToShare(d);
+                                                                setIsShareModalOpen(true);
+                                                            }}
+                                                            onMouseEnter={() => handleDoctorHover(doc.doctor.exp_codigo)}
+                                                            onMouseLeave={() => handleDoctorHover(null)}
+                                                        />
+                                                    );
+                                                })}
+
+                                                {/* Paginación */}
+                                                {totalPages > 1 && (
+                                                    <div className="flex items-center justify-center gap-3 pt-3 pb-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+                                                            disabled={currentPageForView === 1}
+                                                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition shadow-2xs cursor-pointer"
+                                                            aria-label="Página anterior"
+                                                        >
+                                                            <ChevronLeft className="h-4 w-4" />
+                                                        </button>
+                                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                                                            Página {currentPageForView} de {totalPages}
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
+                                                            disabled={currentPageForView >= totalPages}
+                                                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition shadow-2xs cursor-pointer"
+                                                            aria-label="Página siguiente"
+                                                        >
+                                                            <ChevronRight className="h-4 w-4" />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <div className="rounded-3xl border border-slate-200 bg-white dark:bg-slate-900 p-8 text-center shadow-xs">
+                                                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 mb-3">
+                                                    <Search className="h-6 w-6" />
+                                                </div>
+                                                <h4 className="text-lg font-bold text-slate-900 dark:text-white">No hay coincidencias</h4>
+                                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                                    Prueba con otro nombre, especialidad o ajusta los filtros.
+                                                </p>
+                                                {hasActiveFilters && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleClearAllFilters}
+                                                        className="mt-4 px-4 py-2 rounded-xl bg-sky-600 text-white text-xs font-bold shadow-xs hover:bg-sky-700 transition cursor-pointer"
+                                                    >
+                                                        Limpiar todos los filtros
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
+                                    </>
                                 )}
-                            </AnimatePresence>
+                            </div>
+
+{/* PANEL PRINCIPAL: Mapa Interactivo */}
+                            <div className={`flex-1 min-w-0 w-full h-[calc(100vh-155px)] min-h-[620px] lg:sticky lg:top-20 flex flex-col rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xl bg-white dark:bg-slate-900 relative z-10 overflow-hidden ${
+                                mobileTab === 'list' ? 'hidden lg:flex' : 'flex'
+                            }`}>
+                                {/* Cuerpo del Panel Principal: Mapa Interactivo */}
+                                <div className="flex-1 w-full h-full relative overflow-hidden">
+                                    <DirectoryMap
+                                        doctors={resolvedDoctors}
+                                        hoveredDoctorId={hoveredDoctorId}
+                                        selectedDoctorId={selectedDoctorId}
+                                        selectedClinicIndex={selectedClinicIndex}
+                                        radarRadiusKm={radarRadiusKm}
+                                        userLocation={effectiveLocation}
+                                        searchedLocation={searchedLocation}
+                                        isNearMeActive={isNearMeActive || !!searchedLocation}
+                                        onDoctorHover={setHoveredDoctorId}
+                                        onDoctorSelect={(expCodigo, clinicIndex) => {
+                                            handleDoctorSelectFromMap(expCodigo, clinicIndex);
+                                        }}
+                                        onNavigateToProfile={handleNavigateToProfile}
+                                        onBuildingSelect={handleBuildingSelect}
+                                    />
+                                </div>
+                            </div>
                         </div>
-                    </section>
+                    )}
+                </section>
                 </div>
             </div>
 
-            {/* Botón Flotante para Móvil: Toggle Mapa / Lista */}
-            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 lg:hidden">
-                <button
-                    type="button"
-                    onClick={() => {
-                        if (showMapMobile) {
-                            setShowMapMobile(false);
-                            setIsMapVisible(false);
-                            setSelectedDoctorId(null);
-                        } else {
-                            setSelectedDoctorId(null); // Garantiza mostrar todos los punteros de los médicos
-                            setShowMapMobile(true);
-                            setIsMapVisible(true);
-                        }
+            {/* Modal Expandible estilo Aceternity para Móvil o detalle rápido */}
+            <DoctorExpandableModal
+                active={modalDoctor}
+                onClose={() => setModalDoctor(null)}
+                onViewOnMap={(clinicIndex) => {
+                    setModalDoctor(null);
+                    setMainPanelView('map');
+                    setMobileTab('map');
+                    if (typeof clinicIndex === 'number') {
+                        setSelectedClinicIndex(clinicIndex);
+                    }
+                }}
+            />
+
+            {/* Modal para Compartir Médico */}
+            {isShareModalOpen && doctorToShare && (
+                <ShareDoctorModal
+                    isOpen={isShareModalOpen}
+                    onClose={() => {
+                        setIsShareModalOpen(false);
+                        setDoctorToShare(null);
                     }}
-                    className={`inline-flex items-center gap-2 px-5 py-3 rounded-full font-bold text-xs shadow-xl transition-all duration-150 active:scale-95 cursor-pointer ${
-                        showMapMobile
-                            ? 'bg-slate-900 text-white border border-slate-700'
-                            : 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-600/30'
-                    }`}
-                >
-                    {showMapMobile ? (
-                        <>
-                            <List className="w-4 h-4 text-sky-400" />
-                            <span>Ver Lista</span>
-                        </>
-                    ) : (
-                        <>
-                            <MapPin className="w-4 h-4 text-white" />
-                            <span>Ver Mapa</span>
-                        </>
-                    )}
-                </button>
-            </div>
+                    doctor={{
+                        nombre: doctorToShare.fullName,
+                        especialidad: doctorToShare.specialtyPreview[0] || 'Especialista',
+                        fotoPerfil: doctorToShare.doctor.exp_foto_perfil || null,
+                        expCodigo: doctorToShare.doctor.exp_codigo,
+                        url: `${typeof window !== 'undefined' ? window.location.origin : ''}/dashboard/${doctorToShare.doctor.exp_codigo}`,
+                    }}
+                />
+            )}
         </main>
     );
 }

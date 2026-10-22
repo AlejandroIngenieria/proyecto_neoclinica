@@ -102,6 +102,7 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
 
   // Navbar inteligente (Smart Sticky): se oculta al hacer scroll hacia abajo y aparece al hacer scroll hacia arriba
   const [isVisible, setIsVisible] = useState(true);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const lastScrollYRef = useRef(0);
 
   useEffect(() => {
@@ -130,8 +131,12 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
   return (
     <div
       id="app-navbar"
-      className={`sticky top-0 z-[950] w-full bg-transparent border-none shadow-none transition-transform duration-300 ease-in-out ${
-        isVisible ? 'translate-y-0' : '-translate-y-full'
+      className={`sticky top-0 z-[950] w-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 shadow-2xs transition-all duration-300 ease-in-out ${
+        isCollapsed
+          ? '-translate-y-full -mb-14 sm:-mb-16 pointer-events-none'
+          : !isVisible
+          ? '-translate-y-full'
+          : 'translate-y-0'
       }`}
     >
       <div className="w-full">
@@ -401,6 +406,28 @@ export function Navbar({ navLinks = [], backHref, subtitle, children }: NavbarPr
         isOpen={showLogoutModal}
         onClose={() => setShowLogoutModal(false)}
       />
+
+      {/* Pestaña central colapsable moderna en el borde inferior */}
+      <div className="absolute left-1/2 bottom-0 translate-y-full -translate-x-1/2 z-[960] pointer-events-auto">
+        <button
+          type="button"
+          onClick={() => {
+            setIsCollapsed((prev) => {
+              if (prev) setIsVisible(true);
+              return !prev;
+            });
+          }}
+          className="flex items-center justify-center gap-1.5 w-16 sm:w-20 h-4 sm:h-4.5 hover:h-5 rounded-b-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-x border-slate-200/90 dark:border-slate-800 shadow-2xs hover:shadow-md hover:border-sky-300 dark:hover:border-sky-700 text-slate-400 hover:text-sky-600 dark:text-slate-500 dark:hover:text-sky-400 transition-all duration-200 cursor-pointer group active:scale-95"
+          title={isCollapsed ? 'Mostrar barra de navegación' : 'Ocultar barra de navegación'}
+          aria-label={isCollapsed ? 'Mostrar barra de navegación' : 'Ocultar barra de navegación'}
+        >
+          <ChevronDown
+            className={`w-3.5 h-3.5 transition-transform duration-300 ${
+              isCollapsed ? 'rotate-0 text-sky-600 dark:text-sky-400' : 'rotate-180 text-slate-400 group-hover:text-sky-600 dark:text-slate-500 dark:group-hover:text-sky-400'
+            }`}
+          />
+        </button>
+      </div>
     </div>
   );
 }
